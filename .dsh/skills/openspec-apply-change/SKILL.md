@@ -13,7 +13,7 @@ Use the `openspec_*` tools for every step. Fall back to the `openspec` CLI only 
 
 ## Start
 
-1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec init` unless the user asks.
+1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks.
 2. If no change is named, infer it from context. If several exist, ask.
 3. Call `openspec_status` for the change. If `isPlanningComplete` is false or artifacts are missing, finish planning first; do not start apply.
 4. Call `openspec_apply_next` once. Read every file under `contextFiles` before editing. Treat `instruction` as the current guidance. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.
@@ -39,15 +39,3 @@ Ask before continuing when a task is unclear, the implementation reveals a desig
 - Call `openspec_validate` for the change.
 - Report the completed count, the remaining tasks, and every validation issue.
 - Archiving belongs to `openspec-archive-change`; use it only when the user asks.
-
-## Command map
-
-| CLI | Tool |
-| --- | --- |
-| `openspec list --json` | `openspec_list` |
-| `openspec status --change <name> --json` | `openspec_status` |
-| `openspec instructions apply --change <name> --json` | `openspec_apply_next` |
-| `openspec instructions <artifact> --change <name> --json` | `openspec_instructions` |
-| `openspec show <id> --json` | `openspec_show` |
-| `openspec validate <name> --json` | `openspec_validate` |
-| `openspec store list --json` | `openspec_store_list` |

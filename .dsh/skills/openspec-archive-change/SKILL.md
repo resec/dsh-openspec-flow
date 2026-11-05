@@ -30,14 +30,3 @@ Use the `openspec_*` tools for every step. Fall back to the `openspec` CLI only 
 
 - The change is now under `openspec/changes/archive/`.
 - Do not create a new change or edit the merged specs unless the user asks.
-
-## Command map
-
-| CLI | Tool |
-| --- | --- |
-| `openspec list --json` | `openspec_list` |
-| `openspec status --change <name> --json` | `openspec_status` |
-| `openspec validate <name> --json` | `openspec_validate` |
-| `openspec show <name> --json` | `openspec_show` |
-| `openspec archive <name> --yes --json` | `openspec_archive` |
-| `openspec instructions specs --change <name> --json` | `openspec_instructions` |
