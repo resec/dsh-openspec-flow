@@ -13,5 +13,8 @@ npm-debug.log*
 coverage/
 *.tgz
 
+# Local skill migration backups
+.dsh/openspec-flow-backup/
+
 # OS metadata
 .DS_Store
