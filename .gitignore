@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Test and pack artifacts
+coverage/
+*.tgz
+
+# OS metadata
+.DS_Store
