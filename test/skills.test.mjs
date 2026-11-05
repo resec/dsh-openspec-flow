@@ -80,6 +80,7 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     const parsed = parseFrontmatter(raw)
     assert.equal(parsed.name, name)
     assert.ok(parsed.description.length > 0 && parsed.description.length <= 500, name)
+    assert.doesNotMatch(parsed.description, /: /, `${name} description must stay a YAML plain scalar`)
     assert.equal(parsed.metadata.generatedBy, GENERATED_BY, name)
     assert.equal(parsed.metadata.upstream, 'openspec@1.16.0', name)
     assert.match(raw, /openspec_[a-z_]+/, name)

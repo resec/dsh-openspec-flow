@@ -1,6 +1,6 @@
 ---
 name: openspec-flow
-description: Drive an OpenSpec project end to end with the openspec_* tools: init, propose, instructions, show, validate, apply, mark and archive. Use for any OpenSpec workflow, or when the user runs /openspec-flow.
+description: Drive an OpenSpec project end to end with the openspec_* tools, covering init, propose, instructions, show, validate, apply, mark and archive. Use for any OpenSpec workflow, or when the user runs /openspec-flow.
 ---
 
 # OpenSpec flow

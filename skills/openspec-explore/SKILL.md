@@ -1,6 +1,6 @@
 ---
 name: openspec-explore
-description: Explore an OpenSpec project with the openspec_* tools: read the root, changes, specs and artifact instructions, then reason about options without writing files. Use when the user wants to think through a change or says "openspec explore" or "opsx explore".
+description: Explore an OpenSpec project with the openspec_* tools, reading the root, changes, specs and artifact instructions, then reasoning about options without writing files. Use when the user wants to think through a change or says "openspec explore" or "opsx explore".
 whenToUse: The user wants a thinking partner before or during a change, and no artifact should be written yet.
 metadata:
   generatedBy: dsh-openspec-flow@0.1.0
