@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "OpenSpec flow",
-    "description": "Token-efficient OpenSpec workflow tools and an apply skill for DeepSeek Harness."
+    "description": "A full OpenSpec workflow toolset and skills for DeepSeek Harness."
   }
 }
