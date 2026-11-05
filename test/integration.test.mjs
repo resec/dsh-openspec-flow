@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,9 +15,17 @@ const CHANGE_DIR = 'openspec/changes/add-dark-mode'
 const PROBE_ROOT = fileURLToPath(new URL('../../.probe/proj/openspec', import.meta.url))
 const TOOL_NAMES = [
   'openspec_apply_next',
+  'openspec_archive',
+  'openspec_context',
+  'openspec_init',
+  'openspec_instructions',
   'openspec_list',
   'openspec_mark_task_done',
+  'openspec_new_change',
+  'openspec_schemas',
+  'openspec_show',
   'openspec_status',
+  'openspec_store_list',
   'openspec_validate',
 ]
 
@@ -92,7 +100,7 @@ test.after(() => {
   for (const root of created) rmSync(root, { recursive: true, force: true })
 })
 
-test('registers five tools and the openspec-flow skill', () => {
+test('registers the tool set and the openspec-flow skill', () => {
   const root = fixture()
   const fake = setup(root)
   assert.deepEqual([...fake.tools.keys()].sort(), TOOL_NAMES)
@@ -376,4 +384,305 @@ test('39-task apply loop stays compact and spawns once', async () => {
 
   const validation = await call(fake, 'openspec_validate', { change: CHANGE })
   assert.equal(validation.valid, true)
+})
+
+test('lists capability specs through openspec_list', async () => {
+  const root = fixture()
+  const specDir = join(root, 'openspec', 'specs', 'theme')
+  mkdirSync(specDir, { recursive: true })
+  writeFileSync(join(specDir, 'spec.md'), [
+    '# Theme',
+    '',
+    '## Purpose',
+    '',
+    'Lets users choose a theme for the app.',
+    '',
+    '## Requirements',
+    '',
+    '### Requirement: Theme selection',
+    'The app SHALL let users choose a theme.',
+    '',
+    '#### Scenario: Toggle',
+    '- **WHEN** the user toggles the theme',
+    '- **THEN** the theme changes',
+    '',
+  ].join('\n'))
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_list', { specs: true })
+  assert.equal(result.setup, true)
+  assert.deepEqual(result.specs.map((spec) => spec.id), ['theme'])
+  assert.equal(result.specs[0].requirementCount, 1)
+  assert.equal(result.changes, undefined)
+})
+
+test('validates specs and single specs through scope', async () => {
+  const root = fixture()
+  const specDir = join(root, 'openspec', 'specs', 'theme')
+  mkdirSync(specDir, { recursive: true })
+  writeFileSync(join(specDir, 'spec.md'), [
+    '# Theme',
+    '',
+    '## Purpose',
+    '',
+    'Lets users choose a theme for the app.',
+    '',
+    '## Requirements',
+    '',
+    '### Requirement: Theme selection',
+    'The app SHALL let users choose a theme.',
+    '',
+    '#### Scenario: Toggle',
+    '- **WHEN** the user toggles the theme',
+    '- **THEN** the theme changes',
+    '',
+  ].join('\n'))
+  const fake = setup(root)
+
+  const report = await call(fake, 'openspec_validate', { scope: 'specs' })
+  assert.equal(report.scope, 'specs')
+  assert.equal(report.valid, true)
+  assert.ok(report.items.some((item) => item.id === 'theme'))
+
+  const single = await call(fake, 'openspec_validate', { scope: 'spec', change: 'theme' })
+  assert.equal(single.scope, 'spec')
+  assert.equal(single.items.length, 1)
+  assert.equal(single.items[0].id, 'theme')
+
+  await assert.rejects(
+    call(fake, 'openspec_validate', { scope: 'bogus', change: 'theme' }),
+    /Unsupported validate scope/,
+  )
+})
+
+test('reads planning instructions through openspec_instructions', async () => {
+  const root = fixture()
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  assert.equal(result.change, CHANGE)
+  assert.equal(result.artifact, 'proposal')
+  assert.equal(result.schema, 'spec-driven')
+  assert.match(result.instruction, /proposal/i)
+  assert.doesNotMatch(result.instruction, /`openspec (list|show|validate|instructions)/)
+  assert.match(result.instruction, /openspec_list/)
+  assert.ok(result.outputPath.endsWith('proposal.md'))
+  assert.ok(result.existingOutputPaths.length >= 1)
+  assert.ok(Array.isArray(result.dependencies))
+
+  await assert.rejects(
+    call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'bogus' }),
+    /artifact must be one of/,
+  )
+})
+
+test('shows changes and specs through one tool', async () => {
+  const root = fixture()
+  const specDir = join(root, 'openspec', 'specs', 'theme')
+  mkdirSync(specDir, { recursive: true })
+  writeFileSync(join(specDir, 'spec.md'), [
+    '# Theme',
+    '',
+    '## Purpose',
+    '',
+    'Lets users choose a theme for the app.',
+    '',
+    '## Requirements',
+    '',
+    '### Requirement: Theme selection',
+    'The app SHALL let users choose a theme.',
+    '',
+    '#### Scenario: Toggle',
+    '- **WHEN** the user toggles the theme',
+    '- **THEN** the theme changes',
+    '',
+  ].join('\n'))
+  const fake = setup(root)
+
+  const change = await call(fake, 'openspec_show', { name: CHANGE })
+  assert.equal(change.kind, 'change')
+  assert.ok(change.deltaCount >= 1)
+  assert.ok(change.deltas[0].requirements.length >= 1)
+
+  const spec = await call(fake, 'openspec_show', { name: 'theme', type: 'spec' })
+  assert.equal(spec.kind, 'spec')
+  assert.equal(spec.name, 'theme')
+  assert.equal(spec.requirements[0].name, 'Theme selection')
+  assert.equal(spec.requirements[0].scenarios.length, 1)
+
+  const noScenarios = await call(fake, 'openspec_show', { name: 'theme', type: 'spec', noScenarios: true })
+  assert.equal(noScenarios.requirements[0].scenarios.length, 0)
+})
+
+test('reads context, schemas and registered stores', async () => {
+  const root = fixture()
+  const fake = setup(root)
+
+  const context = await call(fake, 'openspec_context', {})
+  assert.equal(context.setup, true)
+  assert.equal(context.root.path, root)
+
+  const schemas = await call(fake, 'openspec_schemas', {})
+  assert.ok(schemas.schemas.some((schema) => schema.name === 'spec-driven'))
+  assert.ok(Array.isArray(schemas.schemas[0].artifacts))
+
+  const stores = await call(fake, 'openspec_store_list', {})
+  assert.ok(Array.isArray(stores.stores))
+  assert.ok(Array.isArray(stores.status))
+})
+
+test('creates a change through openspec_new_change', async () => {
+  const root = fixture()
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_new_change', {
+    name: 'add-light-mode',
+    description: 'Add a light theme',
+  })
+  assert.equal(result.change.id, 'add-light-mode')
+  assert.ok(result.change.path.endsWith('add-light-mode'))
+  assert.equal(result.change.schema, 'spec-driven')
+  assert.ok(existsSync(join(result.change.path, '.openspec.yaml')))
+
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
+    /exists|already/i,
+  )
+})
+
+test('refuses to create a change without a root', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-empty-'))
+  created.push(root)
+  const fake = setup(root)
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
+    /No OpenSpec root/,
+  )
+})
+
+test('archives a completed change and merges its specs', async () => {
+  const root = fixture()
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_archive', { change: CHANGE })
+  assert.equal(result.valid, true)
+  assert.equal(result.archived, true)
+  assert.match(result.archivedAs, /add-dark-mode$/)
+  assert.ok(existsSync(result.path))
+  assert.equal(existsSync(join(root, CHANGE_DIR)), false)
+  assert.ok(existsSync(join(root, 'openspec', 'specs', 'theme', 'spec.md')))
+})
+
+test('refuses to archive while tasks remain', async () => {
+  const root = fixture()
+  writeTasks(root, readFileSync(tasksPath(root), 'utf8').replace('- [x]', '- [ ]'))
+  const fake = setup(root)
+
+  await assert.rejects(
+    call(fake, 'openspec_archive', { change: CHANGE }),
+    /incomplete task/,
+  )
+  assert.ok(existsSync(join(root, CHANGE_DIR)))
+})
+
+test('returns validation findings instead of archiving a broken change', async () => {
+  const root = fixture()
+  writeFileSync(
+    join(root, CHANGE_DIR, 'specs', 'theme', 'spec.md'),
+    '# Delta\n\n## ADDED Requirements\n\n### Requirement: Broken\nNo scenario.\n',
+  )
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_archive', { change: CHANGE })
+  assert.equal(result.valid, false)
+  assert.equal(result.archived, false)
+  assert.ok(result.issues.length > 0)
+  assert.ok(existsSync(join(root, CHANGE_DIR)))
+})
+
+test('reports an unwritable project instead of writing partially', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root bypasses directory permissions')
+    return
+  }
+  const root = fixture()
+  const fake = setup(root)
+  const changesDir = join(root, 'openspec', 'changes')
+  chmodSync(changesDir, 0o500)
+  try {
+    await assert.rejects(call(fake, 'openspec_new_change', { name: 'blocked-change' }))
+  } finally {
+    chmodSync(changesDir, 0o700)
+  }
+  assert.equal(existsSync(join(changesDir, 'blocked-change')), false)
+})
+
+function writeInstalledSkill(root, name, frontmatter, body) {
+  const dir = join(root, '.dsh', 'skills', name)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'SKILL.md'), ['---', `name: ${name}`, 'description: old', ...frontmatter, '---', '', body, ''].join('\n'))
+}
+
+const PLUGIN_SKILLS = [
+  'openspec-explore',
+  'openspec-propose',
+  'openspec-apply-change',
+  'openspec-archive-change',
+  'openspec-sync-specs',
+  'openspec-update-change',
+]
+
+test('initializes an empty project and installs the plugin skills', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-init-'))
+  created.push(root)
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_init', {})
+  assert.equal(result.root, root)
+  assert.equal(result.config, 'created')
+  assert.ok(existsSync(join(root, 'openspec', 'config.yaml')))
+  assert.deepEqual([...result.skills.written].sort(), [...PLUGIN_SKILLS].sort())
+  for (const name of PLUGIN_SKILLS) {
+    assert.ok(existsSync(join(root, '.dsh', 'skills', name, 'SKILL.md')), name)
+  }
+  const apply = readFileSync(join(root, '.dsh', 'skills', 'openspec-apply-change', 'SKILL.md'), 'utf8')
+  assert.match(apply, /openspec_mark_task_done/)
+  assert.match(apply, /generatedBy: dsh-openspec-flow@0\.1\.0/)
+
+  const again = await call(fake, 'openspec_init', {})
+  assert.equal(again.config, 'exists')
+  assert.deepEqual(again.skills.written, [])
+  assert.deepEqual([...again.skills.skipped].sort(), [...PLUGIN_SKILLS].sort())
+})
+
+test('migrates an official skill after backing it up', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-migrate-'))
+  created.push(root)
+  writeInstalledSkill(root, 'openspec-apply-change', ['metadata:', '  generatedBy: "1.16.0"'], 'official body')
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_init', {})
+  assert.ok(result.skills.migrated.includes('openspec-apply-change'))
+  assert.ok(result.backupDir)
+  assert.ok(existsSync(join(result.backupDir, 'openspec-apply-change', 'SKILL.md')))
+  const migrated = readFileSync(join(root, '.dsh', 'skills', 'openspec-apply-change', 'SKILL.md'), 'utf8')
+  assert.match(migrated, /openspec_mark_task_done/)
+  assert.doesNotMatch(migrated, /official body/)
+})
+
+test('reports a user-authored skill conflict and honors force', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-conflict-'))
+  created.push(root)
+  writeInstalledSkill(root, 'openspec-propose', [], 'my own policy')
+  const fake = setup(root)
+
+  const first = await call(fake, 'openspec_init', {})
+  assert.ok(first.skills.conflicts.some((conflict) => conflict.name === 'openspec-propose'))
+  assert.match(readFileSync(join(root, '.dsh', 'skills', 'openspec-propose', 'SKILL.md'), 'utf8'), /my own policy/)
+
+  const forced = await call(fake, 'openspec_init', { force: true })
+  assert.ok(forced.backupDir)
+  const replaced = readFileSync(join(root, '.dsh', 'skills', 'openspec-propose', 'SKILL.md'), 'utf8')
+  assert.match(replaced, /openspec_new_change/)
+  assert.doesNotMatch(replaced, /my own policy/)
 })

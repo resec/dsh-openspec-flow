@@ -20,7 +20,7 @@
 
 import { registerPolicy } from './lib/policy.js'
 import { registerSkill } from './lib/skill.js'
-import { registerTools } from './lib/tools.js'
+import { registerTools } from './lib/tools/index.js'
 
 /** Cordis plugin name. */
 export const name = 'openspec-flow'
