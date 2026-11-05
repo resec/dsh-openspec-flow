@@ -11,6 +11,8 @@ The project uses OpenSpec. Non-trivial work starts as a change under `openspec/c
 3. After each task, call `openspec_mark_task_done` with the returned id and continue with its `next`. Call `openspec_apply_next` again only to start or resync.
 4. Finish with `openspec_validate <name>` and `node --test test/`. Archive with the upstream archive workflow when the user asks.
 
+The plugin also registers a scoped system prompt rule (`openspec-flow:policy`) for agents whose working directory contains an `openspec/` root. It restates these gates: clarify before proposing, confirm before creating a change, apply through the compact loop, validate before completion, and archive only on request. The rule is advisory and does not restrict tools.
+
 Checkbox state changes go through `openspec_mark_task_done`; that keeps the cached progress and the source line consistent.
 
 ## Plugin constraints
@@ -18,6 +20,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 - Plain ESM JavaScript with Node built-ins only. Runtime imports of `@deepseek-ai/*` break a linked profile install.
 - The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 1.16.0). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
 - Keep tool descriptions and output schemas in `lib/tools.js`, the projection and cache in `lib/state.js`, and the shipped skill in `skills/openspec-flow/SKILL.md` in sync with behavior.
+- Keep the policy text in `lib/policy.js` consistent with the shipped skill. The policy is agent-scoped and must never be registered globally.
 - Add a regression test for every behavior change. The tests use a fake Host context and the real bundled OpenSpec CLI.
 
 ## Verification

@@ -7,6 +7,10 @@ description: Apply an OpenSpec change with the openspec_* tools: one compact app
 
 Use these tools when an existing OpenSpec project needs a change implemented. They do not initialize a project.
 
+## Standing rule
+
+In an OpenSpec project, the plugin also registers a scoped system prompt rule (`openspec-flow:policy`). It restates the stage gates this skill implements: clarify before proposing, confirm the change before creating it, apply with these tools, validate before completion, and archive only on request. The rule is advisory and does not restrict tools; this skill remains the procedure to follow.
+
 ## Start
 
 1. Call `openspec_list`. If `setup` is false, stop and report that the current directory is not an OpenSpec project. Do not run `openspec init` unless the user asks.

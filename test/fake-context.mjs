@@ -2,22 +2,30 @@
  * A small structural stand-in for the Host context.
  *
  * It implements only the members the plugin reads: `tools.register`,
- * `subprocess.spawn`, `workingDirectory.ensure`, `get('skills')`, `effect`,
- * and `logger.warn`. The subprocess half wraps Node's own `spawn` while
- * honoring the collected-output contract.
+ * `subprocess.spawn`, `workingDirectory.ensure` and `workingDirectory.get`,
+ * `get('skills')`, `get('systemPrompt')`/`systemPrompt`, `agents.list`,
+ * `on('agent/created')`, `effect`, and `logger.warn`. The subprocess half
+ * wraps Node's own `spawn` while honoring the collected-output contract.
+ *
+ * Policy tests create agents through `createAgent`; each agent carries its own
+ * scoped context whose `systemPrompt.section` records sections for assertions.
  */
 
 import { spawn } from 'node:child_process'
 
 /**
  * Build a fake context and the registries it fills.
- * @param {object} options - `cwd` and an optional `skills` flag.
- * @returns `{ ctx, tools, skills }`.
+ * @param {object} options - `cwd`, an optional `skills` flag, and optional seed
+ *   agents already live at load time.
+ * @returns the fake context plus the registries and helpers tests read.
  */
-export function createFakeContext({ cwd, skills: withSkills = true }) {
+export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [] } = {}) {
   const tools = new Map()
   const skills = []
   const stats = { spawns: 0 }
+  const listeners = new Map()
+  const liveAgents = [...seedAgents]
+  const sessionDirectories = new Map()
 
   const collected = (getText) => ({
     readFrom() {
@@ -26,13 +34,35 @@ export function createFakeContext({ cwd, skills: withSkills = true }) {
     },
   })
 
+  const globalSystemPrompt = {
+    /** Record one global section; policy must never take this path. */
+    section(definition) {
+      globalSystemPrompt.sections.push(definition)
+      return () => {}
+    },
+    sections: [],
+    getSectionOrder() {
+      return 500
+    },
+  }
+
   const ctx = {
     logger: {
       warn() {},
       info() {},
     },
+    systemPrompt: globalSystemPrompt,
+    agents: {
+      list() {
+        return [...liveAgents]
+      },
+    },
     workingDirectory: {
       defaultDirectory: cwd,
+      get(session) {
+        const id = session?.id
+        return sessionDirectories.get(id) ?? cwd
+      },
       async ensure() {
         return cwd
       },
@@ -91,6 +121,15 @@ export function createFakeContext({ cwd, skills: withSkills = true }) {
         return () => tools.delete(definition.name)
       },
     },
+    on(event, listener) {
+      const list = listeners.get(event) ?? []
+      list.push(listener)
+      listeners.set(event, list)
+      return () => {
+        const index = list.indexOf(listener)
+        if (index !== -1) list.splice(index, 1)
+      }
+    },
     get(name) {
       if (name === 'skills' && withSkills) {
         return {
@@ -100,6 +139,8 @@ export function createFakeContext({ cwd, skills: withSkills = true }) {
           },
         }
       }
+      if (name === 'systemPrompt') return globalSystemPrompt
+      if (name === 'agents') return ctx.agents
       return undefined
     },
     effect(fn) {
@@ -107,5 +148,64 @@ export function createFakeContext({ cwd, skills: withSkills = true }) {
     },
   }
 
-  return { ctx, tools, skills, stats }
+  /**
+   * Create a live agent with its own scoped context.
+   * @param {object} options - agent id and initial directory.
+   * @returns the agent and the sections registered in its scope.
+   */
+  function createAgent({ id = `session-${liveAgents.length + 1}`, directory } = {}) {
+    const sections = []
+    const agentContext = {
+      systemPrompt: {
+        section(definition) {
+          sections.push(definition)
+          return () => {}
+        },
+        getSectionOrder() {
+          return 500
+        },
+      },
+      effect(fn) {
+        return fn()
+      },
+      get(name) {
+        return name === 'systemPrompt' ? agentContext.systemPrompt : undefined
+      },
+    }
+    const session = { id }
+    const agent = { id, session, ctx: agentContext }
+    if (directory !== undefined) sessionDirectories.set(id, directory)
+    liveAgents.push(agent)
+    return { agent, sections }
+  }
+
+  /**
+   * Move an existing session to another directory.
+   * @param id - session id.
+   * @param directory - new absolute directory.
+   */
+  function setCwd(id, directory) {
+    sessionDirectories.set(id, directory)
+  }
+
+  /**
+   * Deliver one host event to its listeners.
+   * @param event - event name.
+   * @param payload - event payload.
+   */
+  function emit(event, payload) {
+    for (const listener of listeners.get(event) ?? []) listener(payload)
+  }
+
+  return {
+    ctx,
+    tools,
+    skills,
+    stats,
+    createAgent,
+    setCwd,
+    emit,
+    liveAgents,
+    globalSections: globalSystemPrompt.sections,
+  }
 }

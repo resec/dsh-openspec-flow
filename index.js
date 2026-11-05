@@ -1,8 +1,9 @@
 /**
  * OpenSpec flow for DeepSeek Harness.
  *
- * Registers five agent tools over an existing OpenSpec project and one
- * user-invocable skill. The tools keep the OpenSpec CLI as the authority for
+ * Registers five agent tools over an existing OpenSpec project, one
+ * user-invocable skill, and one agent-scoped system prompt section that states
+ * the OpenSpec stage gates. The tools keep the OpenSpec CLI as the authority for
  * schema, state and progress, but project its large `instructions apply`
  * payload down to the next task and one compact progress object. Marking a
  * task complete flips exactly one checkbox and updates the cached progress
@@ -17,6 +18,7 @@
  * @module dsh-openspec-flow
  */
 
+import { registerPolicy } from './lib/policy.js'
 import { registerSkill } from './lib/skill.js'
 import { registerTools } from './lib/tools.js'
 
@@ -24,7 +26,7 @@ import { registerTools } from './lib/tools.js'
 export const name = 'openspec-flow'
 
 /** Services used by the plugin. */
-export const inject = ['tools', 'subprocess', 'workingDirectory']
+export const inject = ['tools', 'subprocess', 'workingDirectory', 'systemPrompt', 'agents']
 
 /** Settings resolved by the Standard Schema below. */
 const DEFAULT_CONFIG = {
@@ -84,4 +86,5 @@ export function apply(ctx, config) {
   }
   registerTools(ctx, settings)
   registerSkill(ctx)
+  registerPolicy(ctx)
 }

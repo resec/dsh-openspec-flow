@@ -18,6 +18,8 @@ DeepSeek Harness 的 OpenSpec 流程插件。它把 apply 阶段「每完成一�
 | `openspec_mark_task_done` | 翻转一个复选框并返回新进度与下一任务 | 平均 394 B |
 | `openspec_validate` | 紧凑校验结果 | 数百字节 |
 
+插件还会为 OpenSpec 项目的 agent 注入一段常驻系统提示规则（`openspec-flow:policy`）。规则只在该 agent 当前工作目录存在 `openspec/` 根时出现；其他项目不注册、不注入，切换目录后规则随之出现或消失。规则是提示层约束，不拦截任何工具调用。
+
 同时注册技能 `openspec-flow`（模型可加载，也可由用户执行 `/openspec-flow`），说明上述工具的 apply 循环与暂停条件。技能名与上游 `openspec-apply-change` 不同，因此不会争抢同名条目；运行时技能 rank 为 250，压不过项目 `.dsh/skills` 的 100，这是有意的：项目自带的 OpenSpec 技能仍然优先。
 
 ## 安装
@@ -55,6 +57,7 @@ CLI 来源固定：
 - **字节保真**：按 `\n` 切分、按原行拼回，CRLF 的 `\r` 留在行尾；只替换复选框内的字符。UTF-8 与 BOM 不受影响。
 - **精确寻址**：`1.1` 不会匹配 `1.10` 或 `1.1.1`；无编号任务用 `#N`（CLI 的 1 基序号）。行号与描述同时用于写入前核对。
 - **无 shell 拼接**：CLI 参数以 argv 数组交给 subprocess 服务；change 名、store id 不经过 shell。
+- **按项目注入规则**：流程规则通过 agent 自己的 context 注册为作用域内 system prompt 段；每次组装重新读取工作目录，非 OpenSpec 项目返回空文本，空段不进入提示。
 
 ## 验证
 
@@ -98,18 +101,22 @@ node --test test/
 - 文件写入是直接覆盖，不是原子替换；需要原子性时应在上游或外层加保护。
 - Windows 下通过 `process.execPath` 运行插件自带的 JS 入口，未在 Windows 实机验证。
 - 本插件的技能不能覆盖项目级同名技能；项目里若已有 `openspec-flow`，项目版本胜出。
+- 流程规则只识别当前工作目录下的本地 `openspec/` 根，不解析 store 声明或全局默认 store；store 模式的项目不会获得该规则。
+- 规则是提示层约束，不阻止任何工具调用；要强制写入门禁需要额外的工具 guard。
+- 技能目录仍全局可见：非 OpenSpec 项目仍会看到 `openspec-flow` 的技能描述，只是不会被注入规则。
 - `Config` 是手写 Standard Schema：Cordis 用它校验行配置，但 Plugin Manager 的 Config 检查器无法把它投影成 JSON Schema，会显示 `unsupported`。这不影响插件激活与工具运行，配置项写在 bundle 行的 `config` 中即可。
 
 ## 文件
 
 ```text
-index.js                 插件入口、Config、注册 tools + skill
+index.js                 插件入口、Config、注册 tools + skill + policy
 lib/tools.js             五个工具的定义、schema、参数校验
 lib/state.js             apply 载荷缓存、投影、mark 逻辑
 lib/schema.js            内置 spec-driven 闸门与覆盖检测
 lib/tasks.js             任务行解析、编号、翻转、寻址
 lib/openspec.js          CLI 解析、subprocess 调用、JSON 解析
 lib/skill.js             技能文档解析与注册
+lib/policy.js            流程规则文本、项目检测、agent 作用域注册
 lib/cache.js             进程内 LRU
 lib/hash.js              SHA-1 指纹
 skills/openspec-flow/    技能正文
