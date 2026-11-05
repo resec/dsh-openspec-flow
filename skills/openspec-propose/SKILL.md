@@ -30,17 +30,3 @@ Use the `openspec_*` tools for every step. Fall back to the CLI only when the to
 
 - Present the proposal, specs, design and tasks, and the validation result.
 - Do not start implementation. Apply begins only when the user asks.
-
-## Command map
-
-| CLI | Tool |
-| --- | --- |
-| `openspec list --json` | `openspec_list` |
-| `openspec list --specs --json` | `openspec_list` with `specs: true` |
-| `openspec show <spec> --type spec --json` | `openspec_show` |
-| `openspec new change <name> --json` | `openspec_new_change` |
-| `openspec instructions <artifact> --change <name> --json` | `openspec_instructions` |
-| `openspec validate <name> --json` | `openspec_validate` |
-| `openspec schemas --json` | `openspec_schemas` |
-| `openspec context --json` | `openspec_context` |
-| `openspec store list --json` | `openspec_store_list` |

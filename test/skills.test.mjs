@@ -85,5 +85,11 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     assert.equal(parsed.metadata.upstream, 'openspec@1.16.0', name)
     assert.match(raw, /openspec_[a-z_]+/, name)
     assert.match(raw, /Fall back to the `openspec` CLI|Fall back to the CLI/, name)
+    assert.doesNotMatch(raw, /^## Command map/m, `${name} must not carry a command map`)
+    assert.doesNotMatch(
+      raw,
+      /`openspec (list|show|validate|instructions|status|archive|new|init|update|store|context|schemas)\b/,
+      `${name} must not name a CLI command`,
+    )
   }
 })
