@@ -1,7 +1,7 @@
 # coverage-gate Specification
 
 ## Purpose
-Defines how the repository measures and gates line, branch, and function coverage for the plugin and eval scopes on the primary Node runtime.
+Defines how the repository measures and gates line, branch, and function coverage for the plugin scope on the primary Node runtime.
 
 ## Requirements
 
@@ -48,25 +48,6 @@ When coverage recording is enabled, the test command SHALL collect lcov during t
 
 - **WHEN** the coverage gate evaluates a completed instrumented run
 - **THEN** it reads the recorded lcov and does not spawn a test process again
-
-### Requirement: Separate plugin and eval scopes
-
-The gate SHALL evaluate the plugin and eval scopes independently. The plugin scope SHALL include `index.js` and `lib/**/*.js`. The eval scope SHALL include `eval/lib/**/*.mjs` and `eval/run.mjs`. Test files, eval fixtures, eval runs, and `node_modules` SHALL be excluded.
-
-#### Scenario: Both scopes are reported
-
-- **WHEN** the gate evaluates a completed run
-- **THEN** the report shows line, branch, and function figures for both scopes
-
-#### Scenario: An in-scope source file has no coverage record
-
-- **WHEN** a file in either scope is absent from lcov
-- **THEN** the gate reports a missing-coverage violation for that file
-
-#### Scenario: The eval entrypoint is in scope
-
-- **WHEN** `eval/run.mjs` is absent from the eval lcov
-- **THEN** the eval scope cannot pass
 
 ### Requirement: Overall coverage floors
 
@@ -166,3 +147,17 @@ The gate SHALL support a report mode that prints coverage violations without fai
 
 - **WHEN** the instrumented test run fails
 - **THEN** the command returns the test failure and does not evaluate coverage
+
+### Requirement: Plugin coverage scope
+
+The gate SHALL evaluate a single plugin scope that includes `index.js` and `lib/**/*.js`. Test files and `node_modules` SHALL be excluded.
+
+#### Scenario: The scope is reported
+
+- **WHEN** the gate evaluates a completed run
+- **THEN** the report shows line, branch and function figures for the plugin scope
+
+#### Scenario: An in-scope source file has no coverage record
+
+- **WHEN** a file in the plugin scope is absent from lcov
+- **THEN** the gate reports a missing-coverage violation for that file

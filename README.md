@@ -100,7 +100,7 @@ CLI 来源固定：
 
 在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
 
-- `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init 与迁移、指令映射；`npm run test:eval` 覆盖评测 harness；`npm run test:all` 运行两套。
+- `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init 与迁移、指令映射。
 - 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 863 B，39 次 mark 平均 394 B，合计 16,226 B，约为「每任务重跑」53.3 万字节的 3.0%。
 - 39 次 mark 期间 CLI 子进程启动次数为 0，证明循环不再是 O(N²) 查询。
 - 测试使用真实 `@fission-ai/openspec` 1.16.0，不是 mock。
@@ -117,7 +117,7 @@ npm test
 覆盖率与测试在同一次运行中采集，不会为了覆盖率再跑一遍测试：
 
 - `COVERAGE=1 npm test`：单次运行并写 `.coverage/plugin.info`；不设置 `COVERAGE` 时不采集。
-- `npm run coverage`：插件与 eval 各运行一次，写 lcov、`.coverage/report.md`，按 report 模式输出违规。
+- `npm run coverage`：运行一次插件测试并采集覆盖率，写 lcov、`.coverage/report.md`，按 report 模式输出违规。
 - `npm run coverage:check`：同样的单次运行，按 enforce 模式判定；存量覆盖率不足时会失败。
 - `npm run coverage:baseline`：单次运行后更新 `coverage.baseline.json`；默认拒绝下调，必要时应显式传 `--allow-lower --reason`。
 

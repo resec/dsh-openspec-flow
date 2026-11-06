@@ -144,7 +144,7 @@ test('lists uncovered new-code locations', () => {
   ])
 })
 
-test('evaluates exact floor boundaries', () => {
+test('checks exact floor boundaries', () => {
   assert.deepEqual(floorViolations('plugin', metrics(90, 85, 95), { line: 90, branch: 85, function: 95 }), [])
   const violations = floorViolations('plugin', metrics(89, 84, 94), { line: 90, branch: 85, function: 95 })
   assert.equal(violations.length, 3)
@@ -153,10 +153,10 @@ test('evaluates exact floor boundaries', () => {
 
 test('requires every new function to be called', () => {
   assert.deepEqual(
-    newCodeViolations('eval', metrics(100, 100, 100), { line: 95, branch: 90, function: 100 }),
+    newCodeViolations('plugin', metrics(100, 100, 100), { line: 95, branch: 90, function: 100 }),
     [],
   )
-  const violations = newCodeViolations('eval', metrics(100, 100, 99), { line: 95, branch: 90, function: 100 })
+  const violations = newCodeViolations('plugin', metrics(100, 100, 99), { line: 95, branch: 90, function: 100 })
   assert.equal(violations.length, 1)
   assert.match(violations[0], /new-code function 99\.00% < 100\.00%/)
 })
@@ -205,18 +205,18 @@ test('ratchets the baseline and requires an explicit lower override', () => {
       JSON.stringify({
         version: 1,
         node: { version: 'v24.22.2', range: '>=24.9.0' },
-        scopes: { plugin: metrics(90), eval: metrics(90) },
+        scopes: { plugin: metrics(90) },
       }),
     )
     assert.throws(
-      () => writeBaseline(root, { plugin: metrics(80), eval: metrics(90) }, requirements, { allowLower: false, reason: null }),
+      () => writeBaseline(root, { plugin: metrics(80) }, requirements, { allowLower: false, reason: null }),
       /would drop/,
     )
-    const raised = writeBaseline(root, { plugin: metrics(95), eval: metrics(90) }, requirements, { allowLower: false, reason: null })
+    const raised = writeBaseline(root, { plugin: metrics(95) }, requirements, { allowLower: false, reason: null })
     assert.equal(raised.scopes.plugin.line.hits, 95)
     const lowered = writeBaseline(
       root,
-      { plugin: metrics(80), eval: metrics(90) },
+      { plugin: metrics(80) },
       requirements,
       { allowLower: true, reason: 'removed covered code' },
     )
@@ -275,11 +275,8 @@ test('report mode exits zero and enforce mode exits one for the same run', async
     git(root, ['config', 'user.email', 'test@example.com'])
     git(root, ['config', 'user.name', 'Test'])
     mkdirSync(join(root, 'lib'), { recursive: true })
-    mkdirSync(join(root, 'eval', 'lib'), { recursive: true })
     writeFileSync(join(root, 'index.js'), 'export const a = 1\n')
     writeFileSync(join(root, 'lib', 'a.js'), 'export const b = 2\n')
-    writeFileSync(join(root, 'eval', 'run.mjs'), 'export const c = 3\n')
-    writeFileSync(join(root, 'eval', 'lib', 'a.mjs'), 'export const d = 4\n')
     writeFileSync(
       join(root, 'package.json'),
       JSON.stringify({ engines: { node: '>=24.9.0' } }, null, 2),
@@ -305,11 +302,6 @@ test('report mode exits zero and enforce mode exits one for the same run', async
           branch: { hits: 0, total: 0 },
           function: { hits: 0, total: 0 },
         },
-        eval: {
-          line: { hits: 0, total: 0 },
-          branch: { hits: 0, total: 0 },
-          function: { hits: 0, total: 0 },
-        },
       },
     })
     mkdirSync(join(root, '.coverage'), { recursive: true })
@@ -317,10 +309,6 @@ test('report mode exits zero and enforce mode exits one for the same run', async
       join(root, '.coverage', 'plugin.info'),
       lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]) +
         lcov('lib/a.js', [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0], [9, 0], [10, 0]], [], []),
-    )
-    writeFileSync(
-      join(root, '.coverage', 'eval.info'),
-      lcov('eval/run.mjs', [[1, 1]], [], []) + lcov('eval/lib/a.mjs', [[1, 1]], [], []),
     )
     git(root, ['add', '-A'])
     git(root, ['commit', '-m', 'base'])
