@@ -87,3 +87,30 @@ test('counts checked and unchecked checkboxes only', () => {
     unchecked: 1,
   })
 })
+
+test('ignores an unrelated active change before the target exists', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'eval-flow-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const other = join(root, 'openspec', 'changes', 'other')
+  mkdirSync(other, { recursive: true })
+  writeFileSync(join(other, 'tasks.md'), '- [x] 1.1 Done\n')
+
+  const stage = inspectStage(root, 'demo')
+  assert.equal(stage.stage, 'no-change')
+  assert.equal(stage.change, null)
+})
+
+test('reports the expected archive while another change is active', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'eval-flow-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const other = join(root, 'openspec', 'changes', 'other')
+  mkdirSync(other, { recursive: true })
+  writeFileSync(join(other, 'tasks.md'), '- [x] 1.1 Done\n')
+  const archived = join(root, 'openspec', 'changes', 'archive', '2026-11-06-demo')
+  mkdirSync(archived, { recursive: true })
+  writeFileSync(join(archived, 'tasks.md'), '- [x] 1.1 Done\n')
+
+  const stage = inspectStage(root, 'demo')
+  assert.equal(stage.stage, 'archived')
+  assert.equal(stage.tasks.checked, 1)
+})

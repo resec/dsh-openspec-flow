@@ -15,6 +15,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -129,6 +130,27 @@ function linkNodeModules(destination) {
 }
 
 /**
+ * Move unrelated in-flight changes out of the working tree.
+ *
+ * A base commit can contain a change that was never archived. It is real
+ * history, but it is not the target of this run and must not steer stage
+ * detection or the model. Preserve it under the archive instead of deleting it.
+ *
+ * @param destination - prepared fixture tree.
+ * @param expectedName - the change the request asks for.
+ */
+function archiveUnrelatedChanges(destination, expectedName) {
+  const root = join(destination, 'openspec', 'changes')
+  if (!existsSync(root)) return
+  const archiveRoot = join(root, 'archive')
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === 'archive' || entry.name === expectedName) continue
+    mkdirSync(archiveRoot, { recursive: true })
+    renameSync(join(root, entry.name), join(archiveRoot, `2026-01-01-${entry.name}`))
+  }
+}
+
+/**
  * Fail when the target change is already present.
  * @param destination - fixture tree.
  * @param changeName - target change name.
@@ -215,6 +237,7 @@ export function prepareFixture({
     extractGitFixture(fixture, destination)
   }
   rmSync(join(destination, '.git'), { recursive: true, force: true })
+  archiveUnrelatedChanges(destination, fixture.changeName)
   linkNodeModules(destination)
   assertNoTargetChange(destination, fixture.changeName)
   assertAcceptanceHidden(fixture, destination)

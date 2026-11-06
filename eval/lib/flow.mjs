@@ -83,8 +83,9 @@ function artifacts(changeDir) {
 export function inspectStage(fixtureDir, expectedName) {
   const changes = listChanges(fixtureDir)
   const archived = expectedName ? archivedName(fixtureDir, expectedName) : null
+  const expectedActive = expectedName !== undefined && changes.includes(expectedName)
 
-  if (changes.length === 0) {
+  if (!expectedActive) {
     if (archived !== null) {
       const archivedDir = join(fixtureDir, 'openspec', 'changes', 'archive', archived)
       return {
@@ -104,22 +105,20 @@ export function inspectStage(fixtureDir, expectedName) {
     }
   }
 
-  const change = changes.includes(expectedName) ? expectedName : changes[0]
-  const changeDir = join(fixtureDir, 'openspec', 'changes', change)
+  const changeDir = join(fixtureDir, 'openspec', 'changes', expectedName)
   const tasks = readTasks(changeDir)
   const changeArtifacts = artifacts(changeDir)
-  const archivedForChange = archivedName(fixtureDir, change)
-  if (archivedForChange !== null) {
+  if (archived !== null) {
     return {
       stage: 'archived',
-      change,
-      archivedAs: archivedForChange,
+      change: expectedName,
+      archivedAs: archived,
       tasks,
       artifacts: changeArtifacts,
     }
   }
   const stage = tasks.total > 0 && tasks.unchecked === 0 ? 'applied' : 'created'
-  return { stage, change, archivedAs: null, tasks, artifacts: changeArtifacts }
+  return { stage, change: expectedName, archivedAs: null, tasks, artifacts: changeArtifacts }
 }
 
 /**

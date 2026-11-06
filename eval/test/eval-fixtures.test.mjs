@@ -153,6 +153,8 @@ test('prepares the skill fixture with the pre-change command maps', (t) => {
   assert.match(installed, /^## Command map/mu)
   assert.equal(existsSync(join(destination, 'test/skills-acceptance.test.mjs')), false)
   assert.equal(existsSync(join(destination, 'openspec/changes/remove-skill-command-maps')), false)
+  assert.equal(existsSync(join(destination, 'openspec/changes/complete-openspec-toolset')), false)
+  assert.equal(existsSync(join(destination, 'openspec/changes/archive/2026-01-01-complete-openspec-toolset')), true)
 })
 
 test('uses a cached official-skill directory without invoking the CLI', (t) => {
