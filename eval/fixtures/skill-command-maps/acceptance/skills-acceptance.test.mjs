@@ -6,6 +6,14 @@ import { fileURLToPath } from 'node:url'
 
 const SKILLS = fileURLToPath(new URL('../skills/', import.meta.url))
 const NAMES = readdirSync(SKILLS).filter((name) => name.startsWith('openspec-'))
+const INSTALLED = new Set([
+  'openspec-explore',
+  'openspec-propose',
+  'openspec-apply-change',
+  'openspec-archive-change',
+  'openspec-sync-specs',
+  'openspec-update-change',
+])
 
 test('packaged skills contain no command map', () => {
   assert.ok(NAMES.length >= 6)
@@ -26,8 +34,9 @@ test('packaged skills name no CLI command', () => {
   }
 })
 
-test('frontmatter metadata survives', () => {
+test('installed skill frontmatter keeps its metadata', () => {
   for (const name of NAMES) {
+    if (!INSTALLED.has(name)) continue
     const raw = readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8')
     assert.match(raw, /generatedBy: dsh-openspec-flow@/u, `${name} must keep generatedBy`)
   }

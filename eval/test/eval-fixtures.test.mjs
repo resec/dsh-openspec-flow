@@ -155,6 +155,8 @@ test('prepares the skill fixture with the pre-change command maps', (t) => {
   assert.equal(existsSync(join(destination, 'openspec/changes/remove-skill-command-maps')), false)
   assert.equal(existsSync(join(destination, 'openspec/changes/complete-openspec-toolset')), false)
   assert.equal(existsSync(join(destination, 'openspec/changes/archive/2026-01-01-complete-openspec-toolset')), true)
+  assert.equal(existsSync(join(destination, '..', '.probe', 'proj', 'openspec', 'config.yaml')), true)
+  assert.equal(existsSync(join(destination, 'node_modules', '@fission-ai', 'openspec', 'package.json')), true)
 })
 
 test('uses a cached official-skill directory without invoking the CLI', (t) => {

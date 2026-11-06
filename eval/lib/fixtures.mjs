@@ -24,7 +24,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { installSkills } from '../../lib/skills.js'
-import { REPO_ROOT, OPENSPEC_BIN } from './paths.mjs'
+import { FIXTURES_ROOT, REPO_ROOT, OPENSPEC_BIN } from './paths.mjs'
 import { fixtureDir, requestPath } from './registry.mjs'
 
 const SKILL_NAMES = [
@@ -123,10 +123,37 @@ function initGit(destination, date = FIXED_DATE) {
   return run('git', ['rev-parse', 'HEAD'], { cwd: destination }).stdout.trim()
 }
 
-function linkNodeModules(destination) {
+function copyNodeModules(destination) {
   const target = join(destination, 'node_modules')
   if (existsSync(target)) return
-  symlinkSync(join(REPO_ROOT, 'node_modules'), target, 'dir')
+  const source = join(REPO_ROOT, 'node_modules')
+  const result = spawnSync('cp', ['-al', source, target], { encoding: 'utf8' })
+  if (result.status !== 0) cpSync(source, target, { recursive: true })
+}
+
+function prepareProbe(destination) {
+  const source = join(FIXTURES_ROOT, 'probe', 'proj', 'openspec')
+  if (!existsSync(source)) throw new Error(`probe fixture is missing: ${source}`)
+  const probeRoot = join(destination, '..', '.probe', 'proj')
+  rmSync(join(destination, '..', '.probe'), { recursive: true, force: true })
+  mkdirSync(probeRoot, { recursive: true })
+  cpSync(source, join(probeRoot, 'openspec'), { recursive: true })
+}
+
+function runBaseTests(destination) {
+  const env = { ...process.env, OPENSPEC_TELEMETRY: '0', OPENSPEC_NO_UPDATE_CHECK: '1' }
+  delete env.NODE_TEST_CONTEXT
+  const result = spawnSync('node', ['--test', 'test/'], {
+    cwd: destination,
+    encoding: 'utf8',
+    timeout: 120_000,
+    maxBuffer: 16 * 1024 * 1024,
+    env,
+  })
+  if (result.status !== 0) {
+    const detail = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.slice(-2000)
+    throw new Error(`fixture base tests failed before the run:\n${detail}`)
+  }
 }
 
 /**
@@ -238,7 +265,10 @@ export function prepareFixture({
   }
   rmSync(join(destination, '.git'), { recursive: true, force: true })
   archiveUnrelatedChanges(destination, fixture.changeName)
-  linkNodeModules(destination)
+  if (fixture.kind === 'git') {
+    prepareProbe(destination)
+    copyNodeModules(destination)
+  }
   assertNoTargetChange(destination, fixture.changeName)
   assertAcceptanceHidden(fixture, destination)
 
@@ -254,6 +284,7 @@ export function prepareFixture({
     rmSync(join(destination, '.dsh', 'openspec-flow-backup'), { recursive: true, force: true })
   }
 
+  runBaseTests(destination)
   const commit = initGit(destination, date)
   return {
     fixtureId: fixture.id,
