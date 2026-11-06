@@ -28,6 +28,9 @@ npm run eval:pilot
 # 指定夹具与重复次数
 node eval/run.mjs --execute --fixture budget-cli --arms official,plugin --runs 5
 
+# 两个 worker 并发（默认 1）
+node eval/run.mjs --execute --concurrency 2
+
 # 调整单次超时与 token 预算
 node eval/run.mjs --execute --timeout-min 30 --budget 5000000
 
@@ -42,12 +45,21 @@ npm run eval:clean
 
 ## 隔离 home
 
-每次矩阵使用两个私有目录：
+每个 worker 使用一对私有目录：
 
-- `eval/.dsh-home/`：`DSH_HOME`，包含生成的 `headless` profile、凭据副本、sessions 和 logs。
-- `eval/.agents-home/`：`DSH_AGENTS_HOME`，初始为空，避免用户级 skills 与 `AGENTS.md` 进入会话。
+- `eval/.dsh-home/`（并发时 `.dsh-home-worker-0..N-1`）：`DSH_HOME`，包含生成的 `headless` profile、凭据副本、sessions 和 logs。
+- `eval/.agents-home/`（并发时 `.agents-home-worker-0..N-1`）：`DSH_AGENTS_HOME`，初始为空，避免用户级 skills 与 `AGENTS.md` 进入会话。
 
-两个目录都带所有权标记，矩阵结束后自动删除；报告和 `eval/runs/` 下的运行产物保留。`--keep-home` 可保留一次用于调试，`npm run eval:clean` 清理崩溃后遗留的标记目录。默认不写入 `~/.dsh`，只从那里读取凭据。
+每个目录都带所有权标记，矩阵结束后自动删除；报告和 `eval/runs/` 下的运行产物保留。`--keep-home` 可保留一次用于调试，`npm run eval:clean` 扫描并清理崩溃后遗留的标记目录。默认不写入 `~/.dsh`，只从那里读取凭据。
+
+## 并发
+
+`--concurrency <n>` 设置 worker 数，默认 1。每个 worker 有自己的 home、profile 和凭据副本，因此不会争用同一个 `cordis.yml`。worker 从同一个 ABBA 顺序的单元格队列取任务，每个 worker 一次只跑一格。
+
+- 并发只降低墙钟时间，不降低 token 消耗。
+- 建议先从 2 开始，观察 `llm/retry`、429/限流和无效格；再考虑 3–4。
+- 报告为每格记录 worker、开始/结束时间和 `wallMs`。
+- 并发时 home 名称带 `-worker-<i>` 后缀，`eval:clean` 会全部扫描。
 
 ## 测试
 

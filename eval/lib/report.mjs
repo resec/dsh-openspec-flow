@@ -86,14 +86,14 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
   lines.push('## Runs')
   lines.push('')
   lines.push(
-    '| Fixture | Arm | Rep | Valid | Total tokens | Work tokens | Confirmation round tokens | Confirmation ack tokens | Steps | Tool calls | CLI calls | Result bytes | Missing usage | Gates failed | Session |',
+    '| Fixture | Arm | Rep | Worker | Wall (s) | Valid | Total tokens | Work tokens | Confirmation round tokens | Confirmation ack tokens | Steps | Tool calls | CLI calls | Result bytes | Missing usage | Gates failed | Session |',
   )
   lines.push('| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |')
   for (const run of runs) {
     const metrics = run.metrics
     const failed = failedGates(run)
     lines.push(
-      `| ${run.fixtureId} | ${run.arm} | ${run.replicate} | ${run.valid ? 'yes' : 'no'} | ${number(metrics.tokens.totalTokens)} | ${number(metrics.tokens.work.totalTokens)} | ${number(metrics.tokens.confirmationRounds.totalTokens)} | ${number(metrics.tokens.confirmationAck.totalTokens)} | ${number(metrics.friction.steps)} | ${number(metrics.friction.toolCalls)} | ${number(metrics.friction.openspecCliCalls)} | ${number(metrics.friction.resultBytes)} | ${metrics.missingUsage.length === 0 ? '—' : metrics.missingUsage.map((entry) => `${entry.turn}.${entry.step}`).join(' ')} | ${failed.length === 0 ? '—' : failed.join(', ')} | ${run.sessionId ?? '—'} |`,
+      `| ${run.fixtureId} | ${run.arm} | ${run.replicate} | ${run.worker ?? '—'} | ${run.wallMs === null || run.wallMs === undefined ? '—' : (run.wallMs / 1000).toFixed(1)} | ${run.valid ? 'yes' : 'no'} | ${number(metrics.tokens.totalTokens)} | ${number(metrics.tokens.work.totalTokens)} | ${number(metrics.tokens.confirmationRounds.totalTokens)} | ${number(metrics.tokens.confirmationAck.totalTokens)} | ${number(metrics.friction.steps)} | ${number(metrics.friction.toolCalls)} | ${number(metrics.friction.openspecCliCalls)} | ${number(metrics.friction.resultBytes)} | ${metrics.missingUsage.length === 0 ? '—' : metrics.missingUsage.map((entry) => `${entry.turn}.${entry.step}`).join(' ')} | ${failed.length === 0 ? '—' : failed.join(', ')} | ${run.sessionId ?? '—'} |`,
     )
   }
   lines.push('')

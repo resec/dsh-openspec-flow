@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import {
   assertToolSurface,
   checkDump,
+  dumpConfig,
   parseDump,
   readDumpFixture,
 } from '../lib/profile.mjs'
@@ -69,4 +73,17 @@ test('rejects subagent and missing web tools', () => {
   const issues = assertToolSurface(summary(names), 'official')
   assert.match(issues.join('\n'), /subagent tools/u)
   assert.match(issues.join('\n'), /web tools are missing/u)
+})
+
+test('passes the environment overlay to dump-config', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'eval-profile-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const bin = join(dir, 'fake-dsh.mjs')
+  writeFileSync(bin, '#!/usr/bin/env node\nprocess.stdout.write(process.env.DSH_HOME ?? "unset")\n')
+  chmodSync(bin, 0o755)
+
+  assert.equal(
+    dumpConfig({ arm: 'official', model: MODEL, dshBin: bin, env: { DSH_HOME: '/tmp/isolated' } }),
+    '/tmp/isolated',
+  )
 })

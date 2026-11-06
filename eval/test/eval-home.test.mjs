@@ -15,6 +15,7 @@ import test from 'node:test'
 import {
   applyHomeEnv,
   cleanupEvalHome,
+  cleanupStaleHomes,
   createEvalHome,
   isOwnedRoot,
   restoreHomeEnv,
@@ -121,4 +122,23 @@ test('a blank DSH_HOME falls back to the default home', () => {
     if (previous === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previous
   }
+})
+
+test('cleans marked worker homes', (t) => {
+  const home = workspace(t)
+  credentials(home)
+  for (let index = 0; index < 2; index += 1) {
+    createEvalHome({
+      root: join(home.root, `.dsh-home-worker-${index}`),
+      agentsRoot: join(home.root, `.agents-home-worker-${index}`),
+      sourceHome: home.source,
+    })
+  }
+
+  const removed = cleanupStaleHomes({ root: home.root })
+
+  assert.equal(removed.length, 4)
+  assert.equal(existsSync(join(home.root, '.dsh-home-worker-0')), false)
+  assert.equal(existsSync(join(home.root, '.agents-home-worker-1')), false)
+  assert.equal(existsSync(home.source), true)
 })

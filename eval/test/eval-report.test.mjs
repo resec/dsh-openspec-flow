@@ -12,6 +12,8 @@ function run(fixtureId, arm, replicate, total, { valid = true, gates = [], confi
     fixtureId,
     arm,
     replicate,
+    worker: 0,
+    wallMs: 1000,
     valid,
     gates,
     sessionId: `session-${fixtureId}-${arm}-${replicate}`,
@@ -77,6 +79,7 @@ test('writes per-run and aggregate sections with artifact paths', (t) => {
   assert.match(markdown, /## Comparison/u)
   assert.match(markdown, /## Runs/u)
   assert.match(markdown, /Work tokens/u)
+  assert.match(markdown, /Worker \| Wall/u)
   assert.match(markdown, /Work token ratio/u)
   assert.match(markdown, /## Confirmations/u)
   assert.match(markdown, /plugin lower/u)

@@ -5,15 +5,12 @@
  * Only marked roots are removed; an unmarked directory is reported and kept.
  */
 
-import {
-  cleanupEvalHome,
-  DEFAULT_AGENTS_HOME,
-  DEFAULT_DSH_HOME,
-} from './lib/dsh-home.mjs'
+import { cleanupStaleHomes } from './lib/dsh-home.mjs'
 
 try {
-  cleanupEvalHome()
-  console.log(`removed ${DEFAULT_DSH_HOME} and ${DEFAULT_AGENTS_HOME} when present`)
+  const removed = cleanupStaleHomes()
+  console.log(`removed ${removed.length} private evaluation home(s)`)
+  for (const path of removed) console.log(`- ${path}`)
 } catch (error) {
   console.error(`eval:clean: ${error.message}`)
   process.exit(1)

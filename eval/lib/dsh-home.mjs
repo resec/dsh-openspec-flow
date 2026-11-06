@@ -14,6 +14,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -205,3 +206,25 @@ export function isOwnedRoot(root, kind) {
 }
 
 export { DSH_KIND, AGENTS_KIND, MARKER }
+
+/**
+ * Remove every marked evaluation home directly under a directory.
+ * @param options - directory to scan.
+ * @returns removed paths.
+ */
+export function cleanupStaleHomes({ root = EVAL_ROOT } = {}) {
+  const removed = []
+  if (!existsSync(root)) return removed
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const full = join(root, entry.name)
+    if (entry.name.startsWith('.dsh-home') && isOwnedRoot(full, DSH_KIND)) {
+      rmSync(full, { recursive: true, force: true })
+      removed.push(full)
+    } else if (entry.name.startsWith('.agents-home') && isOwnedRoot(full, AGENTS_KIND)) {
+      rmSync(full, { recursive: true, force: true })
+      removed.push(full)
+    }
+  }
+  return removed
+}

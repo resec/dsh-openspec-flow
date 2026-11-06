@@ -66,7 +66,11 @@ function baseConfig(out) {
     fixtures: ['budget-cli'],
     arms: ['official', 'plugin'],
     runs: 2,
+    concurrency: 1,
     out,
+    home: join(out, '.dsh-home'),
+    agentsHome: join(out, '.agents-home'),
+    sourceHome: join(out, '.source'),
     timeoutMs: 60_000,
     maxRounds: 5,
     budgetTokensPerRun: 1_000_000,
@@ -127,10 +131,11 @@ function depsFor({ out, stages, total = 1000, state = {} }) {
       }
     },
     runGates: () => ({ passed: true, gates: [{ name: 'all', passed: true }] }),
-    createEvalHome: () => ({ dshHome: join(out, '.dsh-home'), agentsHome: join(out, '.agents-home') }),
+    createEvalHome: ({ root, agentsRoot }) => ({
+      dshHome: root ?? join(out, '.dsh-home'),
+      agentsHome: agentsRoot ?? join(out, '.agents-home'),
+    }),
     cleanupEvalHome: () => {},
-    applyHomeEnv: () => ({}),
-    restoreHomeEnv: () => {},
     acceptanceDir: () => null,
     copySession: () => {},
     gitDiff: () => '',
@@ -188,25 +193,23 @@ test('stops a stalled run and marks it invalid', async (t) => {
   assert.equal(run.rounds.length, 2)
 })
 
-test('creates, applies and cleans the private home', async (t) => {
+test('creates and cleans one private home at the default concurrency', async (t) => {
   const out = mkdtempSync(join(tmpdir(), 'eval-matrix-'))
   t.after(() => rmSync(out, { recursive: true, force: true }))
   const { deps } = depsFor({ out, stages: ['archived'] })
   const calls = []
-  deps.createEvalHome = () => {
-    calls.push('create')
-    return { dshHome: join(out, '.dsh-home'), agentsHome: join(out, '.agents-home') }
+  deps.createEvalHome = ({ root }) => {
+    calls.push(`create:${root}`)
+    return { dshHome: root, agentsHome: `${root}-agents` }
   }
-  deps.applyHomeEnv = () => {
-    calls.push('apply')
-    return { DSH_HOME: undefined, DSH_AGENTS_HOME: undefined }
-  }
-  deps.restoreHomeEnv = () => calls.push('restore')
-  deps.cleanupEvalHome = () => calls.push('cleanup')
+  deps.cleanupEvalHome = ({ dshHome }) => calls.push(`cleanup:${dshHome}`)
 
   await runMatrix(baseConfig(out), deps)
 
-  assert.deepEqual(calls, ['create', 'apply', 'restore', 'cleanup'])
+  assert.deepEqual(calls, [
+    `create:${join(out, '.dsh-home')}`,
+    `cleanup:${join(out, '.dsh-home')}`,
+  ])
 })
 
 test('uses and removes a real private home', async (t) => {
@@ -221,8 +224,6 @@ test('uses and removes a real private home', async (t) => {
   const { deps } = depsFor({ out, stages: ['archived'] })
   delete deps.createEvalHome
   delete deps.cleanupEvalHome
-  delete deps.applyHomeEnv
-  delete deps.restoreHomeEnv
 
   const config = {
     ...baseConfig(join(out, 'runs')),
@@ -238,4 +239,33 @@ test('uses and removes a real private home', async (t) => {
   assert.equal(existsSync(dshHome), false)
   assert.equal(existsSync(agentsHome), false)
   assert.equal(existsSync(source), true)
+})
+
+test('runs two workers with distinct homes and environments', async (t) => {
+  const out = mkdtempSync(join(tmpdir(), 'eval-matrix-'))
+  t.after(() => rmSync(out, { recursive: true, force: true }))
+  const { deps } = depsFor({ out, stages: ['archived'] })
+  const created = []
+  const cleaned = []
+  const environments = new Set()
+  deps.createEvalHome = ({ root, agentsRoot }) => {
+    const home = { dshHome: root, agentsHome: agentsRoot }
+    created.push(home)
+    return home
+  }
+  deps.cleanupEvalHome = ({ dshHome }) => cleaned.push(dshHome)
+  const run = deps.runRound
+  deps.runRound = async (options) => {
+    environments.add(options.env.DSH_HOME)
+    return run(options)
+  }
+
+  const result = await runMatrix({ ...baseConfig(out), concurrency: 2 }, deps)
+
+  assert.equal(created.length, 2)
+  assert.equal(new Set(created.map((home) => home.dshHome)).size, 2)
+  assert.deepEqual(cleaned.sort(), created.map((home) => home.dshHome).sort())
+  assert.equal(environments.size, 2)
+  assert.equal(result.runs.length, 4)
+  assert.deepEqual([...new Set(result.runs.map((entry) => entry.worker))].sort(), [0, 1])
 })

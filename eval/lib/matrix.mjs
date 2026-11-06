@@ -27,10 +27,8 @@ import {
 import { runGates as runGatesImpl } from './verify.mjs'
 import { buildRunMetrics } from './metrics.mjs'
 import {
-  applyHomeEnv as applyHomeEnvImpl,
   cleanupEvalHome as cleanupEvalHomeImpl,
   createEvalHome as createEvalHomeImpl,
-  restoreHomeEnv as restoreHomeEnvImpl,
 } from './dsh-home.mjs'
 import { writeReport as writeReportImpl } from './report.mjs'
 import { CACHE_ROOT, OPENSPEC_BIN } from './paths.mjs'
@@ -76,9 +74,9 @@ function emptySummary() {
   }
 }
 
-function defaultCopySession(sessionId, target) {
+function defaultCopySession(sessionId, target, home) {
   if (sessionId === null) return
-  const directory = findSessionDirImpl(sessionId)
+  const directory = findSessionDirImpl(sessionId, join(home.dshHome, 'sessions'))
   copyFileSync(join(directory, 'session.v4.jsonl.zstd'), target)
 }
 
@@ -102,8 +100,11 @@ async function runCell({
   replicate,
   timestamp,
   officialSkillsDir,
+  home,
+  worker,
   deps,
 }) {
+  const startedMs = Date.now()
   const runId = `${timestamp}-${fixture.id}-${arm}-r${replicate}`
   const runDir = join(config.out, runId)
   const fixtureDir = join(runDir, 'fixture')
@@ -116,6 +117,10 @@ async function runCell({
     fixtureId: fixture.id,
     arm,
     replicate,
+    worker,
+    startedAt: new Date(startedMs).toISOString(),
+    finishedAt: null,
+    wallMs: null,
     sessionId: null,
     commit: null,
     valid: false,
@@ -163,6 +168,8 @@ async function runCell({
         outDir: roundsDir,
         index,
         env: {
+          DSH_HOME: home.dshHome,
+          DSH_AGENTS_HOME: home.agentsHome,
           PATH: `${dirname(OPENSPEC_BIN)}:${process.env.PATH ?? ''}`,
           OPENSPEC_TELEMETRY: '0',
           OPENSPEC_NO_UPDATE_CHECK: '1',
@@ -190,7 +197,9 @@ async function runCell({
         break
       }
 
-      const summary = deps.loadSession(sessionId)
+      const summary = deps.loadSession(sessionId, {
+        sessionsRoot: join(home.dshHome, 'sessions'),
+      })
       if (index === 0) {
         record.surfaceIssues = assertToolSurface(summary, arm)
         if (record.surfaceIssues.length > 0) break
@@ -218,7 +227,10 @@ async function runCell({
       message = next
     }
 
-    const summary = sessionId === null ? emptySummary() : deps.loadSession(sessionId)
+    const summary =
+      sessionId === null
+        ? emptySummary()
+        : deps.loadSession(sessionId, { sessionsRoot: join(home.dshHome, 'sessions') })
     record.gates = deps.runGates({
       destination: fixtureDir,
       changeName: fixture.changeName,
@@ -241,7 +253,7 @@ async function runCell({
       record.sessionId !== null &&
       record.rounds.length > 0 &&
       record.metrics.missingUsage.length === 0
-    deps.copySession(sessionId, join(runDir, 'session.v4.jsonl.zstd'))
+    deps.copySession(sessionId, join(runDir, 'session.v4.jsonl.zstd'), home)
     writeFileSync(join(runDir, 'diff.patch'), deps.gitDiff(fixtureDir))
   } catch (error) {
     record.error = error.stack ?? error.message
@@ -255,12 +267,37 @@ async function runCell({
     })
   }
 
+  record.finishedAt = new Date().toISOString()
+  record.wallMs = Date.now() - startedMs
   writeJson(join(runDir, 'run.json'), record)
   return record
 }
 
+function workerRoots(config, index, count) {
+  if (count === 1) return { root: config.home, agentsRoot: config.agentsHome }
+  return {
+    root: `${config.home}-worker-${index}`,
+    agentsRoot: `${config.agentsHome}-worker-${index}`,
+  }
+}
+
+function homeEnv(home) {
+  return { DSH_HOME: home.dshHome, DSH_AGENTS_HOME: home.agentsHome }
+}
+
+function sortRuns(runs, config) {
+  const fixtureOrder = new Map(config.fixtures.map((id, index) => [id, index]))
+  const armOrder = new Map(config.arms.map((arm, index) => [arm, index]))
+  return [...runs].sort(
+    (left, right) =>
+      (fixtureOrder.get(left.fixtureId) ?? 0) - (fixtureOrder.get(right.fixtureId) ?? 0) ||
+      left.replicate - right.replicate ||
+      (armOrder.get(left.arm) ?? 0) - (armOrder.get(right.arm) ?? 0),
+  )
+}
+
 /**
- * Run the complete matrix.
+ * Run the complete matrix with a fixed worker pool.
  * @param config - resolved configuration.
  * @param deps - injectable implementations for tests.
  * @returns report paths and run records.
@@ -280,24 +317,32 @@ export async function runMatrix(config, deps = {}) {
     gitDiff: defaultGitDiff,
     createEvalHome: createEvalHomeImpl,
     cleanupEvalHome: cleanupEvalHomeImpl,
-    applyHomeEnv: applyHomeEnvImpl,
-    restoreHomeEnv: restoreHomeEnvImpl,
     repoRoot: undefined,
     now: () => new Date(),
     ...deps,
   }
 
-  const home = resolved.createEvalHome({
-    root: config.home,
-    agentsRoot: config.agentsHome,
-    sourceHome: config.sourceHome,
-  })
-  const previousEnv = resolved.applyHomeEnv(home)
+  const cellRuns = planCells(config)
+  if (cellRuns.length === 0) throw new Error('the matrix has no cells')
+  const workerCount = Math.min(Math.max(1, config.concurrency ?? 1), cellRuns.length)
+  const homes = []
+
   try {
-    for (const arm of config.arms) {
-      const issues = resolved.preflight({ arm, model: config.model })
-      if (issues.length > 0) {
-        throw new Error(`preflight failed for ${arm}: ${issues.join('; ')}`)
+    for (let index = 0; index < workerCount; index += 1) {
+      homes.push(
+        resolved.createEvalHome({
+          ...workerRoots(config, index, workerCount),
+          sourceHome: config.sourceHome,
+        }),
+      )
+    }
+
+    for (const home of homes) {
+      for (const arm of config.arms) {
+        const issues = resolved.preflight({ arm, model: config.model, env: homeEnv(home) })
+        if (issues.length > 0) {
+          throw new Error(`preflight failed for ${arm} on ${home.dshHome}: ${issues.join('; ')}`)
+        }
       }
     }
 
@@ -307,35 +352,47 @@ export async function runMatrix(config, deps = {}) {
     const startedAt = resolved.now().toISOString()
     const timestamp = startedAt.replace(/[:.]/gu, '-')
     mkdirSync(config.out, { recursive: true })
-    const cellRuns = planCells(config)
     const runs = []
+    let next = 0
 
-    for (const cell of cellRuns) {
-      const fixture = fixtureById(cell.fixture)
-      const record = await runCell({
-        config,
-        fixture,
-        arm: cell.arm,
-        replicate: cell.replicate,
-        timestamp,
-        officialSkillsDir,
-        deps: resolved,
-      })
-      runs.push(record)
-      process.stdout.write(
-        `  ${record.runId} valid=${record.valid} tokens=${record.metrics?.tokens.totalTokens ?? 0}\n`,
-      )
+    const runWorker = async (home, worker) => {
+      while (true) {
+        const position = next
+        next += 1
+        if (position >= cellRuns.length) return
+        const cell = cellRuns[position]
+        const fixture = fixtureById(cell.fixture)
+        const record = await runCell({
+          config,
+          fixture,
+          arm: cell.arm,
+          replicate: cell.replicate,
+          timestamp,
+          officialSkillsDir,
+          home,
+          worker,
+          deps: resolved,
+        })
+        runs.push(record)
+        process.stdout.write(
+          `  [w${worker}] ${record.runId} valid=${record.valid} tokens=${record.metrics?.tokens.totalTokens ?? 0}\n`,
+        )
+      }
     }
 
+    await Promise.all(homes.map((home, worker) => runWorker(home, worker)))
+
+    const ordered = sortRuns(runs, config)
     const finishedAt = resolved.now().toISOString()
-    const report = resolved.writeReport({ outDir: config.out, config, runs, startedAt, finishedAt })
-    return { ...report, runs }
+    const report = resolved.writeReport({ outDir: config.out, config, runs: ordered, startedAt, finishedAt })
+    return { ...report, runs: ordered }
   } finally {
-    resolved.restoreHomeEnv(previousEnv)
-    if (config.keepHome) {
-      process.stdout.write(`  kept private home ${home.dshHome}\n`)
-    } else {
-      resolved.cleanupEvalHome({ dshHome: home.dshHome, agentsHome: home.agentsHome })
+    for (const home of homes) {
+      if (config.keepHome) {
+        process.stdout.write(`  kept private home ${home.dshHome}\n`)
+      } else {
+        resolved.cleanupEvalHome({ dshHome: home.dshHome, agentsHome: home.agentsHome })
+      }
     }
   }
 }

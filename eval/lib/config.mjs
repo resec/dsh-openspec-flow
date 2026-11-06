@@ -12,6 +12,7 @@ import { FIXTURES } from './registry.mjs'
 export const DEFAULT_CONFIG = Object.freeze({
   arms: Object.freeze(['official', 'plugin']),
   runs: 5,
+  concurrency: 1,
   timeoutMs: 45 * 60 * 1000,
   maxRounds: 6,
   budgetTokensPerRun: 8_000_000,
@@ -61,6 +62,7 @@ export function parseArgs(argv) {
     out: null,
     timeoutMin: null,
     budget: null,
+    concurrency: null,
     home: null,
     agentsHome: null,
     sourceHome: null,
@@ -98,6 +100,9 @@ export function parseArgs(argv) {
         break
       case '--budget':
         options.budget = positiveInteger(requireValue(argv, (index += 1), arg), arg)
+        break
+      case '--concurrency':
+        options.concurrency = positiveInteger(requireValue(argv, (index += 1), arg), arg)
         break
       case '--home':
         options.home = requireValue(argv, (index += 1), arg)
@@ -141,6 +146,7 @@ export function resolveConfig(options) {
     timeoutMs: (options.timeoutMin ?? DEFAULT_CONFIG.timeoutMs / 60_000) * 60_000,
     budgetTokensPerRun: options.budget ?? DEFAULT_CONFIG.budgetTokensPerRun,
     out: options.out ?? RUNS_ROOT,
+    concurrency: options.concurrency ?? DEFAULT_CONFIG.concurrency,
     home: options.home ?? DEFAULT_DSH_HOME,
     agentsHome: options.agentsHome ?? DEFAULT_AGENTS_HOME,
     sourceHome: options.sourceHome ?? DEFAULT_SOURCE_HOME,
@@ -189,6 +195,7 @@ Options:
   --fixture <id>       Fixture id; repeatable. Default: every fixture.
   --arms <a,b>         Arms to run: official, plugin. Default: official,plugin.
   --runs <n>           Replicates per fixture and arm. Default: 5.
+  --concurrency <n>    Concurrent workers. Default: 1.
   --timeout-min <n>    Wall-clock limit for one run. Default: 45.
   --budget <tokens>    Token budget for one run. Default: 8000000.
   --out <dir>          Output root. Default: eval/runs.

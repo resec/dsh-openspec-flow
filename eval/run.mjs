@@ -16,6 +16,7 @@ function printPlan(config) {
   console.log(`  fixtures: ${config.fixtures.join(', ')}`)
   console.log(`  arms:     ${config.arms.join(', ')}`)
   console.log(`  runs:     ${config.runs} per fixture and arm`)
+  console.log(`  workers:  ${config.concurrency}`)
   console.log(`  timeout:  ${config.timeoutMs / 60_000} min per run`)
   console.log(`  budget:   ${config.budgetTokensPerRun} tokens per run`)
   console.log(`  output:   ${config.out}`)

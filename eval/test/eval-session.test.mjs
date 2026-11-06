@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { loadSession, summarizeSession, usageForTurns } from '../lib/session.mjs'
+import { findSessionDir, loadSession, summarizeSession, usageForTurns } from '../lib/session.mjs'
 
 const SAMPLE = fileURLToPath(new URL('../fixtures/sessions/sample.v4.jsonl.zstd', import.meta.url))
 
@@ -105,4 +107,18 @@ test('marks a tool call that starts the first step', () => {
   ])
 
   assert.equal(summary.perTurn[0].stepDetails[0].hasToolCall, true)
+})
+
+test('resolves a session under an explicit sessions root', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'eval-sessions-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const project = join(root, '--project--')
+  const session = join(project, 'session-explicit')
+  mkdirSync(session, { recursive: true })
+  copyFileSync(SAMPLE, join(session, 'session.v4.jsonl.zstd'))
+
+  assert.equal(findSessionDir('session-explicit', root), session)
+  const summary = loadSession('session-explicit', { sessionsRoot: root })
+  assert.equal(summary.steps, 2)
+  assert.equal(summary.sessionId, 'session-f9976bd7-e7c2-4f84-abd4-48a7e16c9b0f')
 })

@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-06
+goal: Add a worker pool with a configurable concurrency, per-worker DSH_HOME and
+  DSH_AGENTS_HOME, explicit child environments, per-worker preflight, cleanup of
+  every worker home, and worker/wall-time reporting while keeping concurrency 1
+  as the default.

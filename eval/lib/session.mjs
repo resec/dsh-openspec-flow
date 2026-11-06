@@ -45,10 +45,10 @@ function parseJson(value, fallback) {
 /**
  * Find the directory of a persisted session id.
  * @param sessionId - exact session identity.
+ * @param root - sessions root; defaults to the process DSH home.
  * @returns absolute session directory.
  */
-export function findSessionDir(sessionId) {
-  const root = sessionsRoot()
+export function findSessionDir(sessionId, root = sessionsRoot()) {
   if (!existsSync(root)) {
     throw new Error(`session root not found: ${root}`)
   }
@@ -63,14 +63,15 @@ export function findSessionDir(sessionId) {
 /**
  * Read a session log as parsed events.
  * @param target - session id, session directory, or an explicit log file.
+ * @param options - sessions root used when target is an id.
  * @returns parsed session events in log order.
  */
-export function readSessionEvents(target) {
+export function readSessionEvents(target, { sessionsRoot: root = sessionsRoot() } = {}) {
   let file
   if (existsSync(target) && statSync(target).isFile()) {
     file = target
   } else {
-    const directory = existsSync(target) ? target : findSessionDir(target)
+    const directory = existsSync(target) ? target : findSessionDir(target, root)
     file = join(directory, 'session.v4.jsonl.zstd')
   }
   if (!existsSync(file)) throw new Error(`session log not found: ${file}`)
@@ -242,8 +243,8 @@ export function summarizeSession(events) {
  * @param target - session id, directory, or log file.
  * @returns the session summary.
  */
-export function loadSession(target) {
-  return summarizeSession(readSessionEvents(target))
+export function loadSession(target, options) {
+  return summarizeSession(readSessionEvents(target, options))
 }
 
 /**

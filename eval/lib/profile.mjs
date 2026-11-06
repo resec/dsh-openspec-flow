@@ -112,15 +112,18 @@ export function checkDump(entries, { arm, model }) {
 
 /**
  * Run `--dump-config` for one arm.
- * @param options - arm, model and launcher.
+ * @param options - arm, model, launcher and environment overlay.
  * @returns dump text.
  */
-export function dumpConfig({ arm, model, dshBin = DSH_BIN }) {
+export function dumpConfig({ arm, model, dshBin = DSH_BIN, env = {} }) {
   const patches = patchesForArm(arm)
   const args = ['--profile', PROFILE]
   for (const patch of patches) args.push('--patch', patch)
   args.push('--dump-config')
-  const result = spawnSync(dshBin, args, { encoding: 'utf8' })
+  const result = spawnSync(dshBin, args, {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  })
   if (result.status !== 0) {
     throw new Error(`dsh --dump-config failed: ${result.stderr || result.stdout}`)
   }
@@ -129,11 +132,11 @@ export function dumpConfig({ arm, model, dshBin = DSH_BIN }) {
 
 /**
  * Full preflight for one arm: composition, model, CLI and tool surface.
- * @param options - arm, model and launcher.
+ * @param options - arm, model, launcher and environment overlay.
  * @returns issue strings.
  */
-export function preflight({ arm, model, dshBin = DSH_BIN }) {
-  const issues = checkDump(parseDump(dumpConfig({ arm, model, dshBin })), { arm, model })
+export function preflight({ arm, model, dshBin = DSH_BIN, env = {} }) {
+  const issues = checkDump(parseDump(dumpConfig({ arm, model, dshBin, env })), { arm, model })
   if (!existsSync(OPENSPEC_BIN)) {
     issues.push(`OpenSpec CLI is missing: ${OPENSPEC_BIN}`)
   }
