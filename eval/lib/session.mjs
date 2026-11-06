@@ -114,19 +114,28 @@ export function summarizeSession(events) {
     (step) => Number(step.usage?.inputTokens ?? 0) + Number(step.usage?.cacheReadTokens ?? 0),
   )
 
+  const calls = events.filter((event) => event.type === 'tool/call')
+  const toolSteps = new Set(calls.map((event) => `${event.data?.turn}:${event.data?.step}`))
+
   const byTurn = new Map()
   for (const step of steps) {
     const turn = step.turn ?? 0
-    const entry = byTurn.get(turn) ?? { turn, usage: emptyUsage(), prompts: [], steps: 0 }
+    const entry = byTurn.get(turn) ?? { turn, usage: emptyUsage(), prompts: [], steps: 0, stepDetails: [] }
     entry.steps += 1
     if (step.usage) {
       addUsage(entry.usage, step.usage)
       entry.prompts.push(Number(step.usage.inputTokens ?? 0) + Number(step.usage.cacheReadTokens ?? 0))
     }
+    entry.stepDetails.push({
+      step: step.step,
+      usage: step.usage ?? null,
+      hasToolCall: toolSteps.has(`${step.turn}:${step.step}`),
+    })
     byTurn.set(turn, entry)
   }
-
-  const calls = events.filter((event) => event.type === 'tool/call')
+  for (const entry of byTurn.values()) {
+    entry.stepDetails.sort((left, right) => (left.step ?? 0) - (right.step ?? 0))
+  }
   const callNames = new Map()
   const byTool = {}
   const cliCommands = []

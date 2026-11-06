@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { writeReport } from '../lib/report.mjs'
 
-function run(fixtureId, arm, replicate, total, { valid = true, gates = [], confirmation = 100 } = {}) {
+function run(fixtureId, arm, replicate, total, { valid = true, gates = [], confirmationRound = 100, confirmationAck = 40 } = {}) {
   return {
     runId: `${fixtureId}-${arm}-${replicate}`,
     runDir: `/tmp/runs/${fixtureId}-${arm}-${replicate}`,
@@ -19,8 +19,9 @@ function run(fixtureId, arm, replicate, total, { valid = true, gates = [], confi
       missingUsage: [],
       tokens: {
         totalTokens: total,
-        core: { totalTokens: total - confirmation },
-        confirmation: { totalTokens: confirmation },
+        work: { totalTokens: total - confirmationAck },
+        confirmationRounds: { totalTokens: confirmationRound },
+        confirmationAck: { totalTokens: confirmationAck },
       },
       friction: {
         steps: 5,
@@ -75,6 +76,8 @@ test('writes per-run and aggregate sections with artifact paths', (t) => {
   assert.match(markdown, /## Aggregate/u)
   assert.match(markdown, /## Comparison/u)
   assert.match(markdown, /## Runs/u)
+  assert.match(markdown, /Work tokens/u)
+  assert.match(markdown, /Work token ratio/u)
   assert.match(markdown, /## Confirmations/u)
   assert.match(markdown, /plugin lower/u)
   assert.match(markdown, /indistinguishable/u)

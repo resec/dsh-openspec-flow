@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-06
+goal: Attribute only the acknowledgment steps before the first tool call in a
+  confirmation round, report total/work/confirmation-round/ack tokens, and
+  update the report, tests and documentation.

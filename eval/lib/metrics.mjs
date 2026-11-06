@@ -40,9 +40,20 @@ export function buildRunMetrics({ summary, rounds, fixtureId, arm }) {
     .filter((round) => round.kind === 'confirmation')
     .map((round) => round.turn)
   const confirmationUsage = usageForTurns(summary, confirmationTurns)
-  const coreUsage = emptyUsage()
+  const confirmationAckUsage = emptyUsage()
+  for (const round of normalizedRounds) {
+    if (round.kind !== 'confirmation') continue
+    const turn = summary.perTurn.find((entry) => entry.turn === round.turn)
+    const steps = turn?.stepDetails ?? []
+    const firstTool = steps.findIndex((step) => step.hasToolCall)
+    const ackSteps = firstTool === -1 ? steps : steps.slice(0, firstTool)
+    for (const step of ackSteps) {
+      if (step.usage) addUsage(confirmationAckUsage, step.usage)
+    }
+  }
+  const workUsage = emptyUsage()
   for (const key of USAGE_KEYS) {
-    coreUsage[key] = summary.usage[key] - confirmationUsage[key]
+    workUsage[key] = summary.usage[key] - confirmationAckUsage[key]
   }
 
   const promptTokens = summary.prompt.totalRequestTokens
@@ -70,8 +81,9 @@ export function buildRunMetrics({ summary, rounds, fixtureId, arm }) {
     tokens: {
       ...summary.usage,
       promptTokens,
-      core: coreUsage,
-      confirmation: confirmationUsage,
+      work: workUsage,
+      confirmationRounds: confirmationUsage,
+      confirmationAck: confirmationAckUsage,
     },
     prompt: summary.prompt,
     friction: {
@@ -188,14 +200,14 @@ export function aggregateRuns(runs) {
       const armRuns = scoped.filter((run) => run.arm === arm)
       const valid = armRuns.filter((run) => run.valid !== false)
       const totals = valid.map((run) => run.metrics.tokens.totalTokens)
-      const core = valid.map((run) => run.metrics.tokens.core.totalTokens)
+      const work = valid.map((run) => run.metrics.tokens.work.totalTokens)
       arms[arm] = {
         runs: armRuns.length,
         validRuns: valid.length,
         medianTotalTokens: median(totals),
         iqrTotalTokens: iqr(totals),
-        medianCoreTokens: median(core),
-        iqrCoreTokens: iqr(core),
+        medianWorkTokens: median(work),
+        iqrWorkTokens: iqr(work),
         medianSteps: median(valid.map((run) => run.metrics.friction.steps)),
         medianToolCalls: median(valid.map((run) => run.metrics.friction.toolCalls)),
         medianResultBytes: median(valid.map((run) => run.metrics.friction.resultBytes)),
@@ -204,10 +216,10 @@ export function aggregateRuns(runs) {
     }
     const pluginTotals = valuesFor(scoped, 'plugin', (run) => run.metrics.tokens.totalTokens)
     const officialTotals = valuesFor(scoped, 'official', (run) => run.metrics.tokens.totalTokens)
-    const pluginCore = valuesFor(scoped, 'plugin', (run) => run.metrics.tokens.core.totalTokens)
-    const officialCore = valuesFor(scoped, 'official', (run) => run.metrics.tokens.core.totalTokens)
+    const pluginWork = valuesFor(scoped, 'plugin', (run) => run.metrics.tokens.work.totalTokens)
+    const officialWork = valuesFor(scoped, 'official', (run) => run.metrics.tokens.work.totalTokens)
     const tokenRatio = bootstrapRatio(pluginTotals, officialTotals)
-    const coreRatio = bootstrapRatio(pluginCore, officialCore)
+    const workRatio = bootstrapRatio(pluginWork, officialWork)
     const spread = Math.max(
       arms.plugin?.iqrTotalTokens ?? 0,
       arms.official?.iqrTotalTokens ?? 0,
@@ -224,7 +236,7 @@ export function aggregateRuns(runs) {
       arms,
       comparison: {
         tokenRatio,
-        coreRatio,
+        workRatio,
         difference,
         spread,
         indistinguishable,

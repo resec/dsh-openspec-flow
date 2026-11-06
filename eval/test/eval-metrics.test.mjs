@@ -19,8 +19,21 @@ function summary() {
     usage: usage(300, 30, 900),
     prompt: { firstRequestTokens: 1000, peakRequestTokens: 1100, totalRequestTokens: 2100 },
     perTurn: [
-      { turn: 1, usage: usage(200, 20, 500), steps: 2 },
-      { turn: 2, usage: usage(100, 10, 400), steps: 1 },
+      {
+        turn: 1,
+        usage: usage(200, 20, 500),
+        steps: 1,
+        stepDetails: [{ step: 1, usage: usage(200, 20, 500), hasToolCall: true }],
+      },
+      {
+        turn: 2,
+        usage: usage(100, 10, 400),
+        steps: 2,
+        stepDetails: [
+          { step: 1, usage: usage(50, 5, 50), hasToolCall: false },
+          { step: 2, usage: usage(50, 5, 350), hasToolCall: true },
+        ],
+      },
     ],
     steps: 3,
     turns: 2,
@@ -57,8 +70,9 @@ test('builds per-round tokens and a confirmation split', () => {
   })
 
   assert.equal(metrics.tokens.totalTokens, 1230)
-  assert.equal(metrics.tokens.confirmation.totalTokens, 510)
-  assert.equal(metrics.tokens.core.totalTokens, 720)
+  assert.equal(metrics.tokens.confirmationRounds.totalTokens, 510)
+  assert.equal(metrics.tokens.confirmationAck.totalTokens, 105)
+  assert.equal(metrics.tokens.work.totalTokens, 1125)
   assert.equal(metrics.confirmationRounds, 1)
   assert.equal(metrics.rounds.length, 2)
   assert.equal(metrics.rounds[1].kind, 'confirmation')
@@ -76,9 +90,28 @@ test('keeps confirmation usage visible when no confirmation round exists', () =>
     arm: 'official',
   })
 
-  assert.equal(metrics.tokens.confirmation.totalTokens, 0)
-  assert.equal(metrics.tokens.core.totalTokens, 1230)
+  assert.equal(metrics.tokens.confirmationRounds.totalTokens, 0)
+  assert.equal(metrics.tokens.confirmationAck.totalTokens, 0)
+  assert.equal(metrics.tokens.work.totalTokens, 1230)
   assert.equal(metrics.friction.expectedConfirmations, 0)
+})
+
+test('counts no acknowledgment when the confirmation round starts with a tool call', () => {
+  const data = summary()
+  data.perTurn[1].stepDetails[0].hasToolCall = true
+
+  const metrics = buildRunMetrics({
+    summary: data,
+    rounds: [
+      { kind: 'initial', turn: 1 },
+      { kind: 'confirmation', turn: 2 },
+    ],
+    fixtureId: 'demo',
+    arm: 'plugin',
+  })
+
+  assert.equal(metrics.tokens.confirmationAck.totalTokens, 0)
+  assert.equal(metrics.tokens.work.totalTokens, 1230)
 })
 
 test('computes quantiles and medians', () => {
@@ -96,7 +129,7 @@ test('aggregates arms per fixture and flags indistinguishable variance', () => {
     metrics: {
       tokens: {
         totalTokens: totals,
-        core: { totalTokens: totals },
+        work: { totalTokens: totals },
       },
       friction: { steps: 10, toolCalls: 5, resultBytes: 100, durationMs: 1000 },
     },
@@ -114,6 +147,7 @@ test('aggregates arms per fixture and flags indistinguishable variance', () => {
   assert.ok(demo.comparison.tokenRatio.ratio < 1)
   assert.equal(demo.arms.official.medianTotalTokens, 1100)
   assert.equal(demo.arms.plugin.medianTotalTokens, 850)
+  assert.equal(demo.arms.official.medianWorkTokens, 1100)
 
   const noisy = aggregateRuns([
     run('official', 1000),
@@ -133,7 +167,7 @@ test('drops invalid runs from aggregates but counts them', () => {
     arm,
     valid: isValid,
     metrics: {
-      tokens: { totalTokens: total, core: { totalTokens: total } },
+      tokens: { totalTokens: total, work: { totalTokens: total } },
       friction: { steps: 1, toolCalls: 1, resultBytes: 0, durationMs: 1 },
     },
   })

@@ -78,3 +78,31 @@ test('extracts the skill catalog and the loaded-skill calls', () => {
   assert.deepEqual(summary.skills.catalog, ['openspec-flow', 'tdd'])
   assert.deepEqual(summary.skills.loaded, ['tdd'])
 })
+
+function u(input, output, cacheRead = 0) {
+  return { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: 0, totalTokens: input + output + cacheRead }
+}
+
+test('records per-step usage and tool-call steps', () => {
+  const summary = summarizeSession([
+    { type: 'session', id: 'session-steps', cwd: '/tmp/project' },
+    { type: 'assistant/message', data: { turn: 1, step: 1, usage: u(10, 1) } },
+    { type: 'tool/call', data: { turn: 1, step: 2, callId: 'c1', name: 'bash', arguments: '{}' } },
+    { type: 'assistant/message', data: { turn: 1, step: 2, usage: u(20, 2) } },
+  ])
+
+  assert.deepEqual(summary.perTurn[0].stepDetails, [
+    { step: 1, usage: u(10, 1), hasToolCall: false },
+    { step: 2, usage: u(20, 2), hasToolCall: true },
+  ])
+})
+
+test('marks a tool call that starts the first step', () => {
+  const summary = summarizeSession([
+    { type: 'session', id: 'session-tool-first', cwd: '/tmp/project' },
+    { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{}' } },
+    { type: 'assistant/message', data: { turn: 1, step: 1, usage: u(5, 1) } },
+  ])
+
+  assert.equal(summary.perTurn[0].stepDetails[0].hasToolCall, true)
+})

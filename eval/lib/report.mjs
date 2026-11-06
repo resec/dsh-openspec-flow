@@ -57,7 +57,7 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
   lines.push('## Aggregate')
   lines.push('')
   lines.push(
-    '| Fixture | Arm | Valid/Total | Median tokens | IQR | Median core | Median steps | Median tool calls | Median result bytes | Median duration (s) |',
+    '| Fixture | Arm | Valid/Total | Median tokens | IQR | Median work | Median steps | Median tool calls | Median result bytes | Median duration (s) |',
   )
   lines.push('| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
   for (const fixture of aggregates.fixtures) {
@@ -65,7 +65,7 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
       const entry = fixture.arms[arm]
       if (entry === undefined) continue
       lines.push(
-        `| ${fixture.fixtureId} | ${arm} | ${entry.validRuns}/${entry.runs} | ${number(entry.medianTotalTokens)} | ${number(entry.iqrTotalTokens)} | ${number(entry.medianCoreTokens)} | ${number(entry.medianSteps)} | ${number(entry.medianToolCalls)} | ${number(entry.medianResultBytes)} | ${(entry.medianDurationMs / 1000).toFixed(1)} |`,
+        `| ${fixture.fixtureId} | ${arm} | ${entry.validRuns}/${entry.runs} | ${number(entry.medianTotalTokens)} | ${number(entry.iqrTotalTokens)} | ${number(entry.medianWorkTokens)} | ${number(entry.medianSteps)} | ${number(entry.medianToolCalls)} | ${number(entry.medianResultBytes)} | ${(entry.medianDurationMs / 1000).toFixed(1)} |`,
       )
     }
   }
@@ -73,12 +73,12 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
 
   lines.push('## Comparison')
   lines.push('')
-  lines.push('| Fixture | Plugin / official tokens | 95% CI | Difference | Spread | Result | Core token ratio |')
+  lines.push('| Fixture | Plugin / official tokens | 95% CI | Difference | Spread | Result | Work token ratio |')
   lines.push('| --- | ---: | --- | ---: | ---: | --- | ---: |')
   for (const fixture of aggregates.fixtures) {
     const comparison = fixture.comparison
     lines.push(
-      `| ${fixture.fixtureId} | ${ratio(comparison.tokenRatio.ratio)} | ${interval(comparison.tokenRatio)} | ${number(comparison.difference)} | ${number(comparison.spread)} | ${verdict(comparison)} | ${ratio(comparison.coreRatio.ratio)} |`,
+      `| ${fixture.fixtureId} | ${ratio(comparison.tokenRatio.ratio)} | ${interval(comparison.tokenRatio)} | ${number(comparison.difference)} | ${number(comparison.spread)} | ${verdict(comparison)} | ${ratio(comparison.workRatio.ratio)} |`,
     )
   }
   lines.push('')
@@ -86,14 +86,14 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
   lines.push('## Runs')
   lines.push('')
   lines.push(
-    '| Fixture | Arm | Rep | Valid | Total tokens | Core tokens | Confirmation tokens | Steps | Tool calls | CLI calls | Result bytes | Missing usage | Gates failed | Session |',
+    '| Fixture | Arm | Rep | Valid | Total tokens | Work tokens | Confirmation round tokens | Confirmation ack tokens | Steps | Tool calls | CLI calls | Result bytes | Missing usage | Gates failed | Session |',
   )
   lines.push('| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |')
   for (const run of runs) {
     const metrics = run.metrics
     const failed = failedGates(run)
     lines.push(
-      `| ${run.fixtureId} | ${run.arm} | ${run.replicate} | ${run.valid ? 'yes' : 'no'} | ${number(metrics.tokens.totalTokens)} | ${number(metrics.tokens.core.totalTokens)} | ${number(metrics.tokens.confirmation.totalTokens)} | ${number(metrics.friction.steps)} | ${number(metrics.friction.toolCalls)} | ${number(metrics.friction.openspecCliCalls)} | ${number(metrics.friction.resultBytes)} | ${metrics.missingUsage.length === 0 ? '—' : metrics.missingUsage.map((entry) => `${entry.turn}.${entry.step}`).join(' ')} | ${failed.length === 0 ? '—' : failed.join(', ')} | ${run.sessionId ?? '—'} |`,
+      `| ${run.fixtureId} | ${run.arm} | ${run.replicate} | ${run.valid ? 'yes' : 'no'} | ${number(metrics.tokens.totalTokens)} | ${number(metrics.tokens.work.totalTokens)} | ${number(metrics.tokens.confirmationRounds.totalTokens)} | ${number(metrics.tokens.confirmationAck.totalTokens)} | ${number(metrics.friction.steps)} | ${number(metrics.friction.toolCalls)} | ${number(metrics.friction.openspecCliCalls)} | ${number(metrics.friction.resultBytes)} | ${metrics.missingUsage.length === 0 ? '—' : metrics.missingUsage.map((entry) => `${entry.turn}.${entry.step}`).join(' ')} | ${failed.length === 0 ? '—' : failed.join(', ')} | ${run.sessionId ?? '—'} |`,
     )
   }
   lines.push('')
@@ -119,7 +119,7 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
   lines.push('')
   lines.push('## Reading notes')
   lines.push('')
-  lines.push('- Token totals include every round; the confirmation column is an additional view, not a silent subtraction.')
+  lines.push('- Work tokens subtract only the steps before the first tool call in a confirmation round; confirmation-round tokens include the work that round performed.')
   lines.push('- A fixture is labelled indistinguishable when the 95% interval includes 1 or the difference is smaller than the larger IQR.')
   lines.push('- Invalid runs stay in the table and are excluded from the aggregate medians.')
   lines.push('')

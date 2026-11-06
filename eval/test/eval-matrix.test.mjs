@@ -20,6 +20,7 @@ function summary(arm, total = 1000, turns = 1) {
     turn: index + 1,
     usage: usage(total / turns),
     steps: 1,
+    stepDetails: [{ step: 1, usage: usage(total / turns), hasToolCall: true }],
   }))
   const openspecTools =
     arm === 'plugin' ? Array.from({ length: 13 }, (_, index) => `openspec_tool_${index}`) : []
@@ -166,8 +167,9 @@ test('marks confirmation rounds and splits their tokens', async (t) => {
   assert.equal(run.rounds[2].message, '确认，开始实施。')
   assert.equal(run.rounds[3].message, '请归档该变更并完成。')
   assert.equal(run.metrics.confirmationRounds, 3)
-  assert.equal(run.metrics.tokens.confirmation.totalTokens, 750)
-  assert.equal(run.metrics.tokens.core.totalTokens, 250)
+  assert.equal(run.metrics.tokens.confirmationRounds.totalTokens, 750)
+  assert.equal(run.metrics.tokens.confirmationAck.totalTokens, 0)
+  assert.equal(run.metrics.tokens.work.totalTokens, 1000)
 })
 
 test('stops a stalled run and marks it invalid', async (t) => {
