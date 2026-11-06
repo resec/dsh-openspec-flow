@@ -21,6 +21,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 ## Plugin constraints
 
 - Plain ESM JavaScript with Node built-ins only. Runtime imports of `@deepseek-ai/*` break a linked profile install.
+- `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor. When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
 - The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 1.16.0). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
 - Keep tool descriptions and output schemas in `lib/tools/`, the projection and cache in `lib/state.js`, the init and migration logic in `lib/init.js` and `lib/skills.js`, and the shipped skills in `skills/` in sync with behavior.
 - Every packaged skill's `metadata.generatedBy` must equal `dsh-openspec-flow@<package.json version>`; the skill test enforces it.

@@ -44,6 +44,22 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 对已有项目，显式调用一次 `openspec_init` 完成技能迁移；不调用时项目里的官方技能仍然存在，agent 可能继续按 CLI 路径工作。
 
+## 版本兼容性
+
+`package.json` 的 `engines` 声明两项：
+
+- `dsh`：`=0.2.2-rc.1`。只接受该 DSH 运行时；其他版本在安装或 profile 启动检查时被拒绝，除非 profile 的 `compatibility.json` 中有针对该精确版本的豁免。DSH 仍处 alpha，逐个版本验证后再调整。
+- `node`：`>=24.9.0`。与 DSH 0.2.2-rc.1 的 Node 下限一致；插件与 DSH 同进程运行，不单独支持更低的 Node。
+
+升级 DSH 依赖时：
+
+1. 读取目标 DSH 版本的 `engines.node`。
+2. 把本插件的 `engines.node` 对齐到同一下限。
+3. 把 `engines.dsh` 改为该 DSH 的精确版本。
+4. 重启 DSH，确认 stderr 没有 `skipping profile bundle`，`openspec_*` 工具正常注册。
+
+版本不匹配时 DSH 会跳过整个 bundle：工具、技能与流程规则都不会注册，stderr 输出 `dsh: skipping profile bundle "dsh-openspec-flow": ...`。
+
 ## 配置
 
 `cordis.patch.yml` 的 `config` 可覆盖：

@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-06
+goal: Declare engines.dsh as the exact DSH 0.2.2-rc.1 runtime, align
+  engines.node to DSH's >=24.9.0 floor, and document that upgrading the DSH
+  dependency requires checking DSH's Node range and re-aligning the plugin's.
