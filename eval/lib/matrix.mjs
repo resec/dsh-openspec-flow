@@ -15,6 +15,7 @@ import {
   ensureOfficialSkills as ensureOfficialSkillsImpl,
   prepareFixture as prepareFixtureImpl,
 } from './fixtures.mjs'
+import { describePlugin as describePluginImpl } from './plugin.mjs'
 import { assertToolSurface, patchesForArm, preflight as preflightImpl } from './profile.mjs'
 import { runRound as runRoundImpl } from './runner.mjs'
 import { findSessionDir as findSessionDirImpl, loadSession as loadSessionImpl } from './session.mjs'
@@ -31,7 +32,7 @@ import {
   createEvalHome as createEvalHomeImpl,
 } from './dsh-home.mjs'
 import { writeReport as writeReportImpl } from './report.mjs'
-import { CACHE_ROOT, OPENSPEC_BIN } from './paths.mjs'
+import { CACHE_ROOT, openspecBin } from './paths.mjs'
 
 const OPERATING_RULES = `
 
@@ -131,6 +132,7 @@ async function runCell({
     gates: [],
     rounds: [],
     metrics: null,
+    plugin: deps.plugin,
     error: null,
   }
 
@@ -140,7 +142,7 @@ async function runCell({
       arm,
       destination: fixtureDir,
       officialSkillsDir,
-      repoRoot: deps.repoRoot,
+      pluginRoot: deps.pluginRoot,
     })
     record.commit = prepared.commit
     const firstMessage = prepared.request + OPERATING_RULES
@@ -170,7 +172,7 @@ async function runCell({
         env: {
           DSH_HOME: home.dshHome,
           DSH_AGENTS_HOME: home.agentsHome,
-          PATH: `${dirname(OPENSPEC_BIN)}:${process.env.PATH ?? ''}`,
+          PATH: `${dirname(openspecBin())}:${process.env.PATH ?? ''}`,
           OPENSPEC_TELEMETRY: '0',
           OPENSPEC_NO_UPDATE_CHECK: '1',
         },
@@ -317,9 +319,20 @@ export async function runMatrix(config, deps = {}) {
     gitDiff: defaultGitDiff,
     createEvalHome: createEvalHomeImpl,
     cleanupEvalHome: cleanupEvalHomeImpl,
-    repoRoot: undefined,
+    describePlugin: describePluginImpl,
+    pluginRoot: config.pluginRoot ?? null,
     now: () => new Date(),
     ...deps,
+  }
+
+  if (resolved.pluginRoot === null) {
+    throw new Error('matrix requires a resolved plugin root; pass --plugin-root or --clone')
+  }
+
+  try {
+    resolved.plugin = resolved.describePlugin(resolved.pluginRoot)
+  } catch (error) {
+    resolved.plugin = { root: resolved.pluginRoot, error: error.message }
   }
 
   const cellRuns = planCells(config)
@@ -333,6 +346,7 @@ export async function runMatrix(config, deps = {}) {
         resolved.createEvalHome({
           ...workerRoots(config, index, workerCount),
           sourceHome: config.sourceHome,
+          repoRoot: resolved.pluginRoot,
         }),
       )
     }

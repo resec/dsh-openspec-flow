@@ -179,3 +179,65 @@ test('rejects a fixture with no test files', (t) => {
   writeFileSync(join(root, 'test', 'a.test.mjs'), '')
   assert.deepEqual(fixtureTestTargets(root), ['test/a.test.mjs'])
 })
+
+test('uses the supplied plugin root for the fixture git archive', (t) => {
+  const directory = root(t)
+  const destination = join(directory, 'run', 'fixture')
+  mkdirSync(join(directory, 'run'), { recursive: true })
+  const plugin = join(directory, 'plugin')
+  mkdirSync(plugin, { recursive: true })
+  writeFileSync(
+    join(plugin, 'package.json'),
+    `${JSON.stringify({ name: 'dsh-openspec-flow', version: '0.1.0' })}\n`,
+  )
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'Eval Fixture',
+    GIT_AUTHOR_EMAIL: 'eval@example.invalid',
+    GIT_COMMITTER_NAME: 'Eval Fixture',
+    GIT_COMMITTER_EMAIL: 'eval@example.invalid',
+  }
+  for (const args of [
+    ['init', '-b', 'main'],
+    ['add', '-A'],
+    ['-c', 'user.name=Eval', '-c', 'user.email=eval@example.invalid', 'commit', '-m', 'base'],
+  ]) {
+    const result = spawnSync('git', args, { cwd: plugin, encoding: 'utf8', env })
+    assert.equal(result.status, 0, result.stderr)
+  }
+
+  assert.throws(
+    () =>
+      prepareFixture({
+        fixture: fixtureById('policy-rule'),
+        arm: 'plugin',
+        destination,
+        pluginRoot: plugin,
+      }),
+    /fixture base commit .* is not reachable/u,
+  )
+})
+
+test('generates official skills with an injected CLI', (t) => {
+  const directory = root(t)
+  const cache = join(directory, 'cache')
+  const fake = join(directory, 'fake-openspec.sh')
+  writeFileSync(
+    fake,
+    '#!/bin/sh\nmkdir -p "$PWD/.dsh/skills/openspec-apply-change"\nprintf "%s\\n" ok > "$PWD/.dsh/skills/openspec-apply-change/SKILL.md"\n',
+    { mode: 0o755 },
+  )
+
+  const result = ensureOfficialSkills({ cacheDir: cache, openspecBin: fake })
+
+  assert.equal(result, cache)
+  assert.equal(existsSync(join(cache, 'openspec-apply-change', 'SKILL.md')), true)
+})
+
+test('generates official skills with the harness CLI', (t) => {
+  const cache = join(root(t), 'official')
+
+  ensureOfficialSkills({ cacheDir: cache })
+
+  assert.equal(existsSync(join(cache, 'openspec-apply-change', 'SKILL.md')), true)
+})

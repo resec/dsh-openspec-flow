@@ -47,6 +47,16 @@ export function renderMarkdown({ config, runs, aggregates, startedAt, finishedAt
   lines.push('')
   lines.push(`- Started: ${startedAt}`)
   lines.push(`- Finished: ${finishedAt}`)
+  const plugin = runs.find((run) => run.plugin !== null && run.plugin !== undefined)?.plugin
+  if (plugin !== undefined) {
+    if (plugin.error !== undefined) {
+      lines.push(`- Plugin: unresolved at ${plugin.root} (${plugin.error})`)
+    } else {
+      const commit = plugin.commit ?? 'no git metadata'
+      const dirty = plugin.dirty === true ? ' (dirty)' : ''
+      lines.push(`- Plugin: ${plugin.version ?? 'unknown'} at ${commit}${dirty}; root ${plugin.root}`)
+    }
+  }
   lines.push(`- Fixtures: ${config.fixtures.join(', ')}`)
   lines.push(`- Arms: ${config.arms.join(', ')}`)
   lines.push(`- Runs per fixture and arm: ${config.runs}`)

@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-06
+goal: Remove the eval harness's hard-coded assumption that its parent directory
+  is the tested plugin repository, so the harness can run against a local
+  checkout or a cloned plugin and later move to its own repository.

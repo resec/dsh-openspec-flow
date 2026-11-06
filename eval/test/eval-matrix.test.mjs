@@ -82,6 +82,7 @@ function baseConfig(out) {
       apply: '确认，开始实施。',
       archive: '请归档该变更并完成。',
     },
+    pluginRoot: join(out, 'plugin'),
   }
 }
 
@@ -139,6 +140,13 @@ function depsFor({ out, stages, total = 1000, state = {} }) {
     acceptanceDir: () => null,
     copySession: () => {},
     gitDiff: () => '',
+    describePlugin: (root) => ({
+      root,
+      name: 'dsh-openspec-flow',
+      version: '0.1.0',
+      commit: 'abc1234',
+      dirty: false,
+    }),
     now: () => new Date('2026-11-06T00:00:00.000Z'),
   }
   return { deps, preparedArms, roundMessages }
@@ -157,7 +165,11 @@ test('runs the ABBA matrix and writes a complete report', async (t) => {
   assert.equal(existsSync(join(out, 'report.md')), true)
   assert.equal(existsSync(join(out, 'report.json')), true)
   assert.equal(existsSync(join(result.runs[0].runDir, 'run.json')), true)
-  assert.match(readFileSync(join(out, 'report.md'), 'utf8'), /## Comparison/u)
+  assert.equal(result.runs[0].plugin.commit, 'abc1234')
+  assert.equal(result.runs[0].plugin.version, '0.1.0')
+  const markdown = readFileSync(join(out, 'report.md'), 'utf8')
+  assert.match(markdown, /## Comparison/u)
+  assert.match(markdown, /- Plugin: 0\.1\.0 at abc1234/u)
 })
 
 test('marks confirmation rounds and splits their tokens', async (t) => {
@@ -268,4 +280,28 @@ test('runs two workers with distinct homes and environments', async (t) => {
   assert.equal(environments.size, 2)
   assert.equal(result.runs.length, 4)
   assert.deepEqual([...new Set(result.runs.map((entry) => entry.worker))].sort(), [0, 1])
+})
+
+test('rejects a matrix without a resolved plugin root', async (t) => {
+  const out = mkdtempSync(join(tmpdir(), 'eval-matrix-'))
+  t.after(() => rmSync(out, { recursive: true, force: true }))
+  const { deps } = depsFor({ out, stages: ['archived'] })
+  const config = baseConfig(out)
+  delete config.pluginRoot
+
+  await assert.rejects(runMatrix(config, deps), /requires a resolved plugin root/u)
+})
+
+test('records an unresolved plugin when description fails', async (t) => {
+  const out = mkdtempSync(join(tmpdir(), 'eval-matrix-'))
+  t.after(() => rmSync(out, { recursive: true, force: true }))
+  const { deps } = depsFor({ out, stages: ['archived'] })
+  deps.describePlugin = () => {
+    throw new Error('bad root')
+  }
+
+  const result = await runMatrix(baseConfig(out), deps)
+
+  assert.equal(result.runs[0].plugin.error, 'bad root')
+  assert.match(readFileSync(join(out, 'report.md'), 'utf8'), /Plugin: unresolved/u)
 })

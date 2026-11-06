@@ -97,3 +97,101 @@ test('falls back to console output when no sinks are supplied', async () => {
   assert.ok(logs.length > 0)
   assert.match(errors[0], /unknown option/)
 })
+
+function clonePlanConfig(execute = false) {
+  return {
+    fixtures: ['budget-cli'],
+    arms: ['official', 'plugin'],
+    runs: 1,
+    concurrency: 1,
+    out: '/tmp/out',
+    home: '/tmp/home',
+    agentsHome: '/tmp/agents',
+    sourceHome: '/tmp/source',
+    timeoutMs: 60_000,
+    budgetTokensPerRun: 1_000,
+    pluginRoot: null,
+    pluginSource: 'clone',
+    clone: { url: 'git@example.invalid:plugin.git', ref: 'main', destination: '/tmp/plugin' },
+    execute,
+  }
+}
+
+test('prints the resolved plugin root in the plan', async () => {
+  const plan = capture()
+
+  assert.equal(await main([], plan.io), 0)
+
+  const line = plan.stdout.find((entry) => entry.includes('plugin:'))
+  assert.match(line, /plugin:\s+\/.+\(.+\)/u)
+})
+
+test('prints the clone plan without cloning on a dry run', async () => {
+  const plan = capture()
+  let cloned = false
+
+  const code = await main(['--clone'], {
+    ...plan.io,
+    resolveConfig: () => clonePlanConfig(false),
+    clonePlugin: () => {
+      cloned = true
+      return { root: '/tmp/cloned', cloned: true, ref: 'main' }
+    },
+  })
+
+  assert.equal(code, 0)
+  assert.match(
+    plan.stdout.join('\n'),
+    /plugin:\s+clone git@example\.invalid:plugin\.git @ main -> \/tmp\/plugin/u,
+  )
+  assert.equal(cloned, false)
+})
+
+test('clones before executing and passes the root to the runner', async () => {
+  const run = capture()
+  let clonedWith = null
+  let received = null
+
+  const code = await main(['--execute', '--clone'], {
+    ...run.io,
+    resolveConfig: () => clonePlanConfig(true),
+    clonePlugin: (clone) => {
+      clonedWith = clone
+      return { root: '/tmp/cloned', cloned: true, ref: clone.ref }
+    },
+    runMatrix: async (config) => {
+      received = config
+      return { reportPath: '/tmp/report.md' }
+    },
+  })
+
+  assert.equal(code, 0)
+  assert.deepEqual(clonedWith, {
+    url: 'git@example.invalid:plugin.git',
+    ref: 'main',
+    destination: '/tmp/plugin',
+  })
+  assert.equal(received.pluginRoot, '/tmp/cloned')
+  assert.equal(received.pluginSource, 'clone')
+})
+
+test('reports a clone failure before the matrix starts', async () => {
+  const failure = capture()
+  let called = false
+
+  const code = await main(['--execute', '--clone'], {
+    ...failure.io,
+    resolveConfig: () => clonePlanConfig(true),
+    clonePlugin: () => {
+      throw new Error('network down')
+    },
+    runMatrix: async () => {
+      called = true
+      return { reportPath: '/tmp/report.md' }
+    },
+  })
+
+  assert.equal(code, 1)
+  assert.match(failure.stderr.join('\n'), /network down/u)
+  assert.equal(called, false)
+})

@@ -12,6 +12,7 @@
 
 import { pathToFileURL } from 'node:url'
 import { parseArgs, planCells, resolveConfig, USAGE } from './lib/config.mjs'
+import { clonePlugin } from './lib/plugin.mjs'
 import { FIXTURES, fixtureById } from './lib/registry.mjs'
 
 function printPlan(config, write) {
@@ -27,6 +28,11 @@ function printPlan(config, write) {
   write(`  DSH_HOME: ${config.home}${config.keepHome ? ' (kept)' : ''}`)
   write(`  agents:   ${config.agentsHome}`)
   write(`  source:   ${config.sourceHome}`)
+  if (config.pluginRoot !== null) {
+    write(`  plugin:   ${config.pluginRoot} (${config.pluginSource})`)
+  } else {
+    write(`  plugin:   clone ${config.clone.url} @ ${config.clone.ref} -> ${config.clone.destination}`)
+  }
   write(`  cells:    ${cells.length}`)
   for (const fixtureId of config.fixtures) {
     const fixture = fixtureById(fixtureId)
@@ -37,7 +43,7 @@ function printPlan(config, write) {
 /**
  * Run the harness entrypoint.
  * @param argv - arguments after the script name.
- * @param io - output sinks and an optional injected matrix runner.
+ * @param io - output sinks, an optional matrix runner, configuration resolver and clone helper.
  * @returns process exit code.
  */
 export async function main(argv = process.argv.slice(2), io = {}) {
@@ -67,7 +73,8 @@ export async function main(argv = process.argv.slice(2), io = {}) {
 
   let config
   try {
-    config = resolveConfig(options)
+    const resolve = io.resolveConfig ?? resolveConfig
+    config = resolve(options)
   } catch (error) {
     writeError(`eval: ${error.message}`)
     return 1
@@ -76,6 +83,16 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   if (!config.execute) {
     printPlan(config, write)
     return 0
+  }
+
+  if (config.pluginRoot === null) {
+    try {
+      const cloned = (io.clonePlugin ?? clonePlugin)(config.clone)
+      config = { ...config, pluginRoot: cloned.root, pluginSource: 'clone' }
+    } catch (error) {
+      writeError(`eval: ${error.message}`)
+      return 1
+    }
   }
 
   try {

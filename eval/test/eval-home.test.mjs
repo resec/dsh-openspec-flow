@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -38,13 +39,25 @@ function credentials(home) {
   writeFileSync(join(home.source, '.credentials.yaml'), 'deepseek:\n  token: test\n')
 }
 
+function pluginCheckout(t) {
+  const root = mkdtempSync(join(tmpdir(), 'eval-home-plugin-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  writeFileSync(
+    join(root, 'package.json'),
+    `${JSON.stringify({ name: 'dsh-openspec-flow', version: '0.1.0' })}\n`,
+  )
+  return root
+}
+
 test('creates a marked home with profile and restricted credentials', (t) => {
   const home = workspace(t)
   credentials(home)
+  const plugin = pluginCheckout(t)
   const created = createEvalHome({
     root: home.dshHome,
     agentsRoot: home.agentsHome,
     sourceHome: home.source,
+    repoRoot: plugin,
   })
 
   assert.equal(created.dshHome, home.dshHome)
@@ -60,6 +73,7 @@ test('creates a marked home with profile and restricted credentials', (t) => {
     'dsh-openspec-flow',
   ])
   assert.equal(lstatSync(join(profile, 'node_modules', 'dsh-openspec-flow')).isSymbolicLink(), true)
+  assert.equal(readlinkSync(join(profile, 'node_modules', 'dsh-openspec-flow')), plugin)
   assert.match(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8'), /reasoningEffort: high/u)
   assert.equal(statSync(join(home.dshHome, '.credentials.yaml')).mode & 0o777, 0o600)
   assert.equal(existsSync(join(home.agentsHome, 'skills')), true)
@@ -72,10 +86,16 @@ test('creates a marked home with profile and restricted credentials', (t) => {
 
 test('refuses to create without credentials', (t) => {
   const home = workspace(t)
+  const plugin = pluginCheckout(t)
   mkdirSync(home.source, { recursive: true })
-
   assert.throws(
-    () => createEvalHome({ root: home.dshHome, agentsRoot: home.agentsHome, sourceHome: home.source }),
+    () =>
+      createEvalHome({
+        root: home.dshHome,
+        agentsRoot: home.agentsHome,
+        sourceHome: home.source,
+        repoRoot: plugin,
+      }),
     /credentials not found/u,
   )
   assert.equal(existsSync(home.dshHome), false)
@@ -85,11 +105,18 @@ test('refuses to create without credentials', (t) => {
 test('refuses an unmarked existing root', (t) => {
   const home = workspace(t)
   credentials(home)
+  const plugin = pluginCheckout(t)
   mkdirSync(home.dshHome, { recursive: true })
   writeFileSync(join(home.dshHome, 'keep.txt'), 'user data\n')
 
   assert.throws(
-    () => createEvalHome({ root: home.dshHome, agentsRoot: home.agentsHome, sourceHome: home.source }),
+    () =>
+      createEvalHome({
+        root: home.dshHome,
+        agentsRoot: home.agentsHome,
+        sourceHome: home.source,
+        repoRoot: plugin,
+      }),
     /unmarked directory/u,
   )
   assert.equal(existsSync(join(home.dshHome, 'keep.txt')), true)
@@ -98,10 +125,12 @@ test('refuses an unmarked existing root', (t) => {
 test('applies and restores the home environment', (t) => {
   const home = workspace(t)
   credentials(home)
+  const plugin = pluginCheckout(t)
   const created = createEvalHome({
     root: home.dshHome,
     agentsRoot: home.agentsHome,
     sourceHome: home.source,
+    repoRoot: plugin,
   })
   const previous = applyHomeEnv(created)
   t.after(() => restoreHomeEnv(previous))
@@ -127,11 +156,13 @@ test('a blank DSH_HOME falls back to the default home', () => {
 test('cleans marked worker homes', (t) => {
   const home = workspace(t)
   credentials(home)
+  const plugin = pluginCheckout(t)
   for (let index = 0; index < 2; index += 1) {
     createEvalHome({
       root: join(home.root, `.dsh-home-worker-${index}`),
       agentsRoot: join(home.root, `.agents-home-worker-${index}`),
       sourceHome: home.source,
+      repoRoot: plugin,
     })
   }
 
@@ -141,4 +172,19 @@ test('cleans marked worker homes', (t) => {
   assert.equal(existsSync(join(home.root, '.dsh-home-worker-0')), false)
   assert.equal(existsSync(join(home.root, '.agents-home-worker-1')), false)
   assert.equal(existsSync(home.source), true)
+})
+
+test('requires a resolved plugin root', (t) => {
+  const home = workspace(t)
+  credentials(home)
+
+  assert.throws(
+    () =>
+      createEvalHome({
+        root: home.dshHome,
+        agentsRoot: home.agentsHome,
+        sourceHome: home.source,
+      }),
+    /createEvalHome requires a resolved plugin root/u,
+  )
 })

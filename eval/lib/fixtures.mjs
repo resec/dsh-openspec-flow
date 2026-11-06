@@ -21,10 +21,12 @@ import {
   writeFileSync,
   readFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { installSkills } from '../../lib/skills.js'
-import { FIXTURES_ROOT, REPO_ROOT, OPENSPEC_BIN } from './paths.mjs'
+import { pathToFileURL } from 'node:url'
+import { assertCommitReachable, resolvePluginRoot } from './plugin.mjs'
+import { FIXTURES_ROOT, openspecBin as resolveOpenspecBin } from './paths.mjs'
 import { fixtureDir, requestPath } from './registry.mjs'
 
 const SKILL_NAMES = [
@@ -36,6 +38,34 @@ const SKILL_NAMES = [
   'openspec-update-change',
 ]
 const FIXED_DATE = new Date('2026-01-01T00:00:00.000Z')
+
+const INSTALLERS = new Map()
+
+/**
+ * Load the plugin skill installer from the resolved plugin root.
+ *
+ * `require` of the plugin's ESM module works on the supported Node 24 runtime
+ * because `lib/skills.js` has no top-level await; this keeps prepareFixture
+ * synchronous and the skill text sourced from the tested checkout.
+ *
+ * @param pluginRoot - resolved plugin checkout.
+ * @returns the installer function.
+ */
+function installSkillsFrom(pluginRoot) {
+  const cached = INSTALLERS.get(pluginRoot)
+  if (cached !== undefined) return cached
+  const requireFromPlugin = createRequire(pathToFileURL(join(pluginRoot, 'package.json')))
+  const { installSkills } = requireFromPlugin('./lib/skills.js')
+  INSTALLERS.set(pluginRoot, installSkills)
+  return installSkills
+}
+
+/** Node modules root of the harness dependency tree. */
+function harnessNodeModules() {
+  const cli = resolveOpenspecBin()
+  // .../node_modules/@fission-ai/openspec/bin/openspec.js -> .../node_modules
+  return dirname(dirname(dirname(dirname(cli))))
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options })
@@ -60,12 +90,13 @@ function replaceSkills(destination, source) {
  * @param options - cache directory and CLI binary.
  * @returns the cache directory.
  */
-export function ensureOfficialSkills({ cacheDir, openspecBin = OPENSPEC_BIN }) {
+export function ensureOfficialSkills({ cacheDir, openspecBin = null }) {
   const marker = join(cacheDir, 'openspec-apply-change', 'SKILL.md')
   if (existsSync(marker)) return cacheDir
+  const cli = openspecBin ?? resolveOpenspecBin()
   const temp = mkdtempSync(join(tmpdir(), 'eval-official-'))
   try {
-    run(openspecBin, ['init', '--tools', 'dsh', '--no-animation'], {
+    run(cli, ['init', '--tools', 'dsh', '--no-animation'], {
       cwd: temp,
       env: { ...process.env, OPENSPEC_TELEMETRY: '0', OPENSPEC_NO_UPDATE_CHECK: '1' },
     })
@@ -78,10 +109,11 @@ export function ensureOfficialSkills({ cacheDir, openspecBin = OPENSPEC_BIN }) {
   return cacheDir
 }
 
-function extractGitFixture(fixture, destination) {
+function extractGitFixture(fixture, destination, pluginRoot) {
+  assertCommitReachable(pluginRoot, fixture.baseCommit)
   mkdirSync(destination, { recursive: true })
   const archive = spawnSync('git', ['archive', '--format=tar', fixture.baseCommit], {
-    cwd: REPO_ROOT,
+    cwd: pluginRoot,
     maxBuffer: 128 * 1024 * 1024,
   })
   if (archive.status !== 0) {
@@ -123,12 +155,11 @@ function initGit(destination, date = FIXED_DATE) {
   return run('git', ['rev-parse', 'HEAD'], { cwd: destination }).stdout.trim()
 }
 
-function copyNodeModules(destination) {
+function copyNodeModules(destination, sourceRoot = harnessNodeModules()) {
   const target = join(destination, 'node_modules')
   if (existsSync(target)) return
-  const source = join(REPO_ROOT, 'node_modules')
-  const result = spawnSync('cp', ['-al', source, target], { encoding: 'utf8' })
-  if (result.status !== 0) cpSync(source, target, { recursive: true })
+  const result = spawnSync('cp', ['-al', sourceRoot, target], { encoding: 'utf8' })
+  if (result.status !== 0) cpSync(sourceRoot, target, { recursive: true })
 }
 
 function prepareProbe(destination) {
@@ -255,7 +286,7 @@ export function injectAcceptance(fixture, destination) {
 
 /**
  * Prepare one fixture for one arm.
- * @param options - fixture, arm, destination, official skills and repository root.
+ * @param options - fixture, arm, destination, official skills, plugin root and date.
  * @returns preparation metadata.
  */
 export function prepareFixture({
@@ -263,16 +294,17 @@ export function prepareFixture({
   arm,
   destination,
   officialSkillsDir = null,
-  repoRoot = REPO_ROOT,
+  pluginRoot = null,
   date = FIXED_DATE,
 }) {
+  const resolvedPlugin = pluginRoot ?? resolvePluginRoot().root
   rmSync(destination, { recursive: true, force: true })
   mkdirSync(destination, { recursive: true })
 
   if (fixture.kind === 'synthetic') {
     copySyntheticFixture(fixture, destination)
   } else {
-    extractGitFixture(fixture, destination)
+    extractGitFixture(fixture, destination, resolvedPlugin)
   }
   rmSync(join(destination, '.git'), { recursive: true, force: true })
   archiveUnrelatedChanges(destination, fixture.changeName)
@@ -291,7 +323,7 @@ export function prepareFixture({
   } else if (fixture.skillSource === 'fixture') {
     replaceSkills(destination, join(destination, 'skills'))
   } else {
-    installSkills(destination, { now: date })
+    installSkillsFrom(resolvedPlugin)(destination, { now: date })
     rmSync(join(destination, '.dsh', 'openspec-flow-backup'), { recursive: true, force: true })
   }
 
@@ -302,6 +334,7 @@ export function prepareFixture({
     arm,
     destination,
     commit,
+    pluginRoot: resolvedPlugin,
     request: readFileSync(requestPath(fixture), 'utf8'),
     skills: fixture.skillSource,
   }

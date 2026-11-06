@@ -21,7 +21,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { EVAL_ROOT, REPO_ROOT } from './paths.mjs'
+import { EVAL_ROOT } from './paths.mjs'
 
 /** Default private DSH home. */
 export const DEFAULT_DSH_HOME = join(EVAL_ROOT, '.dsh-home')
@@ -116,15 +116,19 @@ function writeProfile(root, repoRoot) {
 /**
  * Create both private roots, the generated profile and the credentials copy.
  *
- * @param options - root, agents root, source home and repository root.
+ * @param options - root, agents root, source home and resolved plugin root.
  * @returns the created roots and profile path.
  */
 export function createEvalHome({
   root = DEFAULT_DSH_HOME,
   agentsRoot = DEFAULT_AGENTS_HOME,
   sourceHome = DEFAULT_SOURCE_HOME,
-  repoRoot = REPO_ROOT,
+  repoRoot,
 } = {}) {
+  if (typeof repoRoot !== 'string' || repoRoot === '') {
+    throw new Error('createEvalHome requires a resolved plugin root')
+  }
+  const pluginRoot = resolve(repoRoot)
   const dshHome = resolve(root)
   const agentsHome = resolve(agentsRoot)
   const source = resolve(sourceHome)
@@ -139,7 +143,7 @@ export function createEvalHome({
     prepareRoot(dshHome, DSH_KIND)
     prepareRoot(agentsHome, AGENTS_KIND)
     mkdirSync(join(agentsHome, 'skills'), { recursive: true })
-    const profile = writeProfile(dshHome, repoRoot)
+    const profile = writeProfile(dshHome, pluginRoot)
     const target = join(dshHome, '.credentials.yaml')
     copyFileSync(credentials, target)
     chmodSync(target, 0o600)

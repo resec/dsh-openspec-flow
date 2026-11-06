@@ -9,9 +9,9 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DSH_BIN, OPENSPEC_BIN, PATCHES_ROOT, PROFILE } from './paths.mjs'
+import { DSH_BIN, openspecBin, PATCHES_ROOT, PROFILE } from './paths.mjs'
 
 const SUBAGENT_ROWS = [
   'subagent',
@@ -137,8 +137,10 @@ export function dumpConfig({ arm, model, dshBin = DSH_BIN, env = {} }) {
  */
 export function preflight({ arm, model, dshBin = DSH_BIN, env = {} }) {
   const issues = checkDump(parseDump(dumpConfig({ arm, model, dshBin, env })), { arm, model })
-  if (!existsSync(OPENSPEC_BIN)) {
-    issues.push(`OpenSpec CLI is missing: ${OPENSPEC_BIN}`)
+  try {
+    openspecBin()
+  } catch (error) {
+    issues.push(error.message)
   }
   return issues
 }

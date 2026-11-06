@@ -8,15 +8,16 @@
  * @module eval/lib/paths
  */
 
+import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const require = createRequire(import.meta.url)
 
 /** Absolute `eval/` directory. */
 export const EVAL_ROOT = fileURLToPath(new URL('..', import.meta.url))
-
-/** Absolute plugin repository root. */
-export const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 /** Fixture manifests and synthetic templates. */
 export const FIXTURES_ROOT = join(EVAL_ROOT, 'fixtures')
@@ -30,8 +31,34 @@ export const RUNS_ROOT = join(EVAL_ROOT, 'runs')
 /** Cached generated assets such as official skills. */
 export const CACHE_ROOT = join(EVAL_ROOT, '.cache')
 
-/** Pinned OpenSpec CLI binary used by the official arm. */
-export const OPENSPEC_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'openspec')
+let openspecBinPath
+
+/**
+ * Resolve the pinned OpenSpec CLI from the harness dependency tree.
+ *
+ * Resolution is lazy so help, list and dry-run paths work without an
+ * installed CLI, and the first successful lookup is cached.
+ *
+ * @returns absolute path to the CLI entry.
+ */
+export function openspecBin({ resolveEntry = require.resolve, exists = existsSync } = {}) {
+  if (openspecBinPath !== undefined) return openspecBinPath
+  let entry
+  try {
+    entry = resolveEntry('@fission-ai/openspec')
+  } catch (cause) {
+    throw new Error(
+      'OpenSpec CLI is not installed for the eval harness; run npm install in the harness repository',
+      { cause },
+    )
+  }
+  const binary = join(dirname(dirname(entry)), 'bin', 'openspec.js')
+  if (!exists(binary)) {
+    throw new Error(`OpenSpec CLI entry is missing: ${binary}`)
+  }
+  openspecBinPath = binary
+  return openspecBinPath
+}
 
 /** DSH launcher; tests replace it with a fake executable. */
 export const DSH_BIN = process.env.DSH_BIN ?? 'dsh'

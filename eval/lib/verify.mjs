@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { inspectStage } from './flow.mjs'
-import { OPENSPEC_BIN } from './paths.mjs'
+import { openspecBin as resolveOpenspecBin } from './paths.mjs'
 
 function execute(command, args, { cwd, timeoutMs, env = {} }) {
   const childEnv = { ...process.env, ...env }
@@ -59,7 +59,7 @@ export function runGates({
   changeName,
   outDir,
   acceptanceDir = null,
-  openspecBin = OPENSPEC_BIN,
+  openspecBin = resolveOpenspecBin(),
   timeoutMs = 120_000,
 }) {
   mkdirSync(outDir, { recursive: true })

@@ -92,3 +92,32 @@ test('writes per-run and aggregate sections with artifact paths', (t) => {
   assert.equal(json.aggregates.fixtures.length, 2)
   assert.equal(json.config.model.model, 'deepseek-flash')
 })
+
+test('reports plugin provenance when git metadata is absent', (t) => {
+  const outDir = mkdtempSync(join(tmpdir(), 'eval-report-'))
+  t.after(() => rmSync(outDir, { recursive: true, force: true }))
+
+  const runs = []
+  for (const total of [1000, 1100, 1200]) runs.push(run('separated', 'official', runs.length, total))
+  for (const total of [800, 850, 900]) runs.push(run('separated', 'plugin', runs.length, total))
+  runs[0].plugin = { root: '/tmp/plugin', version: '0.1.0', commit: null, dirty: true }
+
+  const result = writeReport({
+    outDir,
+    config: {
+      fixtures: ['separated'],
+      arms: ['official', 'plugin'],
+      runs: 3,
+      out: outDir,
+      timeoutMs: 45 * 60 * 1000,
+      budgetTokensPerRun: 8_000_000,
+      model: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' },
+    },
+    runs,
+    startedAt: '2026-11-06T00:00:00.000Z',
+    finishedAt: '2026-11-06T01:00:00.000Z',
+  })
+
+  const markdown = readFileSync(result.reportPath, 'utf8')
+  assert.match(markdown, /Plugin: 0\.1\.0 at no git metadata \(dirty\); root \/tmp\/plugin/u)
+})

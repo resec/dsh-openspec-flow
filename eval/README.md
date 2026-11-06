@@ -9,12 +9,12 @@
 
 ## 前置条件
 
-- 在插件仓库执行过 `npm install`（固定 `@fission-ai/openspec` 1.16.0）。
+- 在 harness 所在仓库执行过 `npm install`，并能解析到固定的 `@fission-ai/openspec` 1.16.0（当前布局为插件仓库；独立后为评测仓库自身）。
 - 本机 `~/.dsh/.credentials.yaml` 存在，或通过 `--source-home` 指定包含该文件的目录。harness 会把它复制到私有 home，并以 `0600` 权限保存。
 - 不需要手工创建 `headless` profile：harness 在私有 home 里生成 profile、bundle 列表和模型配置。
 - 从本仓库根目录运行；私有 home、`eval/runs` 和缓存的写入都发生在工作区内。
 - 真实调用会计费。默认模型 `deepseek-account/deepseek-flash`，`reasoningEffort=high`。
-- 真实夹具的准备与单测依赖本仓库的基线提交，以及 POSIX 的 `git` 与 `tar`。
+- 真实夹具的准备与单测依赖被测插件的基线提交，以及 POSIX 的 `git` 与 `tar`。
 
 ## 命令
 
@@ -37,11 +37,30 @@ node eval/run.mjs --execute --timeout-min 30 --budget 5000000
 # 指定凭据来源，或保留私有 home 调试
 node eval/run.mjs --execute --source-home /path/to/home --keep-home
 
+# 指定被测插件 checkout
+node eval/run.mjs --execute --plugin-root /path/to/dsh-openspec-flow
+
+# 本地没有 checkout 时显式 clone（仅在 --execute 时执行）
+node eval/run.mjs --execute --clone --plugin-ref main
+
 # 清理崩溃后遗留的私有 home
 npm run eval:clean
 ```
 
 没有 `--execute` 时，脚本只打印矩阵，不会启动 `dsh`，也不会产生费用。
+
+## 插件来源
+
+harness 不假设自身位于插件仓库内。解析顺序：
+
+1. `--plugin-root <dir>`
+2. `EVAL_PLUGIN_ROOT`
+3. 同级 `../dsh-openspec-flow`
+4. 当前仓库根
+
+所选目录必须包含 `package.json.name = dsh-openspec-flow`。解析结果写入计划输出、`run.json` 与 `report.md`，包含版本、commit 与 dirty 状态；非 git 目录的 commit 与 dirty 为空。
+
+本地没有 checkout 时，`--clone` 会在 `--execute` 前完整 clone `git@github.com:resec/dsh-openspec-flow.git` 到 `eval/.plugin/`，再 checkout `--plugin-ref`（默认 `main`）。dry run 只打印 clone 计划，不联网；`--clone` 也不在离线测试中执行。
 
 ## 隔离 home
 
@@ -78,7 +97,7 @@ harness 测试不调用真实模型；日常插件开发只需 `npm test`。
 | `policy-rule` | 真实 | 基线 `14dada0`，参考 `3f30caf` | 作用域 OpenSpec 策略；基线无 `lib/policy.js` |
 | `skill-command-maps` | 真实 | 基线 `4a3b507`，参考 `6fd4df3` | 移除六份打包技能中的命令映射；`skillSource: fixture` |
 
-真实夹具用 `git archive <base>` 从本仓库历史取出基线，再初始化固定提交；目标变更与隐藏验收在运行前都不在夹具里。真实夹具的请求文本会说明隐藏验收依赖的 API 或文件位置。
+真实夹具用 `git archive <base>` 从被测插件的 git 历史取出基线，再初始化固定提交；准备前会校验基线提交在被测 checkout 中可达。目标变更与隐藏验收在运行前都不在夹具里。真实夹具的请求文本会说明隐藏验收依赖的 API 或文件位置。
 
 ## 输出
 
@@ -89,7 +108,7 @@ harness 测试不调用真实模型；日常插件开发只需 `npm test`。
 - `<runId>/rounds/`：每轮的 NDJSON 与 stderr。
 - `<runId>/session.v4.jsonl.zstd`：会话日志副本，token 与工具数据的来源。
 - `<runId>/gates/`：仓库测试、隐藏验收、`openspec validate --strict` 的日志。
-- `<runId>/diff.patch`、`<runId>/run.json`：变更与指标记录。
+- `<runId>/diff.patch`、`<runId>/run.json`：变更、指标与插件溯源记录（`plugin.root`、`version`、`commit`、`dirty`）。
 
 ## 判定
 
@@ -122,6 +141,7 @@ harness 测试不调用真实模型；日常插件开发只需 `npm test`。
 - 真正跑矩阵前会先做 `--dump-config` 预检；工具面在首轮请求头里再次核对。
 - 私有 home 中的凭据副本以 `0600` 保存，随 home 一起删除；不要把它加入版本控制或复制到别处。
 - `DSH_AGENTS_HOME` 为空意味着用户级 skills 与 `AGENTS.md` 不参与评测；这是受控对比的有意选择。
+- `--clone` 是唯一的网络路径，只在 `--execute` 前执行；dry run 与离线测试都不会 clone。
 
 ## 已知缺口
 
@@ -129,3 +149,4 @@ harness 测试不调用真实模型；日常插件开发只需 `npm test`。
 - 还没有价格表，报告只报 token 分类。
 - 解析器只累加 `assistant/message` 的 provider usage；如果未来重试把用量写进 `assistant/attempt`，需要补入。
 - 合成夹具的隐藏验收是行为契约，不覆盖实现风格。
+- 同级探测在多 checkout 的机器上可能选错目录；用 `--plugin-root` 覆盖，报告会记录实际选择。

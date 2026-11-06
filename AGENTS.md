@@ -33,7 +33,8 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 - `eval/` is a manual real-model harness. `npm test` and `npm run test:eval` must stay offline: never add a real provider call or `dsh` invocation to either suite.
 - Do not run `eval/run.mjs --execute` unless the user explicitly asks; it spends provider tokens. A dry run (`npm run eval:dry`) is free.
-- Real fixtures pin base and reference commits from this repository's history. Do not rewrite those commits; if a fixture needs a new base, update its manifest and tests together.
+- Real fixtures pin base and reference commits from the tested plugin's history. Do not rewrite those commits; if a fixture needs a new base, update its manifest and tests together.
+- The harness resolves the tested plugin from `--plugin-root`, `EVAL_PLUGIN_ROOT`, a sibling checkout, or the current repository root, validates the package name, and records the plugin version, commit and dirty state in every run record and report. `--clone` is the only network path, runs only before `--execute`, and must never appear in a test suite.
 - Hidden acceptance lives under `eval/fixtures/<id>/acceptance/` and is injected only after a run. Keep it out of the fixture tree and out of the request text's file list.
 - Real runs use a generated `headless` profile under `eval/.dsh-home` and an empty `eval/.agents-home`; the harness copies `~/.dsh/.credentials.yaml` (or `--source-home`), removes both roots afterward, and never writes to the default `~/.dsh`.
 - `--concurrency <n>` gives each worker its own home and profile. Start with 2, watch provider retries and invalid cells, and remember that concurrency changes wall time only, not token cost.

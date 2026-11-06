@@ -3,11 +3,10 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, write
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { EVAL_ROOT } from '../lib/paths.mjs'
 import { runGates } from '../lib/verify.mjs'
 
-const REPO = fileURLToPath(new URL('../..', import.meta.url))
-const ARCHIVED_CHANGE = join(REPO, 'openspec/changes/archive/2026-11-05-add-scoped-flow-policy')
+const ARCHIVED_CHANGE = join(EVAL_ROOT, 'fixtures', 'verify-change')
 
 const PASS = `import assert from 'node:assert/strict'\nimport test from 'node:test'\ntest('ok', () => assert.equal(1, 1))\n`
 const FAIL = `import assert from 'node:assert/strict'\nimport test from 'node:test'\ntest('bad', () => assert.equal(1, 2))\n`

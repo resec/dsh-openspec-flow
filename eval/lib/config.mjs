@@ -4,8 +4,10 @@
  * @module eval/lib/config
  */
 
+import { join } from 'node:path'
 import { DEFAULT_AGENTS_HOME, DEFAULT_DSH_HOME, DEFAULT_SOURCE_HOME } from './dsh-home.mjs'
-import { RUNS_ROOT } from './paths.mjs'
+import { DEFAULT_PLUGIN_REF, DEFAULT_PLUGIN_URL, resolvePluginRoot } from './plugin.mjs'
+import { EVAL_ROOT, RUNS_ROOT } from './paths.mjs'
 import { FIXTURES } from './registry.mjs'
 
 /** Defaults shared by a dry run and a real run. */
@@ -67,6 +69,9 @@ export function parseArgs(argv) {
     agentsHome: null,
     sourceHome: null,
     keepHome: false,
+    pluginRoot: null,
+    clone: false,
+    pluginRef: null,
   }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -113,6 +118,15 @@ export function parseArgs(argv) {
       case '--source-home':
         options.sourceHome = requireValue(argv, (index += 1), arg)
         break
+      case '--plugin-root':
+        options.pluginRoot = requireValue(argv, (index += 1), arg)
+        break
+      case '--clone':
+        options.clone = true
+        break
+      case '--plugin-ref':
+        options.pluginRef = requireValue(argv, (index += 1), arg)
+        break
       case '--keep-home':
         options.keepHome = true
         break
@@ -126,9 +140,10 @@ export function parseArgs(argv) {
 /**
  * Resolve parsed options into a complete matrix configuration.
  * @param options - parsed command-line options.
+ * @param dependencies - injectable plugin resolver for tests.
  * @returns the resolved configuration.
  */
-export function resolveConfig(options) {
+export function resolveConfig(options, { resolvePlugin = resolvePluginRoot } = {}) {
   const known = new Set(FIXTURES.map((fixture) => fixture.id))
   const fixtures = options.fixtures.length > 0 ? options.fixtures : [...known]
   for (const id of fixtures) {
@@ -138,6 +153,21 @@ export function resolveConfig(options) {
   for (const arm of arms) {
     if (arm !== 'official' && arm !== 'plugin') throw new Error(`unknown arm: ${arm}`)
   }
+  let plugin
+  try {
+    plugin = resolvePlugin({ explicit: options.pluginRoot })
+  } catch (error) {
+    if (!options.clone) throw error
+    plugin = { root: null, source: 'clone' }
+  }
+  const clone =
+    plugin.root === null
+      ? {
+          url: DEFAULT_PLUGIN_URL,
+          ref: options.pluginRef ?? DEFAULT_PLUGIN_REF,
+          destination: join(EVAL_ROOT, '.plugin'),
+        }
+      : null
   return {
     ...DEFAULT_CONFIG,
     fixtures,
@@ -152,6 +182,9 @@ export function resolveConfig(options) {
     sourceHome: options.sourceHome ?? DEFAULT_SOURCE_HOME,
     keepHome: options.keepHome,
     execute: options.execute,
+    pluginRoot: plugin.root,
+    pluginSource: plugin.source,
+    clone,
   }
 }
 
@@ -202,6 +235,9 @@ Options:
   --home <dir>         Private DSH_HOME. Default: eval/.dsh-home.
   --agents-home <dir>  Private DSH_AGENTS_HOME. Default: eval/.agents-home.
   --source-home <dir>  Home holding .credentials.yaml. Default: ~/.dsh.
+  --plugin-root <dir>  Tested plugin checkout. Default: sibling or repository root.
+  --clone              Clone the plugin when no local root resolves.
+  --plugin-ref <ref>   Ref checked out by --clone. Default: main.
   --keep-home          Keep the private roots after the matrix.
   --execute            Run the matrix. Without it, print the plan only.
   --list               List fixtures and exit.
