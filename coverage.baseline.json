@@ -4,43 +4,25 @@
     "version": "v24.22.2",
     "range": ">=24.9.0"
   },
-  "commit": "4399bbd",
+  "commit": "7cb4e99",
   "missing": [],
   "scopes": {
     "plugin": {
       "line": {
-        "pct": 95.8893,
-        "hits": 3639,
+        "pct": 95.942,
+        "hits": 3641,
         "total": 3795
       },
       "branch": {
-        "pct": 86.7105,
+        "pct": 86.8248,
         "hits": 659,
-        "total": 760
+        "total": 759
       },
       "function": {
         "pct": 96.2567,
         "hits": 180,
         "total": 187
       }
-    },
-    "eval": {
-      "line": {
-        "pct": 95.8104,
-        "hits": 2607,
-        "total": 2721
-      },
-      "branch": {
-        "pct": 87.4016,
-        "hits": 555,
-        "total": 635
-      },
-      "function": {
-        "pct": 95.098,
-        "hits": 194,
-        "total": 204
-      }
     }
-  },
-  "reason": "coverage variance after adding gate tests"
+  }
 }

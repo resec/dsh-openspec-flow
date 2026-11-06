@@ -1,0 +1,6 @@
+schema: spec-driven
+retire_capabilities: true
+created: 2026-11-06
+goal: Retire the plugin repository's evaluation harness now that the
+  dsh-openspec-flow-eval repository owns it, leaving the plugin repository's
+  tests and coverage gate scoped to plugin code only.

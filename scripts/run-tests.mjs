@@ -23,12 +23,6 @@ const SCOPES = {
     exclude: ['test/**'],
     lcov: '.coverage/plugin.info',
   },
-  eval: {
-    testDir: 'eval/test',
-    include: ['eval/lib/**', 'eval/run.mjs'],
-    exclude: ['eval/test/**', 'eval/fixtures/**'],
-    lcov: '.coverage/eval.info',
-  },
 }
 
 function listTests(directory) {
@@ -75,12 +69,12 @@ function main() {
     throw new Error(`unknown arguments: ${unknown.join(' ')}`)
   }
   if (scope !== 'all' && !Object.hasOwn(SCOPES, scope)) {
-    throw new Error(`unknown scope: ${scope}; use plugin, eval, or all`)
+    throw new Error(`unknown scope: ${scope}; use plugin or all`)
   }
 
   assertCurrentNode()
 
-  const scopes = scope === 'all' ? ['plugin', 'eval'] : [scope]
+  const scopes = scope === 'all' ? Object.keys(SCOPES) : [scope]
   let failed = false
   for (const name of scopes) {
     const status = runScope(name, coverage, extra)

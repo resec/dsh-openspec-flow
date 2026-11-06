@@ -94,14 +94,7 @@ CLI 来源固定：
 
 ## 真实模型评测
 
-`eval/` 提供手动触发的真实模型对照 harness：同一夹具、同一模型、同一提示词，只切换官方技能 + CLI 与插件两条路径，统计 provider usage、流程摩擦与正确性门禁。默认只打印计划；加 `--execute` 才会调用模型并计费。它不接入 CI，真实调用也不进入 `npm test`。
-
-```sh
-npm run eval:dry    # 只打印矩阵
-npm run eval:pilot  # 每个夹具、每个臂跑 1 次
-```
-
-夹具、指标口径、输出结构与已知限制见 [eval/README.md](eval/README.md)。
+评测 harness 已迁至独立仓库 `dsh-openspec-flow-eval`，该仓库包含 harness 规格、夹具、离线测试与覆盖率门禁。本仓库不再包含 `eval/`，也不再提供 `eval:*` 命令。
 
 ## 验证
 

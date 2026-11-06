@@ -32,16 +32,10 @@
   ],
   "scripts": {
     "test": "node scripts/run-tests.mjs plugin",
-    "test:eval": "node scripts/run-tests.mjs eval",
-    "test:all": "node scripts/run-tests.mjs all",
     "coverage": "node scripts/coverage.mjs",
     "coverage:check": "node scripts/coverage.mjs --check",
     "coverage:baseline": "node scripts/coverage.mjs --update-baseline",
-    "hooks:install": "node scripts/install-hooks.mjs",
-    "eval:dry": "node eval/run.mjs",
-    "eval:pilot": "node eval/run.mjs --execute --runs 1",
-    "eval:matrix": "node eval/run.mjs --execute",
-    "eval:clean": "node eval/clean.mjs"
+    "hooks:install": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": "1.16.0"

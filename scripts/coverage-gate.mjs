@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Coverage gate for the plugin and eval scopes.
+ * Coverage gate for the plugin scope.
  *
  * The gate never runs tests. It reads the lcov files produced by the
  * instrumented test run, validates the recorded Node version, and applies the
@@ -19,10 +19,6 @@ const SCOPES = {
   plugin: {
     lcov: '.coverage/plugin.info',
     isSource: (file) => file === 'index.js' || (file.startsWith('lib/') && file.endsWith('.js')),
-  },
-  eval: {
-    lcov: '.coverage/eval.info',
-    isSource: (file) => file === 'eval/run.mjs' || (file.startsWith('eval/lib/') && file.endsWith('.mjs')),
   },
 }
 

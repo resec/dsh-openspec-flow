@@ -17,11 +17,5 @@ coverage/
 # Local skill migration backups
 .dsh/openspec-flow-backup/
 
-# Evaluation output and generated caches
-eval/runs/
-eval/.cache/
-eval/.dsh-home*/
-eval/.agents-home*/
-
 # OS metadata
 .DS_Store
