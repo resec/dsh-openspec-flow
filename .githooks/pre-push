@@ -1,0 +1,7 @@
+#!/bin/sh
+# Local coverage gate. Requires Node 24 on PATH; no version manager is invoked.
+if [ "${COVERAGE_SKIP:-}" = "1" ]; then
+  echo "coverage gate: skipped because COVERAGE_SKIP=1" >&2
+  exit 0
+fi
+exec npm run coverage:check

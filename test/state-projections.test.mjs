@@ -1,0 +1,277 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  projectApply,
+  projectContext,
+  projectInstructions,
+  projectList,
+  projectMark,
+  projectSchemas,
+  projectShow,
+  projectSpecList,
+  projectStatus,
+  projectStoreList,
+  projectValidate,
+  projectValidationReport,
+} from '../lib/state.js'
+
+test('projectApply handles an empty next task and absent optional fields', () => {
+  const minimal = projectApply({
+    tasks: [],
+    payload: { changeName: 'c', schemaName: 's', state: 'ready', progress: {} },
+  })
+  assert.equal(minimal.next, undefined)
+  assert.deepEqual(minimal.contextFiles, {})
+  assert.equal(minimal.instruction, undefined)
+  assert.equal(minimal.missingArtifacts, undefined)
+  assert.equal(minimal.warnings, undefined)
+
+  const full = projectApply({
+    tasks: [{ id: '1.1', description: 'one', done: false, sourcePath: 'x', line: 1, numericId: '1.1' }],
+    payload: {
+      changeName: 'c',
+      schemaName: 's',
+      state: 'ready',
+      progress: { total: 1, complete: 0, remaining: 1 },
+      contextFiles: { tasks: ['a', 2], docs: 'not-an-array' },
+      instruction: '',
+      missingArtifacts: [],
+      warnings: ['w'],
+    },
+  })
+  assert.deepEqual(full.contextFiles, { tasks: ['a'] })
+  assert.equal(full.instruction, undefined)
+  assert.deepEqual(full.warnings, ['w'])
+})
+
+test('projectApply normalizes malformed contextFiles', () => {
+  for (const contextFiles of [null, [], 'text', { tasks: null }]) {
+    const result = projectApply({ tasks: [], payload: { contextFiles } })
+    assert.deepEqual(result.contextFiles, {})
+  }
+})
+
+test('projectMark projects a missing next task', () => {
+  const result = projectMark({ tasks: [], payload: { changeName: 'c', state: 'ready', progress: {} } }, { status: 'flipped' }, '1.1')
+  assert.equal(result.next, undefined)
+  assert.equal(result.taskId, '1.1')
+})
+
+test('projectStatus handles missing optional sections', () => {
+  const result = projectStatus({ changeName: 'c', schemaName: 's' })
+  assert.deepEqual(result, {
+    change: 'c',
+    schema: 's',
+    changeRoot: '',
+    isPlanningComplete: false,
+    isComplete: false,
+    applyRequires: [],
+    artifacts: [],
+  })
+})
+
+test('projectStatus projects every optional section', () => {
+  const result = projectStatus({
+    changeName: 'c',
+    schemaName: 's',
+    changeRoot: '/changes/c',
+    planningHome: { root: '/home' },
+    isPlanningComplete: true,
+    isComplete: true,
+    applyRequires: ['tasks'],
+    artifacts: [{ id: 'a', status: 'done' }, { id: 'b', status: 'ready', requires: ['a'] }],
+    actionContext: {
+      mode: 'repo-local',
+      sourceOfTruth: 'repo',
+      allowedEditRoots: ['/root'],
+      requiresAffectedAreaSelection: false,
+      constraints: ['c1'],
+    },
+    nextSteps: ['next'],
+    root: { path: '/root', source: 'nearest' },
+  })
+  assert.equal(result.planningHome, '/home')
+  assert.deepEqual(result.artifacts[0].requires, [])
+  assert.deepEqual(result.artifacts[1].requires, ['a'])
+  assert.equal(result.actionContext.mode, 'repo-local')
+  assert.deepEqual(result.nextSteps, ['next'])
+  assert.deepEqual(result.root, { path: '/root', source: 'nearest' })
+})
+
+test('projectStatus skips absent optional sections', () => {
+  const result = projectStatus({
+    changeName: 'c',
+    schemaName: 's',
+    artifacts: [{}],
+    actionContext: {},
+    planningHome: {},
+    root: null,
+  })
+  assert.deepEqual(result.artifacts, [{ id: 'undefined', status: 'undefined', requires: [] }])
+  assert.equal(result.actionContext, undefined)
+  assert.equal(result.planningHome, undefined)
+  assert.equal(result.root, undefined)
+})
+
+test('projectStatus rejects an unexpected payload', () => {
+  assert.throws(() => projectStatus({}), /unexpected payload/)
+})
+
+test('projectList handles an absent root and status messages', () => {
+  const result = projectList({
+    root: null,
+    status: [{ message: 'no root' }, {}, { message: 3 }],
+  })
+  assert.equal(result.setup, false)
+  assert.equal(result.issue, 'no root')
+  assert.deepEqual(result.changes, [])
+})
+
+test('projectList tolerates malformed changes', () => {
+  const result = projectList({
+    root: { path: '/root', source: 'nearest' },
+    changes: [{}, { name: 'n', completedTasks: '2', totalTasks: 3, status: 'ready' }],
+  })
+  assert.equal(result.setup, true)
+  assert.deepEqual(result.changes, [
+    { name: 'undefined', completedTasks: 0, totalTasks: 0, status: 'undefined' },
+    { name: 'n', completedTasks: 2, totalTasks: 3, status: 'ready' },
+  ])
+  assert.equal(result.issue, undefined)
+})
+
+test('projectSpecList handles an absent root and malformed specs', () => {
+  const result = projectSpecList({
+    root: null,
+    status: [{ message: 'no root' }],
+    specs: [{}],
+  })
+  assert.equal(result.setup, false)
+  assert.equal(result.issue, 'no root')
+  assert.deepEqual(result.specs, [{ id: 'undefined', requirementCount: 0 }])
+})
+
+test('projectContext handles missing arrays and mixed status items', () => {
+  const result = projectContext({ status: [{ message: 'm' }, 'plain', null, { message: '' }] })
+  assert.equal(result.setup, false)
+  assert.deepEqual(result.members, [])
+  assert.deepEqual(result.status, ['m', 'plain', 'null'])
+})
+
+test('projectSchemas handles a non-array payload and missing fields', () => {
+  assert.deepEqual(projectSchemas(null), { schemas: [] })
+  assert.deepEqual(projectSchemas([{}]), { schemas: [{ name: '', description: '', artifacts: [], source: '' }] })
+  assert.deepEqual(projectSchemas([{ name: 'x', artifacts: 'no' }]), {
+    schemas: [{ name: 'x', description: '', artifacts: [], source: '' }],
+  })
+})
+
+test('projectStoreList handles missing stores and absent metadata', () => {
+  assert.deepEqual(projectStoreList({}), { stores: [], status: [] })
+  assert.deepEqual(projectStoreList({ stores: [{}], status: [{}] }), {
+    stores: [{ id: '', root: '' }],
+    status: ['[object Object]'],
+  })
+})
+
+test('projectShow handles a minimal spec and missing requirement fields', () => {
+  const spec = projectShow({ id: 's', requirements: [{}] })
+  assert.equal(spec.kind, 'spec')
+  assert.deepEqual(spec.requirements, [{ name: '', text: '', scenarios: [] }])
+  assert.equal(spec.root, undefined)
+
+  const scenario = projectShow({
+    id: 's',
+    requirements: [{ scenarios: [{}, { name: 'n' }] }],
+  })
+  assert.deepEqual(scenario.requirements[0].scenarios[0], { name: '' })
+})
+
+test('projectShow handles a minimal change and missing delta fields', () => {
+  const change = projectShow({ id: 'c', deltas: [{}] })
+  assert.equal(change.kind, 'change')
+  assert.deepEqual(change.deltas, [{ spec: '', operation: '', requirements: [] }])
+  assert.equal(change.root, undefined)
+})
+
+test('projectInstructions handles missing fields and non-array lists', () => {
+  const result = projectInstructions({
+    existingOutputPaths: ['a', 1],
+    instruction: 'Use `openspec list`.',
+    dependencies: 'no',
+    unlocks: null,
+    root: null,
+  }, 'proposal')
+  assert.deepEqual(result.existingOutputPaths, ['a'])
+  assert.match(result.instruction, /openspec_list/)
+  assert.deepEqual(result.dependencies, [])
+  assert.deepEqual(result.unlocks, [])
+  assert.equal(result.resolvedOutputPath, undefined)
+  assert.equal(result.root, undefined)
+})
+
+test('projectValidationReport handles empty and malformed items', () => {
+  assert.deepEqual(projectValidationReport({}, 'all'), { scope: 'all', valid: true, items: [] })
+  const result = projectValidationReport({
+    items: [{}],
+    root: null,
+  }, 'all')
+  assert.equal(result.valid, false)
+  assert.deepEqual(result.items, [{ id: '', type: '', valid: false, issues: [] }])
+  assert.equal(result.root, undefined)
+})
+
+test('projectValidate falls back to the first item and rejects an empty list', () => {
+  const result = projectValidate({ items: [{ id: 'other' }] }, 'missing')
+  assert.equal(result.change, 'other')
+  assert.equal(result.valid, false)
+  assert.deepEqual(result.issues, [])
+  assert.throws(() => projectValidate({ items: [] }, 'missing'), /did not return an item/)
+})
+
+test('projectList and projectSpecList tolerate a non-array status', () => {
+  const list = projectList({ root: null, status: null, changes: [] })
+  assert.equal(list.issue, undefined)
+  const specs = projectSpecList({ root: null, status: null, specs: [] })
+  assert.equal(specs.issue, undefined)
+  assert.deepEqual(projectSpecList({ root: null }).specs, [])
+})
+
+test('projectShow tolerates absent arrays', () => {
+  const spec = projectShow({})
+  assert.equal(spec.kind, 'spec')
+  assert.deepEqual(spec.requirements, [])
+  const change = projectShow({ deltas: [] })
+  assert.equal(change.kind, 'change')
+  assert.deepEqual(change.deltas, [])
+})
+
+test('projectInstructions defaults every absent field', () => {
+  const result = projectInstructions({}, 'proposal')
+  assert.equal(result.change, '')
+  assert.equal(result.artifact, 'proposal')
+  assert.equal(result.schema, '')
+  assert.equal(result.outputPath, '')
+  assert.deepEqual(result.existingOutputPaths, [])
+  assert.equal(result.description, '')
+  assert.equal(result.instruction, '')
+  assert.deepEqual(result.dependencies, [])
+  assert.deepEqual(result.unlocks, [])
+  assert.equal(result.root, undefined)
+})
+
+test('projectValidationReport and projectValidate default missing issue fields', () => {
+  const report = projectValidationReport({ items: [{ id: 'x', issues: [{}] }] }, 'all')
+  assert.deepEqual(report.items[0].issues, [{ level: '', path: '', message: '' }])
+  const validate = projectValidate({ items: [{ id: 'x', issues: [{}] }] }, 'x')
+  assert.deepEqual(validate.issues, [{ level: '', path: '', message: '' }])
+  assert.equal(projectValidate({ items: [{}] }, 'x').change, 'x')
+  assert.throws(() => projectValidate({}, 'x'), /did not return an item/)
+})
+
+test('projectContext tolerates an absent status array', () => {
+  const result = projectContext({})
+  assert.equal(result.setup, false)
+  assert.deepEqual(result.members, [])
+  assert.deepEqual(result.status, [])
+})

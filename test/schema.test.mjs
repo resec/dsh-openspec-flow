@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { assertBuiltinSchema, BUILTIN_SCHEMA, userSchemasDir } from '../lib/schema.js'
+import { assertBuiltinSchema, BUILTIN_SCHEMA, projectRootFromStatus, userSchemasDir } from '../lib/schema.js'
 
 function makeRoot() {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-schema-'))
@@ -99,4 +99,21 @@ test('fails closed when no project root can be resolved', () => {
     () => assertBuiltinSchema('spec-driven', '', 'demo'),
     /no project root was resolved/,
   )
+})
+
+
+test('resolves a project root from planningHome or changeRoot', () => {
+  assert.equal(projectRootFromStatus({ planningHome: { root: '/project' } }), '/project')
+  assert.equal(projectRootFromStatus({ changeRoot: '/project/openspec/changes/c' }), '/project')
+  assert.equal(projectRootFromStatus({}), '')
+  assert.equal(projectRootFromStatus(null), '')
+})
+
+test('builds the Windows user schema directory with and without LOCALAPPDATA', () => {
+  assert.equal(userSchemasDir({ LOCALAPPDATA: '/local' }, 'win32'), join('/local', 'openspec', 'schemas'))
+  assert.match(userSchemasDir({}, 'win32'), /AppData[\\/]Local[\\/]openspec[\\/]schemas$/)
+})
+
+test('rejects a missing schema name', () => {
+  assert.throws(() => assertBuiltinSchema('', '/project', 'c'), /no schema name/)
 })

@@ -16,6 +16,7 @@ import {
   assertNoTargetChange,
   ensureOfficialSkills,
   findChange,
+  fixtureTestTargets,
   injectAcceptance,
   installedSkills,
   prepareFixture,
@@ -167,4 +168,14 @@ test('uses a cached official-skill directory without invoking the CLI', (t) => {
 
   const result = ensureOfficialSkills({ cacheDir: cache, openspecBin: '/does/not/exist' })
   assert.equal(result, cache)
+})
+
+
+test('rejects a fixture with no test files', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'eval-fixture-targets-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  mkdirSync(join(root, 'test'), { recursive: true })
+  assert.throws(() => fixtureTestTargets(root), /no test files/)
+  writeFileSync(join(root, 'test', 'a.test.mjs'), '')
+  assert.deepEqual(fixtureTestTargets(root), ['test/a.test.mjs'])
 })

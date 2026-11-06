@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { assertCliVersion, PINNED_CLI_VERSION, resolveBundledCli } from '../lib/openspec.js'
+import { assertCliVersion, parseJson, PINNED_CLI_VERSION, resolveBundledCli, withStore } from '../lib/openspec.js'
 
 const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'))
 
@@ -39,4 +39,21 @@ test('rejects a mismatched CLI version or schema envelope', () => {
     /schemaVersion '2'.*expects 1/,
   )
   assert.throws(() => assertCliVersion(null), /non-object version report/)
+})
+
+
+test('parses JSON output and treats empty or malformed text as absent', () => {
+  assert.deepEqual(parseJson('{"ok":true}'), { ok: true })
+  assert.equal(parseJson(''), undefined)
+  assert.equal(parseJson('not json'), undefined)
+})
+
+test('withStore appends only a non-empty string store', () => {
+  assert.deepEqual(withStore(['list'], 'team'), ['list', '--store', 'team'])
+  assert.deepEqual(withStore(['list'], '  '), ['list'])
+  assert.deepEqual(withStore(['list'], 3), ['list'])
+})
+
+test('rejects an array version report', () => {
+  assert.throws(() => assertCliVersion([]), /non-object version report/)
 })

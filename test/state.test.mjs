@@ -87,3 +87,37 @@ test('detects an external edit', () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('reports stale when the source or task disappears', () => {
+  const missing = makeEntry()
+  const removed = makeEntry()
+  try {
+    writeFileSync(removed.file, '- [ ] 1.1 one\n')
+    assert.equal(markDone(removed.entry, '1.2').stale, true)
+    rmSync(missing.file)
+    assert.equal(markDone(missing.entry, '1.1').stale, true)
+  } finally {
+    rmSync(missing.dir, { recursive: true, force: true })
+    rmSync(removed.dir, { recursive: true, force: true })
+  }
+})
+
+test('falls back to the numeric id when the line hint moved', () => {
+  const { dir, entry } = makeEntry()
+  try {
+    const result = markDone(entry, '1.1', { line: 2 })
+    assert.equal(result.status, 'flipped')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('detects a missing hash target', () => {
+  const { dir, entry } = makeEntry()
+  try {
+    entry.hashes.set(join(dir, 'missing.md'), 'expected')
+    assert.equal(isStale(entry), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

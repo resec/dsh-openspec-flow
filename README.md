@@ -60,6 +60,12 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 版本不匹配时 DSH 会跳过整个 bundle：工具、技能与流程规则都不会注册，stderr 输出 `dsh: skipping profile bundle "dsh-openspec-flow": ...`。
 
+### 测试运行时
+
+测试和覆盖率只允许运行在 Node 24 上，且具体版本必须满足 `engines.node`。大版本 24 对齐 DSH 0.2.2-rc.1 的 `PRIMARY_NODE_VERSION`。
+
+命令只检查当前 `PATH` 上的 `node`，不会调用 fnm、nvm、volta，也不读取 `.nvmrc`。如果当前 `node` 不是 24，或具体版本低于 `>=24.9.0`，命令会在测试启动前报错退出。本机默认 `node` 可能是 26，运行前需手动激活 Node 24。
+
 ## 配置
 
 `cordis.patch.yml` 的 `config` 可覆盖：
@@ -88,7 +94,7 @@ CLI 来源固定：
 
 ## 真实模型评测
 
-`eval/` 提供手动触发的真实模型对照 harness：同一夹具、同一模型、同一提示词，只切换官方技能 + CLI 与插件两条路径，统计 provider usage、流程摩擦与正确性门禁。默认只打印计划；加 `--execute` 才会调用模型并计费。它不接入 CI，真实调用也不进入 `node --test test/`。
+`eval/` 提供手动触发的真实模型对照 harness：同一夹具、同一模型、同一提示词，只切换官方技能 + CLI 与插件两条路径，统计 provider usage、流程摩擦与正确性门禁。默认只打印计划；加 `--execute` 才会调用模型并计费。它不接入 CI，真实调用也不进入 `npm test`。
 
 ```sh
 npm run eval:dry    # 只打印矩阵
@@ -99,7 +105,7 @@ npm run eval:pilot  # 每个夹具、每个臂跑 1 次
 
 ## 验证
 
-在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 26 上：
+在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
 
 - `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init 与迁移、指令映射；`npm run test:eval` 覆盖评测 harness；`npm run test:all` 运行两套。
 - 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 863 B，39 次 mark 平均 394 B，合计 16,226 B，约为「每任务重跑」53.3 万字节的 3.0%。
@@ -110,8 +116,21 @@ npm run eval:pilot  # 每个夹具、每个臂跑 1 次
 
 ```text
 cd dsh-openspec-flow
-node --test test/
+npm test
 ```
+
+### 覆盖率
+
+覆盖率与测试在同一次运行中采集，不会为了覆盖率再跑一遍测试：
+
+- `COVERAGE=1 npm test`：单次运行并写 `.coverage/plugin.info`；不设置 `COVERAGE` 时不采集。
+- `npm run coverage`：插件与 eval 各运行一次，写 lcov、`.coverage/report.md`，按 report 模式输出违规。
+- `npm run coverage:check`：同样的单次运行，按 enforce 模式判定；存量覆盖率不足时会失败。
+- `npm run coverage:baseline`：单次运行后更新 `coverage.baseline.json`；默认拒绝下调，必要时应显式传 `--allow-lower --reason`。
+
+基线记录具体 Node 版本和 `engines.node` 范围；门禁要求当前与基线都满足主版本 24 且落在范围内，允许 24.x 补丁差异并在报告中提示。当前为 enforce 模式，`npm run coverage:check` 是完成变更的必需检查。
+
+运行 `npm run hooks:install` 会把 `core.hooksPath` 指向 `.githooks`，pre-push 执行 `npm run coverage:check`。钩子不调用 fnm；Node 24 未激活时会直接报预检错误。需要跳过时使用 `COVERAGE_SKIP=1` 或 `git push --no-verify`。
 
 ## 自举开发
 
@@ -120,7 +139,7 @@ node --test test/
 - OpenSpec 根：`openspec/`；项目技能：`.dsh/skills/openspec-*`；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
 - apply：显式调用 `/openspec-flow <name>`，或按 `openspec-apply-change` 技能走 `openspec_apply_next` → 每任务 `openspec_mark_task_done`。
-- 收尾：`openspec_validate <name>` 与 `node --test test/`。
+- 收尾：`openspec_validate <name>` 与 `npm test`。
 - 归档：`openspec_archive`，只在用户明确要求时。
 
 `openspec/` 与 `.dsh/` 是项目文件，不在本包 `files` 列表中，不会进入打包产物。
@@ -131,7 +150,7 @@ node --test test/
 
 发布顺序：
 
-1. 变更的全部任务完成，`openspec_validate <name>` 与 `node --test test/` 通过。
+1. 变更的全部任务完成，`openspec_validate <name>` 与 `npm test` 通过。
 2. `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
 3. 提交归档结果、文档更新与合并后的 specs。
 4. 推送到 `origin/main`。

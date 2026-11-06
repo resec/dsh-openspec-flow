@@ -140,10 +140,21 @@ function prepareProbe(destination) {
   cpSync(source, join(probeRoot, 'openspec'), { recursive: true })
 }
 
+export function fixtureTestTargets(destination) {
+  const testDir = join(destination, 'test')
+  const targets = readdirSync(testDir)
+    .filter((name) => name.endsWith('.test.mjs'))
+    .sort()
+    .map((name) => join('test', name))
+  if (targets.length === 0) throw new Error(`fixture has no test files: ${testDir}`)
+  return targets
+}
+
 function runBaseTests(destination) {
   const env = { ...process.env, OPENSPEC_TELEMETRY: '0', OPENSPEC_NO_UPDATE_CHECK: '1' }
   delete env.NODE_TEST_CONTEXT
-  const result = spawnSync('node', ['--test', 'test/'], {
+  const targets = fixtureTestTargets(destination)
+  const result = spawnSync('node', ['--test', ...targets], {
     cwd: destination,
     encoding: 'utf8',
     timeout: 120_000,

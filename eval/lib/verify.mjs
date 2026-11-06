@@ -81,7 +81,12 @@ export function runGates({
     ),
   )
 
-  const repo = execute('node', ['--test', 'test/'], {
+  const repoTestDir = join(destination, 'test')
+  const repoTests = readdirSync(repoTestDir)
+    .filter((name) => name.endsWith('.test.mjs'))
+    .sort()
+    .map((name) => join('test', name))
+  const repo = execute('node', ['--test', ...repoTests], {
     cwd: destination,
     timeoutMs,
     env: { OPENSPEC_TELEMETRY: '0', OPENSPEC_NO_UPDATE_CHECK: '1' },
@@ -91,7 +96,7 @@ export function runGates({
       'repo-tests',
       repo.status === 0 && repo.error === null,
       repo.error ?? `exit ${repo.status}`,
-      writeLog(outDir, 'repo-tests.log', 'node --test test/', repo),
+      writeLog(outDir, 'repo-tests.log', `node --test ${repoTests.join(' ')}`, repo),
     ),
   )
 

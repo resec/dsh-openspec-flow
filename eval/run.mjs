@@ -5,63 +5,90 @@
  * Without `--execute` this prints the planned matrix and exits without any
  * model call. With `--execute` it loads the orchestrator, which prepares
  * fixtures, runs both arms and writes the report.
+ *
+ * The entrypoint is importable so tests can exercise argument handling, the
+ * help/list/plan paths, and the execute boundary with an injected runner.
  */
 
+import { pathToFileURL } from 'node:url'
 import { parseArgs, planCells, resolveConfig, USAGE } from './lib/config.mjs'
 import { FIXTURES, fixtureById } from './lib/registry.mjs'
 
-function printPlan(config) {
+function printPlan(config, write) {
   const cells = planCells(config)
-  console.log('Evaluation plan')
-  console.log(`  fixtures: ${config.fixtures.join(', ')}`)
-  console.log(`  arms:     ${config.arms.join(', ')}`)
-  console.log(`  runs:     ${config.runs} per fixture and arm`)
-  console.log(`  workers:  ${config.concurrency}`)
-  console.log(`  timeout:  ${config.timeoutMs / 60_000} min per run`)
-  console.log(`  budget:   ${config.budgetTokensPerRun} tokens per run`)
-  console.log(`  output:   ${config.out}`)
-  console.log(`  DSH_HOME: ${config.home}${config.keepHome ? ' (kept)' : ''}`)
-  console.log(`  agents:   ${config.agentsHome}`)
-  console.log(`  source:   ${config.sourceHome}`)
-  console.log(`  cells:    ${cells.length}`)
+  write('Evaluation plan')
+  write(`  fixtures: ${config.fixtures.join(', ')}`)
+  write(`  arms:     ${config.arms.join(', ')}`)
+  write(`  runs:     ${config.runs} per fixture and arm`)
+  write(`  workers:  ${config.concurrency}`)
+  write(`  timeout:  ${config.timeoutMs / 60_000} min per run`)
+  write(`  budget:   ${config.budgetTokensPerRun} tokens per run`)
+  write(`  output:   ${config.out}`)
+  write(`  DSH_HOME: ${config.home}${config.keepHome ? ' (kept)' : ''}`)
+  write(`  agents:   ${config.agentsHome}`)
+  write(`  source:   ${config.sourceHome}`)
+  write(`  cells:    ${cells.length}`)
   for (const fixtureId of config.fixtures) {
     const fixture = fixtureById(fixtureId)
-    console.log(`  - ${fixture.id}: ${fixture.title} (${fixture.kind})`)
+    write(`  - ${fixture.id}: ${fixture.title} (${fixture.kind})`)
   }
 }
 
-let options
-try {
-  options = parseArgs(process.argv.slice(2))
-} catch (error) {
-  console.error(`eval: ${error.message}`)
-  console.error('Run `node eval/run.mjs --help` for usage.')
-  process.exit(1)
-}
+/**
+ * Run the harness entrypoint.
+ * @param argv - arguments after the script name.
+ * @param io - output sinks and an optional injected matrix runner.
+ * @returns process exit code.
+ */
+export async function main(argv = process.argv.slice(2), io = {}) {
+  const write = io.stdout ?? console.log
+  const writeError = io.stderr ?? console.error
 
-if (options.help) {
-  console.log(USAGE)
-  process.exit(0)
-}
-
-if (options.list) {
-  for (const fixture of FIXTURES) {
-    console.log(`${fixture.id}\t${fixture.kind}\t${fixture.title}`)
+  let options
+  try {
+    options = parseArgs(argv)
+  } catch (error) {
+    writeError(`eval: ${error.message}`)
+    writeError('Run `node eval/run.mjs --help` for usage.')
+    return 1
   }
-  process.exit(0)
+
+  if (options.help) {
+    write(USAGE)
+    return 0
+  }
+
+  if (options.list) {
+    for (const fixture of FIXTURES) {
+      write(`${fixture.id}\t${fixture.kind}\t${fixture.title}`)
+    }
+    return 0
+  }
+
+  let config
+  try {
+    config = resolveConfig(options)
+  } catch (error) {
+    writeError(`eval: ${error.message}`)
+    return 1
+  }
+
+  if (!config.execute) {
+    printPlan(config, write)
+    return 0
+  }
+
+  try {
+    const runner = io.runMatrix ?? (await import('./lib/matrix.mjs')).runMatrix
+    const result = await runner(config)
+    write(`Report: ${result.reportPath}`)
+    return 0
+  } catch (error) {
+    writeError(`eval: ${error.stack ?? error.message}`)
+    return 1
+  }
 }
 
-const config = resolveConfig(options)
-if (!config.execute) {
-  printPlan(config)
-  process.exit(0)
-}
-
-try {
-  const { runMatrix } = await import('./lib/matrix.mjs')
-  const result = await runMatrix(config)
-  console.log(`Report: ${result.reportPath}`)
-} catch (error) {
-  console.error(`eval: ${error.stack ?? error.message}`)
-  process.exit(1)
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  process.exitCode = await main()
 }

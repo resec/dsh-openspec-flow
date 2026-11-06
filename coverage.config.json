@@ -1,0 +1,17 @@
+{
+  "primaryNodeMajor": 24,
+  "mode": "enforce",
+  "thresholds": {
+    "absolute": {
+      "line": 90,
+      "branch": 85,
+      "function": 95
+    },
+    "deltaMaxDrop": 1.0,
+    "newCode": {
+      "line": 95,
+      "branch": 90,
+      "function": 100
+    }
+  }
+}
