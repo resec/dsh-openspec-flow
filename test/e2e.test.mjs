@@ -128,7 +128,7 @@ test('runs init, plan, apply and archive through tools, matching a CLI run', asy
 
   const init = await call(fake, 'openspec_init', {})
   assert.equal(init.config, 'created')
-  assert.equal(init.skills.written.length, 6)
+  assert.equal(existsSync(join(toolRoot, '.dsh', 'skills')), false)
 
   const change = await call(fake, 'openspec_new_change', { name: CHANGE })
   assert.equal(change.change.id, CHANGE)

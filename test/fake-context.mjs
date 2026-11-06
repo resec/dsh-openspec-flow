@@ -3,7 +3,8 @@
  *
  * It implements only the members the plugin reads: `tools.register`,
  * `subprocess.spawn`, `workingDirectory.ensure` and `workingDirectory.get`,
- * `get('skills')`, `get('systemPrompt')`/`systemPrompt`, `agents.list`,
+ * `get('skills')` with `register` and `registerProvider`,
+ * `get('systemPrompt')`/`systemPrompt`, `agents.list`,
  * `on('agent/created')`, `effect`, and `logger.warn`. The subprocess half
  * wraps Node's own `spawn` while honoring the collected-output contract.
  *
@@ -22,6 +23,7 @@ import { spawn } from 'node:child_process'
 export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [] } = {}) {
   const tools = new Map()
   const skills = []
+  const providers = new Map()
   const stats = { spawns: 0 }
   const listeners = new Map()
   const liveAgents = [...seedAgents]
@@ -137,6 +139,18 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
             skills.push(definition)
             return () => {}
           },
+          registerProvider(create) {
+            const controller = new AbortController()
+            const provider = create({
+              signal: controller.signal,
+              invalidate() {},
+            })
+            providers.set(provider.name, provider)
+            return () => {
+              providers.delete(provider.name)
+              controller.abort()
+            }
+          },
         }
       }
       if (name === 'systemPrompt') return globalSystemPrompt
@@ -201,6 +215,7 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
     ctx,
     tools,
     skills,
+    providers,
     stats,
     createAgent,
     setCwd,

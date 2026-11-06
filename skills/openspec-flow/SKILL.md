@@ -16,9 +16,9 @@ The plugin exposes the whole agent-facing OpenSpec workflow. Use these tools ins
 | Write | `openspec_new_change`, `openspec_archive`, `openspec_init` |
 | Apply | `openspec_apply_next`, `openspec_mark_task_done` |
 
-## Initialize or migrate
+## Skills and initialization
 
-`openspec_init` creates `openspec/config.yaml` and `openspec/specs/` with `init --tools none`, so no official skill is generated. It then writes six plugin skills into `.dsh/skills/`:
+The plugin serves these skills from its own provider, so they are available in every session with the plugin tools and need no project copy:
 
 - `openspec-explore`
 - `openspec-propose`
@@ -27,7 +27,7 @@ The plugin exposes the whole agent-facing OpenSpec workflow. Use these tools ins
 - `openspec-sync-specs`
 - `openspec-update-change`
 
-An existing official skill is backed up to `.dsh/openspec-flow-backup/<timestamp>/` and replaced. A skill the plugin does not recognize is reported as a conflict and left alone unless the caller sets `force`. Re-run `openspec_init` after a plugin upgrade to refresh the skill text.
+`openspec_init` only creates the OpenSpec project structure: `openspec/config.yaml`, `openspec/specs/` and the change directories, with `init --tools none`, so no official skill is generated. It writes no skills; do not copy them into `.dsh/skills/`.
 
 ## Workflow skills
 

@@ -1,28 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   GENERATED_BY,
   SKILL_NAMES,
-  backupDirectory,
-  classifyGeneratedBy,
-  hashContent,
-  inspectSkill,
   packagedSkillPath,
   parseFrontmatter,
 } from '../lib/skills.js'
-
-const created = []
-function project() {
-  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-skills-'))
-  created.push(root)
-  return root
-}
-test.after(() => {
-  for (const root of created) rmSync(root, { recursive: true, force: true })
-})
 
 test('parses frontmatter name, description and metadata', () => {
   const parsed = parseFrontmatter([
@@ -44,34 +28,6 @@ test('parses frontmatter name, description and metadata', () => {
 
 test('rejects a document without frontmatter', () => {
   assert.throws(() => parseFrontmatter('# no frontmatter'), /frontmatter/)
-})
-
-test('classifies generatedBy values', () => {
-  assert.equal(classifyGeneratedBy('1.16.0'), 'official')
-  assert.equal(classifyGeneratedBy('openspec'), 'official')
-  assert.equal(classifyGeneratedBy(GENERATED_BY), 'current')
-  assert.equal(classifyGeneratedBy('dsh-openspec-flow@9.9.9'), 'plugin-other')
-  assert.equal(classifyGeneratedBy(undefined), 'unknown')
-  assert.equal(classifyGeneratedBy('someone-else'), 'unknown')
-})
-
-test('inspects a missing and an official skill', () => {
-  const root = project()
-  assert.equal(inspectSkill(root, 'openspec-propose').exists, false)
-
-  const dir = join(root, '.dsh', 'skills', 'openspec-propose')
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'SKILL.md'), '---\nname: openspec-propose\ndescription: old\nmetadata:\n  generatedBy: "1.16.0"\n---\n\nold\n')
-  const inspected = inspectSkill(root, 'openspec-propose')
-  assert.equal(inspected.exists, true)
-  assert.equal(inspected.classification, 'official')
-  assert.equal(inspected.hash, hashContent(readFileSync(join(dir, 'SKILL.md'), 'utf8')))
-})
-
-test('builds a timestamped backup directory outside skills', () => {
-  const root = project()
-  const dir = backupDirectory(root, new Date('2026-11-05T12:00:00.000Z'))
-  assert.equal(dir, join(root, '.dsh', 'openspec-flow-backup', '2026-11-05T12-00-00-000Z'))
 })
 
 test('every packaged skill is valid and stamps the plugin version', () => {

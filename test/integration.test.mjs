@@ -100,18 +100,19 @@ test.after(() => {
   for (const root of created) rmSync(root, { recursive: true, force: true })
 })
 
-test('registers the tool set and the openspec-flow skill', () => {
+test('registers the tool set and the skill provider', async () => {
   const root = fixture()
   const fake = setup(root)
   assert.deepEqual([...fake.tools.keys()].sort(), TOOL_NAMES)
-  assert.equal(fake.skills.length, 1)
-  assert.equal(fake.skills[0].name, 'openspec-flow')
-  assert.equal(fake.skills[0].source, 'runtime')
-  assert.ok(fake.skills[0].path.endsWith('skills/openspec-flow/SKILL.md'))
-  assert.equal(fake.skills[0].invocation.modelInvocable, true)
-  assert.equal(fake.skills[0].invocation.userInvocable, true)
-  assert.match(fake.skills[0].description, /OpenSpec/)
-  assert.match(fake.skills[0].content, /openspec_mark_task_done/)
+  const provider = fake.providers.get('openspec-flow')
+  assert.ok(provider, 'the skill provider is registered')
+  const candidates = await provider.list()
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.name).sort(),
+    [...PLUGIN_SKILLS, 'openspec-flow'].sort(),
+  )
+  const definition = await provider.get(candidates.find((candidate) => candidate.name === 'openspec-flow'))
+  assert.match(definition.content, /openspec_mark_task_done/)
 })
 
 test('verifies the bundled CLI once per process', async () => {
@@ -617,12 +618,6 @@ test('reports an unwritable project instead of writing partially', async (t) => 
   assert.equal(existsSync(join(changesDir, 'blocked-change')), false)
 })
 
-function writeInstalledSkill(root, name, frontmatter, body) {
-  const dir = join(root, '.dsh', 'skills', name)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'SKILL.md'), ['---', `name: ${name}`, 'description: old', ...frontmatter, '---', '', body, ''].join('\n'))
-}
-
 const PLUGIN_SKILLS = [
   'openspec-explore',
   'openspec-propose',
@@ -632,7 +627,7 @@ const PLUGIN_SKILLS = [
   'openspec-update-change',
 ]
 
-test('initializes an empty project and installs the plugin skills', async () => {
+test('initializes an empty project without writing skills', async () => {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-init-'))
   created.push(root)
   const fake = setup(root)
@@ -641,48 +636,10 @@ test('initializes an empty project and installs the plugin skills', async () => 
   assert.equal(result.root, root)
   assert.equal(result.config, 'created')
   assert.ok(existsSync(join(root, 'openspec', 'config.yaml')))
-  assert.deepEqual([...result.skills.written].sort(), [...PLUGIN_SKILLS].sort())
-  for (const name of PLUGIN_SKILLS) {
-    assert.ok(existsSync(join(root, '.dsh', 'skills', name, 'SKILL.md')), name)
-  }
-  const apply = readFileSync(join(root, '.dsh', 'skills', 'openspec-apply-change', 'SKILL.md'), 'utf8')
-  assert.match(apply, /openspec_mark_task_done/)
-  assert.match(apply, /generatedBy: dsh-openspec-flow@0\.1\.0/)
+  assert.ok(existsSync(join(root, 'openspec', 'specs')))
+  assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
 
   const again = await call(fake, 'openspec_init', {})
   assert.equal(again.config, 'exists')
-  assert.deepEqual(again.skills.written, [])
-  assert.deepEqual([...again.skills.skipped].sort(), [...PLUGIN_SKILLS].sort())
-})
-
-test('migrates an official skill after backing it up', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-migrate-'))
-  created.push(root)
-  writeInstalledSkill(root, 'openspec-apply-change', ['metadata:', '  generatedBy: "1.16.0"'], 'official body')
-  const fake = setup(root)
-
-  const result = await call(fake, 'openspec_init', {})
-  assert.ok(result.skills.migrated.includes('openspec-apply-change'))
-  assert.ok(result.backupDir)
-  assert.ok(existsSync(join(result.backupDir, 'openspec-apply-change', 'SKILL.md')))
-  const migrated = readFileSync(join(root, '.dsh', 'skills', 'openspec-apply-change', 'SKILL.md'), 'utf8')
-  assert.match(migrated, /openspec_mark_task_done/)
-  assert.doesNotMatch(migrated, /official body/)
-})
-
-test('reports a user-authored skill conflict and honors force', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-conflict-'))
-  created.push(root)
-  writeInstalledSkill(root, 'openspec-propose', [], 'my own policy')
-  const fake = setup(root)
-
-  const first = await call(fake, 'openspec_init', {})
-  assert.ok(first.skills.conflicts.some((conflict) => conflict.name === 'openspec-propose'))
-  assert.match(readFileSync(join(root, '.dsh', 'skills', 'openspec-propose', 'SKILL.md'), 'utf8'), /my own policy/)
-
-  const forced = await call(fake, 'openspec_init', { force: true })
-  assert.ok(forced.backupDir)
-  const replaced = readFileSync(join(root, '.dsh', 'skills', 'openspec-propose', 'SKILL.md'), 'utf8')
-  assert.match(replaced, /openspec_new_change/)
-  assert.doesNotMatch(replaced, /my own policy/)
+  assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
 })

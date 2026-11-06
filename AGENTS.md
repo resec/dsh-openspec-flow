@@ -7,12 +7,12 @@ This repository develops the `dsh-openspec-flow` plugin. `README.md` covers the 
 The project uses OpenSpec. Non-trivial work starts as a change under `openspec/changes/<name>/`:
 
 1. Plan with the installed `openspec-propose` skill, or `openspec_new_change` (the CLI `openspec new change <name>` works too). Read the change's `proposal.md`, `specs/`, `design.md`, and `tasks.md` before editing code.
-2. Apply with the installed plugin. Invoke `/openspec-flow <name>` or load `openspec-apply-change`, then call `openspec_apply_next` once. The project carries the upstream skill of the same name; name `openspec-flow` explicitly to select the compact loop.
+2. Apply with the installed plugin. Invoke `/openspec-flow <name>` or load `openspec-apply-change`, then call `openspec_apply_next` once. The provider ships both skills; name `openspec-flow` explicitly to select the compact loop.
 3. After each task, call `openspec_mark_task_done` with the returned id and continue with its `next`. Call `openspec_apply_next` again only to start or resync.
 4. Finish with `openspec_validate <name>` and `npm test` on Node 24. Archive with `openspec_archive` only when the user asks.
 5. After archiving, commit the archive, the documentation updates, and the merged specs in one commit, then push to `origin/main` (`git@github.com:resec/dsh-openspec-flow.git`).
 
-`openspec_init` installs the six plugin skills and migrates official copies after backing them up. This repository currently keeps the official skills in `.dsh/skills`; run `openspec_init` when you want the plugin text installed.
+The plugin serves the six workflow skills and `openspec-flow` from its own skill provider at rank 50; it writes no project copy. `openspec_init` only creates the OpenSpec project structure. This repository keeps no `.dsh/skills/` copies.
 
 The plugin also registers a scoped system prompt rule (`openspec-flow:policy`) for agents whose working directory contains an `openspec/` root. It restates these gates: clarify before proposing, confirm before creating a change, apply through the compact loop, validate before completion, and archive only on request. The rule is advisory and does not restrict tools.
 
@@ -24,7 +24,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 - `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor. When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
 - Tests and coverage run only on the primary Node major 24 and require a concrete version satisfying `engines.node`. Entrypoints check the `node` on PATH; they never call fnm, nvm, volta, or read `.nvmrc`. If the runtime does not qualify, they fail before starting tests.
 - The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 1.16.0). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
-- Keep tool descriptions and output schemas in `lib/tools/`, the projection and cache in `lib/state.js`, the init and migration logic in `lib/init.js` and `lib/skills.js`, and the shipped skills in `skills/` in sync with behavior.
+- Keep tool descriptions and output schemas in `lib/tools/`, the projection and cache in `lib/state.js`, project initialization in `lib/init.js`, packaged-skill discovery in `lib/skills.js` and `lib/skill.js`, and the shipped skills in `skills/` in sync with behavior.
 - Every packaged skill's `metadata.generatedBy` must equal `dsh-openspec-flow@<package.json version>`; the skill test enforces it.
 - Keep the policy text in `lib/policy.js` consistent with the shipped skills. The policy is agent-scoped and must never be registered globally.
 - Add a regression test for every behavior change. The tests use a fake Host context and the real bundled OpenSpec CLI.

@@ -19,7 +19,7 @@
  */
 
 import { registerPolicy } from './lib/policy.js'
-import { registerSkill } from './lib/skill.js'
+import { registerSkillProvider } from './lib/skill.js'
 import { registerTools } from './lib/tools/index.js'
 
 /** Cordis plugin name. */
@@ -85,6 +85,6 @@ export function apply(ctx, config) {
     timeoutMs: Number.isInteger(config?.timeoutMs) ? config.timeoutMs : DEFAULT_CONFIG.timeoutMs,
   }
   registerTools(ctx, settings)
-  registerSkill(ctx)
+  registerSkillProvider(ctx)
   registerPolicy(ctx)
 }
