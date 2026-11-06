@@ -98,6 +98,17 @@ node --test test/
 
 `openspec/` 与 `.dsh/` 是项目文件，不在本包 `files` 列表中，不会进入打包产物。
 
+## 仓库与推送
+
+远端为 `git@github.com:resec/dsh-openspec-flow.git`，远端名为 `origin`；`main` 跟踪 `origin/main`。
+
+发布顺序：
+
+1. 变更的全部任务完成，`openspec_validate <name>` 与 `node --test test/` 通过。
+2. `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
+3. 提交归档结果、文档更新与合并后的 specs。
+4. 推送到 `origin/main`。
+
 ## 限制
 
 - CLI 固定为 `@fission-ai/openspec` 1.16.0；升级 OpenSpec 需要发布新插件。

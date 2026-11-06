@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-06
+goal: Configure origin as git@github.com:resec/dsh-openspec-flow.git, publish
+  main with upstream tracking, and record the archive-then-push convention.

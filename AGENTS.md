@@ -10,6 +10,7 @@ The project uses OpenSpec. Non-trivial work starts as a change under `openspec/c
 2. Apply with the installed plugin. Invoke `/openspec-flow <name>` or load `openspec-apply-change`, then call `openspec_apply_next` once. The project carries the upstream skill of the same name; name `openspec-flow` explicitly to select the compact loop.
 3. After each task, call `openspec_mark_task_done` with the returned id and continue with its `next`. Call `openspec_apply_next` again only to start or resync.
 4. Finish with `openspec_validate <name>` and `node --test test/`. Archive with `openspec_archive` only when the user asks.
+5. After archiving, commit the archive, the documentation updates, and the merged specs in one commit, then push to `origin/main` (`git@github.com:resec/dsh-openspec-flow.git`).
 
 `openspec_init` installs the six plugin skills and migrates official copies after backing them up. This repository currently keeps the official skills in `.dsh/skills`; run `openspec_init` when you want the plugin text installed.
 
