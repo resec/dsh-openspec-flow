@@ -11,7 +11,7 @@ metadata:
 
 This edits planning documents only. It does not implement code and does not archive.
 
-Use the `openspec_*` tools for every step. Fall back to the `openspec` CLI only when the tools are unavailable, and say why in the reply.
+Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
 
 ## Read first
 

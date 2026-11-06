@@ -38,4 +38,4 @@ Read the whole delta and the whole target requirement before editing. Never copy
 
 - Do not archive the change and do not move files.
 - Do not edit the delta specs in this workflow; that is `openspec-update-change`.
-- Fall back to the `openspec` CLI only when the tools are unavailable, and say why in the reply.
+- Report a missing tool and stop; the plugin provides no CLI fallback.

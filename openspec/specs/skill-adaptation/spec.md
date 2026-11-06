@@ -33,20 +33,6 @@ The plugin SHALL back up an official skill before replacing it, and SHALL keep t
 - **WHEN** a same-named skill has no recognized `generatedBy` value
 - **THEN** the tool reports a conflict and does not overwrite it unless `force` is set
 
-### Requirement: Skills prefer tools and fall back to CLI
-
-Each generated skill SHALL direct the agent to the `openspec_*` tools first and permit a CLI fallback only when the tools are unavailable.
-
-#### Scenario: Tool surface is present
-
-- **WHEN** the agent loads a generated skill in a session with the plugin tools
-- **THEN** every workflow step in the skill names a tool call and no bare `openspec` command is required
-
-#### Scenario: Tools are unavailable
-
-- **WHEN** the agent loads a generated skill in a session without the plugin tools
-- **THEN** the skill says to fall back to the CLI and to state that fallback in the reply
-
 ### Requirement: Instructions output maps CLI commands to tools
 
 The `openspec_instructions` result SHALL replace known CLI command fragments in the instruction text with the corresponding tool names.
@@ -73,3 +59,17 @@ The plugin SHALL not modify a skill it did not generate unless the caller sets `
 
 - **WHEN** the project has a hand-written `openspec-apply-change` skill
 - **THEN** `openspec_init` reports the conflict, leaves the file untouched, and lists the path in its result
+
+### Requirement: Skills use tools and report missing tools
+
+Each generated skill SHALL direct the agent to the `openspec_*` tools for every workflow step and SHALL state that the plugin provides no CLI fallback. When a tool is unavailable, the skill SHALL instruct the agent to report the missing tool and stop.
+
+#### Scenario: Tool surface is present
+
+- **WHEN** the agent loads a generated skill in a session with the plugin tools
+- **THEN** every workflow step in the skill names a tool call and no bare `openspec` command is required
+
+#### Scenario: A tool is unavailable
+
+- **WHEN** the agent loads a generated skill in a session without the plugin tools
+- **THEN** the skill states that the plugin provides no CLI fallback and the agent reports the missing tool instead of running the CLI

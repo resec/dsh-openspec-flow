@@ -11,7 +11,7 @@ metadata:
 
 This is a thinking mode. Do not write planning artifacts, do not create a change, and do not edit code unless the user asks.
 
-Use the `openspec_*` tools for every read. Fall back to the `openspec` CLI only when the tools are unavailable, and say why in the reply.
+Use the `openspec_*` tools for every read. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
 
 ## Read the ground truth
 
@@ -35,4 +35,4 @@ Read only what the question needs. Prefer one filtered read over pulling every s
 
 - Do not create a change. When the user wants that, switch to `openspec-propose`.
 - Do not mark tasks or archive.
-- Do not run the CLI when a tool covers the read. Fall back only if the tools are unavailable.
+- Do not run the CLI when a tool covers the read; the plugin provides no CLI fallback. Report a missing tool instead.

@@ -52,6 +52,12 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /Archive only when the user explicitly asks/)
 })
 
+test('the policy text offers no CLI fallback', () => {
+  assert.match(POLICY_TEXT, /no CLI fallback/)
+  assert.doesNotMatch(POLICY_TEXT, /fall back/i)
+  assert.doesNotMatch(POLICY_TEXT, /run the `openspec` CLI/)
+})
+
 test('an OpenSpec-project agent receives one scoped rule', (t) => {
   const f = fixture()
   t.after(() => f.dispose())

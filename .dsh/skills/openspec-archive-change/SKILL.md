@@ -11,7 +11,7 @@ metadata:
 
 Archive only on an explicit request. A finished apply is not the same as a request to archive.
 
-Use the `openspec_*` tools for every step. Fall back to the `openspec` CLI only when the tools are unavailable, and say why in the reply.
+Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
 
 ## Preconditions
 

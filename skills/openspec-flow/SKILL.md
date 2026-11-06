@@ -5,7 +5,7 @@ description: Drive an OpenSpec project end to end with the openspec_* tools, cov
 
 # OpenSpec flow
 
-The plugin exposes the whole agent-facing OpenSpec workflow. Use these tools instead of running `openspec` by hand; fall back to the CLI only when a tool is unavailable, and say why.
+The plugin exposes the whole agent-facing OpenSpec workflow. Use these tools instead of running `openspec` by hand; the plugin provides no CLI fallback, so report a missing tool and stop.
 
 ## Tools
 
@@ -47,7 +47,7 @@ Pick the skill that matches the stage; each one names the tool for every step.
 - Do not edit implementation code until the user starts apply.
 - Run `openspec_validate` and the project's tests before reporting completion.
 - Archive only on an explicit request.
-- Only the CLI's built-in `spec-driven` schema is supported; report a custom or shadowing schema instead of retrying.
+- Only the built-in `spec-driven` schema is supported; report a custom or shadowing schema instead of retrying.
 - When a store is selected, pass the same `store` on every call.
 
 ## Apply loop

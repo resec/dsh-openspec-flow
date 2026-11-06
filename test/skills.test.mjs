@@ -84,7 +84,8 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     assert.equal(parsed.metadata.generatedBy, GENERATED_BY, name)
     assert.equal(parsed.metadata.upstream, 'openspec@1.16.0', name)
     assert.match(raw, /openspec_[a-z_]+/, name)
-    assert.match(raw, /Fall back to the `openspec` CLI|Fall back to the CLI/, name)
+    assert.match(raw, /no CLI fallback/, name)
+    assert.doesNotMatch(raw, /fall back/i, `${name} must not promise a CLI fallback`)
     assert.doesNotMatch(raw, /^## Command map/m, `${name} must not carry a command map`)
     assert.doesNotMatch(
       raw,

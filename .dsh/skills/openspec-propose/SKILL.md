@@ -9,7 +9,7 @@ metadata:
 
 # Propose a change with the plugin tools
 
-Use the `openspec_*` tools for every step. Fall back to the CLI only when the tools are missing.
+Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
 
 ## Before creating
 

@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-06
+goal: The plugin provides no CLI fallback, so no skill or policy may tell the
+  agent to run the openspec CLI when a tool is missing.
