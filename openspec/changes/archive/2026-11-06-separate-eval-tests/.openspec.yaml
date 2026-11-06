@@ -1,0 +1,6 @@
+schema: spec-driven
+skip_specs: true
+created: 2026-11-06
+goal: Separate eval harness tests into eval/test/, add test, test:eval and
+  test:all scripts, update the verification documentation, and keep every suite
+  green.

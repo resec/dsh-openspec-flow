@@ -30,7 +30,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "test:eval": "node --test eval/test/",
+    "test:all": "node --test test/ eval/test/",
+    "eval:dry": "node eval/run.mjs",
+    "eval:pilot": "node eval/run.mjs --execute --runs 1",
+    "eval:matrix": "node eval/run.mjs --execute"
   },
   "dependencies": {
     "@fission-ai/openspec": "1.16.0"

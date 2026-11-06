@@ -70,11 +70,22 @@ CLI 来源固定：
 - **写操作可恢复**：`openspec_init` 覆盖前备份；六份技能按内容哈希幂等写入；`openspec_archive` 先校验后移动。
 - **按项目注入规则**：流程规则通过 agent 自己的 context 注册为作用域内 system prompt 段；非 OpenSpec 项目返回空文本。
 
+## 真实模型评测
+
+`eval/` 提供手动触发的真实模型对照 harness：同一夹具、同一模型、同一提示词，只切换官方技能 + CLI 与插件两条路径，统计 provider usage、流程摩擦与正确性门禁。默认只打印计划；加 `--execute` 才会调用模型并计费。它不接入 CI，真实调用也不进入 `node --test test/`。
+
+```sh
+npm run eval:dry    # 只打印矩阵
+npm run eval:pilot  # 每个夹具、每个臂跑 1 次
+```
+
+夹具、指标口径、输出结构与已知限制见 [eval/README.md](eval/README.md)。
+
 ## 验证
 
 在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 26 上：
 
-- `node --test test/` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init 与迁移、指令映射。
+- `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init 与迁移、指令映射；`npm run test:eval` 覆盖评测 harness；`npm run test:all` 运行两套。
 - 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 863 B，39 次 mark 平均 394 B，合计 16,226 B，约为「每任务重跑」53.3 万字节的 3.0%。
 - 39 次 mark 期间 CLI 子进程启动次数为 0，证明循环不再是 O(N²) 查询。
 - 测试使用真实 `@fission-ai/openspec` 1.16.0，不是 mock。

@@ -9,7 +9,7 @@ The project uses OpenSpec. Non-trivial work starts as a change under `openspec/c
 1. Plan with the installed `openspec-propose` skill, or `openspec_new_change` (the CLI `openspec new change <name>` works too). Read the change's `proposal.md`, `specs/`, `design.md`, and `tasks.md` before editing code.
 2. Apply with the installed plugin. Invoke `/openspec-flow <name>` or load `openspec-apply-change`, then call `openspec_apply_next` once. The project carries the upstream skill of the same name; name `openspec-flow` explicitly to select the compact loop.
 3. After each task, call `openspec_mark_task_done` with the returned id and continue with its `next`. Call `openspec_apply_next` again only to start or resync.
-4. Finish with `openspec_validate <name>` and `node --test test/`. Archive with `openspec_archive` only when the user asks.
+4. Finish with `openspec_validate <name>` and the relevant suite (`npm test`, `npm run test:eval`, or `npm run test:all`). Archive with `openspec_archive` only when the user asks.
 5. After archiving, commit the archive, the documentation updates, and the merged specs in one commit, then push to `origin/main` (`git@github.com:resec/dsh-openspec-flow.git`).
 
 `openspec_init` installs the six plugin skills and migrates official copies after backing them up. This repository currently keeps the official skills in `.dsh/skills`; run `openspec_init` when you want the plugin text installed.
@@ -27,6 +27,14 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 - Keep the policy text in `lib/policy.js` consistent with the shipped skills. The policy is agent-scoped and must never be registered globally.
 - Add a regression test for every behavior change. The tests use a fake Host context and the real bundled OpenSpec CLI.
 
+## Evaluation harness
+
+- `eval/` is a manual real-model harness. `npm test` and `npm run test:eval` must stay offline: never add a real provider call or `dsh` invocation to either suite.
+- Do not run `eval/run.mjs --execute` unless the user explicitly asks; it spends provider tokens. A dry run (`npm run eval:dry`) is free.
+- Real fixtures pin base and reference commits from this repository's history. Do not rewrite those commits; if a fixture needs a new base, update its manifest and tests together.
+- Hidden acceptance lives under `eval/fixtures/<id>/acceptance/` and is injected only after a run. Keep it out of the fixture tree and out of the request text's file list.
+- Real runs require the `headless` profile with stored credentials and the plugin installed as a bundle; they also need full file access because `dsh` rewrites `~/.dsh`.
+
 ## Verification
 
-A change is complete when every task is checked, `openspec validate <name>` passes, and `node --test test/` passes. The installed plugin is linked into the `web` profile; re-enable the `include:openspec-flow` entry or restart DSH to load changed Host code in a live session.
+A change is complete when every task is checked, `openspec validate <name>` passes, and the relevant test suite passes: `npm test` for plugin code, `npm run test:eval` for `eval/`, or `npm run test:all` when both. The installed plugin is linked into the `web` profile; re-enable the `include:openspec-flow` entry or restart DSH to load changed Host code in a live session.

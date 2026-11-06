@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-06
+goal: Provide a repeatable, manually triggered harness that runs both arms over
+  synthetic and git-history fixtures, drives the full propose/apply/archive flow
+  with scripted confirmations, extracts provider usage and friction metrics from
+  session logs, gates on correctness, and reports per-run and aggregate results.
