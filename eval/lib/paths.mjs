@@ -9,7 +9,7 @@
  */
 
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Absolute `eval/` directory. */
@@ -36,11 +36,24 @@ export const OPENSPEC_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'openspec')
 /** DSH launcher; tests replace it with a fake executable. */
 export const DSH_BIN = process.env.DSH_BIN ?? 'dsh'
 
-/** DSH home that owns profiles and session logs. */
-export const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+/**
+ * Resolve the DSH home at call time so a matrix can swap in an isolated home.
+ * A blank or whitespace-only override is treated as unset.
+ * @returns the absolute DSH home.
+ */
+export function dshHome() {
+  const configured = process.env.DSH_HOME
+  if (configured !== undefined && configured.trim() !== '') return resolve(configured)
+  return join(homedir(), '.dsh')
+}
 
-/** Root of persisted session logs. */
-export const SESSIONS_ROOT = join(DSH_HOME, 'sessions')
+/**
+ * Root of persisted session logs under the current DSH home.
+ * @returns the absolute sessions root.
+ */
+export function sessionsRoot() {
+  return join(dshHome(), 'sessions')
+}
 
 /** Headless profile name used by every arm. */
 export const PROFILE = 'headless'

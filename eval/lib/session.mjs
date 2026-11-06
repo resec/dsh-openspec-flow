@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
-import { SESSIONS_ROOT } from './paths.mjs'
+import { sessionsRoot } from './paths.mjs'
 
 const USAGE_KEYS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'totalTokens']
 
@@ -48,15 +48,16 @@ function parseJson(value, fallback) {
  * @returns absolute session directory.
  */
 export function findSessionDir(sessionId) {
-  if (!existsSync(SESSIONS_ROOT)) {
-    throw new Error(`session root not found: ${SESSIONS_ROOT}`)
+  const root = sessionsRoot()
+  if (!existsSync(root)) {
+    throw new Error(`session root not found: ${root}`)
   }
-  for (const entry of readdirSync(SESSIONS_ROOT, { withFileTypes: true })) {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
-    const candidate = join(SESSIONS_ROOT, entry.name, sessionId)
+    const candidate = join(root, entry.name, sessionId)
     if (existsSync(candidate)) return candidate
   }
-  throw new Error(`session not found under ${SESSIONS_ROOT}: ${sessionId}`)
+  throw new Error(`session not found under ${root}: ${sessionId}`)
 }
 
 /**

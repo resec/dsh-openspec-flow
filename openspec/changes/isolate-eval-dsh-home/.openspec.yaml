@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-06
+goal: "Stop eval runs from writing to ~/.dsh: create controlled home
+  directories, install the headless profile there, copy credentials with
+  owner-only permissions, pass both homes to every dsh process, remove them
+  after the matrix, and keep reports and session artifacts."

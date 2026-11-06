@@ -10,10 +10,9 @@
 ## 前置条件
 
 - 在插件仓库执行过 `npm install`（固定 `@fission-ai/openspec` 1.16.0）。
-- `headless` profile 已创建，已恢复 `deepseek-account` 凭据，并已把 `dsh-openspec-flow` 装为 bundle。参考阶段 0 的做法：
-  - `~/.dsh/profiles/headless/cordis.patch.yml` 恢复 `credentials`、`authorization`、`deepseek-account`，并固定模型。
-  - `~/.dsh/profiles/headless/package.json` 以 `link:` 加入本插件，并加入 `dsh.profile.bundles`。
-- 从本仓库根目录运行，且具备工作区外写权限：每次 `dsh` 启动都会重写 `~/.dsh/profiles/headless/cordis.yml` 并写 `~/.dsh/sessions`。
+- 本机 `~/.dsh/.credentials.yaml` 存在，或通过 `--source-home` 指定包含该文件的目录。harness 会把它复制到私有 home，并以 `0600` 权限保存。
+- 不需要手工创建 `headless` profile：harness 在私有 home 里生成 profile、bundle 列表和模型配置。
+- 从本仓库根目录运行；私有 home、`eval/runs` 和缓存的写入都发生在工作区内。
 - 真实调用会计费。默认模型 `deepseek-account/deepseek-flash`，`reasoningEffort=high`。
 - 真实夹具的准备与单测依赖本仓库的基线提交，以及 POSIX 的 `git` 与 `tar`。
 
@@ -31,9 +30,24 @@ node eval/run.mjs --execute --fixture budget-cli --arms official,plugin --runs 5
 
 # 调整单次超时与 token 预算
 node eval/run.mjs --execute --timeout-min 30 --budget 5000000
+
+# 指定凭据来源，或保留私有 home 调试
+node eval/run.mjs --execute --source-home /path/to/home --keep-home
+
+# 清理崩溃后遗留的私有 home
+npm run eval:clean
 ```
 
 没有 `--execute` 时，脚本只打印矩阵，不会启动 `dsh`，也不会产生费用。
+
+## 隔离 home
+
+每次矩阵使用两个私有目录：
+
+- `eval/.dsh-home/`：`DSH_HOME`，包含生成的 `headless` profile、凭据副本、sessions 和 logs。
+- `eval/.agents-home/`：`DSH_AGENTS_HOME`，初始为空，避免用户级 skills 与 `AGENTS.md` 进入会话。
+
+两个目录都带所有权标记，矩阵结束后自动删除；报告和 `eval/runs/` 下的运行产物保留。`--keep-home` 可保留一次用于调试，`npm run eval:clean` 清理崩溃后遗留的标记目录。默认不写入 `~/.dsh`，只从那里读取凭据。
 
 ## 测试
 
@@ -94,6 +108,8 @@ harness 测试不调用真实模型；日常插件开发只需 `npm test`。
 - 默认单次 45 分钟、800 万 token 预算；超时或超预算会中止并保留产物。
 - 不接入 CI；harness 测试在 `eval/test/`，用 `npm run test:eval` 运行，不调用真实模型。
 - 真正跑矩阵前会先做 `--dump-config` 预检；工具面在首轮请求头里再次核对。
+- 私有 home 中的凭据副本以 `0600` 保存，随 home 一起删除；不要把它加入版本控制或复制到别处。
+- `DSH_AGENTS_HOME` 为空意味着用户级 skills 与 `AGENTS.md` 不参与评测；这是受控对比的有意选择。
 
 ## 已知缺口
 

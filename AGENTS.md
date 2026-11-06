@@ -34,7 +34,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 - Do not run `eval/run.mjs --execute` unless the user explicitly asks; it spends provider tokens. A dry run (`npm run eval:dry`) is free.
 - Real fixtures pin base and reference commits from this repository's history. Do not rewrite those commits; if a fixture needs a new base, update its manifest and tests together.
 - Hidden acceptance lives under `eval/fixtures/<id>/acceptance/` and is injected only after a run. Keep it out of the fixture tree and out of the request text's file list.
-- Real runs require the `headless` profile with stored credentials and the plugin installed as a bundle; they also need full file access because `dsh` rewrites `~/.dsh`.
+- Real runs use a generated `headless` profile under `eval/.dsh-home` and an empty `eval/.agents-home`; the harness copies `~/.dsh/.credentials.yaml` (or `--source-home`), removes both roots afterward, and never writes to the default `~/.dsh`.
 
 ## Verification
 

@@ -36,7 +36,8 @@
     "test:all": "node --test test/ eval/test/",
     "eval:dry": "node eval/run.mjs",
     "eval:pilot": "node eval/run.mjs --execute --runs 1",
-    "eval:matrix": "node eval/run.mjs --execute"
+    "eval:matrix": "node eval/run.mjs --execute",
+    "eval:clean": "node eval/clean.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": "1.16.0"

@@ -26,6 +26,12 @@ import {
 } from './flow.mjs'
 import { runGates as runGatesImpl } from './verify.mjs'
 import { buildRunMetrics } from './metrics.mjs'
+import {
+  applyHomeEnv as applyHomeEnvImpl,
+  cleanupEvalHome as cleanupEvalHomeImpl,
+  createEvalHome as createEvalHomeImpl,
+  restoreHomeEnv as restoreHomeEnvImpl,
+} from './dsh-home.mjs'
 import { writeReport as writeReportImpl } from './report.mjs'
 import { CACHE_ROOT, OPENSPEC_BIN } from './paths.mjs'
 
@@ -272,47 +278,66 @@ export async function runMatrix(config, deps = {}) {
     acceptanceDir,
     copySession: defaultCopySession,
     gitDiff: defaultGitDiff,
+    createEvalHome: createEvalHomeImpl,
+    cleanupEvalHome: cleanupEvalHomeImpl,
+    applyHomeEnv: applyHomeEnvImpl,
+    restoreHomeEnv: restoreHomeEnvImpl,
     repoRoot: undefined,
     now: () => new Date(),
     ...deps,
   }
 
-  for (const arm of config.arms) {
-    const issues = resolved.preflight({ arm, model: config.model })
-    if (issues.length > 0) {
-      throw new Error(`preflight failed for ${arm}: ${issues.join('; ')}`)
+  const home = resolved.createEvalHome({
+    root: config.home,
+    agentsRoot: config.agentsHome,
+    sourceHome: config.sourceHome,
+  })
+  const previousEnv = resolved.applyHomeEnv(home)
+  try {
+    for (const arm of config.arms) {
+      const issues = resolved.preflight({ arm, model: config.model })
+      if (issues.length > 0) {
+        throw new Error(`preflight failed for ${arm}: ${issues.join('; ')}`)
+      }
+    }
+
+    const officialSkillsDir = resolved.ensureOfficialSkills({
+      cacheDir: join(CACHE_ROOT, 'official-skills'),
+    })
+    const startedAt = resolved.now().toISOString()
+    const timestamp = startedAt.replace(/[:.]/gu, '-')
+    mkdirSync(config.out, { recursive: true })
+    const cellRuns = planCells(config)
+    const runs = []
+
+    for (const cell of cellRuns) {
+      const fixture = fixtureById(cell.fixture)
+      const record = await runCell({
+        config,
+        fixture,
+        arm: cell.arm,
+        replicate: cell.replicate,
+        timestamp,
+        officialSkillsDir,
+        deps: resolved,
+      })
+      runs.push(record)
+      process.stdout.write(
+        `  ${record.runId} valid=${record.valid} tokens=${record.metrics?.tokens.totalTokens ?? 0}\n`,
+      )
+    }
+
+    const finishedAt = resolved.now().toISOString()
+    const report = resolved.writeReport({ outDir: config.out, config, runs, startedAt, finishedAt })
+    return { ...report, runs }
+  } finally {
+    resolved.restoreHomeEnv(previousEnv)
+    if (config.keepHome) {
+      process.stdout.write(`  kept private home ${home.dshHome}\n`)
+    } else {
+      resolved.cleanupEvalHome({ dshHome: home.dshHome, agentsHome: home.agentsHome })
     }
   }
-
-  const officialSkillsDir = resolved.ensureOfficialSkills({
-    cacheDir: join(CACHE_ROOT, 'official-skills'),
-  })
-  const startedAt = resolved.now().toISOString()
-  const timestamp = startedAt.replace(/[:.]/gu, '-')
-  mkdirSync(config.out, { recursive: true })
-  const cellRuns = planCells(config)
-  const runs = []
-
-  for (const cell of cellRuns) {
-    const fixture = fixtureById(cell.fixture)
-    const record = await runCell({
-      config,
-      fixture,
-      arm: cell.arm,
-      replicate: cell.replicate,
-      timestamp,
-      officialSkillsDir,
-      deps: resolved,
-    })
-    runs.push(record)
-    process.stdout.write(
-      `  ${record.runId} valid=${record.valid} tokens=${record.metrics?.tokens.totalTokens ?? 0}\n`,
-    )
-  }
-
-  const finishedAt = resolved.now().toISOString()
-  const report = resolved.writeReport({ outDir: config.out, config, runs, startedAt, finishedAt })
-  return { ...report, runs }
 }
 
 export { OPERATING_RULES }

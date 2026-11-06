@@ -19,6 +19,9 @@ function printPlan(config) {
   console.log(`  timeout:  ${config.timeoutMs / 60_000} min per run`)
   console.log(`  budget:   ${config.budgetTokensPerRun} tokens per run`)
   console.log(`  output:   ${config.out}`)
+  console.log(`  DSH_HOME: ${config.home}${config.keepHome ? ' (kept)' : ''}`)
+  console.log(`  agents:   ${config.agentsHome}`)
+  console.log(`  source:   ${config.sourceHome}`)
   console.log(`  cells:    ${cells.length}`)
   for (const fixtureId of config.fixtures) {
     const fixture = fixtureById(fixtureId)

@@ -4,6 +4,7 @@
  * @module eval/lib/config
  */
 
+import { DEFAULT_AGENTS_HOME, DEFAULT_DSH_HOME, DEFAULT_SOURCE_HOME } from './dsh-home.mjs'
 import { RUNS_ROOT } from './paths.mjs'
 import { FIXTURES } from './registry.mjs'
 
@@ -60,6 +61,10 @@ export function parseArgs(argv) {
     out: null,
     timeoutMin: null,
     budget: null,
+    home: null,
+    agentsHome: null,
+    sourceHome: null,
+    keepHome: false,
   }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -94,6 +99,18 @@ export function parseArgs(argv) {
       case '--budget':
         options.budget = positiveInteger(requireValue(argv, (index += 1), arg), arg)
         break
+      case '--home':
+        options.home = requireValue(argv, (index += 1), arg)
+        break
+      case '--agents-home':
+        options.agentsHome = requireValue(argv, (index += 1), arg)
+        break
+      case '--source-home':
+        options.sourceHome = requireValue(argv, (index += 1), arg)
+        break
+      case '--keep-home':
+        options.keepHome = true
+        break
       default:
         throw new Error(`unknown option: ${arg}`)
     }
@@ -124,6 +141,10 @@ export function resolveConfig(options) {
     timeoutMs: (options.timeoutMin ?? DEFAULT_CONFIG.timeoutMs / 60_000) * 60_000,
     budgetTokensPerRun: options.budget ?? DEFAULT_CONFIG.budgetTokensPerRun,
     out: options.out ?? RUNS_ROOT,
+    home: options.home ?? DEFAULT_DSH_HOME,
+    agentsHome: options.agentsHome ?? DEFAULT_AGENTS_HOME,
+    sourceHome: options.sourceHome ?? DEFAULT_SOURCE_HOME,
+    keepHome: options.keepHome,
     execute: options.execute,
   }
 }
@@ -171,6 +192,10 @@ Options:
   --timeout-min <n>    Wall-clock limit for one run. Default: 45.
   --budget <tokens>    Token budget for one run. Default: 8000000.
   --out <dir>          Output root. Default: eval/runs.
+  --home <dir>         Private DSH_HOME. Default: eval/.dsh-home.
+  --agents-home <dir>  Private DSH_AGENTS_HOME. Default: eval/.agents-home.
+  --source-home <dir>  Home holding .credentials.yaml. Default: ~/.dsh.
+  --keep-home          Keep the private roots after the matrix.
   --execute            Run the matrix. Without it, print the plan only.
   --list               List fixtures and exit.
   --help               Print this help and exit.

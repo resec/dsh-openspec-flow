@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -127,6 +127,10 @@ function depsFor({ out, stages, total = 1000, state = {} }) {
       }
     },
     runGates: () => ({ passed: true, gates: [{ name: 'all', passed: true }] }),
+    createEvalHome: () => ({ dshHome: join(out, '.dsh-home'), agentsHome: join(out, '.agents-home') }),
+    cleanupEvalHome: () => {},
+    applyHomeEnv: () => ({}),
+    restoreHomeEnv: () => {},
     acceptanceDir: () => null,
     copySession: () => {},
     gitDiff: () => '',
@@ -182,4 +186,56 @@ test('stops a stalled run and marks it invalid', async (t) => {
   assert.equal(run.stalled, true)
   assert.equal(run.valid, false)
   assert.equal(run.rounds.length, 2)
+})
+
+test('creates, applies and cleans the private home', async (t) => {
+  const out = mkdtempSync(join(tmpdir(), 'eval-matrix-'))
+  t.after(() => rmSync(out, { recursive: true, force: true }))
+  const { deps } = depsFor({ out, stages: ['archived'] })
+  const calls = []
+  deps.createEvalHome = () => {
+    calls.push('create')
+    return { dshHome: join(out, '.dsh-home'), agentsHome: join(out, '.agents-home') }
+  }
+  deps.applyHomeEnv = () => {
+    calls.push('apply')
+    return { DSH_HOME: undefined, DSH_AGENTS_HOME: undefined }
+  }
+  deps.restoreHomeEnv = () => calls.push('restore')
+  deps.cleanupEvalHome = () => calls.push('cleanup')
+
+  await runMatrix(baseConfig(out), deps)
+
+  assert.deepEqual(calls, ['create', 'apply', 'restore', 'cleanup'])
+})
+
+test('uses and removes a real private home', async (t) => {
+  const out = mkdtempSync(join(tmpdir(), 'eval-matrix-'))
+  t.after(() => rmSync(out, { recursive: true, force: true }))
+  const source = join(out, 'source')
+  const dshHome = join(out, 'dsh')
+  const agentsHome = join(out, 'agents')
+  mkdirSync(source, { recursive: true })
+  writeFileSync(join(source, '.credentials.yaml'), 'deepseek:\n  token: test\n')
+
+  const { deps } = depsFor({ out, stages: ['archived'] })
+  delete deps.createEvalHome
+  delete deps.cleanupEvalHome
+  delete deps.applyHomeEnv
+  delete deps.restoreHomeEnv
+
+  const config = {
+    ...baseConfig(join(out, 'runs')),
+    arms: ['official'],
+    runs: 1,
+    home: dshHome,
+    agentsHome,
+    sourceHome: source,
+    keepHome: false,
+  }
+  await runMatrix(config, deps)
+
+  assert.equal(existsSync(dshHome), false)
+  assert.equal(existsSync(agentsHome), false)
+  assert.equal(existsSync(source), true)
 })
