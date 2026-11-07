@@ -183,3 +183,11 @@ Tool output paths that fall under the resolved OpenSpec root SHALL be returned r
 
 - **WHEN** the schema listing reports a schema whose name is not `spec-driven`
 - **THEN** `openspec_schemas` does not return that entry
+
+### Requirement: No sync-only write tool
+
+The plugin SHALL NOT expose a tool that applies a change's delta specs to main specs without archiving the change.
+
+#### Scenario: A sync-only write is requested
+- **WHEN** the user asks for a tool that merges delta specs without archiving
+- **THEN** no such tool exists, and the flow rule states that the flow is unsupported

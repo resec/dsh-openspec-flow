@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   GENERATED_BY,
@@ -28,6 +28,11 @@ test('parses frontmatter name, description and metadata', () => {
 
 test('rejects a document without frontmatter', () => {
   assert.throws(() => parseFrontmatter('# no frontmatter'), /frontmatter/)
+})
+
+test('the removed sync skill is not packaged', () => {
+  assert.equal(SKILL_NAMES.includes('openspec-sync-specs'), false)
+  assert.equal(existsSync(packagedSkillPath('openspec-sync-specs')), false)
 })
 
 test('every packaged skill is valid and stamps the plugin version', () => {

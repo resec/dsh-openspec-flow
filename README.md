@@ -30,7 +30,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 提案 | `openspec-propose`；`openspec_new_change`、`openspec_instructions`、`openspec_validate` | 支持 | 创建 change，写 proposal、specs、design、tasks |
 | 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done` | 支持 | 紧凑 apply 循环；批量翻转任务 |
 | 修订规划 | `openspec-update-change`；`openspec_instructions`、`openspec_validate` | 支持 | 修改现有 artifacts；没有专用写工具 |
-| 同步主规格 | `openspec-sync-specs`；`openspec_show`、`openspec_validate` | 部分支持 | 手动编辑主 specs；没有专用工具，归档时的合并由 OpenSpec CLI 完成 |
+| 同步主规格（不归档） | — | 不支持 | 没有工具，也没有技能；主规格只在归档时合并。需要提前更新时，先完成并归档变更 |
 | 归档 | `openspec-archive-change`；`openspec_archive` | 支持 | 先校验、检查任务，再移动并合并 delta specs |
 | 初始化 | `openspec_init` | 支持 | 只建项目结构，不写技能 |
 | store 模式 | 各工具的 `store` 参数 | 部分支持 | 透传 `--store`；端到端未在本机验证 |
@@ -39,7 +39,9 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 
 ## 技能与初始化
 
-六份流程技能由插件的 skill provider 提供：插件在 `ctx.skills` 上注册一个 provider，rank 50，低于项目 `.dsh/skills`（100）与 `.agents/skills`（200），因此项目内的同名副本不会遮蔽插件文本，插件升级后重启会话即生效。目录构建只读 frontmatter，正文在选中时才读取。
+五份流程技能由插件的 skill provider 提供：插件在 `ctx.skills` 上注册一个 provider，rank 50，低于项目 `.dsh/skills`（100）与 `.agents/skills`（200），因此项目内的同名副本不会遮蔽插件文本，插件升级后重启会话即生效。目录构建只读 frontmatter，正文在选中时才读取。
+
+插件不再提供 `openspec-sync-specs`；项目里旧的同名副本不会被 provider 覆盖，需手动删除，否则模型仍可能加载它。
 
 `openspec_init` 只做项目初始化：若项目还没有 `openspec/config.yaml`，执行 `init --tools none --no-animation`，创建配置、`specs/`、`changes/` 与 `changes/archive/`，不生成官方技能，也不写任何技能文件。技能 frontmatter 的 `metadata.generatedBy` 记录 `dsh-openspec-flow@<version>`；不要把这些技能复制进 `.dsh/skills/`。
 
@@ -53,7 +55,7 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 安装后插件行 id 为 `openspec-flow`。本包是 Host-only bundle，无构建脚本、无 `@deepseek-ai/*` 运行时依赖；工具、技能与策略都从 `index.js` 注册。安装时由包管理器安装 `@fission-ai/openspec` 1.16.0；以本地 linked 目录安装时，需要先在插件目录执行 `npm install`。
 
-对已有项目，`openspec_init` 只补项目结构；技能无需安装，插件加载后即可用。项目里若有旧的 `.dsh/skills/openspec-*` 副本，会被 provider 的 rank 50 覆盖，可直接删除。
+对已有项目，`openspec_init` 只补项目结构；技能无需安装，插件加载后即可用。项目里若有旧的 `.dsh/skills/openspec-*` 副本，仍随插件提供的五份技能会被 provider 的 rank 50 覆盖；`openspec-sync-specs` 已不再提供，旧副本必须手动删除。
 
 ## 版本兼容性
 
@@ -164,9 +166,10 @@ npm test
 
 - CLI 固定为 `@fission-ai/openspec` 1.16.0；升级 OpenSpec 需要发布新插件。
 - 只支持 CLI 内置的 `spec-driven` schema。自定义 schema，或项目、用户目录中同名覆盖 `spec-driven` 的 schema，都会被 change 作用域的工具拒绝；`openspec_schemas` 不列出这些 schema，`openspec_new_change` 在写入前拒绝创建。
-- 六份技能正文与 OpenSpec 1.16.0 对齐；升级 CLI 需要重新核对每个命令引用。
+- 五份技能正文与 OpenSpec 1.16.0 对齐；升级 CLI 需要重新核对每个命令引用。
 - 只覆盖 agent 工作流的 13 个工具；`update`、`install`、`config`、`workset`、`view`、`completion`、`schema fork` 仍由 CLI 负责。
-- 项目内残留的官方技能会被 provider 的 rank 50 覆盖；模型不会加载这些残留副本。
+- 项目内残留的其他官方技能会被 provider 的 rank 50 覆盖；`openspec-sync-specs` 已不再提供，残留副本不会被覆盖，必须删除。
+- 不归档的规格合并没有工具，也没有技能；主规格只由归档更新。
 - 技能随插件版本生效：升级插件后重启会话即可，不需要重新执行 `openspec_init`。
 - store 模式会透传 `--store`，但端到端未在本机验证（本机无 store fixture）。
 - 缓存是进程内的派生视图，跨进程不持久；DSH 重启后第一次 mark 会重跑一次 apply 取数。
@@ -194,7 +197,7 @@ lib/skill.js             skill provider 注册与按需读取
 lib/policy.js            流程规则文本、项目检测、agent 作用域注册
 lib/cache.js             进程内 LRU
 lib/hash.js              SHA-1 指纹
-skills/                  六份流程技能
+skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
 test/                    单元与真实 CLI 集成测试

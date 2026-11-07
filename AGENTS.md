@@ -12,7 +12,7 @@ The project uses OpenSpec. Non-trivial work starts as a change under `openspec/c
 4. Finish with `openspec_validate <name>` and `npm test` on Node 24. Archive with `openspec_archive` only when the user asks.
 5. After archiving, commit the archive, the documentation updates, and the merged specs in one commit, then push to `origin/main` (`git@github.com:resec/dsh-openspec-flow.git`).
 
-The plugin serves the six workflow skills from its own skill provider at rank 50; it writes no project copy. `openspec_init` only creates the OpenSpec project structure. This repository keeps no `.dsh/skills/` copies.
+The plugin serves the five workflow skills from its own skill provider at rank 50; it writes no project copy. `openspec_init` only creates the OpenSpec project structure. This repository keeps no `.dsh/skills/` copies. There is no sync-only flow: main specs are updated only by `openspec_archive`, and `openspec-sync-specs` must not be reintroduced.
 
 The plugin also registers a scoped system prompt rule (`openspec-flow:policy`) for agents whose working directory contains an `openspec/` root. It restates these gates: clarify before proposing, confirm before creating a change, apply through the compact loop, validate before completion, and archive only on request. The rule is advisory and does not restrict tools.
 

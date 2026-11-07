@@ -1,7 +1,7 @@
 /**
  * OpenSpec flow for DeepSeek Harness.
  *
- * Registers thirteen agent tools over an existing OpenSpec project, six
+ * Registers thirteen agent tools over an existing OpenSpec project, five
  * user-invocable skills, and one agent-scoped system prompt section that states
  * the OpenSpec stage gates. The tools keep the OpenSpec CLI as the authority for
  * schema, state and progress, but project its large `instructions apply`

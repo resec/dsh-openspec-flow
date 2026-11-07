@@ -768,7 +768,6 @@ const PLUGIN_SKILLS = [
   'openspec-propose',
   'openspec-apply-change',
   'openspec-archive-change',
-  'openspec-sync-specs',
   'openspec-update-change',
 ]
 
