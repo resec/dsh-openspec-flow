@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { assertBuiltinSchema, BUILTIN_SCHEMA, projectRootFromStatus, userSchemasDir } from '../lib/schema.js'
+import { assertBuiltinSchema, assertCreatedChangeSchema, assertNewChangeSchema, BUILTIN_SCHEMA, projectRootFromStatus, readProjectSchema, userSchemasDir } from '../lib/schema.js'
 
 function makeRoot() {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-schema-'))
@@ -116,4 +116,146 @@ test('builds the Windows user schema directory with and without LOCALAPPDATA', (
 
 test('rejects a missing schema name', () => {
   assert.throws(() => assertBuiltinSchema('', '/project', 'c'), /no schema name/)
+})
+
+test('reads a quoted project schema and ignores an inline comment', () => {
+  const root = makeRoot()
+  try {
+    writeFileSync(join(root, 'openspec', 'config.yaml'), 'schema: "custom" # project choice\n')
+    assert.deepEqual(readProjectSchema(root), {
+      path: join(root, 'openspec', 'config.yaml'),
+      value: 'custom',
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('accepts a new change only when the project schema is spec-driven', () => {
+  const root = makeRoot()
+  const userHome = mkdtempSync(join(tmpdir(), 'openspec-flow-user-'))
+  try {
+    withUserData(userHome, () => {
+      writeFileSync(join(root, 'openspec', 'config.yaml'), "schema: 'spec-driven' # built-in\n")
+      assert.doesNotThrow(() => assertNewChangeSchema(root, 'demo'))
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(userHome, { recursive: true, force: true })
+  }
+})
+
+test('rejects a new change when the project selects a custom schema', () => {
+  const root = makeRoot()
+  const config = join(root, 'openspec', 'config.yaml')
+  const userHome = mkdtempSync(join(tmpdir(), 'openspec-flow-user-'))
+  try {
+    withUserData(userHome, () => {
+      writeFileSync(config, 'schema: custom\n')
+      assert.throws(
+        () => assertNewChangeSchema(root, 'demo'),
+        new RegExp(`Unsupported OpenSpec schema 'custom' in '${config.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}' for new change 'demo'`),
+      )
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(userHome, { recursive: true, force: true })
+  }
+})
+
+test('rejects a new change when the built-in schema is shadowed', () => {
+  const root = makeRoot()
+  const userHome = mkdtempSync(join(tmpdir(), 'openspec-flow-user-'))
+  try {
+    writeSchema(join(root, 'openspec', 'schemas', 'spec-driven'))
+    withUserData(userHome, () => {
+      assert.throws(
+        () => assertNewChangeSchema(root, 'demo'),
+        /shadowed by the project schema/,
+      )
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(userHome, { recursive: true, force: true })
+  }
+})
+
+test('fails closed when the project config cannot be read', () => {
+  const root = makeRoot()
+  const userHome = mkdtempSync(join(tmpdir(), 'openspec-flow-user-'))
+  try {
+    mkdirSync(join(root, 'openspec', 'config.yaml'))
+    withUserData(userHome, () => {
+      assert.throws(
+        () => assertNewChangeSchema(root, 'demo'),
+        /Cannot verify the project schema for new change 'demo'.*Cannot read/s,
+      )
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(userHome, { recursive: true, force: true })
+  }
+})
+
+test('returns undefined when the project has no config file', () => {
+  const root = makeRoot()
+  try {
+    assert.equal(readProjectSchema(root), undefined)
+    assert.equal(readProjectSchema(''), undefined)
+    assert.equal(readProjectSchema(undefined), undefined)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('reads an unquoted schema with an inline comment', () => {
+  const root = makeRoot()
+  try {
+    writeFileSync(join(root, 'openspec', 'config.yaml'), 'schema: custom # project choice\n')
+    assert.deepEqual(readProjectSchema(root), {
+      path: join(root, 'openspec', 'config.yaml'),
+      value: 'custom',
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('keeps an unterminated quote in the scalar', () => {
+  const root = makeRoot()
+  try {
+    writeFileSync(join(root, 'openspec', 'config.yaml'), 'schema: "custom\n')
+    assert.deepEqual(readProjectSchema(root), {
+      path: join(root, 'openspec', 'config.yaml'),
+      value: '"custom',
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('handles a config without a schema line', () => {
+  const root = makeRoot()
+  const userHome = mkdtempSync(join(tmpdir(), 'openspec-flow-user-'))
+  try {
+    writeFileSync(join(root, 'openspec', 'config.yaml'), '# no schema here\n')
+    assert.deepEqual(readProjectSchema(root), {
+      path: join(root, 'openspec', 'config.yaml'),
+      value: '',
+    })
+    withUserData(userHome, () => {
+      assert.doesNotThrow(() => assertNewChangeSchema(root, 'demo'))
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(userHome, { recursive: true, force: true })
+  }
+})
+
+test('accepts and rejects the schema reported by the create command', () => {
+  assert.doesNotThrow(() => assertCreatedChangeSchema('spec-driven', 'demo'))
+  assert.throws(
+    () => assertCreatedChangeSchema('custom', 'demo'),
+    /returned schema 'custom' for 'demo'.*only supports the built-in 'spec-driven'/s,
+  )
 })

@@ -10,17 +10,32 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 读 | `openspec_status` | 紧凑状态：schema、产物完成度、下一步、编辑约束 |
 | 读 | `openspec_show` | 读变更的 delta 或规格的 purpose、需求与场景 |
 | 读 | `openspec_context` | 解析根、成员与状态 |
-| 读 | `openspec_schemas` | 列出可用 schema 及其来源 |
+| 读 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven` |
 | 读 | `openspec_store_list` | 列出已注册 store |
 | 规划 | `openspec_instructions` | 读某产物的 CLI 指令、输出路径、依赖与已存在文件 |
 | 规划 | `openspec_validate` | 校验 change、spec、全部 specs 或全部项目 |
-| 写 | `openspec_new_change` | 创建变更目录与 `.openspec.yaml`，不隐式建根 |
+| 写 | `openspec_new_change` | 创建变更目录与 `.openspec.yaml`；先检查项目 schema，不支持则拒绝 |
 | 写 | `openspec_archive` | 先校验、再归档并合并 delta specs |
 | 写 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能 |
 | apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles 与指令 |
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 
-写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
+写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
+
+## 流程覆盖
+
+| 流程 | 入口 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 探索与读取 | `openspec-explore`；`openspec_list`、`openspec_status`、`openspec_show`、`openspec_context`、`openspec_schemas`、`openspec_store_list` | 支持 | 只读，不写项目文件 |
+| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_instructions`、`openspec_validate` | 支持 | 创建 change，写 proposal、specs、design、tasks |
+| 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done` | 支持 | 紧凑 apply 循环；批量翻转任务 |
+| 修订规划 | `openspec-update-change`；`openspec_instructions`、`openspec_validate` | 支持 | 修改现有 artifacts；没有专用写工具 |
+| 同步主规格 | `openspec-sync-specs`；`openspec_show`、`openspec_validate` | 部分支持 | 手动编辑主 specs；没有专用工具，归档时的合并由 OpenSpec CLI 完成 |
+| 归档 | `openspec-archive-change`；`openspec_archive` | 支持 | 先校验、检查任务，再移动并合并 delta specs |
+| 初始化 | `openspec_init` | 支持 | 只建项目结构，不写技能 |
+| store 模式 | 各工具的 `store` 参数 | 部分支持 | 透传 `--store`；端到端未在本机验证 |
+| 自定义 schema | — | 不支持 | 只支持内置 `spec-driven`；`openspec_schemas` 不列出其他 schema，`openspec_new_change` 拒绝创建 |
+| 全局管理命令 | — | 不支持 | `update`、`install`、`config`、`workset`、`view`、`completion`、`schema fork` 由 OpenSpec CLI 负责 |
 
 ## 技能与初始化
 
@@ -148,7 +163,7 @@ npm test
 ## 限制
 
 - CLI 固定为 `@fission-ai/openspec` 1.16.0；升级 OpenSpec 需要发布新插件。
-- 只支持 CLI 内置的 `spec-driven` schema。自定义 schema，或项目、用户目录中同名覆盖 `spec-driven` 的 schema，都会被 change 作用域的工具拒绝。
+- 只支持 CLI 内置的 `spec-driven` schema。自定义 schema，或项目、用户目录中同名覆盖 `spec-driven` 的 schema，都会被 change 作用域的工具拒绝；`openspec_schemas` 不列出这些 schema，`openspec_new_change` 在写入前拒绝创建。
 - 六份技能正文与 OpenSpec 1.16.0 对齐；升级 CLI 需要重新核对每个命令引用。
 - 只覆盖 agent 工作流的 13 个工具；`update`、`install`、`config`、`workset`、`view`、`completion`、`schema fork` 仍由 CLI 负责。
 - 项目内残留的官方技能会被 provider 的 rank 50 覆盖；模型不会加载这些残留副本。

@@ -14,6 +14,7 @@ import {
   projectSpecList,
   projectStatus,
   projectStoreList,
+  projectSupportedSchemas,
   projectValidate,
   projectValidationReport,
 } from '../lib/state.js'
@@ -299,6 +300,18 @@ test('projectSchemas handles a non-array payload and missing fields', () => {
   assert.deepEqual(projectSchemas([{ name: 'x', artifacts: 'no' }]), {
     schemas: [{ name: 'x', description: '', artifacts: [], source: '' }],
   })
+})
+
+test('projectSupportedSchemas keeps only the package spec-driven entry', () => {
+  const result = projectSupportedSchemas([
+    { name: 'spec-driven', description: 'Default', artifacts: ['proposal'], source: 'package' },
+    { name: 'spec-driven', description: 'Shadow', artifacts: ['proposal'], source: 'project' },
+    { name: 'custom', description: 'Custom', artifacts: ['plan'], source: 'project' },
+  ])
+  assert.deepEqual(result, {
+    schemas: [{ name: 'spec-driven', description: 'Default', artifacts: ['proposal'], source: 'package' }],
+  })
+  assert.deepEqual(projectSupportedSchemas(null), { schemas: [] })
 })
 
 test('projectStoreList handles missing stores and absent metadata', () => {

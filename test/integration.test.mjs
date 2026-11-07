@@ -632,7 +632,9 @@ test('reads context, schemas and registered stores', async () => {
   assert.equal(context.root.path, root)
 
   const schemas = await call(fake, 'openspec_schemas', {})
-  assert.ok(schemas.schemas.some((schema) => schema.name === 'spec-driven'))
+  assert.equal(schemas.schemas.length, 1)
+  assert.equal(schemas.schemas[0].name, 'spec-driven')
+  assert.equal(schemas.schemas[0].source, 'package')
   assert.ok(Array.isArray(schemas.schemas[0].artifacts))
 
   const stores = await call(fake, 'openspec_store_list', {})
@@ -657,6 +659,39 @@ test('creates a change through openspec_new_change', async () => {
     call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
     /exists|already/i,
   )
+})
+
+test('omits a project-local schema shadow from openspec_schemas', async () => {
+  const root = fixture()
+  addSchema(root, 'spec-driven')
+  const fake = setup(root)
+
+  const schemas = await call(fake, 'openspec_schemas', {})
+  assert.deepEqual(schemas.schemas, [])
+})
+
+test('rejects a new change when the project selects a custom schema', async () => {
+  const root = fixture()
+  writeFileSync(join(root, 'openspec', 'config.yaml'), 'schema: custom\n')
+  const fake = setup(root)
+
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
+    /Unsupported OpenSpec schema 'custom'/,
+  )
+  assert.equal(existsSync(join(root, 'openspec', 'changes', 'add-light-mode')), false)
+})
+
+test('rejects a new change when the project schema shadows the built-in', async () => {
+  const root = fixture()
+  addSchema(root, 'spec-driven')
+  const fake = setup(root)
+
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
+    /shadowed by the project schema/,
+  )
+  assert.equal(existsSync(join(root, 'openspec', 'changes', 'add-light-mode')), false)
 })
 
 test('refuses to create a change without a root', async () => {
