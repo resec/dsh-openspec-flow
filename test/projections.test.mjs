@@ -43,6 +43,8 @@ test('projectInstructions keeps the instruction and drops path internals', () =>
   assert.equal(result.artifact, 'proposal')
   assert.equal(result.instruction, 'Write the proposal.')
   assert.equal(result.outputPath, 'proposal.md')
+  assert.equal(result.resolvedOutputPath, 'openspec/changes/add-dark-mode/proposal.md')
+  assert.deepEqual(result.existingOutputPaths, ['openspec/changes/add-dark-mode/proposal.md'])
   assert.deepEqual(result.dependencies, [])
   assert.deepEqual(result.unlocks, ['specs'])
   assert.equal(result.changeDir, undefined)

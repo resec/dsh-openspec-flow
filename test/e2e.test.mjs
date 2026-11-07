@@ -132,7 +132,7 @@ test('runs init, plan, apply and archive through tools, matching a CLI run', asy
 
   const change = await call(fake, 'openspec_new_change', { name: CHANGE })
   assert.equal(change.change.id, CHANGE)
-  writeArtifacts(change.change.path)
+  writeArtifacts(join(toolRoot, change.change.path))
 
   const validation = await call(fake, 'openspec_validate', { change: CHANGE })
   assert.equal(validation.valid, true, JSON.stringify(validation.issues))
@@ -151,7 +151,7 @@ test('runs init, plan, apply and archive through tools, matching a CLI run', asy
   assert.equal(archived.specsUpdated, true)
 
   const toolSpec = readFileSync(join(toolRoot, 'openspec', 'specs', 'theme', 'spec.md'), 'utf8')
-  const toolTasks = readFileSync(join(archived.path, 'tasks.md'), 'utf8')
+  const toolTasks = readFileSync(join(toolRoot, archived.path, 'tasks.md'), 'utf8')
   assert.match(toolTasks, /- \[x\] 1\.1/)
   assert.match(toolTasks, /- \[x\] 1\.2/)
 

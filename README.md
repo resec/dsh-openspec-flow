@@ -80,7 +80,8 @@ CLI 来源固定：
 
 - **CLI 是权威**：schema、store、root、产物状态、校验与归档合并全部来自 `openspec`；插件不重新实现这些语义。
 - **CLI 唯一内置**：只运行插件安装树内的 `@fission-ai/openspec` 1.16.0，首次调用校验版本，同一进程内缓存结果。
-- **工具投影**：每个读工具返回 CLI JSON 的紧凑投影，保留下一步需要的字段，去掉绝对路径映射与内部结构。
+- **工具投影**：每个读工具返回 CLI JSON 的紧凑投影，保留下一步需要的字段，去掉内部结构。
+- **路径基准**：项目内路径相对 `root.path`，根自身用 `.`，分隔符统一为 `/`；含相对路径的响应同时返回绝对 `root.path`，`openspec_apply_next` 与 `openspec_archive` 携带它。根外路径（store 根与元数据、根外 planning home）保持绝对；`openspec_init.root` 保持绝对。`openspec_mark_task_done` 不重复携带根，其 `next.sourcePath` 相对 `openspec_apply_next` 的 `root.path`，并接受相对 `sourcePath` 输入。
 - **schema 闸门**：change 作用域的工具只接受内置 `spec-driven`；项目或用户目录中的同名覆盖会被拒绝。
 - **指令映射**：`openspec_instructions` 返回的正文里，已知 CLI 命令片段被替换为对应工具名，路径保持不变。
 - **一次取数**：`openspec_apply_next` 执行一次 `instructions apply --json`，把完整载荷留在进程内，只向模型返回投影。
@@ -97,7 +98,7 @@ CLI 来源固定：
 在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
 
 - `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init、技能 provider 与指令映射。
-- 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 863 B，39 次 mark 平均 394 B，合计 16,226 B，约为「每任务重跑」53.3 万字节的 3.0%。
+- 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 781 B，39 次 mark 平均 365 B，合计 15,004 B，约为「每任务重跑」53.3 万字节的 2.8%。
 - 39 次 mark 期间 CLI 子进程启动次数为 0，证明循环不再是 O(N²) 查询。
 - 测试使用真实 `@fission-ai/openspec` 1.16.0，不是 mock。
 

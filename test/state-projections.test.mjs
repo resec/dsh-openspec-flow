@@ -2,10 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   projectApply,
+  projectArchive,
   projectContext,
   projectInstructions,
   projectList,
   projectMark,
+  projectNewChange,
+  projectPath,
   projectSchemas,
   projectShow,
   projectSpecList,
@@ -14,6 +17,119 @@ import {
   projectValidate,
   projectValidationReport,
 } from '../lib/state.js'
+
+test('projectPath makes project paths relative and keeps outside paths', () => {
+  assert.equal(projectPath('/project', '/project'), '.')
+  assert.equal(
+    projectPath('/project', '/project/openspec/changes/c/tasks.md'),
+    'openspec/changes/c/tasks.md',
+  )
+  assert.equal(projectPath('/project', '/project2/file.md'), '/project2/file.md')
+  assert.equal(projectPath('/project', '/elsewhere/file.md'), '/elsewhere/file.md')
+  assert.equal(projectPath('/project', 'openspec/changes/c/tasks.md'), 'openspec/changes/c/tasks.md')
+  assert.equal(projectPath('/project', ''), '')
+  assert.equal(projectPath('', '/project/file.md'), '/project/file.md')
+  assert.equal(projectPath('/project', undefined), undefined)
+})
+
+test('projectApply projects context files and the next source relative to the root', () => {
+  const result = projectApply({
+    projectRoot: '/project',
+    tasks: [{
+      id: '1.1',
+      description: 'one',
+      done: false,
+      sourcePath: '/project/openspec/changes/c/tasks.md',
+      line: 3,
+      numericId: '1.1',
+    }],
+    payload: {
+      changeName: 'c',
+      schemaName: 'spec-driven',
+      state: 'ready',
+      progress: { total: 1, complete: 0, remaining: 1 },
+      contextFiles: { tasks: ['/project/openspec/changes/c/tasks.md'] },
+      root: { path: '/project', source: 'nearest' },
+    },
+  })
+  assert.equal(result.next.sourcePath, 'openspec/changes/c/tasks.md')
+  assert.deepEqual(result.contextFiles, { tasks: ['openspec/changes/c/tasks.md'] })
+  assert.deepEqual(result.root, { path: '/project', source: 'nearest' })
+})
+
+test('projectMark projects the next source relative to the root', () => {
+  const result = projectMark({
+    projectRoot: '/project',
+    tasks: [{
+      id: '1.2',
+      description: 'two',
+      done: false,
+      sourcePath: '/project/openspec/changes/c/tasks.md',
+      line: 4,
+      numericId: '1.2',
+    }],
+    payload: {
+      changeName: 'c',
+      state: 'ready',
+      progress: { total: 2, complete: 1, remaining: 1 },
+      root: { path: '/project', source: 'nearest' },
+    },
+  }, { status: 'flipped' }, '1.1')
+  assert.equal(result.next.sourcePath, 'openspec/changes/c/tasks.md')
+  assert.equal(result.root, undefined)
+})
+
+test('projectApply reports an empty root source when the payload has none', () => {
+  const result = projectApply({
+    projectRoot: '/project',
+    tasks: [],
+    payload: { changeName: 'c', schemaName: 's', state: 'ready', progress: {} },
+  })
+  assert.deepEqual(result.root, { path: '/project', source: '' })
+})
+
+test('projectNewChange and projectArchive project paths relative to the root', () => {
+  const created = projectNewChange({
+    change: {
+      id: 'c',
+      path: '/project/openspec/changes/c',
+      metadataPath: '/project/openspec/changes/c/.openspec.yaml',
+      schema: 'spec-driven',
+    },
+    root: { path: '/project', source: 'nearest' },
+  }, '/project', 'c')
+  assert.equal(created.change.path, 'openspec/changes/c')
+  assert.equal(created.change.metadataPath, 'openspec/changes/c/.openspec.yaml')
+  assert.deepEqual(created.root, { path: '/project', source: 'nearest' })
+
+  const minimal = projectNewChange({ change: {} }, '', 'fallback')
+  assert.equal(minimal.change.id, 'fallback')
+  assert.equal(minimal.change.path, '')
+  assert.equal(minimal.change.metadataPath, '')
+  assert.equal(minimal.root, undefined)
+
+  const archived = projectArchive({
+    archive: {
+      archivedAs: 'archive/c',
+      path: '/project/openspec/changes/archive/c',
+      specsUpdated: true,
+      totals: { added: 1 },
+      warnings: ['w'],
+    },
+  }, 'c', '/project', 'nearest')
+  assert.equal(archived.path, 'openspec/changes/archive/c')
+  assert.equal(archived.specsUpdated, true)
+  assert.deepEqual(archived.totals, { added: 1 })
+  assert.deepEqual(archived.warnings, ['w'])
+  assert.deepEqual(archived.root, { path: '/project', source: 'nearest' })
+
+  const empty = projectArchive({ archive: {} }, 'c', '', '')
+  assert.equal(empty.path, '')
+  assert.equal(empty.specsUpdated, false)
+  assert.equal(empty.totals, undefined)
+  assert.equal(empty.warnings, undefined)
+  assert.equal(empty.root, undefined)
+})
 
 test('projectApply handles an empty next task and absent optional fields', () => {
   const minimal = projectApply({
@@ -91,11 +207,27 @@ test('projectStatus projects every optional section', () => {
     root: { path: '/root', source: 'nearest' },
   })
   assert.equal(result.planningHome, '/home')
+  assert.equal(result.changeRoot, '/changes/c')
+  assert.deepEqual(result.actionContext.allowedEditRoots, ['.'])
   assert.deepEqual(result.artifacts[0].requires, [])
   assert.deepEqual(result.artifacts[1].requires, ['a'])
   assert.equal(result.actionContext.mode, 'repo-local')
   assert.deepEqual(result.nextSteps, ['next'])
   assert.deepEqual(result.root, { path: '/root', source: 'nearest' })
+})
+
+test('projectStatus projects root-internal paths relative to the root', () => {
+  const result = projectStatus({
+    changeName: 'c',
+    schemaName: 'spec-driven',
+    changeRoot: '/project/openspec/changes/c',
+    planningHome: { root: '/project' },
+    actionContext: { allowedEditRoots: ['/project', '/project/openspec'] },
+    root: { path: '/project', source: 'nearest' },
+  })
+  assert.equal(result.changeRoot, 'openspec/changes/c')
+  assert.equal(result.planningHome, '.')
+  assert.deepEqual(result.actionContext.allowedEditRoots, ['.', 'openspec'])
 })
 
 test('projectStatus skips absent optional sections', () => {

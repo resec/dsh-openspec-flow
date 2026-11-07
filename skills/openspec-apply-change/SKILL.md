@@ -16,13 +16,13 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks.
 2. If no change is named, infer it from context. If several exist, ask.
 3. Call `openspec_status` for the change. If `isPlanningComplete` is false or artifacts are missing, finish planning first; do not start apply.
-4. Call `openspec_apply_next` once. Read every file under `contextFiles` before editing. Treat `instruction` as the current guidance. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.
+4. Call `openspec_apply_next` once. Every `contextFiles` path is relative to `root.path`; join them with that absolute root before reading. Read every listed file before editing. Treat `instruction` as the current guidance. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.
 5. When the change lives in a store, pass the same `store` on every call.
 
 ## Loop
 
 - Work only on `next`. Keep the change scoped to that task.
-- Verify the checkbox at `next.sourcePath` and `next.line` still matches `next.description`; if it moved, call `openspec_apply_next` once to resync.
+- Verify the checkbox at `next.sourcePath` and `next.line` still matches `next.description`; `sourcePath` is relative to `root.path`, so resolve it against that root first. If it moved, call `openspec_apply_next` once to resync.
 - Mark it with `openspec_mark_task_done`, passing `next.id`, `sourcePath` and `line`.
 - Continue with the `next` returned by that call. Do not re-run `openspec_apply_next` between tasks.
 - If `status` is `already-done`, continue with the returned `next`.

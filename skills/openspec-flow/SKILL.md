@@ -52,4 +52,4 @@ Pick the skill that matches the stage; each one names the tool for every step.
 
 ## Apply loop
 
-Call `openspec_apply_next` once. Read every `contextFiles` entry. Then work through `next`, marking each with `openspec_mark_task_done` and continuing with the returned `next`. Do not re-run `openspec_apply_next` between tasks; call it again only to start or resync.
+Call `openspec_apply_next` once. Every `contextFiles` entry and `next.sourcePath` is relative to `root.path`; join them with that absolute root before reading. Then work through `next`, marking each with `openspec_mark_task_done` and continuing with the returned `next`. Do not re-run `openspec_apply_next` between tasks; call it again only to start or resync.

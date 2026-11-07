@@ -182,7 +182,10 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   assert.equal(result.taskCount, 5)
   assert.equal(result.next.id, '1.1')
   assert.equal(result.next.line, 3)
+  assert.equal(result.next.sourcePath, `${CHANGE_DIR}/tasks.md`)
   assert.equal(result.contextFiles.proposal.length, 1)
+  assert.equal(result.contextFiles.proposal[0], `${CHANGE_DIR}/proposal.md`)
+  assert.equal(result.root.path, root)
   assert.match(result.instruction, /tasks|work|implementation/i)
   const spawnsAfterApply = fake.stats.spawns
 
@@ -195,6 +198,8 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   assert.equal(result.status, 'flipped')
   assert.deepEqual(result.progress, { total: 5, complete: 1, remaining: 4 })
   assert.equal(result.next.id, '1.10')
+  assert.equal(result.next.sourcePath, `${CHANGE_DIR}/tasks.md`)
+  assert.equal(result.root, undefined)
 
   const after = readFileSync(tasksPath(root), 'utf8')
   const beforeLines = before.split('\n')
@@ -232,6 +237,21 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   const validation = await call(fake, 'openspec_validate', { change: CHANGE })
   assert.equal(validation.valid, true)
   assert.deepEqual(validation.issues, [])
+})
+
+test('marks a task with an absolute source path as well', async () => {
+  const root = fixture()
+  writeTasks(root, '- [ ] 1.1 one\n- [ ] 1.2 two\n')
+  const fake = setup(root)
+  const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const result = await call(fake, 'openspec_mark_task_done', {
+    change: CHANGE,
+    taskId: applied.next.id,
+    sourcePath: join(root, applied.next.sourcePath),
+    line: applied.next.line,
+  })
+  assert.equal(result.status, 'flipped')
+  assert.equal(result.progress.complete, 1)
 })
 
 test('rejects a custom schema before caching apply state', async () => {
@@ -541,9 +561,9 @@ test('creates a change through openspec_new_change', async () => {
     description: 'Add a light theme',
   })
   assert.equal(result.change.id, 'add-light-mode')
-  assert.ok(result.change.path.endsWith('add-light-mode'))
+  assert.equal(result.change.path, 'openspec/changes/add-light-mode')
   assert.equal(result.change.schema, 'spec-driven')
-  assert.ok(existsSync(join(result.change.path, '.openspec.yaml')))
+  assert.ok(existsSync(join(root, result.change.path, '.openspec.yaml')))
 
   await assert.rejects(
     call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
@@ -569,7 +589,9 @@ test('archives a completed change and merges its specs', async () => {
   assert.equal(result.valid, true)
   assert.equal(result.archived, true)
   assert.match(result.archivedAs, /add-dark-mode$/)
-  assert.ok(existsSync(result.path))
+  assert.ok(result.path.startsWith('openspec/changes/archive/'))
+  assert.ok(existsSync(join(root, result.path)))
+  assert.equal(result.root.path, root)
   assert.equal(existsSync(join(root, CHANGE_DIR)), false)
   assert.ok(existsSync(join(root, 'openspec', 'specs', 'theme', 'spec.md')))
 })
