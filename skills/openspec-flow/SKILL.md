@@ -5,7 +5,7 @@ description: Drive an OpenSpec project end to end with the openspec_* tools, cov
 
 # OpenSpec flow
 
-The plugin exposes the whole agent-facing OpenSpec workflow. Use these tools instead of running `openspec` by hand; the plugin provides no CLI fallback, so report a missing tool and stop.
+The plugin exposes the whole agent-facing OpenSpec workflow. Use these tools for every step; if a tool is unavailable, report it and stop.
 
 ## Tools
 

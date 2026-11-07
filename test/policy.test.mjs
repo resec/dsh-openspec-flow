@@ -52,10 +52,10 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /Archive only when the user explicitly asks/)
 })
 
-test('the policy text offers no CLI fallback', () => {
-  assert.match(POLICY_TEXT, /no CLI fallback/)
-  assert.doesNotMatch(POLICY_TEXT, /fall back/i)
-  assert.doesNotMatch(POLICY_TEXT, /run the `openspec` CLI/)
+test('the policy text names no CLI', () => {
+  assert.doesNotMatch(POLICY_TEXT, /\bCLI\b/i)
+  assert.doesNotMatch(POLICY_TEXT, /\bopsx\b/i)
+  assert.doesNotMatch(POLICY_TEXT, /`openspec`/)
 })
 
 test('an OpenSpec-project agent receives one scoped rule', (t) => {

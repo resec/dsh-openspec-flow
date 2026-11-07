@@ -1,7 +1,7 @@
 ---
 name: openspec-update-change
-description: Revise an OpenSpec change's planning artifacts with the openspec_* tools and keep proposal, specs, design and tasks coherent. Use when the user wants to update a change's plan, or says "openspec update change" or "opsx update".
-whenToUse: The user wants an existing change's artifacts revised, not implemented, and not the CLI update command that refreshes generated files.
+description: Revise an OpenSpec change's planning artifacts with the openspec_* tools and keep proposal, specs, design and tasks coherent. Use when the user wants to update a change's plan.
+whenToUse: The user wants an existing change's artifacts revised, not implemented, and not the refresh action that regenerates generated files.
 metadata:
   generatedBy: dsh-openspec-flow@0.1.0
   upstream: openspec@1.16.0
@@ -11,7 +11,7 @@ metadata:
 
 This edits planning documents only. It does not implement code and does not archive.
 
-Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
 
 ## Read first
 
@@ -35,4 +35,4 @@ Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: 
 
 - Do not edit code.
 - Do not archive.
-- If the user means the CLI's update command, which refreshes generated skills and commands, that is a different action; explain that this plugin installs its own skills through `openspec_init`.
+- If the user means regenerating generated files, that is a different action and out of scope; this plugin serves its skills directly and regenerates nothing.

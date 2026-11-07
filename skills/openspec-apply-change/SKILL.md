@@ -1,6 +1,6 @@
 ---
 name: openspec-apply-change
-description: Implement tasks from an OpenSpec change with the openspec_* tools. Use when the user wants to start, continue, or finish implementation, or says "openspec apply" or "opsx apply".
+description: Implement tasks from an OpenSpec change with the openspec_* tools. Use when the user wants to start, continue, or finish implementation.
 whenToUse: The user wants to implement, continue, or finish an OpenSpec change in a project that has the dsh-openspec-flow plugin.
 metadata:
   generatedBy: dsh-openspec-flow@0.1.0
@@ -9,7 +9,7 @@ metadata:
 
 # Apply a change with the plugin tools
 
-Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
 
 ## Start
 

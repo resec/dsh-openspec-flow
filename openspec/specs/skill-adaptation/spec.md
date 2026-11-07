@@ -14,20 +14,6 @@ The `openspec_instructions` result SHALL replace known CLI command fragments in 
 - **WHEN** `openspec_instructions` returns the proposal instruction on OpenSpec 1.16.0
 - **THEN** the text names `openspec_list`, `openspec_show` and `openspec_validate` instead of `openspec list --specs`, `openspec show` and `openspec validate`
 
-### Requirement: Skills use tools and report missing tools
-
-Each packaged skill SHALL direct the agent to the `openspec_*` tools for every workflow step and SHALL state that the plugin provides no CLI fallback. When a tool is unavailable, the skill SHALL instruct the agent to report the missing tool and stop.
-
-#### Scenario: Tool surface is present
-
-- **WHEN** the agent loads a packaged skill in a session with the plugin tools
-- **THEN** every workflow step in the skill names a tool call and no bare `openspec` command is required
-
-#### Scenario: A tool is unavailable
-
-- **WHEN** the agent loads a packaged skill in a session without the plugin tools
-- **THEN** the skill states that the plugin provides no CLI fallback and the agent reports the missing tool instead of running the CLI
-
 ### Requirement: Init creates the OpenSpec project structure
 
 `openspec_init` SHALL create `openspec/config.yaml` and the OpenSpec directory structure through the bundled CLI's `init --tools none`, and SHALL NOT generate official skills or AI-tool configuration.

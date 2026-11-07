@@ -1,6 +1,6 @@
 ---
 name: openspec-archive-change
-description: Archive a completed OpenSpec change with the openspec_* tools, merging its delta specs into the main specs. Use when the user asks to archive or finalize a change, or says "openspec archive" or "opsx archive".
+description: Archive a completed OpenSpec change with the openspec_* tools, merging its delta specs into the main specs. Use when the user asks to archive or finalize a change.
 whenToUse: The user explicitly asks to archive a finished change.
 metadata:
   generatedBy: dsh-openspec-flow@0.1.0
@@ -11,7 +11,7 @@ metadata:
 
 Archive only on an explicit request. A finished apply is not the same as a request to archive.
 
-Use the `openspec_*` tools for every step. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
 
 ## Preconditions
 

@@ -1,6 +1,6 @@
 ---
 name: openspec-explore
-description: Explore an OpenSpec project with the openspec_* tools, reading the root, changes, specs and artifact instructions, then reasoning about options without writing files. Use when the user wants to think through a change or says "openspec explore" or "opsx explore".
+description: Explore an OpenSpec project with the openspec_* tools, reading the root, changes, specs and artifact instructions, then reasoning about options without writing files. Use when the user wants to think through a change.
 whenToUse: The user wants a thinking partner before or during a change, and no artifact should be written yet.
 metadata:
   generatedBy: dsh-openspec-flow@0.1.0
@@ -11,7 +11,7 @@ metadata:
 
 This is a thinking mode. Do not write planning artifacts, do not create a change, and do not edit code unless the user asks.
 
-Use the `openspec_*` tools for every read. The plugin provides no CLI fallback: when a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every read. If a tool is unavailable, report it and stop.
 
 ## Read the ground truth
 
@@ -35,4 +35,4 @@ Read only what the question needs. Prefer one filtered read over pulling every s
 
 - Do not create a change. When the user wants that, switch to `openspec-propose`.
 - Do not mark tasks or archive.
-- Do not run the CLI when a tool covers the read; the plugin provides no CLI fallback. Report a missing tool instead.
+- Do not run any external command when a tool covers the read; report a missing tool instead.

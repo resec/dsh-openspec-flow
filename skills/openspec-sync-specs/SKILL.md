@@ -1,6 +1,6 @@
 ---
 name: openspec-sync-specs
-description: Sync an OpenSpec change's delta specs into the main specs with the openspec_* tools, without archiving the change. Use when the user wants main specs updated now, or says "openspec sync" or "opsx sync".
+description: Sync an OpenSpec change's delta specs into the main specs with the openspec_* tools, without archiving the change. Use when the user wants main specs updated now.
 whenToUse: The user wants main specs updated from a change's delta specs but does not want to archive the change.
 metadata:
   generatedBy: dsh-openspec-flow@0.1.0
@@ -38,4 +38,4 @@ Read the whole delta and the whole target requirement before editing. Never copy
 
 - Do not archive the change and do not move files.
 - Do not edit the delta specs in this workflow; that is `openspec-update-change`.
-- Report a missing tool and stop; the plugin provides no CLI fallback.
+- Report a missing tool and stop.
