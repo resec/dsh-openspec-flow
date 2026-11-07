@@ -168,9 +168,12 @@ test('projectApply normalizes malformed contextFiles', () => {
 })
 
 test('projectMark projects a missing next task', () => {
-  const result = projectMark({ tasks: [], payload: { changeName: 'c', state: 'ready', progress: {} } }, { status: 'flipped' }, '1.1')
+  const result = projectMark(
+    { tasks: [], payload: { changeName: 'c', state: 'ready', progress: {} } },
+    { results: [{ id: '1.1', status: 'flipped' }] },
+  )
+  assert.deepEqual(result.results, [{ id: '1.1', status: 'flipped' }])
   assert.equal(result.next, undefined)
-  assert.equal(result.taskId, '1.1')
 })
 
 test('projectStatus handles missing optional sections', () => {

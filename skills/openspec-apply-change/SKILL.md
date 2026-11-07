@@ -21,11 +21,11 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 ## Loop
 
-- Work only on `next`. Keep the change scoped to that task.
+- Work through the pending tasks in order; keep each change scoped to its task.
 - Verify the checkbox at `next.sourcePath` and `next.line` still matches `next.description`; `sourcePath` is relative to `root.path`, so resolve it against that root first. If it moved, call `openspec_apply_next` once to resync.
-- Mark it with `openspec_mark_task_done`, passing `next.id`, `sourcePath` and `line`.
+- Mark finished tasks with `openspec_mark_task_done`, passing every id finished since the last call in `taskIds`; include `next.sourcePath` and `next.line` when the batch starts at `next`.
 - Continue with the `next` returned by that call. Do not re-run `openspec_apply_next` between tasks.
-- If `status` is `already-done`, continue with the returned `next`.
+- If a result entry is `already-done`, that task needed no change; continue with the returned `next`.
 - If `state` is `all_done`, leave the loop.
 
 Mark a task only when its specified behavior is fully implemented, not when it is partially done, deferred, or covered by a narrowed interpretation.

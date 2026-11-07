@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { hashText } from '../lib/hash.js'
-import { isStale, markDone, projectMark } from '../lib/state.js'
+import { commitMarks, isStale, markDone, projectMark, resolveMarks } from '../lib/state.js'
 import { numericIdOf, parseTaskLines } from '../lib/tasks.js'
 
 function makeEntry(content = '- [ ] 1.1 one\n- [ ] 1.2 two\n- [ ]\n') {
@@ -48,7 +48,8 @@ test('marks one task, updates progress, and keeps the other bytes', () => {
     assert.equal(after, content.replace('- [ ] 1.1 one', '- [x] 1.1 one'))
     assert.deepEqual(entry.payload.progress, { total: 3, complete: 1, remaining: 2 })
     assert.equal(entry.payload.state, 'ready')
-    const projected = projectMark(entry, result, '1.1')
+    const projected = projectMark(entry, { results: [{ id: '1.1', status: result.status }] })
+    assert.deepEqual(projected.results, [{ id: '1.1', status: 'flipped' }])
     assert.equal(projected.next.id, '1.2')
     assert.equal(isStale(entry), false)
     assert.equal(markDone(entry, '1.1').status, 'already-done')
@@ -66,7 +67,8 @@ test('reports all_done after the last task', () => {
     assert.equal(last.status, 'flipped')
     assert.deepEqual(entry.payload.progress, { total: 2, complete: 2, remaining: 0 })
     assert.equal(entry.payload.state, 'all_done')
-    const projected = projectMark(entry, last, '1.2')
+    const projected = projectMark(entry, { results: [{ id: '1.2', status: last.status }] })
+    assert.deepEqual(projected.results, [{ id: '1.2', status: 'flipped' }])
     assert.equal(projected.next, undefined)
     assert.equal(projected.state, 'all_done')
   } finally {
@@ -117,6 +119,53 @@ test('detects a missing hash target', () => {
   try {
     entry.hashes.set(join(dir, 'missing.md'), 'expected')
     assert.equal(isStale(entry), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('resolves a batch without writing and collapses duplicates', () => {
+  const { dir, file, entry, content } = makeEntry()
+  try {
+    const { plans, missing } = resolveMarks(entry, ['1.1', '1.2', '1.1', '#1', '9.9'])
+    assert.deepEqual(plans.map((plan) => plan.taskId), ['1.1', '1.2'])
+    assert.deepEqual(missing, ['9.9'])
+    assert.equal(readFileSync(file, 'utf8'), content)
+    assert.deepEqual(entry.payload.progress, { total: 3, complete: 0, remaining: 3 })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('commits a mixed batch in input order', () => {
+  const { dir, entry } = makeEntry('- [ ] 1.1 one\n- [x] 1.2 two\n- [ ] 1.3 three\n')
+  try {
+    const { plans } = resolveMarks(entry, ['1.3', '1.2', '1.1'])
+    const committed = commitMarks(entry, plans)
+    assert.deepEqual(committed.results, [
+      { id: '1.3', status: 'flipped' },
+      { id: '1.2', status: 'already-done' },
+      { id: '1.1', status: 'flipped' },
+    ])
+    assert.equal(committed.interrupted, undefined)
+    assert.deepEqual(entry.payload.progress, { total: 3, complete: 3, remaining: 0 })
+    const projected = projectMark(entry, committed)
+    assert.deepEqual(projected.results.map((item) => item.id), ['1.3', '1.2', '1.1'])
+    assert.equal(projected.state, 'all_done')
+    assert.equal(projected.next, undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('stops a batch when a planned line disappears', () => {
+  const { dir, file, entry } = makeEntry('- [ ] 1.1 one\n- [ ] 1.2 two\n')
+  try {
+    const { plans } = resolveMarks(entry, ['1.1', '1.2'])
+    writeFileSync(file, '- [ ] 1.1 one\n')
+    const committed = commitMarks(entry, plans)
+    assert.deepEqual(committed.results, [{ id: '1.1', status: 'flipped' }])
+    assert.equal(committed.interrupted, '1.2')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

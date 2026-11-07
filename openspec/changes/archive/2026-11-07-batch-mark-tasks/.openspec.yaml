@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-07
+goal: Let openspec_mark_task_done accept a taskIds array, mark the whole batch
+  atomically, and return per-id results so an agent finishing several tasks pays
+  one call and one round trip.

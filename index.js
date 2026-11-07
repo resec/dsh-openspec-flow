@@ -5,8 +5,8 @@
  * user-invocable skills, and one agent-scoped system prompt section that states
  * the OpenSpec stage gates. The tools keep the OpenSpec CLI as the authority for
  * schema, state and progress, but project its large `instructions apply`
- * payload down to the next task and one compact progress object. Marking a
- * task complete flips exactly one checkbox and updates the cached progress
+ * payload down to the next task and one compact progress object. Marking tasks
+ * complete flips their checkboxes in one call and updates the cached progress
  * without re-running the CLI, which removes the apply loop's repeated
  * O(N²) query.
  *

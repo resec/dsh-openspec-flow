@@ -8,6 +8,7 @@ import test from 'node:test'
 import { apply } from '../index.js'
 import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { clearCliVerification, resolveBundledCli } from '../lib/openspec.js'
+import { parseTaskLines, taskKey } from '../lib/tasks.js'
 import { createFakeContext } from './fake-context.mjs'
 
 const CHANGE = 'add-dark-mode'
@@ -191,11 +192,11 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
 
   result = await call(fake, 'openspec_mark_task_done', {
     change: CHANGE,
-    taskId: '1.1',
+    taskIds: ['1.1'],
     sourcePath: result.next.sourcePath,
     line: result.next.line,
   })
-  assert.equal(result.status, 'flipped')
+  assert.deepEqual(result.results, [{ id: '1.1', status: 'flipped' }])
   assert.deepEqual(result.progress, { total: 5, complete: 1, remaining: 4 })
   assert.equal(result.next.id, '1.10')
   assert.equal(result.next.sourcePath, `${CHANGE_DIR}/tasks.md`)
@@ -212,13 +213,13 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   assert.deepEqual(changed, [2])
   assert.equal(afterLines[2], beforeLines[2].replace('- [ ]', '- [x]'))
 
-  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '1.10' })
+  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['1.10'] })
   assert.equal(result.next.id, '1.2')
-  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '1.2' })
+  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['1.2'] })
   assert.equal(result.next.id, '2.1')
-  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '2.1' })
+  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['2.1'] })
   assert.equal(result.next.id, '2.2')
-  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '2.2' })
+  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['2.2'] })
   assert.equal(result.state, 'all_done')
   assert.equal(result.next, undefined)
   assert.deepEqual(result.progress, { total: 5, complete: 5, remaining: 0 })
@@ -226,11 +227,11 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   // The five marks ran without another CLI spawn; this is the O(N) loop.
   assert.equal(fake.stats.spawns, spawnsAfterApply)
 
-  const again = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '2.2' })
-  assert.equal(again.status, 'already-done')
+  const again = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['2.2'] })
+  assert.deepEqual(again.results, [{ id: '2.2', status: 'already-done' }])
   assert.equal(again.state, 'all_done')
   await assert.rejects(
-    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '9.9' }),
+    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['9.9'] }),
     /was not found/,
   )
 
@@ -246,12 +247,93 @@ test('marks a task with an absolute source path as well', async () => {
   const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
   const result = await call(fake, 'openspec_mark_task_done', {
     change: CHANGE,
-    taskId: applied.next.id,
+    taskIds: [applied.next.id],
     sourcePath: join(root, applied.next.sourcePath),
     line: applied.next.line,
   })
-  assert.equal(result.status, 'flipped')
+  assert.deepEqual(result.results, [{ id: '1.1', status: 'flipped' }])
   assert.equal(result.progress.complete, 1)
+})
+
+test('marks a batch of tasks in one call', async () => {
+  const root = fixture()
+  writeTasks(root, '- [ ] 1.1 one\n- [ ] 1.2 two\n- [x] 1.3 three\n- [ ] 1.4 four\n')
+  const fake = setup(root)
+  const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const spawns = fake.stats.spawns
+  const result = await call(fake, 'openspec_mark_task_done', {
+    change: CHANGE,
+    taskIds: [applied.next.id, '1.2', '1.3'],
+    sourcePath: applied.next.sourcePath,
+    line: applied.next.line,
+  })
+  assert.deepEqual(result.results, [
+    { id: '1.1', status: 'flipped' },
+    { id: '1.2', status: 'flipped' },
+    { id: '1.3', status: 'already-done' },
+  ])
+  assert.deepEqual(result.progress, { total: 4, complete: 3, remaining: 1 })
+  assert.equal(result.next.id, '1.4')
+  assert.equal(fake.stats.spawns, spawns, 'a batch needs no query')
+  const lines = readFileSync(tasksPath(root), 'utf8').split('\n')
+  assert.equal(lines[0], '- [x] 1.1 one')
+  assert.equal(lines[1], '- [x] 1.2 two')
+  assert.equal(lines[2], '- [x] 1.3 three')
+  assert.equal(lines[3], '- [ ] 1.4 four')
+})
+
+test('marks a duplicated id once', async () => {
+  const root = fixture()
+  writeTasks(root, '- [ ] 1.1 one\n- [ ] 1.2 two\n')
+  const fake = setup(root)
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const result = await call(fake, 'openspec_mark_task_done', {
+    change: CHANGE,
+    taskIds: ['1.1', '1.1', '#1'],
+  })
+  assert.deepEqual(result.results, [{ id: '1.1', status: 'flipped' }])
+  assert.deepEqual(result.progress, { total: 2, complete: 1, remaining: 1 })
+})
+
+test('a batch with an unknown id changes nothing and can be retried', async () => {
+  const root = fixture()
+  const before = '- [ ] 1.1 one\n- [ ] 1.2 two\n'
+  writeTasks(root, before)
+  const fake = setup(root)
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  await assert.rejects(
+    call(fake, 'openspec_mark_task_done', {
+      change: CHANGE,
+      taskIds: ['1.1', '9.9', '1.2'],
+    }),
+    /Task '9\.9' was not found[\s\S]*No task was marked because a batch writes only when every id is found/,
+  )
+  assert.equal(readFileSync(tasksPath(root), 'utf8'), before)
+  const corrected = await call(fake, 'openspec_mark_task_done', {
+    change: CHANGE,
+    taskIds: ['1.1', '1.2'],
+  })
+  assert.deepEqual(corrected.results, [
+    { id: '1.1', status: 'flipped' },
+    { id: '1.2', status: 'flipped' },
+  ])
+  assert.equal(corrected.state, 'all_done')
+})
+
+test('rejects an empty or malformed taskIds list before writing', async () => {
+  const root = fixture()
+  writeTasks(root, '- [ ] 1.1 one\n')
+  const fake = setup(root)
+
+  await assert.rejects(
+    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: [] }),
+    /taskIds must be a non-empty array of task ids/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['1.1', 2] }),
+    /Every taskIds entry must be a non-empty task id/,
+  )
+  assert.match(readFileSync(tasksPath(root), 'utf8'), /- \[ \] 1\.1 one/)
 })
 
 test('rejects a custom schema before caching apply state', async () => {
@@ -266,7 +348,7 @@ test('rejects a custom schema before caching apply state', async () => {
   )
   assert.equal(readCache(cacheKey(root, CHANGE, undefined)), undefined)
   await assert.rejects(
-    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '1.1' }),
+    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['1.1'] }),
     /Unsupported OpenSpec schema 'custom'/,
   )
 })
@@ -284,7 +366,7 @@ test('a cached apply entry cannot bypass a schema selection change', async () =>
   await assert.rejects(
     call(fake, 'openspec_mark_task_done', {
       change: CHANGE,
-      taskId: '1.1',
+      taskIds: ['1.1'],
       sourcePath: applied.next.sourcePath,
       line: applied.next.line,
     }),
@@ -328,7 +410,7 @@ test('refreshes the cache when the tracking file changed outside the tool', asyn
   assert.equal(result.next.id, '1.1')
   const spawns = fake.stats.spawns
   writeFileSync(tasksPath(root), '- [ ] 1.1 one\n- [x] 1.2 two\n- [ ] 1.3 three\n')
-  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '1.1' })
+  result = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['1.1'] })
   assert.equal(fake.stats.spawns, spawns + 1, 'a stale entry triggers one CLI refresh')
   assert.deepEqual(result.progress, { total: 3, complete: 2, remaining: 1 })
   assert.equal(result.next.id, '1.3')
@@ -343,7 +425,7 @@ test('reports a blocked change and refuses to mark tasks', async () => {
   assert.equal(result.next, undefined)
   assert.match(result.instruction, /Missing artifacts: tasks|tasks\.md/)
   await assert.rejects(
-    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: '1.1' }),
+    call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: ['1.1'] }),
     /blocked/,
   )
 })
@@ -357,11 +439,11 @@ test('preserves CRLF while marking', async () => {
   assert.equal(result.next.id, '1.1')
   const marked = await call(fake, 'openspec_mark_task_done', {
     change: CHANGE,
-    taskId: '1.1',
+    taskIds: ['1.1'],
     sourcePath: result.next.sourcePath,
     line: result.next.line,
   })
-  assert.equal(marked.status, 'flipped')
+  assert.deepEqual(marked.results, [{ id: '1.1', status: 'flipped' }])
   const after = readFileSync(tasksPath(root), 'utf8')
   assert.equal(after, before.replace('- [ ] 1.1 one', '- [x] 1.1 one'))
   const lines = after.split('\n')
@@ -383,25 +465,31 @@ test('39-task apply loop stays compact and spawns once', async () => {
   const rawBytes = rawApplyBytes(root)
   const spawnsAfterApply = fake.stats.spawns
 
+  const ids = parseTaskLines(readFileSync(tasksPath(root), 'utf8'))
+    .filter((task) => task.description.length > 0)
+    .map((task) => taskKey(task))
   const sizes = []
-  while (result.next !== undefined) {
+  for (let index = 0; index < ids.length; index += 4) {
     result = await call(fake, 'openspec_mark_task_done', {
       change: CHANGE,
-      taskId: result.next.id,
+      taskIds: ids.slice(index, index + 4),
     })
     sizes.push(jsonBytes(result))
+    if (index + 4 < ids.length) {
+      assert.equal(result.next.id, ids[index + 4], 'next follows the batch')
+    }
   }
   assert.equal(result.state, 'all_done')
   assert.deepEqual(result.progress, { total: 39, complete: 39, remaining: 0 })
-  assert.equal(fake.stats.spawns, spawnsAfterApply, 'no CLI spawn between tasks')
+  assert.equal(fake.stats.spawns, spawnsAfterApply, 'no CLI spawn between batches')
 
   const total = applyBytes + sizes.reduce((sum, size) => sum + size, 0)
   const naive = rawBytes * 39
   const average = Math.round((sizes.reduce((sum, size) => sum + size, 0)) / sizes.length)
   console.log(
-    `39-task: raw=${rawBytes}B apply_next=${applyBytes}B marks=${sizes.length} avg=${average}B total=${total}B naive=${naive}B ratio=${(total / naive * 100).toFixed(1)}%`,
+    `39-task: raw=${rawBytes}B apply_next=${applyBytes}B batches=${sizes.length} avg=${average}B total=${total}B naive=${naive}B ratio=${(total / naive * 100).toFixed(1)}%`,
   )
-  assert.ok(total < naive * 0.1, `expected <10% of the repeated-query bytes, got ${total}/${naive}`)
+  assert.ok(total < naive * 0.02, `expected <2% of the repeated-query bytes, got ${total}/${naive}`)
 
   const validation = await call(fake, 'openspec_validate', { change: CHANGE })
   assert.equal(validation.valid, true)

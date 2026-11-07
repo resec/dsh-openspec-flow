@@ -18,7 +18,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 写 | `openspec_archive` | 先校验、再归档并合并 delta specs |
 | 写 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能 |
 | apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles 与指令 |
-| apply | `openspec_mark_task_done` | 翻转一个复选框并返回新进度与下一任务 |
+| apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
@@ -85,7 +85,7 @@ CLI 来源固定：
 - **schema 闸门**：change 作用域的工具只接受内置 `spec-driven`；项目或用户目录中的同名覆盖会被拒绝。
 - **指令映射**：`openspec_instructions` 返回的正文里，已知 CLI 命令片段被替换为对应工具名，路径保持不变。
 - **一次取数**：`openspec_apply_next` 执行一次 `instructions apply --json`，把完整载荷留在进程内，只向模型返回投影。
-- **每任务 O(1)**：`openspec_mark_task_done` 只翻转目标复选框，进度按缓存增量更新，下一任务从缓存任务表选取。
+- **每批 O(1)**：`openspec_mark_task_done` 先解析整批 id 并逐行翻转目标复选框，任一 id 缺失则整批不写；进度按缓存增量更新，下一任务从缓存任务表选取。
 - **写操作可恢复**：`openspec_archive` 先校验后移动；`openspec_init` 只在缺少配置时创建目录，不覆盖已有配置。
 - **按项目注入规则**：流程规则通过 agent 自己的 context 注册为作用域内 system prompt 段；非 OpenSpec 项目返回空文本。
 
@@ -98,8 +98,8 @@ CLI 来源固定：
 在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
 
 - `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init、技能 provider 与指令映射。
-- 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 781 B，39 次 mark 平均 365 B，合计 15,004 B，约为「每任务重跑」53.3 万字节的 2.8%。
-- 39 次 mark 期间 CLI 子进程启动次数为 0，证明循环不再是 O(N²) 查询。
+- 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 780 B，每 4 个任务一批共 10 次 mark，平均 448 B，合计 5,258 B，约为「每任务重跑」53.3 万字节的 1.0%。
+- 10 次批量 mark 期间 CLI 子进程启动次数为 0，证明循环不再是 O(N²) 查询。
 - 测试使用真实 `@fission-ai/openspec` 1.16.0，不是 mock。
 
 复跑：
@@ -128,7 +128,7 @@ npm test
 
 - OpenSpec 根：`openspec/`；流程技能由插件 provider 提供，仓库不再保存副本；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
-- apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 每任务 `openspec_mark_task_done`。
+- apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 按批 `openspec_mark_task_done`。
 - 收尾：`openspec_validate <name>` 与 `npm test`。
 - 归档：`openspec_archive`，只在用户明确要求时。
 

@@ -141,7 +141,7 @@ test('runs init, plan, apply and archive through tools, matching a CLI run', asy
   assert.equal(step.state, 'ready')
   assert.equal(step.next.id, '1.1')
   while (step.next !== undefined) {
-    step = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskId: step.next.id })
+    step = await call(fake, 'openspec_mark_task_done', { change: CHANGE, taskIds: [step.next.id] })
   }
   assert.equal(step.state, 'all_done')
 
