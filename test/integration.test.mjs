@@ -109,9 +109,9 @@ test('registers the tool set and the skill provider', async () => {
   const candidates = await provider.list()
   assert.deepEqual(
     candidates.map((candidate) => candidate.name).sort(),
-    [...PLUGIN_SKILLS, 'openspec-flow'].sort(),
+    [...PLUGIN_SKILLS].sort(),
   )
-  const definition = await provider.get(candidates.find((candidate) => candidate.name === 'openspec-flow'))
+  const definition = await provider.get(candidates.find((candidate) => candidate.name === 'openspec-apply-change'))
   assert.match(definition.content, /openspec_mark_task_done/)
 })
 

@@ -24,7 +24,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 
 ## 技能与初始化
 
-六份流程技能与 `openspec-flow` 由插件的 skill provider 提供：插件在 `ctx.skills` 上注册一个 provider，rank 50，低于项目 `.dsh/skills`（100）与 `.agents/skills`（200），因此项目内的同名副本不会遮蔽插件文本，插件升级后重启会话即生效。目录构建只读 frontmatter，正文在选中时才读取。
+六份流程技能由插件的 skill provider 提供：插件在 `ctx.skills` 上注册一个 provider，rank 50，低于项目 `.dsh/skills`（100）与 `.agents/skills`（200），因此项目内的同名副本不会遮蔽插件文本，插件升级后重启会话即生效。目录构建只读 frontmatter，正文在选中时才读取。
 
 `openspec_init` 只做项目初始化：若项目还没有 `openspec/config.yaml`，执行 `init --tools none --no-animation`，创建配置、`specs/`、`changes/` 与 `changes/archive/`，不生成官方技能，也不写任何技能文件。技能 frontmatter 的 `metadata.generatedBy` 记录 `dsh-openspec-flow@<version>`；不要把这些技能复制进 `.dsh/skills/`。
 
@@ -128,7 +128,7 @@ npm test
 
 - OpenSpec 根：`openspec/`；流程技能由插件 provider 提供，仓库不再保存副本；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
-- apply：显式调用 `/openspec-flow <name>`，或按 `openspec-apply-change` 技能走 `openspec_apply_next` → 每任务 `openspec_mark_task_done`。
+- apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 每任务 `openspec_mark_task_done`。
 - 收尾：`openspec_validate <name>` 与 `npm test`。
 - 归档：`openspec_archive`，只在用户明确要求时。
 
@@ -179,7 +179,7 @@ lib/skill.js             skill provider 注册与按需读取
 lib/policy.js            流程规则文本、项目检测、agent 作用域注册
 lib/cache.js             进程内 LRU
 lib/hash.js              SHA-1 指纹
-skills/                  六份流程技能与 openspec-flow
+skills/                  六份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
 test/                    单元与真实 CLI 集成测试

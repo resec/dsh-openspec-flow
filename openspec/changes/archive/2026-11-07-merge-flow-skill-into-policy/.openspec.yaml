@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-07
+goal: Delete the openspec-flow skill so the provider serves six workflow skills;
+  rely on the existing policy, tool descriptions and stage skills for the
+  removed text.

@@ -7,12 +7,12 @@ This repository develops the `dsh-openspec-flow` plugin. `README.md` covers the 
 The project uses OpenSpec. Non-trivial work starts as a change under `openspec/changes/<name>/`:
 
 1. Plan with the installed `openspec-propose` skill, or `openspec_new_change` (the CLI `openspec new change <name>` works too). Read the change's `proposal.md`, `specs/`, `design.md`, and `tasks.md` before editing code.
-2. Apply with the installed plugin. Invoke `/openspec-flow <name>` or load `openspec-apply-change`, then call `openspec_apply_next` once. The provider ships both skills; name `openspec-flow` explicitly to select the compact loop.
+2. Apply with the installed plugin. Load `openspec-apply-change`, then call `openspec_apply_next` once.
 3. After each task, call `openspec_mark_task_done` with the returned id and continue with its `next`. Call `openspec_apply_next` again only to start or resync.
 4. Finish with `openspec_validate <name>` and `npm test` on Node 24. Archive with `openspec_archive` only when the user asks.
 5. After archiving, commit the archive, the documentation updates, and the merged specs in one commit, then push to `origin/main` (`git@github.com:resec/dsh-openspec-flow.git`).
 
-The plugin serves the six workflow skills and `openspec-flow` from its own skill provider at rank 50; it writes no project copy. `openspec_init` only creates the OpenSpec project structure. This repository keeps no `.dsh/skills/` copies.
+The plugin serves the six workflow skills from its own skill provider at rank 50; it writes no project copy. `openspec_init` only creates the OpenSpec project structure. This repository keeps no `.dsh/skills/` copies.
 
 The plugin also registers a scoped system prompt rule (`openspec-flow:policy`) for agents whose working directory contains an `openspec/` root. It restates these gates: clarify before proposing, confirm before creating a change, apply through the compact loop, validate before completion, and archive only on request. The rule is advisory and does not restrict tools.
 

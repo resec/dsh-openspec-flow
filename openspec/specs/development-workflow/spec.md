@@ -17,7 +17,7 @@ The repository SHALL plan non-trivial plugin work as an OpenSpec change under `o
 
 ### Requirement: Apply uses the installed plugin's compact loop
 
-The repository SHALL use the `openspec-flow` skill and the `openspec_apply_next` / `openspec_mark_task_done` tools for apply.
+The repository SHALL use the `openspec-apply-change` skill and the `openspec_apply_next` / `openspec_mark_task_done` tools for apply.
 
 #### Scenario: A task is completed
 

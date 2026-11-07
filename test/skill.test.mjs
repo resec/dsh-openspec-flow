@@ -5,11 +5,10 @@ import { apply } from '../index.js'
 import { withStore } from '../lib/openspec.js'
 import {
   createSkillProvider,
-  loadSkillDocument,
-  PACKAGED_SKILL_NAMES,
   parseSkillDocument,
   SKILL_RANK,
 } from '../lib/skill.js'
+import { SKILL_NAMES } from '../lib/skills.js'
 import { createFakeContext } from './fake-context.mjs'
 
 test('withStore appends the flag only when a store is selected', () => {
@@ -18,17 +17,6 @@ test('withStore appends the flag only when a store is selected', () => {
   assert.deepEqual(withStore(args, '  '), args)
   assert.deepEqual(withStore(args, undefined), args)
 })
-
-test('the shipped skill document is valid and describes the tool loop', () => {
-  const document = loadSkillDocument()
-  assert.equal(document.name, 'openspec-flow')
-  assert.ok(document.description.length <= 500)
-  assert.match(document.description, /OpenSpec/)
-  assert.match(document.content, /openspec_apply_next/)
-  assert.match(document.content, /openspec_mark_task_done/)
-  assert.match(document.content, /openspec_validate/)
-})
-
 
 test('parses quoted and unquoted skill frontmatter', () => {
   const double = parseSkillDocument('---\nname: demo-skill\ndescription: "quoted"\n---\nbody')
@@ -64,7 +52,7 @@ test('fake context registers a skill provider and disposes it', () => {
 test('the provider offers every packaged skill at rank 50', async () => {
   const provider = createSkillProvider()
   const candidates = await provider.list()
-  assert.deepEqual(candidates.map((candidate) => candidate.name), PACKAGED_SKILL_NAMES)
+  assert.deepEqual(candidates.map((candidate) => candidate.name), SKILL_NAMES)
   assert.ok(candidates.every((candidate) => candidate.rank === 50))
   assert.ok(candidates.every((candidate) => candidate.source === 'bundled'))
   assert.ok(candidates.every((candidate) => candidate.provider === 'openspec-flow'))
@@ -90,7 +78,7 @@ test('a malformed packaged document is skipped with one warning', async () => {
       : readFileSync(path, 'utf8')),
   })
   const names = (await provider.list()).map((candidate) => candidate.name)
-  assert.equal(names.length, PACKAGED_SKILL_NAMES.length - 1)
+  assert.equal(names.length, SKILL_NAMES.length - 1)
   assert.ok(!names.includes('openspec-apply-change'))
   assert.equal(warnings.length, 1)
   assert.match(warnings[0], /openspec-apply-change/)
@@ -122,6 +110,6 @@ test('get returns undefined for a missing or malformed body and accepts a name-o
   const malformed = createSkillProvider({ read: () => 'no frontmatter' })
   assert.equal(await malformed.get({ name: 'openspec-apply-change', locator: '/broken/SKILL.md' }), undefined)
 
-  const byName = await createSkillProvider().get({ name: 'openspec-flow' })
-  assert.equal(byName.name, 'openspec-flow')
+  const byName = await createSkillProvider().get({ name: 'openspec-apply-change' })
+  assert.equal(byName.name, 'openspec-apply-change')
 })
