@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-08
+goal: Keep the model-facing tool definition compact without changing store
+  capability or runtime behavior.

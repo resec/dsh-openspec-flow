@@ -39,3 +39,19 @@ test('no tool description names the CLI', () => {
     }
   }
 })
+
+test('store parameter description is uniform', () => {
+  const fake = createFakeContext({ cwd: process.cwd() })
+  apply(fake.ctx, { timeoutMs: 30_000 })
+
+  const exposed = []
+  for (const [name, tool] of fake.tools) {
+    const store = tool.parameters?.properties?.store
+    if (store === undefined) continue
+    exposed.push({ name, description: store.description })
+  }
+  assert.ok(exposed.length > 0, 'at least one tool accepts store')
+  for (const entry of exposed) {
+    assert.equal(entry.description, 'Registered store id.', `${entry.name}.parameters.store`)
+  }
+})
