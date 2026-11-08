@@ -98,6 +98,30 @@ test('maps prose CLI flags in instruction text to tool parameters', () => {
   assert.deepEqual(result.rules, ['Keep `--type` literal in examples.'])
 })
 
+test('projects instruction dependencies and unlocks as artifact ids', () => {
+  const result = projectInstructions({
+    changeName: 'x',
+    artifactId: 'tasks',
+    schemaName: 'spec-driven',
+    outputPath: 'tasks.md',
+    instruction: 'Write it.',
+    dependencies: [
+      { id: 'specs', done: true, path: 'specs/**/*.md', description: 'Detailed specifications' },
+      { id: 'design', done: true },
+      'proposal',
+      { artifactId: 'apply' },
+      { name: 'archive' },
+      { done: true },
+      { id: '' },
+    ],
+    unlocks: ['tasks', 7, null],
+    root: ROOT,
+  }, 'tasks')
+  assert.deepEqual(result.dependencies, ['specs', 'design', 'proposal', 'apply', 'archive'])
+  assert.deepEqual(result.unlocks, ['tasks'])
+  assert.doesNotMatch(JSON.stringify(result), /\[object Object\]/)
+})
+
 test('projectInstructions carries configured context and rules', () => {
   const result = projectInstructions({
     changeName: 'c',

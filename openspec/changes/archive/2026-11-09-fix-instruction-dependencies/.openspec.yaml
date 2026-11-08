@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-09
+goal: openspec_instructions returns dependencies and unlocks as artifact id
+  strings, never \"[object Object]\".

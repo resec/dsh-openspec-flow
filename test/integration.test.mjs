@@ -607,12 +607,21 @@ test('reads planning instructions through openspec_instructions', async () => {
   assert.match(result.instruction, /`specs: true`/)
   assert.ok(result.outputPath.endsWith('proposal.md'))
   assert.ok(result.existingOutputPaths.length >= 1)
-  assert.ok(Array.isArray(result.dependencies))
+  assert.deepEqual(result.dependencies, [])
+  assert.deepEqual(result.unlocks, ['specs', 'design'])
 
-  for (const artifact of ['specs', 'design', 'tasks']) {
+  const expected = {
+    specs: { dependencies: ['proposal'], unlocks: ['tasks'] },
+    design: { dependencies: ['proposal'], unlocks: ['tasks'] },
+    tasks: { dependencies: ['specs', 'design'], unlocks: [] },
+  }
+  for (const [artifact, values] of Object.entries(expected)) {
     const other = await call(fake, 'openspec_instructions', { change: CHANGE, artifact })
     assert.equal(other.artifact, artifact)
     assert.doesNotMatch(other.instruction, /`--(store|type|specs)\b/)
+    assert.deepEqual(other.dependencies, values.dependencies)
+    assert.deepEqual(other.unlocks, values.unlocks)
+    assert.doesNotMatch(JSON.stringify(other.dependencies), /\[object Object\]/)
     assert.ok(other.outputPath.length > 0)
   }
 
