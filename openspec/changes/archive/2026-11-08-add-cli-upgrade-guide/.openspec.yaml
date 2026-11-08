@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-08
+goal: Give maintainers a checkable, repeatable procedure for upgrading the
+  bundled OpenSpec CLI.

@@ -35,6 +35,7 @@
     "coverage": "node scripts/coverage.mjs",
     "coverage:check": "node scripts/coverage.mjs --check",
     "coverage:baseline": "node scripts/coverage.mjs --update-baseline",
+    "contract:check": "node scripts/check-cli-contract.mjs",
     "hooks:install": "node scripts/install-hooks.mjs"
   },
   "dependencies": {

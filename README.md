@@ -102,6 +102,8 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 ## 版本兼容性
 
+升级 `@fission-ai/openspec` 的检查、修改与测试步骤见 [docs/upgrading-openspec-cli.md](docs/upgrading-openspec-cli.md)。
+
 `package.json` 的 `engines` 声明两项：
 
 - `dsh`：`=0.2.2-rc.1`。只接受该 DSH 运行时；其他版本在安装或 profile 启动检查时被拒绝，除非 profile 的 `compatibility.json` 中有针对该精确版本的豁免。DSH 仍处 alpha，逐个版本验证后再调整。

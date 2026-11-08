@@ -1,0 +1,308 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "id": "init",
+      "stage": "setup",
+      "json": false,
+      "args": ["init", "--tools", "none", "--no-animation"],
+      "fields": {}
+    },
+    {
+      "id": "new-change",
+      "stage": "setup",
+      "args": ["new", "change", "{change}", "--schema", "spec-driven", "--json"],
+      "fields": {
+        "change": "object",
+        "change.id": "string",
+        "change.path": "string",
+        "change.metadataPath": "string",
+        "change.schema": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "version",
+      "stage": "base",
+      "args": ["version", "--json"],
+      "fields": {
+        "version": "string",
+        "schemaVersion": "number"
+      }
+    },
+    {
+      "id": "list",
+      "stage": "base",
+      "args": ["list", "--json"],
+      "fields": {
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string",
+        "changes": "array",
+        "changes[].name": "string",
+        "changes[].completedTasks": "number",
+        "changes[].totalTasks": "number",
+        "changes[].status": "string",
+        "status": { "type": "array", "optional": true },
+        "status[].message": { "type": "string", "optional": true }
+      }
+    },
+    {
+      "id": "list-specs",
+      "stage": "base",
+      "args": ["list", "--specs", "--json"],
+      "fields": {
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string",
+        "specs": "array",
+        "specs[].id": "string",
+        "specs[].requirementCount": "number",
+        "status": { "type": "array", "optional": true },
+        "status[].message": { "type": "string", "optional": true }
+      }
+    },
+    {
+      "id": "status",
+      "stage": "base",
+      "args": ["status", "--change", "{change}", "--json"],
+      "fields": {
+        "changeName": "string",
+        "schemaName": "string",
+        "changeRoot": "string",
+        "planningHome": "object",
+        "planningHome.root": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string",
+        "isPlanningComplete": "boolean",
+        "isComplete": "boolean",
+        "applyRequires": "array",
+        "artifacts": "array",
+        "artifacts[].id": "string",
+        "artifacts[].status": "string",
+        "artifacts[].requires": "array",
+        "nextSteps": { "type": "array", "optional": true },
+        "actionContext": { "type": "object", "optional": true },
+        "actionContext.mode": { "type": "string", "optional": true },
+        "actionContext.sourceOfTruth": { "type": "string", "optional": true },
+        "actionContext.allowedEditRoots": { "type": "array", "optional": true },
+        "actionContext.requiresAffectedAreaSelection": { "type": "boolean", "optional": true },
+        "actionContext.constraints": { "type": "array", "optional": true }
+      }
+    },
+    {
+      "id": "instructions-proposal",
+      "stage": "base",
+      "args": ["instructions", "proposal", "--change", "{change}", "--json"],
+      "fields": {
+        "changeName": "string",
+        "artifactId": "string",
+        "schemaName": "string",
+        "outputPath": "string",
+        "resolvedOutputPath": "string",
+        "existingOutputPaths": "array",
+        "description": "string",
+        "instruction": "string",
+        "dependencies": "array",
+        "unlocks": "array",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "instructions-apply",
+      "stage": "base",
+      "args": ["instructions", "apply", "--change", "{change}", "--json"],
+      "fields": {
+        "changeName": "string",
+        "schemaName": "string",
+        "state": "string",
+        "progress": "object",
+        "progress.total": "number",
+        "progress.complete": "number",
+        "progress.remaining": "number",
+        "tasks": "array",
+        "tasks[].id": "string",
+        "tasks[].description": "string",
+        "tasks[].done": "boolean",
+        "tasks[].sourcePath": "string",
+        "tasks[].line": "number",
+        "contextFiles": "object",
+        "instruction": { "type": "string", "optional": true },
+        "missingArtifacts": { "type": "array", "optional": true },
+        "warnings": { "type": "array", "optional": true },
+        "changeDir": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string",
+        "unavailableTrackingFiles": { "type": "array", "optional": true }
+      }
+    },
+    {
+      "id": "show-change",
+      "stage": "base",
+      "args": ["show", "{change}", "--json"],
+      "fields": {
+        "id": "string",
+        "title": "string",
+        "deltaCount": "number",
+        "deltas": "array",
+        "deltas[].spec": "string",
+        "deltas[].operation": "string",
+        "deltas[].requirements": "array",
+        "deltas[].requirements[].name": "string",
+        "deltas[].requirements[].text": "string",
+        "deltas[].requirements[].scenarios": "array",
+        "deltas[].requirements[].scenarios[].name": "string",
+        "deltas[].requirements[].scenarios[].rawText": { "type": "string", "optional": true },
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "show-spec",
+      "stage": "base",
+      "args": ["show", "{spec}", "--type", "spec", "--json"],
+      "fields": {
+        "id": "string",
+        "title": "string",
+        "overview": "string",
+        "requirementCount": "number",
+        "requirements": "array",
+        "requirements[].name": "string",
+        "requirements[].text": "string",
+        "requirements[].scenarios": "array",
+        "requirements[].scenarios[].name": "string",
+        "requirements[].scenarios[].rawText": { "type": "string", "optional": true },
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "context",
+      "stage": "base",
+      "args": ["context", "--json"],
+      "fields": {
+        "root": { "type": "object", "optional": true },
+        "root.path": { "type": "string", "optional": true },
+        "root.source": { "type": "string", "optional": true },
+        "members": "array",
+        "status": "array"
+      }
+    },
+    {
+      "id": "schemas",
+      "stage": "base",
+      "args": ["schemas", "--json"],
+      "fields": {
+        "[].name": "string",
+        "[].description": "string",
+        "[].artifacts": "array",
+        "[].source": "string"
+      }
+    },
+    {
+      "id": "store-list",
+      "stage": "base",
+      "args": ["store", "list", "--json"],
+      "fields": {
+        "stores": "array",
+        "stores[].id": "string",
+        "stores[].root": "string",
+        "stores[].metadata_path": { "type": "string", "optional": true },
+        "status": "array"
+      }
+    },
+    {
+      "id": "validate-change",
+      "stage": "base",
+      "args": ["validate", "{change}", "--json"],
+      "fields": {
+        "items": "array",
+        "items[].id": "string",
+        "items[].type": "string",
+        "items[].valid": "boolean",
+        "items[].issues": "array",
+        "items[].issues[].level": "string",
+        "items[].issues[].path": "string",
+        "items[].issues[].message": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "validate-spec",
+      "stage": "base",
+      "args": ["validate", "{spec}", "--type", "spec", "--json"],
+      "fields": {
+        "items": "array",
+        "items[].id": "string",
+        "items[].type": "string",
+        "items[].valid": "boolean",
+        "items[].issues": "array",
+        "items[].issues[].level": "string",
+        "items[].issues[].path": "string",
+        "items[].issues[].message": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "validate-specs",
+      "stage": "base",
+      "args": ["validate", "--specs", "--json"],
+      "fields": {
+        "items": "array",
+        "items[].id": "string",
+        "items[].type": "string",
+        "items[].valid": "boolean",
+        "items[].issues": "array",
+        "items[].issues[].level": "string",
+        "items[].issues[].path": "string",
+        "items[].issues[].message": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "validate-all",
+      "stage": "base",
+      "args": ["validate", "--all", "--json"],
+      "fields": {
+        "items": "array",
+        "items[].id": "string",
+        "items[].type": "string",
+        "items[].valid": "boolean",
+        "items[].issues": "array",
+        "items[].issues[].level": "string",
+        "items[].issues[].path": "string",
+        "items[].issues[].message": "string",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "archive",
+      "stage": "completed",
+      "args": ["archive", "{change}", "--yes", "--json"],
+      "fields": {
+        "archive": "object",
+        "archive.archivedAs": "string",
+        "archive.path": "string",
+        "archive.specsUpdated": "boolean",
+        "archive.totals": "object",
+        "archive.warnings": { "type": "array", "optional": true }
+      }
+    }
+  ]
+}
