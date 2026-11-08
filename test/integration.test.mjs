@@ -657,6 +657,9 @@ test('reads context, schemas and registered stores', async () => {
   const context = await call(fake, 'openspec_context', {})
   assert.equal(context.setup, true)
   assert.equal(context.root.path, root)
+  assert.equal(context.root.store_id, undefined)
+  assert.deepEqual(context.members, [])
+  assert.deepEqual(context.status, [])
 
   const schemas = await call(fake, 'openspec_schemas', {})
   assert.equal(schemas.schemas.length, 1)

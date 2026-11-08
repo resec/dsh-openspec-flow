@@ -348,7 +348,33 @@ test('projectContext handles missing arrays and mixed status items', () => {
   const result = projectContext({ status: [{ message: 'm' }, 'plain', null, { message: '' }] })
   assert.equal(result.setup, false)
   assert.deepEqual(result.members, [])
-  assert.deepEqual(result.status, ['m', 'plain', 'null'])
+  assert.deepEqual(result.status, [
+    { message: 'm' },
+    { message: 'plain' },
+    { message: 'null' },
+  ])
+})
+
+test('projectContext tolerates malformed members and diagnostics', () => {
+  const result = projectContext({
+    root: { path: '/project', source: 'nearest', store_id: 7 },
+    members: [
+      null,
+      { role: 'referenced_store' },
+      { id: 'no-role', path: '/stores/x' },
+    ],
+    status: [{ code: 'missing-message' }, { message: '' }, 'plain'],
+  })
+  assert.equal(result.root.store_id, undefined)
+  assert.deepEqual(result.members[0], { id: '', status: [] })
+  assert.deepEqual(result.members[1], { role: 'referenced_store', id: '', status: [] })
+  assert.equal(result.members[2].role, undefined)
+  assert.deepEqual(result.members[2].fetch, {
+    tool: 'openspec_show',
+    arguments: { type: 'spec', store: 'no-role' },
+    note: 'Set name to a spec id from this store; openspec_list with specs: true and the same store lists them.',
+  })
+  assert.deepEqual(result.status, [{ message: 'plain' }])
 })
 
 test('projectSchemas handles a non-array payload and missing fields', () => {

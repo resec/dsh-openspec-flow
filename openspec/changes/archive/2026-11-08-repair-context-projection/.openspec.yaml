@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-08
+goal: openspec_context preserves store identity and diagnostic recovery text,
+  and expresses referenced-store fetch as an executable tool action instead of a
+  shell command.

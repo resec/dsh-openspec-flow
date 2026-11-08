@@ -192,6 +192,7 @@
         "root": { "type": "object", "optional": true },
         "root.path": { "type": "string", "optional": true },
         "root.source": { "type": "string", "optional": true },
+        "root.store_id": { "type": "string", "optional": true },
         "members": "array",
         "status": "array"
       }

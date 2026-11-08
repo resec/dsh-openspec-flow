@@ -9,7 +9,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 读 | `openspec_list` | 列出变更与任务计数，或用 `specs: true` 列出能力规格 |
 | 读 | `openspec_status` | 紧凑状态：schema、产物完成度、blockedBy、工具动作、编辑约束 |
 | 读 | `openspec_show` | 读变更的 delta 或规格的 purpose、需求与场景 |
-| 读 | `openspec_context` | 解析根、成员与状态 |
+| 读 | `openspec_context` | 解析根与 store 身份、被引用 store 与诊断 |
 | 读 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven` |
 | 读 | `openspec_store_list` | 列出已注册 store |
 | 规划 | `openspec_instructions` | 读某产物的 CLI 指令、输出路径、依赖与已存在文件 |
@@ -56,7 +56,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 | `schema` | schema 检查与派生 | 不支持 | `which`、`validate`、`fork`、`init` 均未封装；自定义 schema 会被闸门拒绝 |
 | `store` | store 管理 | 部分支持 | 仅 `openspec_store_list` 对应 `store list --json`；`setup`、`register`、`unregister`、`remove`、`store doctor` 不支持 |
 | `doctor` | 根关系健康检查 | 不支持 | 无工具 |
-| `context` | 工作上下文 | 部分支持 | `openspec_context`：root、members、status；不暴露 `--code-workspace`、`--force` |
+| `context` | 工作上下文 | 部分支持 | `openspec_context`：root（含 store_id）、被引用 store（fetch 为工具动作）、诊断（含 code/fix）；不暴露 `--code-workspace`、`--force` |
 | `workset` | 个人工作视图 | 不支持 | `create`、`list`、`open`、`remove` 均未封装 |
 | `version` | 版本与更新检查 | 不支持 | 版本由依赖与 `engines` 固定，无工具 |
 | `install` | 安装独立二进制 | 不支持 | 机器级安装，与插件无关 |

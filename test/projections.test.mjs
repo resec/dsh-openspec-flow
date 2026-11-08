@@ -107,15 +107,79 @@ test('projectShow distinguishes a spec from a change', () => {
   assert.equal(change.deltas[0].requirement, undefined)
 })
 
-test('projectContext reports setup and flattens status messages', () => {
+test('projectContext keeps setup and projects diagnostics', () => {
   const present = projectContext({ root: { path: '/project', source: 'nearest', role: 'root' }, members: [], status: [] })
   assert.equal(present.setup, true)
   assert.equal(present.root.role, undefined)
+  assert.equal(present.root.store_id, undefined)
 
-  const missing = projectContext({ root: null, members: [], status: [{ message: 'no root' }] })
+  const missing = projectContext({
+    root: null,
+    members: [],
+    status: [{ code: 'no_openspec_root', message: 'no root', fix: 'Create a root first.' }],
+  })
   assert.equal(missing.setup, false)
   assert.equal(missing.root, undefined)
-  assert.deepEqual(missing.status, ['no root'])
+  assert.deepEqual(missing.status, [{
+    code: 'no_openspec_root',
+    message: 'no root',
+    fix: 'Create a root first.',
+  }])
+})
+
+test('projectContext keeps store identity and turns member fetch into a tool action', () => {
+  const result = projectContext({
+    root: { path: '/stores/team', source: 'store', store_id: 'team', role: 'openspec_root' },
+    members: [
+      {
+        role: 'referenced_store',
+        id: 'docs',
+        path: '/stores/docs',
+        status: [],
+      },
+      {
+        role: 'referenced_store',
+        id: 'gone',
+        status: [{
+          severity: 'warning',
+          code: 'reference_unresolved',
+          message: 'Referenced store is not registered.',
+          target: 'references',
+          fix: 'Register the store first.',
+        }],
+      },
+    ],
+    status: [{
+      severity: 'error',
+      code: 'no_openspec_root',
+      message: 'No root.',
+      target: 'openspec.root',
+      fix: 'Create a root first.',
+    }],
+  })
+
+  assert.deepEqual(result.root, { path: '/stores/team', source: 'store', store_id: 'team' })
+  assert.deepEqual(result.members[0].fetch, {
+    tool: 'openspec_show',
+    arguments: { type: 'spec', store: 'docs' },
+    note: 'Set name to a spec id from this store; openspec_list with specs: true and the same store lists them.',
+  })
+  assert.deepEqual(result.members[0].status, [])
+  assert.equal(result.members[1].path, undefined)
+  assert.equal(result.members[1].fetch, undefined)
+  assert.deepEqual(result.members[1].status, [{
+    severity: 'warning',
+    code: 'reference_unresolved',
+    message: 'Referenced store is not registered.',
+    fix: 'Register the store first.',
+  }])
+  assert.deepEqual(result.status, [{
+    severity: 'error',
+    code: 'no_openspec_root',
+    message: 'No root.',
+    fix: 'Create a root first.',
+  }])
+  assert.doesNotMatch(JSON.stringify(result), /openspec show/)
 })
 
 test('projectSchemas projects the schema list', () => {
