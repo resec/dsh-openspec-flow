@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-09
+goal: openspec_instructions returns instruction text that names tool parameters
+  instead of CLI flags such as --store, --type and --specs.

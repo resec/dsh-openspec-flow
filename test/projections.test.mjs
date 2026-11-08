@@ -70,6 +70,34 @@ test('maps CLI fragments in instruction text without touching paths', () => {
   assert.doesNotMatch(result.instruction, /`openspec (list|show|validate|instructions)/)
 })
 
+test('maps prose CLI flags in instruction text to tool parameters', () => {
+  const result = projectInstructions({
+    changeName: 'x',
+    artifactId: 'proposal',
+    schemaName: 'spec-driven',
+    outputPath: 'proposal.md',
+    instruction: [
+      'Append `--store "<id>"` to both commands.',
+      'Keep `--type',
+      'spec` for an ambiguous name.',
+      '`openspec_list` without `--specs` lists changes.',
+      'It came from `--store`, a project `store:` pointer.',
+    ].join('\n'),
+    context: 'Use `--store` when the project is store-selected.',
+    rules: ['Keep `--type` literal in examples.'],
+    dependencies: [],
+    unlocks: [],
+    root: ROOT,
+  }, 'proposal')
+  assert.match(result.instruction, /`store: "<id>"`/)
+  assert.match(result.instruction, /`type: "spec"`/)
+  assert.match(result.instruction, /`specs: true`/)
+  assert.match(result.instruction, /came from `store`/)
+  assert.doesNotMatch(result.instruction, /`--(store|type|specs)\b/)
+  assert.equal(result.context, 'Use `--store` when the project is store-selected.')
+  assert.deepEqual(result.rules, ['Keep `--type` literal in examples.'])
+})
+
 test('projectInstructions carries configured context and rules', () => {
   const result = projectInstructions({
     changeName: 'c',

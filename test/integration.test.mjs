@@ -602,14 +602,41 @@ test('reads planning instructions through openspec_instructions', async () => {
   assert.match(result.instruction, /proposal/i)
   assert.doesNotMatch(result.instruction, /`openspec (list|show|validate|instructions)/)
   assert.match(result.instruction, /openspec_list/)
+  assert.match(result.instruction, /`store: "<id>"`/)
+  assert.match(result.instruction, /`type: "spec"`/)
+  assert.match(result.instruction, /`specs: true`/)
   assert.ok(result.outputPath.endsWith('proposal.md'))
   assert.ok(result.existingOutputPaths.length >= 1)
   assert.ok(Array.isArray(result.dependencies))
+
+  for (const artifact of ['specs', 'design', 'tasks']) {
+    const other = await call(fake, 'openspec_instructions', { change: CHANGE, artifact })
+    assert.equal(other.artifact, artifact)
+    assert.doesNotMatch(other.instruction, /`--(store|type|specs)\b/)
+    assert.ok(other.outputPath.length > 0)
+  }
 
   await assert.rejects(
     call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'bogus' }),
     /artifact must be one of/,
   )
+})
+
+test('does not rewrite configured context or rules', async () => {
+  const root = fixture()
+  writeFileSync(join(root, 'openspec', 'config.yaml'), [
+    'schema: spec-driven',
+    'context: Use `--store` when the project is store-selected.',
+    'rules:',
+    '  proposal:',
+    '    - Keep `--type` literal in examples.',
+  ].join('\n'))
+  const fake = setup(root)
+
+  const result = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  assert.equal(result.context, 'Use `--store` when the project is store-selected.')
+  assert.deepEqual(result.rules, ['Keep `--type` literal in examples.'])
+  assert.doesNotMatch(result.instruction, /`--(store|type|specs)\b/)
 })
 
 test('surfaces project context, rules and operation guidance', async () => {
