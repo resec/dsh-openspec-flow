@@ -149,6 +149,33 @@ test('ignores PATH and project-local openspec decoys', async () => {
   }
 })
 
+test('reports blockedBy and the blocking artifact instruction while planning is incomplete', async () => {
+  const root = fixture()
+  rmSync(join(root, CHANGE_DIR, 'design.md'))
+  const fake = setup(root)
+
+  const status = await call(fake, 'openspec_status', { change: CHANGE })
+  assert.equal(status.isPlanningComplete, false)
+  assert.deepEqual(status.blockedBy, ['design'])
+  assert.deepEqual(status.nextSteps, [
+    { tool: 'openspec_instructions', arguments: { change: CHANGE, artifact: 'design' } },
+  ])
+  assert.doesNotMatch(JSON.stringify(status), /Run openspec /)
+})
+
+test('reports an apply_next action and no blocker once planning is complete', async () => {
+  const root = fixture()
+  const fake = setup(root)
+
+  const status = await call(fake, 'openspec_status', { change: CHANGE })
+  assert.equal(status.isPlanningComplete, true)
+  assert.equal(status.blockedBy, undefined)
+  assert.deepEqual(status.nextSteps, [
+    { tool: 'openspec_apply_next', arguments: { change: CHANGE } },
+  ])
+  assert.doesNotMatch(JSON.stringify(status), /openspec (instructions|apply) --/)
+})
+
 test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', async () => {
   const root = fixture()
   writeTasks(root, [

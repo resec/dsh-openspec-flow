@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-08
+goal: openspec_status returns blockedBy for ready artifacts and nextSteps as
+  openspec_instructions/openspec_apply_next actions instead of CLI sentences.

@@ -207,7 +207,7 @@ test('projectStatus projects every optional section', () => {
       requiresAffectedAreaSelection: false,
       constraints: ['c1'],
     },
-    nextSteps: ['next'],
+    nextSteps: ['Run openspec instructions apply --change "c" --json'],
     root: { path: '/root', source: 'nearest' },
   })
   assert.equal(result.planningHome, '/home')
@@ -216,8 +216,65 @@ test('projectStatus projects every optional section', () => {
   assert.deepEqual(result.artifacts[0].requires, [])
   assert.deepEqual(result.artifacts[1].requires, ['a'])
   assert.equal(result.actionContext.mode, 'repo-local')
-  assert.deepEqual(result.nextSteps, ['next'])
+  assert.equal(result.blockedBy, undefined)
+  assert.deepEqual(result.nextSteps, [
+    { tool: 'openspec_apply_next', arguments: { change: 'c' } },
+  ])
   assert.deepEqual(result.root, { path: '/root', source: 'nearest' })
+})
+
+test('projectStatus names ready artifacts and their instruction action', () => {
+  const result = projectStatus({
+    changeName: 'c',
+    schemaName: 's',
+    isPlanningComplete: false,
+    artifacts: [
+      { id: 'proposal', status: 'done' },
+      { id: 'specs', status: 'ready', requires: ['proposal'] },
+      { id: 'design', status: 'ready', requires: ['proposal'] },
+      { id: 'tasks', status: 'blocked', requires: ['specs', 'design'] },
+    ],
+    nextSteps: ['Run openspec instructions specs --change "c" --json'],
+  })
+  assert.deepEqual(result.blockedBy, ['specs', 'design'])
+  assert.deepEqual(result.nextSteps, [
+    { tool: 'openspec_instructions', arguments: { change: 'c', artifact: 'specs' } },
+  ])
+})
+
+test('projectStatus carries an explicit store into every next step', () => {
+  const incomplete = projectStatus({
+    changeName: 'c',
+    schemaName: 's',
+    isPlanningComplete: false,
+    artifacts: [{ id: 'design', status: 'ready' }],
+  }, { store: 's1' })
+  assert.deepEqual(incomplete.blockedBy, ['design'])
+  assert.deepEqual(incomplete.nextSteps, [
+    { tool: 'openspec_instructions', arguments: { change: 'c', artifact: 'design', store: 's1' } },
+  ])
+
+  const complete = projectStatus({
+    changeName: 'c',
+    schemaName: 's',
+    isPlanningComplete: true,
+    artifacts: [{ id: 'tasks', status: 'done' }],
+  }, { store: 's1' })
+  assert.deepEqual(complete.nextSteps, [
+    { tool: 'openspec_apply_next', arguments: { change: 'c', store: 's1' } },
+  ])
+})
+
+test('projectStatus omits next steps when planning is incomplete without a ready artifact', () => {
+  const result = projectStatus({
+    changeName: 'c',
+    schemaName: 's',
+    isPlanningComplete: false,
+    artifacts: [{ id: 'tasks', status: 'blocked', requires: ['design'] }],
+    nextSteps: ['Run openspec instructions design --change "c" --json'],
+  })
+  assert.equal(result.blockedBy, undefined)
+  assert.equal(result.nextSteps, undefined)
 })
 
 test('projectStatus projects root-internal paths relative to the root', () => {

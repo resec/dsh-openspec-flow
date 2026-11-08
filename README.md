@@ -7,7 +7,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 分组 | 工具 | 作用 |
 | --- | --- | --- |
 | 读 | `openspec_list` | 列出变更与任务计数，或用 `specs: true` 列出能力规格 |
-| 读 | `openspec_status` | 紧凑状态：schema、产物完成度、下一步、编辑约束 |
+| 读 | `openspec_status` | 紧凑状态：schema、产物完成度、blockedBy、工具动作、编辑约束 |
 | 读 | `openspec_show` | 读变更的 delta 或规格的 purpose、需求与场景 |
 | 读 | `openspec_context` | 解析根、成员与状态 |
 | 读 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven` |
