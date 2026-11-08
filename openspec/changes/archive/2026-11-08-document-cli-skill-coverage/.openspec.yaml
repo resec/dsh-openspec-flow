@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-08
+goal: README 提供可核对的 CLI 命令与官方技能支持矩阵，并与既有小节去重。
+skip_specs: true
