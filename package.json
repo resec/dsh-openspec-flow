@@ -1,6 +1,6 @@
 {
   "name": "dsh-openspec-flow",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Token-efficient OpenSpec workflow tools and an apply skill for DeepSeek Harness",
   "license": "MIT",
@@ -39,6 +39,6 @@
     "hooks:install": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
-    "@fission-ai/openspec": "1.16.0"
+    "@fission-ai/openspec": "1.16.1"
   }
 }

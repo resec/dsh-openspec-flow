@@ -11,7 +11,7 @@ The `openspec_instructions` result SHALL replace known CLI command fragments in 
 
 #### Scenario: Proposal instruction is read
 
-- **WHEN** `openspec_instructions` returns the proposal instruction on OpenSpec 1.16.0
+- **WHEN** `openspec_instructions` returns the proposal instruction on the bundled OpenSpec CLI
 - **THEN** the text names `openspec_list`, `openspec_show` and `openspec_validate` instead of `openspec list --specs`, `openspec show` and `openspec validate`
 
 ### Requirement: Init creates the OpenSpec project structure

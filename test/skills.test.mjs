@@ -15,7 +15,7 @@ test('parses frontmatter name, description and metadata', () => {
     'description: Apply a change.',
     'metadata:',
     '  generatedBy: dsh-openspec-flow@0.1.0',
-    '  upstream: openspec@1.16.0',
+    '  upstream: openspec@1.16.1',
     '---',
     '',
     '# Body',
@@ -23,7 +23,7 @@ test('parses frontmatter name, description and metadata', () => {
   assert.equal(parsed.name, 'openspec-apply-change')
   assert.equal(parsed.description, 'Apply a change.')
   assert.equal(parsed.metadata.generatedBy, 'dsh-openspec-flow@0.1.0')
-  assert.equal(parsed.metadata.upstream, 'openspec@1.16.0')
+  assert.equal(parsed.metadata.upstream, 'openspec@1.16.1')
 })
 
 test('rejects a document without frontmatter', () => {
@@ -43,7 +43,7 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     assert.ok(parsed.description.length > 0 && parsed.description.length <= 500, name)
     assert.doesNotMatch(parsed.description, /: /, `${name} description must stay a YAML plain scalar`)
     assert.equal(parsed.metadata.generatedBy, GENERATED_BY, name)
-    assert.equal(parsed.metadata.upstream, 'openspec@1.16.0', name)
+    assert.equal(parsed.metadata.upstream, 'openspec@1.16.1', name)
     assert.match(raw, /openspec_[a-z_]+/, name)
     assert.doesNotMatch(raw, /\bCLI\b/i, `${name} must not mention the CLI`)
     assert.doesNotMatch(raw, /\bopsx\b/i, `${name} must not name an alias command`)

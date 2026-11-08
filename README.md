@@ -36,7 +36,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 ## CLI 对照
 
-对照对象为插件内置的 OpenSpec 1.16.0 CLI 与插件注册的 13 个工具。命令与选项清单来自 [tag v1.16.0 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.0/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
+对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 13 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
 
 | CLI 命令 | 作用 | 插件支持 | 对应工具与差异 |
 | --- | --- | --- | --- |
@@ -65,7 +65,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 ## 官方技能对照
 
-对照对象为 [tag v1.16.0 的 Skills 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.0/docs-lab/reference/skills.md) 列出的 12 份技能（Core 6、Optional 6）。插件重写 Core 中的 5 份，正文把命令替换为 `openspec_*` 工具调用，frontmatter 记录 `metadata.upstream: openspec@1.16.0`；未提供的技能不随插件分发。
+对照对象为 [tag v1.16.1 的 Skills 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/skills.md) 列出的 12 份技能（Core 6、Optional 6）。插件重写 Core 中的 5 份，正文把命令替换为 `openspec_*` 工具调用，frontmatter 记录 `metadata.upstream: openspec@1.16.1`；未提供的技能不随插件分发。
 
 | 官方技能 | 官方类型 | 插件处理 | 说明 |
 | --- | --- | --- | --- |
@@ -96,7 +96,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 ```
 
-安装后插件行 id 为 `openspec-flow`。本包是 Host-only bundle，无构建脚本、无 `@deepseek-ai/*` 运行时依赖；工具、技能与策略都从 `index.js` 注册。安装时由包管理器安装 `@fission-ai/openspec` 1.16.0；以本地 linked 目录安装时，需要先在插件目录执行 `npm install`。
+安装后插件行 id 为 `openspec-flow`。本包是 Host-only bundle，无构建脚本、无 `@deepseek-ai/*` 运行时依赖；工具、技能与策略都从 `index.js` 注册。安装时由包管理器安装 `@fission-ai/openspec` 1.16.1；以本地 linked 目录安装时，需要先在插件目录执行 `npm install`。
 
 对已有项目，`openspec_init` 只补项目结构；技能无需安装，插件加载后即可用。
 
@@ -134,14 +134,14 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 CLI 来源固定：
 
-- 只运行插件安装树内的 `@fission-ai/openspec`，精确版本 `1.16.0`；不读取 `PATH`、项目本地 `node_modules/.bin/openspec` 或 `cliPath`。
-- 首次 CLI 调用执行 `openspec version --json`，要求 `version` 为 `1.16.0` 且 `schemaVersion` 为 `1`；不匹配时在运行目标命令前失败。
+- 只运行插件安装树内的 `@fission-ai/openspec`，精确版本 `1.16.1`；不读取 `PATH`、项目本地 `node_modules/.bin/openspec` 或 `cliPath`。
+- 首次 CLI 调用执行 `openspec version --json`，要求 `version` 为 `1.16.1` 且 `schemaVersion` 为 `1`；不匹配时在运行目标命令前失败。
 - 安装树缺少 CLI 时提示重装插件。旧配置中的 `cliPath` 会被配置校验拒绝。
 
 ## 设计要点
 
 - **CLI 是权威**：schema、store、root、产物状态、校验与归档合并全部来自 `openspec`；插件不重新实现这些语义。
-- **CLI 唯一内置**：只运行插件安装树内的 `@fission-ai/openspec` 1.16.0，首次调用校验版本，同一进程内缓存结果。
+- **CLI 唯一内置**：只运行插件安装树内的 `@fission-ai/openspec` 1.16.1，首次调用校验版本，同一进程内缓存结果。
 - **工具投影**：每个读工具返回 CLI JSON 的紧凑投影，保留下一步需要的字段，去掉内部结构。
 - **路径基准**：项目内路径相对 `root.path`，根自身用 `.`，分隔符统一为 `/`；含相对路径的响应同时返回绝对 `root.path`，`openspec_apply_next` 与 `openspec_archive` 携带它。根外路径（store 根与元数据、根外 planning home）保持绝对；`openspec_init.root` 保持绝对。`openspec_mark_task_done` 不重复携带根，其 `next.sourcePath` 相对 `openspec_apply_next` 的 `root.path`，并接受相对 `sourcePath` 输入。
 - **schema 闸门**：change 作用域的工具只接受内置 `spec-driven`；项目或用户目录中的同名覆盖会被拒绝。
@@ -157,12 +157,12 @@ CLI 来源固定：
 
 ## 验证
 
-在 OpenSpec 1.16.0、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
+在 OpenSpec 1.16.1、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
 
 - `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init、技能 provider 与指令映射。
 - 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 780 B，每 4 个任务一批共 10 次 mark，平均 448 B，合计 5,258 B，约为「每任务重跑」53.3 万字节的 1.0%。
 - 10 次批量 mark 期间 CLI 子进程启动次数为 0，证明循环不再是 O(N²) 查询。
-- 测试使用真实 `@fission-ai/openspec` 1.16.0，不是 mock。
+- 测试使用真实 `@fission-ai/openspec` 1.16.1，不是 mock。
 
 复跑：
 
@@ -209,9 +209,9 @@ npm test
 
 ## 限制
 
-- CLI 固定为 `@fission-ai/openspec` 1.16.0；升级 OpenSpec 需要发布新插件。
+- CLI 固定为 `@fission-ai/openspec` 1.16.1；升级 OpenSpec 需要发布新插件。
 - 只支持 CLI 内置的 `spec-driven` schema。自定义 schema，或项目、用户目录中同名覆盖 `spec-driven` 的 schema，都会被 change 作用域的工具拒绝；`openspec_schemas` 不列出这些 schema，`openspec_new_change` 在写入前拒绝创建。
-- 五份技能正文与 OpenSpec 1.16.0 对齐；升级 CLI 需要重新核对每个命令引用。
+- 五份技能正文与 OpenSpec 1.16.1 对齐；升级 CLI 需要重新核对每个命令引用。
 - 项目内残留的其他官方技能会被 provider 的 rank 50 覆盖；`openspec-sync-specs` 已不再提供，残留副本不会被覆盖，必须删除。
 - store 模式会透传 `--store`，但端到端未在本机验证（本机无 store fixture）。
 - 缓存是进程内的派生视图，跨进程不持久；DSH 重启后第一次 mark 会重跑一次 apply 取数。

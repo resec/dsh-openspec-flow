@@ -746,6 +746,106 @@ test('returns validation findings instead of archiving a broken change', async (
   assert.ok(existsSync(join(root, CHANGE_DIR)))
 })
 
+function writeParsingChange(root, name, specBody) {
+  const dir = join(root, 'openspec', 'changes', name)
+  mkdirSync(join(dir, 'specs', 'demo'), { recursive: true })
+  writeFileSync(join(dir, '.openspec.yaml'), 'schema: spec-driven\ncreated: 2026-11-08\n')
+  writeFileSync(
+    join(dir, 'proposal.md'),
+    [
+      '# Delta parsing',
+      '',
+      '## Why',
+      'The parser must report the bundled CLI result.',
+      '',
+      '## What Changes',
+      '- Exercise delta section parsing.',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(join(dir, 'design.md'), '# Design\n\n## Approach\n\nNone.\n')
+  writeFileSync(join(dir, 'tasks.md'), '# Tasks\n\n## 1. Work\n\n- [x] 1.1 Exercise the parser\n')
+  writeFileSync(join(dir, 'specs', 'demo', 'spec.md'), specBody)
+  return dir
+}
+
+test('reads a delta section heading closed with a hash run', async () => {
+  const root = fixture()
+  const name = 'closed-heading'
+  writeParsingChange(
+    root,
+    name,
+    [
+      '## ADDED Requirements ##',
+      '',
+      '### Requirement: Demo behavior',
+      'The demo SHALL behave.',
+      '',
+      '#### Scenario: Demo runs',
+      '- **WHEN** the demo runs',
+      '- **THEN** it behaves',
+      '',
+    ].join('\n'),
+  )
+  const fake = setup(root)
+
+  const shown = await call(fake, 'openspec_show', { name })
+  assert.equal(shown.kind, 'change')
+  assert.equal(shown.deltaCount, 1)
+  assert.deepEqual(
+    shown.deltas[0].requirements.map((requirement) => requirement.name),
+    ['Demo behavior'],
+  )
+
+  const validated = await call(fake, 'openspec_validate', { change: name })
+  assert.equal(validated.valid, true)
+  assert.deepEqual(validated.issues, [])
+})
+
+test('refuses a requirement under an unrecognized delta section', async () => {
+  const root = fixture()
+  const name = 'unknown-section'
+  writeParsingChange(
+    root,
+    name,
+    [
+      '## ADDED Requirements',
+      '',
+      '### Requirement: Supported behavior',
+      'The demo SHALL behave.',
+      '',
+      '#### Scenario: Demo runs',
+      '- **WHEN** the demo runs',
+      '- **THEN** it behaves',
+      '',
+      '## DEPRECATED Requirements',
+      '',
+      '### Requirement: Retired behavior',
+      'The demo SHALL keep a retired behavior.',
+      '',
+      '#### Scenario: Retired path',
+      '- **WHEN** the retired path runs',
+      '- **THEN** it holds',
+      '',
+    ].join('\n'),
+  )
+  const fake = setup(root)
+
+  const validated = await call(fake, 'openspec_validate', { change: name })
+  assert.equal(validated.valid, false)
+  const error = validated.issues.find(
+    (issue) => issue.level === 'ERROR' && issue.message.includes('Retired behavior'),
+  )
+  assert.ok(error, JSON.stringify(validated.issues))
+  assert.match(error.message, /## DEPRECATED Requirements/)
+
+  const archived = await call(fake, 'openspec_archive', { change: name })
+  assert.equal(archived.valid, false)
+  assert.equal(archived.archived, false)
+  assert.ok(archived.issues.some((issue) => issue.message.includes('Retired behavior')))
+  assert.ok(existsSync(join(root, 'openspec', 'changes', name)))
+})
+
 test('reports an unwritable project instead of writing partially', async (t) => {
   if (process.getuid?.() === 0) {
     t.skip('root bypasses directory permissions')

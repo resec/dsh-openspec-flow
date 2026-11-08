@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-08
+goal: Ship plugin 0.2.1 on OpenSpec CLI 1.16.1 with the dependency, version
+  gates, skill metadata, tests and documentation consistent, and the upstream
+  validate/archive tightening covered by regression tests and specs.

@@ -4,10 +4,10 @@
 
 当前基线（2026-11-08 工作树）：
 
-- CLI：`@fission-ai/openspec` 1.16.0（`package.json:42`）
+- CLI：`@fission-ai/openspec` 1.16.1（`package.json:42`）
 - Node：`>=24.9.0`（`package.json` 的 `engines.node`）
 - DSH：`=0.2.2-rc.1`（`package.json` 的 `engines.dsh`）
-- 插件版本：0.2.0（`package.json:3`）
+- 插件版本：0.2.1（`package.json:3`）
 
 插件只运行自己安装树内的 CLI（`lib/openspec.js:106`），首次调用校验精确版本与 `schemaVersion: 1`（`lib/openspec.js:143`）。因此升级必须同时移动依赖、版本断言与文档，不能只改 `package.json`。
 
@@ -54,7 +54,7 @@ npm_config_cache="$(mktemp -d)" npm view @fission-ai/openspec@<version> engines.
 
 `npm view` 对该字段返回单元素数组，例如 `[">=22.12.0"]`。
 
-记录目标版本的 `engines.node`。插件与 DSH 同进程运行，实际 Node 由 DSH 决定；只有当目标 CLI 的下限高于插件当前 `engines.node` 时，才需要评估是否同步调整插件与 DSH 的 Node 下限。当前插件要求 Node 24，CLI 1.16.0 要求 `>=22.12.0`，1.16.1 同为 `>=22.12.0`。
+记录目标版本的 `engines.node`。插件与 DSH 同进程运行，实际 Node 由 DSH 决定；只有当目标 CLI 的下限高于插件当前 `engines.node` 时，才需要评估是否同步调整插件与 DSH 的 Node 下限。当前插件要求 Node 24，CLI 1.16.1 要求 `>=22.12.0`。
 
 同时确认目标 CLI 的 `version --json` 仍输出 `schemaVersion: 1`。插件在 `lib/openspec.js:153` 硬性要求该值；它变化时插件会在运行任何目标命令前失败。
 
@@ -80,7 +80,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
-| `package.json:42` | 精确版本 `1.16.0` | 改为目标精确版本 |
+| `package.json:42` | 精确版本 `1.16.1` | 改为目标精确版本 |
 | `lib/openspec.js:47` | 从 `package.json` 派生 `PINNED_CLI_VERSION` | 无需改代码，改 manifest 即生效 |
 | `lib/openspec.js:143` | `version --json` 的 `version` 与 `schemaVersion` | 目标 CLI 必须仍输出 `schemaVersion: 1`，且 `version` 与 pin 完全一致 |
 | `lib/openspec.js:351` | `runOpenSpec` 的 spawn 参数与 `--json` 解析 | 命令仍支持 `--json`，输出仍是单段 JSON |
@@ -119,11 +119,11 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `lib/tools/write.js:204` | `archive` 前的 `validate --json` | `items[].valid` 仍在 |
 | `lib/tools/write.js:213` | `archive ... --yes --json` 与 `--skip-specs` | 选项仍存在 |
 | `lib/init.js:76` | `init --tools none --no-animation` | 选项仍存在，仍不生成技能 |
-| `skills/*/SKILL.md:7` | `metadata.upstream: openspec@1.16.0` | 改为目标版本 |
-| `test/openspec.test.mjs:11` | 硬编码 `1.16.0` | 改为目标版本 |
-| `test/skills.test.mjs:18` | 硬编码 `upstream: openspec@1.16.0` | 改为目标版本 |
-| `README.md:39` | CLI 对照表的 v1.16.0 tag | 改为目标 tag，并重新核对命令与选项 |
-| `README.md:68` | 官方技能对照表的 v1.16.0 tag | 改为目标 tag，并重新核对 12 份技能 |
+| `skills/*/SKILL.md:7` | `metadata.upstream: openspec@1.16.1` | 改为目标版本 |
+| `test/openspec.test.mjs:11` | 硬编码 `1.16.1` | 改为目标版本 |
+| `test/skills.test.mjs` | 硬编码 `upstream: openspec@1.16.1` | 改为目标版本 |
+| `README.md:39` | CLI 对照表的 v1.16.1 tag | 改为目标 tag，并重新核对命令与选项 |
+| `README.md:68` | 官方技能对照表的 v1.16.1 tag | 改为目标 tag，并重新核对 12 份技能 |
 | `README.md:137` | 精确版本与来源说明 | 更新版本号 |
 | `README.md:138` | 版本闸门说明 | 更新版本号 |
 | `README.md:144` | 设计要点中的版本 | 更新版本号 |
@@ -168,9 +168,9 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 8. 更新五份 `skills/*/SKILL.md` 的 `metadata.upstream`。正文只应出现 `openspec_*` 工具名，不应出现 CLI 命令；`test/skills.test.mjs` 会拦截 CLI 提及。
 
-9. 更新 `test/skills.test.mjs:18` 的 upstream 断言。
+9. 更新 `test/skills.test.mjs` 的 upstream 断言。
 
-10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处 `v1.16.0` 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化，同步调整“官方技能对照”。
+10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处 `v1.16.1` 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化，同步调整“官方技能对照”。
 
 11. 更新 `AGENTS.md:26` 与 `cordis.patch.yml:3` 的版本字样。
 
@@ -262,7 +262,7 @@ npm run contract:check -- --candidate 1.16.1 --json
 - `FAIL <suite>/<command>: ...`：消费字段缺失或类型变化，或命令没有可解析 JSON。
 - `warning: ... was not observed (empty fixture array)`：fixture 的数组为空，元素字段无法观测；不是失败，但说明该字段未被这次运行覆盖。
 
-2026-11-08 对 1.16.0 与 1.16.1 的实测结果：
+2026-11-08 升级前对 1.16.0 与 1.16.1 的实测结果：
 
 ```text
 baseline: 1.16.0
@@ -271,7 +271,7 @@ candidate: 1.16.1
 RESULT: compatible
 ```
 
-所有命令都是 `no shape change`，退出码 0；只有 `store-list` 的 `stores[].id` 与 `stores[].root` 报“未观测”，因为 fixture 没有注册 store。这证明 1.16.1 的 JSON 契约与 1.16.0 一致，但不证明 `validate`/`archive` 的语义没有变化——后者由 release notes 与负向测试覆盖。
+所有命令都是 `no shape change`，退出码 0；只有 `store-list` 的 `stores[].id` 与 `stores[].root` 报“未观测”，因为 fixture 没有注册 store。这证明 1.16.1 的 JSON 契约与 1.16.0 一致，但不证明 `validate`/`archive` 的语义没有变化——后者由 release notes 与 `test/integration.test.mjs` 的两个负向用例覆盖。
 
 ### 字段清单
 
@@ -325,7 +325,9 @@ RESULT: compatible
 - [ ] DSH 会话冒烟通过，工具输出字段符合预期。
 - [ ] 回滚步骤已演练或有明确记录。
 
-## 版本示例：1.16.0 到 1.16.1
+## 版本对照：1.16.0 到 1.16.1
+
+本节记录 2026-11-08 完成的升级，供下一次升级对照。
 
 上游事实：
 
@@ -333,12 +335,26 @@ RESULT: compatible
 - 变化包括：`validate`、`show`、`list`、`view`、`archive` 读取带闭合 `#` 的标题；未知 delta section 从警告变为 `validate` 失败、`archive` 拒绝；`version --check` 的行为调整。
 - 1.16.0 的 Breaking 是 Node.js 22.12.0（[release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.16.0)）。
 
-本次实测：
+升级前核对：
 
 - `npm run contract:check -- --candidate 1.16.1` 在 2026-11-08 退出 0，所有命令 `no shape change`。JSON 契约未变。
-- 因此不需要改 `lib/state.js`、`lib/tools/*`、`lib/schema.js`、`lib/tasks.js`。
-- 仍需改：`package.json:42`、`package-lock.json`、`test/openspec.test.mjs:11`、五份 `skills/*/SKILL.md:7`、`test/skills.test.mjs:18`、README 的版本字样与两个对照表 tag、`AGENTS.md:26`、`cordis.patch.yml:3`、本文档。
-- 仍需人工确认：未知 delta section 的收紧会改变用户项目的归档结果。插件的 `openspec_archive` 先 `validate`，失败时返回 `valid: false` 与 issues，不移动文件（`lib/tools/write.js:200`）；这是期望行为，但应在升级说明中告知用户。
+- 解包对比两版 `dist/`：只有 11 个文件变化，全部在 `core/parsers`、`core/validation`、`core/specs-apply` 与 `core/version-check`；`dist/utils/task-progress.js` 与全部指令模板未变，因此不需要改 `lib/state.js`、`lib/tools/*`、`lib/schema.js`、`lib/tasks.js` 的解析逻辑。
+- 同一 fixture 上两版 `instructions proposal|specs|design|tasks|apply --json` 的 `instruction` 字段逐字节一致，所以不需要改 `INSTRUCTION_COMMAND_MAP`。
+
+本次改动：
+
+- `package.json`：CLI 固定为 1.16.1，插件版本 0.2.0 → 0.2.1。
+- `package-lock.json`：由 `npm install` 更新；根 `engines` 同时同步为 `package.json` 的 `node >=24.9.0` 与 `dsh =0.2.2-rc.1`（旧锁文件停留在 `>=22.12.0` 且缺 `dsh`）。
+- 版本断言：`test/openspec.test.mjs:11`、`:35`、`test/skills.test.mjs`、五份 `skills/*/SKILL.md:7`。
+- 回归测试：`test/integration.test.mjs` 新增闭合标题与未知 delta section 两个用例。
+- 文档：README 的版本字样与两个 v1.16.1 对照链接、`AGENTS.md:26`、`cordis.patch.yml:3`、本文档。
+
+行为变化与验证：
+
+- 未知 delta section：1.16.0 下 `validate` 只报警告、`archive` 成功并丢弃该需求；1.16.1 下 `validate` 返回 `valid: false`（`ERROR`），`openspec_archive` 在前置校验阶段返回 `valid: false`、`archived: false` 且不移动文件。
+- 闭合标题：1.16.0 下 `## ADDED Requirements ##` 被当作未知 section；1.16.1 下正常解析，`openspec_show` 列出需求、`openspec_validate` 通过。
+- 39 任务复测：`instructions apply --json` 原始 13,664 B、`apply_next` 780 B、10 次 mark 平均 448 B、合计 5,258 B，与 README 记录一致。
+- 升级后 `npm test`、`npm run coverage:check`、`npm run contract:check` 与 `openspec_validate` 均通过。
 
 ## 来源
 

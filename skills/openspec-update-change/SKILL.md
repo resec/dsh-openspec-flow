@@ -3,8 +3,8 @@ name: openspec-update-change
 description: Revise an OpenSpec change's planning artifacts with the openspec_* tools and keep proposal, specs, design and tasks coherent. Use when the user wants to update a change's plan.
 whenToUse: The user wants an existing change's artifacts revised, not implemented, and not the refresh action that regenerates generated files.
 metadata:
-  generatedBy: dsh-openspec-flow@0.2.0
-  upstream: openspec@1.16.0
+  generatedBy: dsh-openspec-flow@0.2.1
+  upstream: openspec@1.16.1
 ---
 
 # Update a change's planning artifacts

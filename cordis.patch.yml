@@ -1,6 +1,6 @@
 # One Host row. The tools and the openspec-flow skill are registered from index.js.
 #
-# The plugin runs its bundled @fission-ai/openspec 1.16.0. There is no cliPath
+# The plugin runs its bundled @fission-ai/openspec 1.16.1. There is no cliPath
 # setting: PATH, project-local .bin, and config overrides are not consulted.
 # Only timeoutMs is configurable.
 - insert:

@@ -3,8 +3,8 @@ name: openspec-archive-change
 description: Archive a completed OpenSpec change with the openspec_* tools, merging its delta specs into the main specs. Use when the user asks to archive or finalize a change.
 whenToUse: The user explicitly asks to archive a finished change.
 metadata:
-  generatedBy: dsh-openspec-flow@0.2.0
-  upstream: openspec@1.16.0
+  generatedBy: dsh-openspec-flow@0.2.1
+  upstream: openspec@1.16.1
 ---
 
 # Archive a change with the plugin tools
