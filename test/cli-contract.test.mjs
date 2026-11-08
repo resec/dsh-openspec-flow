@@ -185,7 +185,7 @@ test('parseArgs rejects unknown options, missing values and conflicting candidat
 test('readContract loads the shipped command inventory', () => {
   const contract = readContract()
   assert.equal(contract.version, 1)
-  assert.equal(contract.commands.length, 18)
+  assert.equal(contract.commands.length, 19)
   const ids = contract.commands.map((command) => command.id)
   for (const id of ['init', 'new-change', 'version', 'list', 'status', 'instructions-apply', 'archive']) {
     assert.ok(ids.includes(id), `contract lists ${id}`)

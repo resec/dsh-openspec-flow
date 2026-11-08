@@ -19,8 +19,10 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 ## Create
 
+Every `openspec_instructions` result may carry `context` and `rules` from `openspec/config.yaml`; apply them to the artifact you write.
+
 1. Call `openspec_new_change` with the confirmed name, and a description or goal when the user gave one.
-2. Call `openspec_instructions` for `proposal`. Read the instruction and write `proposal.md` at the returned `outputPath`, following the template and the project's `openspec/config.yaml` rules.
+2. Call `openspec_instructions` for `proposal`. Read the instruction and write `proposal.md` at the returned `outputPath`, following the template.
 3. Call `openspec_instructions` for `specs`. Write one delta spec per capability listed in the proposal, using `## Purpose` for a new capability and `## ADDED` / `## MODIFIED` / `## REMOVED` / `## RENAMED Requirements` for the deltas.
 4. Call `openspec_instructions` for `design`. Write `design.md` only when the change crosses modules, adds a dependency, changes data, or needs a technical decision.
 5. Call `openspec_instructions` for `tasks`. Write `tasks.md` with numbered checkbox tasks grouped by `## 1. ...` headings.

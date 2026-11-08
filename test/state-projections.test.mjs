@@ -58,6 +58,40 @@ test('projectApply projects context files and the next source relative to the ro
   assert.deepEqual(result.root, { path: '/project', source: 'nearest' })
 })
 
+test('projectApply carries configured context and guidance', () => {
+  const result = projectApply({
+    projectRoot: '/project',
+    tasks: [],
+    payload: {
+      changeName: 'c',
+      schemaName: 'spec-driven',
+      state: 'ready',
+      progress: { total: 0, complete: 0, remaining: 0 },
+      context: 'Follow the project glossary.',
+      operationGuidance: ['Keep apply summaries short.', '  '],
+    },
+  })
+  assert.equal(result.context, 'Follow the project glossary.')
+  assert.deepEqual(result.guidance, ['Keep apply summaries short.'])
+})
+
+test('projectApply omits blank context and guidance', () => {
+  const result = projectApply({
+    projectRoot: '/project',
+    tasks: [],
+    payload: {
+      changeName: 'c',
+      schemaName: 'spec-driven',
+      state: 'ready',
+      progress: { total: 0, complete: 0, remaining: 0 },
+      context: ' ',
+      operationGuidance: [],
+    },
+  })
+  assert.equal(result.context, undefined)
+  assert.equal(result.guidance, undefined)
+})
+
 test('projectMark projects the next source relative to the root', () => {
   const result = projectMark({
     projectRoot: '/project',

@@ -17,7 +17,7 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 1. Call `openspec_status` to see which artifacts exist and what is missing.
 2. Read the change's `proposal.md`, `specs/`, `design.md` and `tasks.md` before editing.
-3. Call `openspec_instructions` for each artifact you will touch. The instruction names the output path and the dependencies.
+3. Call `openspec_instructions` for each artifact you will touch. The instruction names the output path and the dependencies; when the result carries `context` or `rules`, apply them to the revision.
 
 ## Revise
 

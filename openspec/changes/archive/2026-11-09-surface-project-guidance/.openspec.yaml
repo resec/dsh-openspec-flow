@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-08
+goal: Make openspec/config.yaml context, rules, apply guidance and archive
+  guidance reach the agent through the existing tool surface.

@@ -16,7 +16,7 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks.
 2. If no change is named, infer it from context. If several exist, ask.
 3. Call `openspec_status` for the change. If `isPlanningComplete` is false or artifacts are missing, finish planning first; do not start apply.
-4. Call `openspec_apply_next` once. Every `contextFiles` path is relative to `root.path`; join them with that absolute root before reading. Read every listed file before editing. Treat `instruction` as the current guidance. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.
+4. Call `openspec_apply_next` once. Every `contextFiles` path is relative to `root.path`; join them with that absolute root before reading. Read every listed file before editing. Treat `instruction` as the current guidance, and follow `context` and `guidance` when those fields are present. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.
 5. When the change lives in a store, pass the same `store` on every call.
 
 ## Loop

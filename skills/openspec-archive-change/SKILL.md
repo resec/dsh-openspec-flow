@@ -20,6 +20,11 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 3. Call `openspec_validate`. Report every finding and stop when `valid` is false.
 4. If the change is doc-only or tooling-only and does not alter spec-level behavior, ask whether to archive with `skipSpecs: true`.
 
+## Archive inputs
+
+- Call `openspec_instructions` with `artifact: "archive"` before archiving.
+- Follow the returned `context` and `guidance` when present; when both are absent, continue.
+
 ## Archive
 
 - Call `openspec_archive` with the change name. It re-validates, refuses on findings or incomplete tasks, and only then moves the change.

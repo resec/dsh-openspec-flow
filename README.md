@@ -12,15 +12,17 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 读 | `openspec_context` | 解析根与 store 身份、被引用 store 与诊断 |
 | 读 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven` |
 | 读 | `openspec_store_list` | 列出已注册 store |
-| 规划 | `openspec_instructions` | 读某产物的 CLI 指令、输出路径、依赖与已存在文件 |
+| 规划 | `openspec_instructions` | 读产物的指令、输出路径、依赖与已存在文件；返回项目 `context` 与产物 `rules`；`archive` 返回归档 `context`/`guidance` |
 | 规划 | `openspec_validate` | 校验 change、spec、全部 specs 或全部项目 |
 | 写 | `openspec_new_change` | 创建变更目录与 `.openspec.yaml`；先检查项目 schema，不支持则拒绝 |
 | 写 | `openspec_archive` | 先校验、再归档并合并 delta specs |
 | 写 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能 |
-| apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles 与指令 |
+| apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles、指令与项目 `context`/`guidance` |
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
+
+`openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_instructions` 的 `archive` 返回归档 `context`/`guidance`，不是空的产物字段。
 
 ## 流程覆盖
 
@@ -32,7 +34,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 提案 | `openspec-propose`；`openspec_new_change`、`openspec_instructions`、`openspec_validate` | 创建 change，写 proposal、specs、design、tasks |
 | 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done` | 紧凑 apply 循环；批量翻转任务 |
 | 修订规划 | `openspec-update-change`；`openspec_instructions`、`openspec_validate` | 修改现有 artifacts；没有专用写工具 |
-| 归档 | `openspec-archive-change`；`openspec_archive` | 先校验、检查任务，再移动并合并 delta specs |
+| 归档 | `openspec-archive-change`；`openspec_instructions`、`openspec_archive` | 先读归档 `context`/`guidance`、校验、检查任务，再移动并合并 delta specs |
 
 ## CLI 对照
 
@@ -50,7 +52,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 | `archive` | 归档并合并 delta 规格 | 部分支持 | `openspec_archive`：`skipSpecs` 对应 `--skip-specs`，`store` 透传；固定 `--yes --json`，归档前先跑一次 `validate`；不暴露 `--no-validate` |
 | `new change` | 创建变更目录 | 部分支持 | `openspec_new_change`：`name`、`description`、`goal`、`store`；`--schema` 固定为内置 `spec-driven` |
 | `status` | 产物完成状态 | 部分支持 | `openspec_status`：`change`、`store`；不暴露 `--all`、`--schema` |
-| `instructions` | 产物与 apply 指令 | 部分支持 | `openspec_instructions` 覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；`apply` 由 `openspec_apply_next` 承载；不暴露 `--schema` |
+| `instructions` | 产物与 apply 指令 | 部分支持 | `openspec_instructions` 覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；产物结果带项目 `context` 与 `rules`，`archive` 返回归档 `context`/`guidance`；`apply` 由 `openspec_apply_next` 承载并带 apply `context`/`guidance`；不暴露 `--schema` |
 | `templates` | 产物模板路径 | 不支持 | 无工具；`openspec_instructions` 返回的 `outputPath` 已给出写入位置 |
 | `schemas` | 列出工作流 schema | 部分支持 | `openspec_schemas` 只保留包内置 `spec-driven`，其余被过滤；`store` 透传 |
 | `schema` | schema 检查与派生 | 不支持 | `which`、`validate`、`fork`、`init` 均未封装；自定义 schema 会被闸门拒绝 |
@@ -74,7 +76,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 | `openspec-apply-change` | Core | 提供，已重写 | `openspec_apply_next` 取一次状态与下一任务，之后按批 `openspec_mark_task_done` |
 | `openspec-update-change` | Core | 提供，已重写 | 只改已存在的规划产物；没有专用写工具，文件由 agent 直接编辑 |
 | `openspec-sync-specs` | Core | 不提供 | delta 规格只在 `openspec_archive` 时合并；插件无「只同步不归档」流程 |
-| `openspec-archive-change` | Core | 提供，已重写 | 先查任务与 `openspec_validate`，再调 `openspec_archive` |
+| `openspec-archive-change` | Core | 提供，已重写 | 先读归档 `context`/`guidance`、查任务与 `openspec_validate`，再调 `openspec_archive` |
 | `openspec-new-change` | Optional | 不提供技能 | 创建动作由 `openspec_new_change` 工具承担，`openspec-propose` 内含该步骤 |
 | `openspec-continue-change` | Optional | 不提供 | 由 `openspec_status` 判定下一个待办产物、`openspec_instructions` 给指令，但没有单产物推进的技能封装 |
 | `openspec-ff-change` | Optional | 不提供 | 无独立技能；`openspec-propose` 已一次写完全部产物，对内置 schema 效果等价 |

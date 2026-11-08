@@ -612,6 +612,63 @@ test('reads planning instructions through openspec_instructions', async () => {
   )
 })
 
+test('surfaces project context, rules and operation guidance', async () => {
+  const root = fixture()
+  writeFileSync(join(root, 'openspec', 'config.yaml'), [
+    'schema: spec-driven',
+    'context: Follow the project glossary.',
+    'rules:',
+    '  proposal:',
+    '    - Keep the proposal under one page.',
+    'operations:',
+    '  apply:',
+    '    guidance:',
+    '      - Keep apply summaries short.',
+    '  archive:',
+    '    guidance:',
+    '      - Summarize the archive outcome.',
+    '',
+  ].join('\n'))
+  const fake = setup(root)
+
+  const proposal = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  assert.equal(proposal.context, 'Follow the project glossary.')
+  assert.deepEqual(proposal.rules, ['Keep the proposal under one page.'])
+  assert.equal(proposal.artifact, 'proposal')
+
+  const archive = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'archive' })
+  assert.equal(archive.change, CHANGE)
+  assert.equal(archive.artifact, 'archive')
+  assert.equal(archive.context, 'Follow the project glossary.')
+  assert.deepEqual(archive.guidance, ['Summarize the archive outcome.'])
+  assert.equal(archive.instruction, undefined)
+  assert.equal(archive.outputPath, undefined)
+  assert.equal(archive.root.path, root)
+
+  const apply = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  assert.equal(apply.context, 'Follow the project glossary.')
+  assert.deepEqual(apply.guidance, ['Keep apply summaries short.'])
+  assert.equal(apply.state, 'all_done')
+})
+
+test('omits project configuration when the config has none', async () => {
+  const root = fixture()
+  const fake = setup(root)
+
+  const proposal = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  assert.equal(proposal.context, undefined)
+  assert.equal(proposal.rules, undefined)
+
+  const archive = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'archive' })
+  assert.deepEqual(Object.keys(archive).sort(), ['artifact', 'change', 'root'])
+  assert.equal(archive.context, undefined)
+  assert.equal(archive.guidance, undefined)
+
+  const apply = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  assert.equal(apply.context, undefined)
+  assert.equal(apply.guidance, undefined)
+})
+
 test('shows changes and specs through one tool', async () => {
   const root = fixture()
   const specDir = join(root, 'openspec', 'specs', 'theme')

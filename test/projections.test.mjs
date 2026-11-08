@@ -70,6 +70,72 @@ test('maps CLI fragments in instruction text without touching paths', () => {
   assert.doesNotMatch(result.instruction, /`openspec (list|show|validate|instructions)/)
 })
 
+test('projectInstructions carries configured context and rules', () => {
+  const result = projectInstructions({
+    changeName: 'c',
+    artifactId: 'proposal',
+    schemaName: 'spec-driven',
+    outputPath: 'proposal.md',
+    instruction: 'Write it.',
+    context: 'Follow the project glossary.',
+    rules: ['Keep it under one page.', 'State what is out of scope.'],
+    dependencies: [],
+    unlocks: [],
+    root: ROOT,
+  }, 'proposal')
+  assert.equal(result.context, 'Follow the project glossary.')
+  assert.deepEqual(result.rules, ['Keep it under one page.', 'State what is out of scope.'])
+  assert.equal(result.instruction, 'Write it.')
+})
+
+test('projectInstructions omits blank context and rules', () => {
+  const result = projectInstructions({
+    changeName: 'c',
+    artifactId: 'proposal',
+    schemaName: 'spec-driven',
+    outputPath: 'proposal.md',
+    instruction: 'Write it.',
+    context: '   ',
+    rules: ['', '  '],
+    dependencies: [],
+    unlocks: [],
+    root: ROOT,
+  }, 'proposal')
+  assert.equal(result.context, undefined)
+  assert.equal(result.rules, undefined)
+})
+
+test('projectInstructions returns archive operation inputs', () => {
+  const result = projectInstructions({
+    changeName: 'c',
+    context: 'Follow the project glossary.',
+    operationGuidance: ['Summarize the archive outcome.', '  '],
+    root: ROOT,
+  }, 'archive')
+  assert.deepEqual(result, {
+    change: 'c',
+    artifact: 'archive',
+    context: 'Follow the project glossary.',
+    guidance: ['Summarize the archive outcome.'],
+    root: ROOT,
+  })
+  assert.equal(result.instruction, undefined)
+  assert.equal(result.outputPath, undefined)
+  assert.equal(result.dependencies, undefined)
+})
+
+test('projectInstructions returns only archive identity without configuration', () => {
+  const result = projectInstructions({ changeName: 'c', root: ROOT }, 'archive')
+  assert.deepEqual(result, { change: 'c', artifact: 'archive', root: ROOT })
+  assert.equal(result.context, undefined)
+  assert.equal(result.guidance, undefined)
+})
+
+test('projectInstructions omits the archive root when the payload has none', () => {
+  const result = projectInstructions({ changeName: 'c' }, 'archive')
+  assert.deepEqual(result, { change: 'c', artifact: 'archive' })
+})
+
 test('projectShow distinguishes a spec from a change', () => {
   const spec = projectShow({
     id: 'theme',

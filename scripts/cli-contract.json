@@ -106,8 +106,25 @@
         "existingOutputPaths": "array",
         "description": "string",
         "instruction": "string",
+        "context": { "type": "string", "optional": true },
+        "rules": { "type": "array", "optional": true },
+        "rules[]": { "type": "string", "optional": true },
         "dependencies": "array",
         "unlocks": "array",
+        "root": "object",
+        "root.path": "string",
+        "root.source": "string"
+      }
+    },
+    {
+      "id": "instructions-archive",
+      "stage": "base",
+      "args": ["instructions", "archive", "--change", "{change}", "--json"],
+      "fields": {
+        "changeName": "string",
+        "context": { "type": "string", "optional": true },
+        "operationGuidance": { "type": "array", "optional": true },
+        "operationGuidance[]": { "type": "string", "optional": true },
         "root": "object",
         "root.path": "string",
         "root.source": "string"
@@ -133,6 +150,9 @@
         "tasks[].line": "number",
         "contextFiles": "object",
         "instruction": { "type": "string", "optional": true },
+        "context": { "type": "string", "optional": true },
+        "operationGuidance": { "type": "array", "optional": true },
+        "operationGuidance[]": { "type": "string", "optional": true },
         "missingArtifacts": { "type": "array", "optional": true },
         "warnings": { "type": "array", "optional": true },
         "changeDir": "string",
