@@ -12,18 +12,18 @@
 
 ## 3. Current tree
 
-- [ ] 3.1 Replace the installation path in `README.md` with `/path/to/dsh-openspec-flow`, commit the change artifacts and README, and verify `git grep -nE '/home/[^/]+/'` prints nothing and `git status --porcelain` is empty
+- [x] 3.1 Replace the installation path in `README.md` with `/path/to/dsh-openspec-flow`, commit the change artifacts and README, and verify `git grep -nE '/home/[^/]+/'` prints nothing and `git status --porcelain` is empty
 
 ## 4. History rewrite
 
-- [ ] 4.1 Rewrite `main` with the index and commit filters and verify the map file has one line per pre-rewrite commit (49 at apply time: 48 baseline plus the change commit), `refs/original/refs/heads/main` exists, and `git rev-list --count main` matches the map
-- [ ] 4.2 Audit every reachable commit for text and decompressed zstd paths, compare author, committer, dates and messages against the baseline, and verify each old/new commit pair differs only in the intended files
+- [x] 4.1 Rewrite `main` with the index and commit filters and verify the map file has one line per pre-rewrite commit (49 at apply time: 48 baseline plus the change commit), `refs/original/refs/heads/main` exists, and `git rev-list --count main` matches the map
+- [x] 4.2 Audit every reachable commit for text and decompressed zstd paths, compare author, committer, dates and messages against the baseline, and verify each old/new commit pair differs only in the intended files
 
 ## 5. Gates
 
-- [ ] 5.1 Run `npm test` on Node 24 and verify the suite passes
-- [ ] 5.2 Run `npm run coverage:check` on Node 24 and verify the gate passes
-- [ ] 5.3 Run `openspec_validate` with `strict: true` and verify no findings remain
+- [x] 5.1 Run `npm test` on Node 24 and verify the suite passes
+- [x] 5.2 Run `npm run coverage:check` on Node 24 and verify the gate passes
+- [x] 5.3 Run `openspec_validate` with `strict: true` and verify no findings remain
 
 ## Workflow follow-up
 
