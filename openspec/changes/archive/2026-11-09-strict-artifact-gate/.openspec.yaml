@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-09
+goal: Every active change and main spec validates with warnings treated as
+  failures, and pre-push runs that check before the coverage gate.

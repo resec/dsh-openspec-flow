@@ -9,7 +9,7 @@ The project uses OpenSpec. Non-trivial work starts as a change under `openspec/c
 1. Plan with the installed `openspec-propose` skill, or `openspec_new_change` (the CLI `openspec new change <name>` works too). Read the change's `proposal.md`, `specs/`, `design.md`, and `tasks.md` before editing code.
 2. Apply with the installed plugin. Load `openspec-apply-change`, then call `openspec_apply_next` once.
 3. After each task or batch, call `openspec_mark_task_done` with `taskIds` for every task finished since the last call and continue with its `next`. Call `openspec_apply_next` again only to start or resync.
-4. Finish with `openspec_validate <name>` and `npm test` on Node 24. Archive with `openspec_archive` only when the user asks.
+4. Finish with `openspec_validate` with `strict: true` and `npm test` on Node 24. Archive with `openspec_archive` only when the user asks.
 5. After archiving, commit the archive, the documentation updates, and the merged specs in one commit, then push to `origin/main` (`git@github.com:resec/dsh-openspec-flow.git`).
 
 The plugin serves the five workflow skills from its own skill provider at rank 50; it writes no project copy. `openspec_init` only creates the OpenSpec project structure. This repository keeps no `.dsh/skills/` copies. There is no sync-only flow: main specs are updated only by `openspec_archive`, and `openspec-sync-specs` must not be reintroduced.
@@ -35,4 +35,4 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 ## Verification
 
-A change is complete when every task is checked, `openspec validate <name>` passes, `npm test` passes on Node 24, and `npm run coverage:check` passes. The installed plugin is linked into the `web` profile; re-enable the `include:openspec-flow` entry or restart DSH to load changed Host code in a live session.
+A change is complete when every task is checked, `openspec_validate` with `strict: true` passes, `npm test` passes on Node 24, and `npm run coverage:check` passes. The pre-push hook runs `npm run openspec:check` over every active change and main spec, and checks archived task completion, before coverage; `COVERAGE_SKIP=1` skips only coverage. A packaged skill that omits `strict: true` does not lower this repository's gate. The installed plugin is linked into the `web` profile; re-enable the `include:openspec-flow` entry or restart DSH to load changed Host code in a live session.

@@ -189,7 +189,10 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | 全量测试 | `npm test`（Node 24） | 全部通过 |
 | 覆盖率门禁 | `npm run coverage:check`（Node 24） | 通过，不低于基线 |
 | JSON 契约 | `npm run contract:check -- --candidate <version>` | 退出码 0 |
-| OpenSpec 校验 | `openspec_validate`（插件工具，`change` 参数） | `valid: true` |
+| 严格校验 | `npm run openspec:check`（Node 无需 24） | 退出码 0，活动 change 与主 specs 无警告 |
+| OpenSpec 校验 | `openspec_validate`（插件工具，`change` 参数，`strict: true`） | `valid: true` |
+
+目标版本可能新增警告，例如更严的需求长度或场景步骤检查。新增警告属于升级改动的一部分：先修好受影响的工件，再让 `npm run openspec:check` 通过。
 
 测试入口只接受 PATH 上的 Node 24，且具体版本满足 `>=24.9.0`；它不会调用 fnm、nvm、volta，也不读 `.nvmrc`。本机默认 Node 可能是 26，需先激活 Node 24：
 
@@ -290,7 +293,7 @@ npm run contract:check -- --candidate <version> --json
 
 发布顺序：
 
-1. 所有任务完成，`openspec_validate`、`npm test`、`npm run coverage:check`、`npm run contract:check` 通过。
+1. 所有任务完成，`openspec_validate` 传 `strict: true`、`npm test`、`npm run coverage:check`、`npm run openspec:check`、`npm run contract:check` 通过。
 2. 升插件版本。`package.json` 的 `version` 决定技能 frontmatter 的 `dsh-openspec-flow@<version>`（`lib/skills.js:23`），`test/skills.test.mjs` 会校验两者一致；只升 CLI 而不升插件版本时，技能元数据仍指向旧插件版本，需要判断是否接受。
 3. 归档 change，提交归档、文档、脚本与合并后的 specs，推送 `origin/main`。
 4. 重启 DSH，确认没有 `skipping profile bundle`，并完成手工冒烟。
@@ -310,7 +313,7 @@ npm run contract:check -- --candidate <version> --json
 - [ ] `package.json`、`package-lock.json`、版本断言、五份技能、README、AGENTS、`cordis.patch.yml` 已更新。
 - [ ] Node 24 上 `npm test` 通过。
 - [ ] Node 24 上 `npm run coverage:check` 通过。
-- [ ] `openspec_validate` 通过。
+- [ ] `openspec_validate` 传 `strict: true` 通过，`npm run openspec:check` 通过。
 - [ ] DSH 会话冒烟通过，工具输出字段符合预期。
 - [ ] 回滚步骤已演练或有明确记录。
 
