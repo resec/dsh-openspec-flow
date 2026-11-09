@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-10
+goal: No reachable commit in this repository contains a host-specific absolute
+  path; README uses a neutral placeholder; author, committer, dates and messages
+  are preserved by the rewrite.
