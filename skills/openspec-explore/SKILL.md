@@ -17,12 +17,13 @@ Use the `openspec_*` tools for every read. If a tool is unavailable, report it a
 
 - `openspec_context` for the resolved root and members.
 - `openspec_list` for active changes, and `openspec_list` with `specs: true` for the capability inventory.
-- `openspec_show` with `type: "spec"` for a capability's purpose, requirements and scenarios. Pass `noScenarios: true` for an overview.
+- `openspec_show` with `type: "spec"` and `noScenarios: true` for a filtered overview of a capability's purpose and requirement texts.
+- `openspec_show` with `type: "spec"` for the full spec, including scenarios. A filtered read is only an overview: before saying what a capability already covers or what should change, read every relevant spec in full.
 - `openspec_show` for a change's delta requirements.
 - `openspec_instructions` for the artifact instruction and output path when the discussion needs to become a spec, design or task list.
 - `openspec_schemas` when the user asks which workflow the project follows.
 
-Read only what the question needs. Prefer one filtered read over pulling every spec.
+Read only what the question needs. Start with the filtered read, then read in full every spec the answer depends on; do not pull unrelated specs.
 
 ## Reason
 

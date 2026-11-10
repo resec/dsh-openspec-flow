@@ -71,8 +71,8 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 | 官方技能 | 官方类型 | 插件处理 | 说明 |
 | --- | --- | --- | --- |
-| `openspec-explore` | Core | 提供，已重写 | 只读探索；使用 `openspec_list`、`openspec_status`、`openspec_show`、`openspec_context` |
-| `openspec-propose` | Core | 提供，已重写 | `openspec_new_change` 建变更，逐产物调 `openspec_instructions` 写文件，最后 `openspec_validate` |
+| `openspec-explore` | Core | 提供，已重写 | 只读探索；先过滤概览，再全读相关 spec（含 scenarios）；使用 `openspec_list`、`openspec_status`、`openspec_show`、`openspec_context` |
+| `openspec-propose` | Core | 提供，已重写 | 先读相关现有 specs 并暴露冲突；`openspec_new_change` 建变更，逐产物调 `openspec_instructions` 写文件，最后 `openspec_validate` |
 | `openspec-apply-change` | Core | 提供，已重写 | `openspec_apply_next` 取一次状态与下一任务，之后按批 `openspec_mark_task_done` |
 | `openspec-update-change` | Core | 提供，已重写 | 只改已存在的规划产物；没有专用写工具，文件由 agent 直接编辑 |
 | `openspec-sync-specs` | Core | 不提供 | delta 规格只在 `openspec_archive` 时合并；插件无「只同步不归档」流程 |

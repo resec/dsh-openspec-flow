@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-10
+goal: Make the propose skill read relevant existing specs and surface conflicts
+  before proposing scope, and make the explore skill read relevant specs in full
+  after the filtered overview.

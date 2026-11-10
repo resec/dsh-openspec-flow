@@ -13,9 +13,14 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 ## Before creating
 
-- Confirm the request and its scope. If the requirements are ambiguous, ask instead of proposing.
+- Confirm the request. If the goal is ambiguous, ask before proposing.
 - If the project is not set up (`openspec_list` returns `setup: false`), ask whether to set it up with `openspec_init`, target a store, or skip OpenSpec.
-- State the kebab-case change name and the artifacts it will produce, then wait for the user's confirmation.
+- Read the existing specs the change may touch, before proposing its scope:
+  1. `openspec_list` with `specs: true` for the capability inventory.
+  2. `openspec_show` with `type: "spec"` and `noScenarios: true` for a filtered overview of each candidate capability.
+  3. `openspec_show` with `type: "spec"` for each capability the overview shows is relevant; this read includes its scenarios.
+  Name the capability and requirement each conclusion rests on. If the change contradicts an existing requirement, surface the conflict and ask instead of deciding it silently.
+- State the kebab-case change name, the artifacts it will produce, and the existing specs the change touches, then wait for the user's confirmation.
 
 ## Create
 

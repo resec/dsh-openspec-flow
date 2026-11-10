@@ -56,3 +56,20 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     )
   }
 })
+
+test('the propose skill reads existing specs before proposing', () => {
+  const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
+  assert.match(propose, /specs: true/)
+  assert.match(propose, /noScenarios: true/)
+  assert.match(propose, /type: "spec"/)
+  assert.match(propose, /surface the conflict/)
+  assert.match(propose, /existing specs the change touches/)
+})
+
+test('the explore skill reads relevant specs in full', () => {
+  const explore = readFileSync(packagedSkillPath('openspec-explore'), 'utf8')
+  assert.match(explore, /only an overview/)
+  assert.match(explore, /read every relevant spec in full/)
+  assert.match(explore, /type: "spec"/)
+  assert.match(explore, /noScenarios: true/)
+})
