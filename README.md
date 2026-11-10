@@ -126,6 +126,12 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 命令只检查当前 `PATH` 上的 `node`，不会调用 fnm、nvm、volta，也不读取 `.nvmrc`。如果当前 `node` 不是 24，或具体版本低于 `>=24.9.0`，命令会在测试启动前报错退出。本机默认 `node` 可能是 26，运行前需手动激活 Node 24。
 
+## 不变量
+
+跨 capability 的取值只在 `project-invariants` capability 中声明一次：Node 主版本与 `engines.node` 下界、OpenSpec CLI 精确版本与 schema 信封版本、覆盖率下限。归档后该 capability 位于 `openspec/specs/project-invariants/spec.md`。
+
+其他 spec 只引用该 capability，不重复取值。这条规则由评审执行，没有测试会在复述时失败。
+
 ## 配置
 
 `cordis.patch.yml` 的 `config` 可覆盖：

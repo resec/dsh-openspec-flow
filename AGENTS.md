@@ -21,9 +21,9 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 ## Plugin constraints
 
 - Plain ESM JavaScript with Node built-ins only. Runtime imports of `@deepseek-ai/*` break a linked profile install.
-- `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor. When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
+- `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor; the floor is stated once in the `project-invariants` capability (`Runtime baseline`). When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
 - Tests and coverage run only on the primary Node major 24 and require a concrete version satisfying `engines.node`. Entrypoints check the `node` on PATH; they never call fnm, nvm, volta, or read `.nvmrc`. If the runtime does not qualify, they fail before starting tests.
-- The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 1.16.1). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
+- The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 1.16.1, stated by the `project-invariants` `OpenSpec CLI pin` requirement). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
 - Keep tool descriptions and output schemas in `lib/tools/`, the projection and cache in `lib/state.js`, project initialization in `lib/init.js`, packaged-skill discovery in `lib/skills.js` and `lib/skill.js`, and the shipped skills in `skills/` in sync with behavior.
 - Every packaged skill's `metadata.generatedBy` must equal `dsh-openspec-flow@<package.json version>`; the skill test enforces it.
 - Keep the policy text in `lib/policy.js` consistent with the shipped skills. The policy is agent-scoped and must never be registered globally.

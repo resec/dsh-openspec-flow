@@ -22,11 +22,11 @@ The plugin SHALL execute only the `@fission-ai/openspec` package installed with 
 
 ### Requirement: The bundled CLI version is pinned and verified
 
-The plugin SHALL pin `@fission-ai/openspec` to an exact version and verify the executable before running any command.
+The plugin SHALL pin `@fission-ai/openspec` to the exact version and schema envelope version recorded in `project-invariants`, and verify the executable before running any command.
 
 #### Scenario: Matching version
 
-- **WHEN** `openspec version --json` reports the pinned version and `schemaVersion: 1`
+- **WHEN** `openspec version --json` reports the registry's version and schema envelope version
 - **THEN** the command proceeds
 
 #### Scenario: Mismatched version
