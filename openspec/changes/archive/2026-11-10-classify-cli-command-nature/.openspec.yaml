@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-10
+goal: 让读者在命令对照表中直接区分规格读写、store/workset 管理与 OpenSpec 自身管理命令。
+skip_specs: true

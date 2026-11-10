@@ -40,30 +40,32 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 13 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
 
-| CLI 命令 | 作用 | 插件支持 | 对应工具与差异 |
-| --- | --- | --- | --- |
-| `init` | 初始化项目结构 | 部分支持 | `openspec_init` 固定执行 `init --tools none --no-animation`，只接受 `path`；不暴露 `--tools`、`--language`、`--force`、`--profile`；已有 `config.yaml` 时跳过 |
-| `update` | 刷新已安装的指令文件 | 不支持 | 技能由插件 skill provider 提供，随插件版本生效；升级插件后重启会话即可 |
-| `config` | 全局配置 | 不支持 | `path`、`list`、`get`、`set`、`unset`、`reset`、`edit`、`profile` 均未封装 |
-| `list` | 列出变更或规格 | 部分支持 | `openspec_list`：`specs` 对应 `--specs`，`store` 对应 `--store`；不暴露 `--archived`、`--all`、`--sort` |
-| `show` | 打印变更或规格 | 部分支持 | `openspec_show`：`name`、`type`、`noScenarios`、`store`，返回结构化投影；不暴露 `--deltas-only`、`--requirements`、`--diff`、`--requirement`、`--no-interactive` |
-| `view` | 交互式仪表盘 | 不支持 | 终端 UI，无等价工具 |
-| `validate` | 结构与任务校验 | 部分支持 | `openspec_validate`：`change`、`spec`、`specs`、`all` 四种 scope，另有 `strict`、`store`；不暴露 `--archived`、`--report`、`--changes`、`--concurrency` |
-| `archive` | 归档并合并 delta 规格 | 部分支持 | `openspec_archive`：`skipSpecs` 对应 `--skip-specs`，`store` 透传；固定 `--yes --json`，归档前先跑一次 `validate`；不暴露 `--no-validate` |
-| `new change` | 创建变更目录 | 部分支持 | `openspec_new_change`：`name`、`description`、`goal`、`store`；`--schema` 固定为内置 `spec-driven` |
-| `status` | 产物完成状态 | 部分支持 | `openspec_status`：`change`、`store`；不暴露 `--all`、`--schema` |
-| `instructions` | 产物与 apply 指令 | 部分支持 | `openspec_instructions` 覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；产物结果带项目 `context` 与 `rules`，`archive` 返回归档 `context`/`guidance`；`apply` 由 `openspec_apply_next` 承载并带 apply `context`/`guidance`；不暴露 `--schema` |
-| `templates` | 产物模板路径 | 不支持 | 无工具；`openspec_instructions` 返回的 `outputPath` 已给出写入位置 |
-| `schemas` | 列出工作流 schema | 部分支持 | `openspec_schemas` 只保留包内置 `spec-driven`，其余被过滤；`store` 透传 |
-| `schema` | schema 检查与派生 | 不支持 | `which`、`validate`、`fork`、`init` 均未封装；自定义 schema 会被闸门拒绝 |
-| `store` | store 管理 | 部分支持 | 仅 `openspec_store_list` 对应 `store list --json`；`setup`、`register`、`unregister`、`remove`、`store doctor` 不支持 |
-| `doctor` | 根关系健康检查 | 不支持 | 无工具 |
-| `context` | 工作上下文 | 部分支持 | `openspec_context`：root（含 store_id）、被引用 store（fetch 为工具动作）、诊断（含 code/fix）；不暴露 `--code-workspace`、`--force` |
-| `workset` | 个人工作视图 | 不支持 | `create`、`list`、`open`、`remove` 均未封装 |
-| `version` | 版本与更新检查 | 不支持 | 版本由依赖与 `engines` 固定，无工具 |
-| `install` | 安装独立二进制 | 不支持 | 机器级安装，与插件无关 |
-| `feedback` | 提交反馈 | 不支持 | 无工具 |
-| `completion` | shell 补全 | 不支持 | 无工具 |
+「命令性质」按读写对象标注：`规格读` 读取变更、主规格或生成它们所需的工作流元数据；`规格写` 创建变更内容，或写入、移动主规格与变更目录；`Store 管理` 管理本机 store 注册与 store 目录；`Workset 管理` 管理本机个人工作视图；`OpenSpec 管理` 管理项目初始化、工具集成、全局配置、schema 定义、CLI 版本检查/安装/补全/反馈；`只读诊断` 只读根、store 引用或工作上下文。分组命令（`config`、`schema`、`store`、`workset`、`completion`）按域标注，不拆分读写子命令；`context --code-workspace` 是唯一会写文件的例外。这里的「只读」指不写规格内容，不代表 CLI 进程没有任何 I/O。
+
+| CLI 命令 | 作用 | 命令性质 | 插件支持 | 对应工具与差异 |
+| --- | --- | --- | --- | --- |
+| `init` | 初始化项目结构 | OpenSpec 管理 | 部分支持 | `openspec_init` 固定执行 `init --tools none --no-animation`，只接受 `path`；不暴露 `--tools`、`--language`、`--force`、`--profile`；已有 `config.yaml` 时跳过 |
+| `update` | 刷新已安装的指令文件 | OpenSpec 管理 | 不支持 | 技能由插件 skill provider 提供，随插件版本生效；升级插件后重启会话即可 |
+| `config` | 全局配置 | OpenSpec 管理 | 不支持 | `path`、`list`、`get`、`set`、`unset`、`reset`、`edit`、`profile` 均未封装 |
+| `list` | 列出变更或规格 | 规格读 | 部分支持 | `openspec_list`：`specs` 对应 `--specs`，`store` 对应 `--store`；不暴露 `--archived`、`--all`、`--sort` |
+| `show` | 打印变更或规格 | 规格读 | 部分支持 | `openspec_show`：`name`、`type`、`noScenarios`、`store`，返回结构化投影；不暴露 `--deltas-only`、`--requirements`、`--diff`、`--requirement`、`--no-interactive` |
+| `view` | 交互式仪表盘 | 规格读 | 不支持 | 终端 UI，无等价工具 |
+| `validate` | 结构与任务校验 | 规格读 | 部分支持 | `openspec_validate`：`change`、`spec`、`specs`、`all` 四种 scope，另有 `strict`、`store`；不暴露 `--archived`、`--report`、`--changes`、`--concurrency` |
+| `archive` | 归档并合并 delta 规格 | 规格写 | 部分支持 | `openspec_archive`：`skipSpecs` 对应 `--skip-specs`，`store` 透传；固定 `--yes --json`，归档前先跑一次 `validate`；不暴露 `--no-validate` |
+| `new change` | 创建变更目录 | 规格写 | 部分支持 | `openspec_new_change`：`name`、`description`、`goal`、`store`；`--schema` 固定为内置 `spec-driven` |
+| `status` | 产物完成状态 | 规格读 | 部分支持 | `openspec_status`：`change`、`store`；不暴露 `--all`、`--schema` |
+| `instructions` | 产物与 apply 指令 | 规格读 | 部分支持 | `openspec_instructions` 覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；产物结果带项目 `context` 与 `rules`，`archive` 返回归档 `context`/`guidance`；`apply` 由 `openspec_apply_next` 承载并带 apply `context`/`guidance`；不暴露 `--schema` |
+| `templates` | 产物模板路径 | 规格读 | 不支持 | 无工具；`openspec_instructions` 返回的 `outputPath` 已给出写入位置 |
+| `schemas` | 列出工作流 schema | 规格读 | 部分支持 | `openspec_schemas` 只保留包内置 `spec-driven`，其余被过滤；`store` 透传 |
+| `schema` | schema 检查与派生 | OpenSpec 管理 | 不支持 | `which`、`validate`、`fork`、`init` 均未封装；自定义 schema 会被闸门拒绝 |
+| `store` | store 管理 | Store 管理 | 部分支持 | 仅 `openspec_store_list` 对应 `store list --json`；`setup`、`register`、`unregister`、`remove`、`store doctor` 不支持 |
+| `doctor` | 根关系健康检查 | 只读诊断 | 不支持 | 无工具 |
+| `context` | 工作上下文 | 只读诊断（可选写） | 部分支持 | `openspec_context`：root（含 store_id）、被引用 store（fetch 为工具动作）、诊断（含 code/fix）；不暴露 `--code-workspace`、`--force` |
+| `workset` | 个人工作视图 | Workset 管理 | 不支持 | `create`、`list`、`open`、`remove` 均未封装 |
+| `version` | 版本与更新检查 | OpenSpec 管理 | 不支持 | 版本由依赖与 `engines` 固定，无工具 |
+| `install` | 安装独立二进制 | OpenSpec 管理 | 不支持 | 机器级安装，与插件无关 |
+| `feedback` | 提交反馈 | OpenSpec 管理 | 不支持 | 无工具 |
+| `completion` | shell 补全 | OpenSpec 管理 | 不支持 | 无工具 |
 
 ## 官方技能对照
 
