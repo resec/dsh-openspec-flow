@@ -20,10 +20,12 @@ import { spawn } from 'node:child_process'
  *   agents already live at load time.
  * @returns the fake context plus the registries and helpers tests read.
  */
-export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [] } = {}) {
+export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [], commands: withCommands = false } = {}) {
   const tools = new Map()
+  const toolOptions = new Map()
   const skills = []
   const providers = new Map()
+  const commands = []
   const stats = { spawns: 0 }
   const listeners = new Map()
   const liveAgents = [...seedAgents]
@@ -36,8 +38,7 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
     },
   })
 
-  const globalSystemPrompt = {
-    /** Record one global section; policy must never take this path. */
+  const globalSystemPrompt = {    /** Record one global section; policy must never take this path. */
     section(definition) {
       globalSystemPrompt.sections.push(definition)
       return () => {}
@@ -49,6 +50,17 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
   }
 
   const ctx = {
+    commands: withCommands
+      ? {
+          register(definition) {
+            commands.push(definition)
+            return () => {
+              const index = commands.indexOf(definition)
+              if (index !== -1) commands.splice(index, 1)
+            }
+          },
+        }
+      : undefined,
     logger: {
       warn() {},
       info() {},
@@ -118,9 +130,13 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       },
     },
     tools: {
-      register(definition) {
+      register(definition, options) {
         tools.set(definition.name, definition)
-        return () => tools.delete(definition.name)
+        toolOptions.set(definition.name, options)
+        return () => {
+          tools.delete(definition.name)
+          toolOptions.delete(definition.name)
+        }
       },
     },
     on(event, listener) {
@@ -155,6 +171,7 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       }
       if (name === 'systemPrompt') return globalSystemPrompt
       if (name === 'agents') return ctx.agents
+      if (name === 'commands' && withCommands) return ctx.commands
       return undefined
     },
     effect(fn) {
@@ -169,6 +186,7 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
    */
   function createAgent({ id = `session-${liveAgents.length + 1}`, directory } = {}) {
     const sections = []
+    const steered = []
     const agentContext = {
       systemPrompt: {
         section(definition) {
@@ -187,10 +205,28 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       },
     }
     const session = { id }
-    const agent = { id, session, ctx: agentContext }
+    const agent = {
+      id,
+      session,
+      ctx: agentContext,
+      status: 'idle',
+      steer(message) {
+        steered.push(message)
+      },
+    }
     if (directory !== undefined) sessionDirectories.set(id, directory)
     liveAgents.push(agent)
-    return { agent, sections }
+    return { agent, sections, steered }
+  }
+
+  /**
+   * Set an agent's status and deliver the host event listeners observe.
+   * @param agent - the agent whose status changes.
+   * @param status - `running` or `idle`.
+   */
+  function setStatus(agent, status) {
+    agent.status = status
+    emit('agent/status', { agent, status })
   }
 
   /**
@@ -214,11 +250,14 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
   return {
     ctx,
     tools,
+    toolOptions,
     skills,
     providers,
+    commands,
     stats,
     createAgent,
     setCwd,
+    setStatus,
     emit,
     liveAgents,
     globalSections: globalSystemPrompt.sections,

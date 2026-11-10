@@ -11,7 +11,7 @@ metadata:
 
 This is a thinking mode. Do not write planning artifacts, do not create a change, and do not edit code unless the user asks.
 
-Use the `openspec_*` tools for every read. If a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every read. If a core tool is unavailable, report it and stop. `openspec_schemas` is a management tool: when it is unavailable, ask the user to run `/opsx-admin` and continue after it appears.
 
 ## Read the ground truth
 
@@ -21,7 +21,7 @@ Use the `openspec_*` tools for every read. If a tool is unavailable, report it a
 - `openspec_show` with `type: "spec"` for the full spec, including scenarios. A filtered read is only an overview: before saying what a capability already covers or what should change, read every relevant spec in full.
 - `openspec_show` for a change's delta requirements.
 - `openspec_instructions` for the artifact instruction and output path when the discussion needs to become a spec, design or task list.
-- `openspec_schemas` when the user asks which workflow the project follows.
+- `openspec_schemas` when the user asks which workflow the project follows; it appears only after the user runs `/opsx-admin`.
 
 Read only what the question needs. Start with the filtered read, then read in full every spec the answer depends on; do not pull unrelated specs.
 

@@ -48,6 +48,9 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /openspec_instructions/)
   assert.match(POLICY_TEXT, /openspec_archive/)
   assert.match(POLICY_TEXT, /openspec_init/)
+  assert.match(POLICY_TEXT, /\/opsx-admin/)
+  assert.match(POLICY_TEXT, /openspec_store_list/)
+  assert.match(POLICY_TEXT, /openspec_schemas/)
   assert.match(POLICY_TEXT, /explicit confirmation/)
   assert.match(POLICY_TEXT, /Archive only when the user explicitly asks/)
   assert.match(POLICY_TEXT, /Main specs are updated only by/)
@@ -57,7 +60,7 @@ test('the policy text states the stage gates', () => {
 
 test('the policy text names no CLI', () => {
   assert.doesNotMatch(POLICY_TEXT, /\bCLI\b/i)
-  assert.doesNotMatch(POLICY_TEXT, /\bopsx\b/i)
+  assert.doesNotMatch(POLICY_TEXT.replaceAll('/opsx-admin', ''), /\bopsx\b/i)
   assert.doesNotMatch(POLICY_TEXT, /`openspec`/)
 })
 

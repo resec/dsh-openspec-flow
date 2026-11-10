@@ -9,12 +9,12 @@ metadata:
 
 # Propose a change with the plugin tools
 
-Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every step. If a core tool is unavailable, report it and stop. `openspec_init` is a management tool: when it is unavailable, ask the user to run `/opsx-admin` and continue after it appears.
 
 ## Before creating
 
 - Confirm the request. If the goal is ambiguous, ask before proposing.
-- If the project is not set up (`openspec_list` returns `setup: false`), ask whether to set it up with `openspec_init`, target a store, or skip OpenSpec.
+- If the project is not set up (`openspec_list` returns `setup: false`), ask whether to run `/opsx-admin init`, target a store, or skip OpenSpec.
 - Read the existing specs the change may touch, before proposing its scope:
   1. `openspec_list` with `specs: true` for the capability inventory.
   2. `openspec_show` with `type: "spec"` and `noScenarios: true` for a filtered overview of each candidate capability.

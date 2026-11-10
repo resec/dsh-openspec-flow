@@ -1,6 +1,6 @@
 # dsh-openspec-flow
 
-DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*` 工具完成 propose、new、status、instructions、validate、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。
+DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*` 工具完成 propose、new、status、instructions、validate、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 10 个工具属于核心变更流程并默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
 
 ## 能力
 
@@ -10,13 +10,13 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 | 读 | `openspec_status` | 紧凑状态：schema、产物完成度、blockedBy、工具动作、编辑约束 |
 | 读 | `openspec_show` | 读变更的 delta 或规格的 purpose、需求与场景 |
 | 读 | `openspec_context` | 解析根与 store 身份、被引用 store 与诊断 |
-| 读 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven` |
-| 读 | `openspec_store_list` | 列出已注册 store |
+| 管理 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven`；管理块，`/opsx-admin` 后可见 |
+| 管理 | `openspec_store_list` | 列出已注册 store；管理块，`/opsx-admin` 后可见 |
 | 规划 | `openspec_instructions` | 读产物的指令、输出路径、依赖与已存在文件；返回项目 `context` 与产物 `rules`；`archive` 返回归档 `context`/`guidance` |
 | 规划 | `openspec_validate` | 校验 change、spec、全部 specs 或全部项目 |
 | 写 | `openspec_new_change` | 创建变更目录与 `.openspec.yaml`；先检查项目 schema，不支持则拒绝 |
 | 写 | `openspec_archive` | 先校验、再归档并合并 delta specs |
-| 写 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能 |
+| 管理 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能；管理块，`/opsx-admin` 后可见 |
 | apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles、指令与项目 `context`/`guidance` |
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 
@@ -24,17 +24,31 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 
 `openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_instructions` 的 `archive` 返回归档 `context`/`guidance`，不是空的产物字段。
 
+## 管理块
+
+核心变更流程的 10 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
+
+- `/opsx-admin <意图>`：打开管理块，并把意图作为当次请求提交；该回合结束（agent 回到 idle）自动关闭。
+- `/opsx-admin off`：提前关闭。
+- 命令不带参数时返回用法错误，不会留下一个等后续消息使用的开口。
+- 模型没有打开管理块的入口；管理工具关闭时按未知工具失败。
+- 宿主没有命令注册表时，三个工具保持常驻并记一条警告，避免能力永久不可达。
+- 打开与关闭会改变请求的工具目录，触发一次提示缓存前缀失效；管理操作日常很少使用，因此默认不暴露。
+
+管理块不写入会话日志，恢复或分叉的会话总是从关闭状态开始。
+
 ## 流程覆盖
 
 Agent 工作流全部由插件技能与工具覆盖。
 
 | 流程 | 入口 | 说明 |
 | --- | --- | --- |
-| 探索与读取 | `openspec-explore`；`openspec_list`、`openspec_status`、`openspec_show`、`openspec_context`、`openspec_schemas`、`openspec_store_list` | 只读，不写项目文件 |
+| 探索与读取 | `openspec-explore`；`openspec_list`、`openspec_status`、`openspec_show`、`openspec_context` | 只读，不写项目文件 |
 | 提案 | `openspec-propose`；`openspec_new_change`、`openspec_instructions`、`openspec_validate` | 创建 change，写 proposal、specs、design、tasks |
 | 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done` | 紧凑 apply 循环；批量翻转任务 |
 | 修订规划 | `openspec-update-change`；`openspec_instructions`、`openspec_validate` | 修改现有 artifacts；没有专用写工具 |
 | 归档 | `openspec-archive-change`；`openspec_instructions`、`openspec_archive` | 先读归档 `context`/`guidance`、校验、检查任务，再移动并合并 delta specs |
+| 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
 
 ## CLI 对照
 
@@ -44,7 +58,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 | CLI 命令 | 作用 | 命令性质 | 插件支持 | 对应工具与差异 |
 | --- | --- | --- | --- | --- |
-| `init` | 初始化项目结构 | OpenSpec 管理 | 部分支持 | `openspec_init` 固定执行 `init --tools none --no-animation`，只接受 `path`；不暴露 `--tools`、`--language`、`--force`、`--profile`；已有 `config.yaml` 时跳过 |
+| `init` | 初始化项目结构 | OpenSpec 管理 | 部分支持 | `openspec_init` 固定执行 `init --tools none --no-animation`，只接受 `path`；不暴露 `--tools`、`--language`、`--force`、`--profile`；已有 `config.yaml` 时跳过；管理块，`/opsx-admin` 后可见 |
 | `update` | 刷新已安装的指令文件 | OpenSpec 管理 | 不支持 | 技能由插件 skill provider 提供，随插件版本生效；升级插件后重启会话即可 |
 | `config` | 全局配置 | OpenSpec 管理 | 不支持 | `path`、`list`、`get`、`set`、`unset`、`reset`、`edit`、`profile` 均未封装 |
 | `list` | 列出变更或规格 | 规格读 | 部分支持 | `openspec_list`：`specs` 对应 `--specs`，`store` 对应 `--store`；不暴露 `--archived`、`--all`、`--sort` |
@@ -56,9 +70,9 @@ Agent 工作流全部由插件技能与工具覆盖。
 | `status` | 产物完成状态 | 规格读 | 部分支持 | `openspec_status`：`change`、`store`；不暴露 `--all`、`--schema` |
 | `instructions` | 产物与 apply 指令 | 规格读 | 部分支持 | `openspec_instructions` 覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；产物结果带项目 `context` 与 `rules`，`archive` 返回归档 `context`/`guidance`；`apply` 由 `openspec_apply_next` 承载并带 apply `context`/`guidance`；不暴露 `--schema` |
 | `templates` | 产物模板路径 | 规格读 | 不支持 | 无工具；`openspec_instructions` 返回的 `outputPath` 已给出写入位置 |
-| `schemas` | 列出工作流 schema | 规格读 | 部分支持 | `openspec_schemas` 只保留包内置 `spec-driven`，其余被过滤；`store` 透传 |
+| `schemas` | 列出工作流 schema | 规格读 | 部分支持 | `openspec_schemas` 只保留包内置 `spec-driven`，其余被过滤；`store` 透传；管理块，`/opsx-admin` 后可见 |
 | `schema` | schema 检查与派生 | OpenSpec 管理 | 不支持 | `which`、`validate`、`fork`、`init` 均未封装；自定义 schema 会被闸门拒绝 |
-| `store` | store 管理 | Store 管理 | 部分支持 | 仅 `openspec_store_list` 对应 `store list --json`；`setup`、`register`、`unregister`、`remove`、`store doctor` 不支持 |
+| `store` | store 管理 | Store 管理 | 部分支持 | 仅 `openspec_store_list` 对应 `store list --json`；`setup`、`register`、`unregister`、`remove`、`store doctor` 不支持；管理块，`/opsx-admin` 后可见 |
 | `doctor` | 根关系健康检查 | 只读诊断 | 不支持 | 无工具 |
 | `context` | 工作上下文 | 只读诊断（可选写） | 部分支持 | `openspec_context`：root（含 store_id）、被引用 store（fetch 为工具动作）、诊断（含 code/fix）；不暴露 `--code-workspace`、`--force` |
 | `workset` | 个人工作视图 | Workset 管理 | 不支持 | `create`、`list`、`open`、`remove` 均未封装 |

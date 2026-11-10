@@ -9,11 +9,11 @@ metadata:
 
 # Apply a change with the plugin tools
 
-Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
+Use the `openspec_*` tools for every step. If a core tool is unavailable, report it and stop. `openspec_init` is a management tool: when it is unavailable, ask the user to run `/opsx-admin` and continue after it appears.
 
 ## Start
 
-1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks.
+1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks, and ask the user to run `/opsx-admin init` when it is needed.
 2. If no change is named, infer it from context. If several exist, ask.
 3. Call `openspec_status` for the change. If `isPlanningComplete` is false or artifacts are missing, finish planning first; do not start apply.
 4. Call `openspec_apply_next` once. Every `contextFiles` path is relative to `root.path`; join them with that absolute root before reading. Read every listed file before editing. Treat `instruction` as the current guidance, and follow `context` and `guidance` when those fields are present. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.

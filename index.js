@@ -3,7 +3,9 @@
  *
  * Registers thirteen agent tools over an existing OpenSpec project, five
  * user-invocable skills, and one agent-scoped system prompt section that states
- * the OpenSpec stage gates. The tools keep the OpenSpec CLI as the authority for
+ * the OpenSpec stage gates. Ten of the tools form the core change flow and stay
+ * exposed; the three management tools stay hidden until the user runs
+ * `/opsx-admin` for one turn. The tools keep the OpenSpec CLI as the authority for
  * schema, state and progress, but project its large `instructions apply`
  * payload down to the next task and one compact progress object. Marking tasks
  * complete flips their checkboxes in one call and updates the cached progress
@@ -18,6 +20,7 @@
  * @module dsh-openspec-flow
  */
 
+import { registerAdminGate } from './lib/admin.js'
 import { registerPolicy } from './lib/policy.js'
 import { registerSkillProvider } from './lib/skill.js'
 import { registerTools } from './lib/tools/index.js'
@@ -84,6 +87,7 @@ export function apply(ctx, config) {
   const settings = {
     timeoutMs: Number.isInteger(config?.timeoutMs) ? config.timeoutMs : DEFAULT_CONFIG.timeoutMs,
   }
+  registerAdminGate(ctx)
   registerTools(ctx, settings)
   registerSkillProvider(ctx)
   registerPolicy(ctx)

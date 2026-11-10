@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
+import { resetAdminState } from '../lib/admin.js'
 import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { clearCliVerification, resolveBundledCli } from '../lib/openspec.js'
 import { parseTaskLines, taskKey } from '../lib/tasks.js'
@@ -1009,4 +1010,25 @@ test('initializes an empty project without writing skills', async () => {
   const again = await call(fake, 'openspec_init', {})
   assert.equal(again.config, 'exists')
   assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
+})
+
+test('the management block keeps three tools out of a gated session', () => {
+  clearCache()
+  const fake = createFakeContext({ cwd: process.cwd(), commands: true })
+  apply(fake.ctx, { timeoutMs: 30_000 })
+  const { agent, steered } = fake.createAgent()
+  const visible = () => [...fake.tools.keys()].filter((name) => {
+    const options = fake.toolOptions.get(name)
+    return options?.when === undefined || options.when({ agent })
+  })
+  const management = ['openspec_init', 'openspec_schemas', 'openspec_store_list']
+
+  assert.deepEqual(visible().sort(), TOOL_NAMES.filter((name) => !management.includes(name)).sort())
+
+  const opened = fake.commands[0].handler({ agent, rawInput: 'list the registered stores' })
+  assert.equal(opened.kind, 'success')
+  assert.equal(steered.length, 1)
+  assert.equal(visible().length, TOOL_NAMES.length)
+
+  resetAdminState()
 })

@@ -46,7 +46,7 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     assert.equal(parsed.metadata.upstream, 'openspec@1.16.1', name)
     assert.match(raw, /openspec_[a-z_]+/, name)
     assert.doesNotMatch(raw, /\bCLI\b/i, `${name} must not mention the CLI`)
-    assert.doesNotMatch(raw, /\bopsx\b/i, `${name} must not name an alias command`)
+    assert.doesNotMatch(raw.replaceAll('/opsx-admin', ''), /\bopsx\b/i, `${name} must not name an alias command`)
     assert.doesNotMatch(raw, /`openspec`/, `${name} must not name a bare openspec command`)
     assert.doesNotMatch(raw, /^## Command map/m, `${name} must not carry a command map`)
     assert.doesNotMatch(
@@ -72,4 +72,14 @@ test('the explore skill reads relevant specs in full', () => {
   assert.match(explore, /read every relevant spec in full/)
   assert.match(explore, /type: "spec"/)
   assert.match(explore, /noScenarios: true/)
+})
+
+test('skills route gated tools through the admin command', () => {
+  for (const name of ['openspec-explore', 'openspec-propose', 'openspec-apply-change']) {
+    const raw = readFileSync(packagedSkillPath(name), 'utf8')
+    assert.match(raw, /\/opsx-admin/, name)
+  }
+  assert.match(readFileSync(packagedSkillPath('openspec-explore'), 'utf8'), /management tool/)
+  assert.match(readFileSync(packagedSkillPath('openspec-propose'), 'utf8'), /\/opsx-admin init/)
+  assert.match(readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8'), /\/opsx-admin init/)
 })
