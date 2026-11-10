@@ -156,8 +156,7 @@ test('an idle event before the turn starts does not close the block', () => {
 
 test('a command registry without register keeps every tool visible', () => {
   resetAdminState()
-  const fake = createFakeContext({ cwd: process.cwd(), commands: true })
-  fake.ctx.commands = {}
+  const fake = createFakeContext({ cwd: process.cwd(), commands: {} })
   apply(fake.ctx, {})
 
   const { agent } = fake.createAgent()

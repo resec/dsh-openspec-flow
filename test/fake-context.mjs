@@ -26,6 +26,19 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
   const skills = []
   const providers = new Map()
   const commands = []
+  const commandRegistry = withCommands === true
+    ? {
+        register(definition) {
+          commands.push(definition)
+          return () => {
+            const index = commands.indexOf(definition)
+            if (index !== -1) commands.splice(index, 1)
+          }
+        },
+      }
+    : typeof withCommands === 'object' && withCommands !== null
+      ? withCommands
+      : undefined
   const stats = { spawns: 0 }
   const listeners = new Map()
   const liveAgents = [...seedAgents]
@@ -50,17 +63,6 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
   }
 
   const ctx = {
-    commands: withCommands
-      ? {
-          register(definition) {
-            commands.push(definition)
-            return () => {
-              const index = commands.indexOf(definition)
-              if (index !== -1) commands.splice(index, 1)
-            }
-          },
-        }
-      : undefined,
     logger: {
       warn() {},
       info() {},
@@ -171,13 +173,21 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       }
       if (name === 'systemPrompt') return globalSystemPrompt
       if (name === 'agents') return ctx.agents
-      if (name === 'commands' && withCommands) return ctx.commands
+      if (name === 'commands') return commandRegistry
       return undefined
     },
     effect(fn) {
       return fn()
     },
   }
+
+  // Cordis rejects a property read for a service the plugin did not inject;
+  // model that here so a `ctx.commands` read fails in tests too.
+  Object.defineProperty(ctx, 'commands', {
+    get() {
+      throw new Error('cannot get property "commands" without inject')
+    },
+  })
 
   /**
    * Create a live agent with its own scoped context.
