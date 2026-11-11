@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-11
+goal: Give maintainers one ordered DSH upgrade playbook covering the
+  compatibility gate, the DSH coupling inventory, candidate-runtime
+  verification, tests, release and rollback.
