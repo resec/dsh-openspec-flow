@@ -1,19 +1,14 @@
 # dsh-openspec-flow
 
-DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*` 工具完成 propose、new、status、instructions、validate、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 10 个工具属于核心变更流程并默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
+DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 8 个 `openspec_*` 工具完成 propose、new、inspect、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 5 个工具属于核心变更流程并默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
 
 ## 能力
 
 | 分组 | 工具 | 作用 |
 | --- | --- | --- |
-| 读 | `openspec_list` | 列出变更与任务计数，或用 `specs: true` 列出能力规格 |
-| 读 | `openspec_status` | 紧凑状态：schema、产物完成度、blockedBy、工具动作、编辑约束 |
-| 读 | `openspec_show` | 读变更的 delta 或规格的 purpose、需求与场景 |
-| 读 | `openspec_context` | 解析根与 store 身份、被引用 store 与诊断 |
+| 读 | `openspec_inspect` | 单一读入口；`action` 选择 `list`（`specs: true` 列能力规格）、`status`、`show`、`instructions`、`context` 或 `validate` |
 | 管理 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven`；管理块，`/opsx-admin` 后可见 |
 | 管理 | `openspec_store_list` | 列出已注册 store；管理块，`/opsx-admin` 后可见 |
-| 规划 | `openspec_instructions` | 读产物的指令、输出路径、依赖与已存在文件；返回项目 `context` 与产物 `rules`；`archive` 返回归档 `context`/`guidance` |
-| 规划 | `openspec_validate` | 校验 change、spec、全部 specs 或全部项目 |
 | 写 | `openspec_new_change` | 创建变更目录与 `.openspec.yaml`；先检查项目 schema，不支持则拒绝 |
 | 写 | `openspec_archive` | 先校验、再归档并合并 delta specs |
 | 管理 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能；管理块，`/opsx-admin` 后可见 |
@@ -22,11 +17,11 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 13 个 `openspec_*`
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
-`openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_instructions` 的 `archive` 返回归档 `context`/`guidance`，不是空的产物字段。
+`openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_inspect` 的 `action: "instructions"` 配合 `artifact: "archive"` 返回归档 `context`/`guidance`，不是空的产物字段。
 
 ## 管理块
 
-核心变更流程的 10 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
+核心变更流程的 5 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
 
 - `/opsx-admin <意图>`：打开管理块，并把意图作为当次请求提交；该回合结束（agent 回到 idle）自动关闭。
 - `/opsx-admin off`：提前关闭。
@@ -43,16 +38,16 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 | 流程 | 入口 | 说明 |
 | --- | --- | --- |
-| 探索与读取 | `openspec-explore`；`openspec_list`、`openspec_status`、`openspec_show`、`openspec_context` | 只读，不写项目文件 |
-| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_instructions`、`openspec_validate` | 创建 change，写 proposal、specs、design、tasks |
+| 探索与读取 | `openspec-explore`；`openspec_inspect`（`action: "list"`、`"status"`、`"show"`、`"context"`） | 只读，不写项目文件 |
+| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_inspect`（`action: "instructions"`、`"validate"`） | 创建 change，写 proposal、specs、design、tasks |
 | 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done` | 紧凑 apply 循环；批量翻转任务 |
-| 修订规划 | `openspec-update-change`；`openspec_instructions`、`openspec_validate` | 修改现有 artifacts；没有专用写工具 |
-| 归档 | `openspec-archive-change`；`openspec_instructions`、`openspec_archive` | 先读归档 `context`/`guidance`、校验、检查任务，再移动并合并 delta specs |
+| 修订规划 | `openspec-update-change`；`openspec_inspect`（`action: "instructions"`、`"validate"`） | 修改现有 artifacts；没有专用写工具 |
+| 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_archive` | 先读归档 `context`/`guidance`、校验、检查任务，再移动并合并 delta specs |
 | 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
 
 ## CLI 对照
 
-对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 13 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
+对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 8 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
 
 「命令性质」按读写对象标注：`规格读` 读取变更、主规格或生成它们所需的工作流元数据；`规格写` 创建变更内容，或写入、移动主规格与变更目录；`Store 管理` 管理本机 store 注册与 store 目录；`Workset 管理` 管理本机个人工作视图；`OpenSpec 管理` 管理项目初始化、工具集成、全局配置、schema 定义、CLI 版本检查/安装/补全/反馈；`只读诊断` 只读根、store 引用或工作上下文。分组命令（`config`、`schema`、`store`、`workset`、`completion`）按域标注，不拆分读写子命令；`context --code-workspace` 是唯一会写文件的例外。这里的「只读」指不写规格内容，不代表 CLI 进程没有任何 I/O。
 
@@ -61,20 +56,20 @@ Agent 工作流全部由插件技能与工具覆盖。
 | `init` | 初始化项目结构 | OpenSpec 管理 | 部分支持 | `openspec_init` 固定执行 `init --tools none --no-animation`，只接受 `path`；不暴露 `--tools`、`--language`、`--force`、`--profile`；已有 `config.yaml` 时跳过；管理块，`/opsx-admin` 后可见 |
 | `update` | 刷新已安装的指令文件 | OpenSpec 管理 | 不支持 | 技能由插件 skill provider 提供，随插件版本生效；升级插件后重启会话即可 |
 | `config` | 全局配置 | OpenSpec 管理 | 不支持 | `path`、`list`、`get`、`set`、`unset`、`reset`、`edit`、`profile` 均未封装 |
-| `list` | 列出变更或规格 | 规格读 | 部分支持 | `openspec_list`：`specs` 对应 `--specs`，`store` 对应 `--store`；不暴露 `--archived`、`--all`、`--sort` |
-| `show` | 打印变更或规格 | 规格读 | 部分支持 | `openspec_show`：`name`、`type`、`noScenarios`、`store`，返回结构化投影；不暴露 `--deltas-only`、`--requirements`、`--diff`、`--requirement`、`--no-interactive` |
+| `list` | 列出变更或规格 | 规格读 | 部分支持 | `openspec_inspect`（`action: "list"`）：`specs` 对应 `--specs`，`store` 对应 `--store`；不暴露 `--archived`、`--all`、`--sort` |
+| `show` | 打印变更或规格 | 规格读 | 部分支持 | `openspec_inspect`（`action: "show"`）：`name`、`type`、`noScenarios`、`store`，返回结构化投影；不暴露 `--deltas-only`、`--requirements`、`--diff`、`--requirement`、`--no-interactive` |
 | `view` | 交互式仪表盘 | 规格读 | 不支持 | 终端 UI，无等价工具 |
-| `validate` | 结构与任务校验 | 规格读 | 部分支持 | `openspec_validate`：`change`、`spec`、`specs`、`all` 四种 scope，另有 `strict`、`store`；不暴露 `--archived`、`--report`、`--changes`、`--concurrency` |
+| `validate` | 结构与任务校验 | 规格读 | 部分支持 | `openspec_inspect`（`action: "validate"`）：`change`、`spec`、`specs`、`all` 四种 scope，另有 `strict`、`store`；不暴露 `--archived`、`--report`、`--changes`、`--concurrency` |
 | `archive` | 归档并合并 delta 规格 | 规格写 | 部分支持 | `openspec_archive`：`skipSpecs` 对应 `--skip-specs`，`store` 透传；固定 `--yes --json`，归档前先跑一次 `validate`；不暴露 `--no-validate` |
 | `new change` | 创建变更目录 | 规格写 | 部分支持 | `openspec_new_change`：`name`、`description`、`goal`、`store`；`--schema` 固定为内置 `spec-driven` |
-| `status` | 产物完成状态 | 规格读 | 部分支持 | `openspec_status`：`change`、`store`；不暴露 `--all`、`--schema` |
-| `instructions` | 产物与 apply 指令 | 规格读 | 部分支持 | `openspec_instructions` 覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；产物结果带项目 `context` 与 `rules`，`archive` 返回归档 `context`/`guidance`；`apply` 由 `openspec_apply_next` 承载并带 apply `context`/`guidance`；不暴露 `--schema` |
-| `templates` | 产物模板路径 | 规格读 | 不支持 | 无工具；`openspec_instructions` 返回的 `outputPath` 已给出写入位置 |
+| `status` | 产物完成状态 | 规格读 | 部分支持 | `openspec_inspect`（`action: "status"`）：`change`、`store`；不暴露 `--all`、`--schema` |
+| `instructions` | 产物与 apply 指令 | 规格读 | 部分支持 | `openspec_inspect`（`action: "instructions"`）覆盖 `proposal`、`specs`、`design`、`tasks`、`archive`；产物结果带项目 `context` 与 `rules`，`archive` 返回归档 `context`/`guidance`；`apply` 由 `openspec_apply_next` 承载并带 apply `context`/`guidance`；不暴露 `--schema` |
+| `templates` | 产物模板路径 | 规格读 | 不支持 | 无工具；`openspec_inspect`（`action: "instructions"`）返回的 `outputPath` 已给出写入位置 |
 | `schemas` | 列出工作流 schema | 规格读 | 部分支持 | `openspec_schemas` 只保留包内置 `spec-driven`，其余被过滤；`store` 透传；管理块，`/opsx-admin` 后可见 |
 | `schema` | schema 检查与派生 | OpenSpec 管理 | 不支持 | `which`、`validate`、`fork`、`init` 均未封装；自定义 schema 会被闸门拒绝 |
 | `store` | store 管理 | Store 管理 | 部分支持 | 仅 `openspec_store_list` 对应 `store list --json`；`setup`、`register`、`unregister`、`remove`、`store doctor` 不支持；管理块，`/opsx-admin` 后可见 |
 | `doctor` | 根关系健康检查 | 只读诊断 | 不支持 | 无工具 |
-| `context` | 工作上下文 | 只读诊断（可选写） | 部分支持 | `openspec_context`：root（含 store_id）、被引用 store（fetch 为工具动作）、诊断（含 code/fix）；不暴露 `--code-workspace`、`--force` |
+| `context` | 工作上下文 | 只读诊断（可选写） | 部分支持 | `openspec_inspect`（`action: "context"`）：root（含 store_id）、被引用 store（fetch 为工具动作）、诊断（含 code/fix）；不暴露 `--code-workspace`、`--force` |
 | `workset` | 个人工作视图 | Workset 管理 | 不支持 | `create`、`list`、`open`、`remove` 均未封装 |
 | `version` | 版本与更新检查 | OpenSpec 管理 | 不支持 | 版本由依赖与 `engines` 固定，无工具 |
 | `install` | 安装独立二进制 | OpenSpec 管理 | 不支持 | 机器级安装，与插件无关 |
@@ -87,16 +82,16 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 | 官方技能 | 官方类型 | 插件处理 | 说明 |
 | --- | --- | --- | --- |
-| `openspec-explore` | Core | 提供，已重写 | 只读探索；先过滤概览，再全读相关 spec（含 scenarios）；使用 `openspec_list`、`openspec_status`、`openspec_show`、`openspec_context` |
-| `openspec-propose` | Core | 提供，已重写 | 先读相关现有 specs 并暴露冲突；`openspec_new_change` 建变更，逐产物调 `openspec_instructions` 写文件，最后 `openspec_validate` |
+| `openspec-explore` | Core | 提供，已重写 | 只读探索；先过滤概览，再全读相关 spec（含 scenarios）；使用 `openspec_inspect` 的 `list`、`status`、`show`、`context` action |
+| `openspec-propose` | Core | 提供，已重写 | 先读相关现有 specs 并暴露冲突；`openspec_new_change` 建变更，逐产物调 `openspec_inspect`（`action: "instructions"`）写文件，最后 `openspec_inspect`（`action: "validate"`） |
 | `openspec-apply-change` | Core | 提供，已重写 | `openspec_apply_next` 取一次状态与下一任务，之后按批 `openspec_mark_task_done` |
 | `openspec-update-change` | Core | 提供，已重写 | 只改已存在的规划产物；没有专用写工具，文件由 agent 直接编辑 |
 | `openspec-sync-specs` | Core | 不提供 | delta 规格只在 `openspec_archive` 时合并；插件无「只同步不归档」流程 |
-| `openspec-archive-change` | Core | 提供，已重写 | 先读归档 `context`/`guidance`、查任务与 `openspec_validate`，再调 `openspec_archive` |
+| `openspec-archive-change` | Core | 提供，已重写 | 先读归档 `context`/`guidance`、查任务与 `openspec_inspect`（`action: "validate"`），再调 `openspec_archive` |
 | `openspec-new-change` | Optional | 不提供技能 | 创建动作由 `openspec_new_change` 工具承担，`openspec-propose` 内含该步骤 |
-| `openspec-continue-change` | Optional | 不提供 | 由 `openspec_status` 判定下一个待办产物、`openspec_instructions` 给指令，但没有单产物推进的技能封装 |
+| `openspec-continue-change` | Optional | 不提供 | 由 `openspec_inspect`（`action: "status"`）判定下一个待办产物、`openspec_inspect`（`action: "instructions"`）给指令，但没有单产物推进的技能封装 |
 | `openspec-ff-change` | Optional | 不提供 | 无独立技能；`openspec-propose` 已一次写完全部产物，对内置 schema 效果等价 |
-| `openspec-verify-change` | Optional | 不提供 | 无 verify 工具；结构检查用 `openspec_validate`，实现与计划的对照需人工复核 |
+| `openspec-verify-change` | Optional | 不提供 | 无 verify 工具；结构检查用 `openspec_inspect`（`action: "validate"`），实现与计划的对照需人工复核 |
 | `openspec-bulk-archive-change` | Optional | 不提供 | `openspec_archive` 一次只处理一个变更 |
 | `openspec-onboard` | Optional | 不提供 | 教学向流程，未适配 |
 
@@ -169,7 +164,7 @@ CLI 来源固定：
 - **工具投影**：每个读工具返回 CLI JSON 的紧凑投影，保留下一步需要的字段，去掉内部结构。
 - **路径基准**：项目内路径相对 `root.path`，根自身用 `.`，分隔符统一为 `/`；含相对路径的响应同时返回绝对 `root.path`，`openspec_apply_next` 与 `openspec_archive` 携带它。根外路径（store 根与元数据、根外 planning home）保持绝对；`openspec_init.root` 保持绝对。`openspec_mark_task_done` 不重复携带根，其 `next.sourcePath` 相对 `openspec_apply_next` 的 `root.path`，并接受相对 `sourcePath` 输入。
 - **schema 闸门**：change 作用域的工具只接受内置 `spec-driven`；项目或用户目录中的同名覆盖会被拒绝。
-- **指令映射**：`openspec_instructions` 返回的正文里，已知 CLI 命令片段被替换为对应工具名，路径保持不变。
+- **指令映射**：`openspec_inspect`（`action: "instructions"`）返回的正文里，已知 CLI 命令片段被替换为对应的 inspect 调用与 action，路径保持不变。
 - **一次取数**：`openspec_apply_next` 执行一次 `instructions apply --json`，把完整载荷留在进程内，只向模型返回投影。
 - **每批 O(1)**：`openspec_mark_task_done` 先解析整批 id 并逐行翻转目标复选框，任一 id 缺失则整批不写；进度按缓存增量更新，下一任务从缓存任务表选取。
 - **写操作可恢复**：`openspec_archive` 先校验后移动；`openspec_init` 只在缺少配置时创建目录，不覆盖已有配置。
@@ -215,7 +210,7 @@ npm test
 - OpenSpec 根：`openspec/`；流程技能由插件 provider 提供，仓库不再保存副本；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
 - apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 按批 `openspec_mark_task_done`。
-- 收尾：`openspec_validate` 传 `strict: true`，并跑 `npm test` 与 `npm run openspec:check`。
+- 收尾：`openspec_inspect`（`action: "validate"`）传 `strict: true`，并跑 `npm test` 与 `npm run openspec:check`。
 - 归档：`openspec_archive`，只在用户明确要求时。
 
 `openspec/` 与 `.dsh/` 是项目文件，不在本包 `files` 列表中，不会进入打包产物；`.dsh/skills/` 已移除，本仓库不再保存技能副本。
@@ -226,7 +221,7 @@ npm test
 
 发布顺序：
 
-1. 变更的全部任务完成，`openspec_validate` 传 `strict: true`、`npm test` 与 `npm run openspec:check` 通过。
+1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm test` 与 `npm run openspec:check` 通过。
 2. `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
 3. 提交归档结果、文档更新与合并后的 specs。
 4. 推送到 `origin/main`。

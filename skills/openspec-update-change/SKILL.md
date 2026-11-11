@@ -3,7 +3,7 @@ name: openspec-update-change
 description: Revise an OpenSpec change's planning artifacts with the openspec_* tools and keep proposal, specs, design and tasks coherent. Use when the user wants to update a change's plan.
 whenToUse: The user wants an existing change's artifacts revised, not implemented, and not the refresh action that regenerates generated files.
 metadata:
-  generatedBy: dsh-openspec-flow@0.2.1
+  generatedBy: dsh-openspec-flow@0.3.0
   upstream: openspec@1.16.1
 ---
 
@@ -15,9 +15,9 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 ## Read first
 
-1. Call `openspec_status` to see which artifacts exist and what is missing.
+1. Call `openspec_inspect` with `action: "status"` to see which artifacts exist and what is missing.
 2. Read the change's `proposal.md`, `specs/`, `design.md` and `tasks.md` before editing.
-3. Call `openspec_instructions` for each artifact you will touch. The instruction names the output path and the dependencies; when the result carries `context` or `rules`, apply them to the revision.
+3. Call `openspec_inspect` with `action: "instructions"` for each artifact you will touch. The instruction names the output path and the dependencies; when the result carries `context` or `rules`, apply them to the revision.
 
 ## Revise
 
@@ -28,7 +28,7 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 ## Verify
 
-- Call `openspec_validate` for the change and report every finding.
+- Call `openspec_inspect` with `action: "validate"` for the change and report every finding.
 - If the revision changes behavior that is already implemented, say so and ask whether to reopen apply.
 
 ## Boundaries

@@ -3,7 +3,7 @@ name: openspec-apply-change
 description: Implement tasks from an OpenSpec change with the openspec_* tools. Use when the user wants to start, continue, or finish implementation.
 whenToUse: The user wants to implement, continue, or finish an OpenSpec change in a project that has the dsh-openspec-flow plugin.
 metadata:
-  generatedBy: dsh-openspec-flow@0.2.1
+  generatedBy: dsh-openspec-flow@0.3.0
   upstream: openspec@1.16.1
 ---
 
@@ -13,9 +13,9 @@ Use the `openspec_*` tools for every step. If a core tool is unavailable, report
 
 ## Start
 
-1. Call `openspec_list`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks, and ask the user to run `/opsx-admin init` when it is needed.
+1. Call `openspec_inspect` with `action: "list"`. If `setup` is false, stop and report that the directory is not an OpenSpec project; do not run `openspec_init` unless the user asks, and ask the user to run `/opsx-admin init` when it is needed.
 2. If no change is named, infer it from context. If several exist, ask.
-3. Call `openspec_status` for the change. If `isPlanningComplete` is false or artifacts are missing, finish planning first; do not start apply.
+3. Call `openspec_inspect` with `action: "status"` for the change. If `isPlanningComplete` is false or artifacts are missing, finish planning first; do not start apply.
 4. Call `openspec_apply_next` once. Every `contextFiles` path is relative to `root.path`; join them with that absolute root before reading. Read every listed file before editing. Treat `instruction` as the current guidance, and follow `context` and `guidance` when those fields are present. If `state` is `blocked`, stop and report the instruction and `missingArtifacts`.
 5. When the change lives in a store, pass the same `store` on every call.
 
@@ -36,6 +36,6 @@ Ask before continuing when a task is unclear, the implementation reveals a desig
 
 ## Finish
 
-- Call `openspec_validate` for the change.
+- Call `openspec_inspect` with `action: "validate"` for the change.
 - Report the completed count, the remaining tasks, and every validation issue.
 - Archiving belongs to `openspec-archive-change`; use it only when the user asks.

@@ -134,7 +134,7 @@ test('runs init, plan, apply and archive through tools, matching a CLI run', asy
   assert.equal(change.change.id, CHANGE)
   writeArtifacts(join(toolRoot, change.change.path))
 
-  const validation = await call(fake, 'openspec_validate', { change: CHANGE })
+  const validation = await call(fake, 'openspec_inspect', { action: 'validate', change: CHANGE })
   assert.equal(validation.valid, true, JSON.stringify(validation.issues))
 
   let step = await call(fake, 'openspec_apply_next', { change: CHANGE })

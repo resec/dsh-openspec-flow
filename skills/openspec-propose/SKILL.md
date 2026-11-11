@@ -3,7 +3,7 @@ name: openspec-propose
 description: Propose a new OpenSpec change with the openspec_* tools, creating the change, reading each artifact instruction, writing proposal, specs, design and tasks, then validating. Use when the user wants to plan a change.
 whenToUse: The user wants a new OpenSpec change created end to end and the planning artifacts ready for review.
 metadata:
-  generatedBy: dsh-openspec-flow@0.2.1
+  generatedBy: dsh-openspec-flow@0.3.0
   upstream: openspec@1.16.1
 ---
 
@@ -14,24 +14,24 @@ Use the `openspec_*` tools for every step. If a core tool is unavailable, report
 ## Before creating
 
 - Confirm the request. If the goal is ambiguous, ask before proposing.
-- If the project is not set up (`openspec_list` returns `setup: false`), ask whether to run `/opsx-admin init`, target a store, or skip OpenSpec.
+- If the project is not set up (`openspec_inspect` with `action: "list"` returns `setup: false`), ask whether to run `/opsx-admin init`, target a store, or skip OpenSpec.
 - Read the existing specs the change may touch, before proposing its scope:
-  1. `openspec_list` with `specs: true` for the capability inventory.
-  2. `openspec_show` with `type: "spec"` and `noScenarios: true` for a filtered overview of each candidate capability.
-  3. `openspec_show` with `type: "spec"` for each capability the overview shows is relevant; this read includes its scenarios.
+  1. `openspec_inspect` with `action: "list"` and `specs: true` for the capability inventory.
+  2. `openspec_inspect` with `action: "show"`, `type: "spec"` and `noScenarios: true` for a filtered overview of each candidate capability.
+  3. `openspec_inspect` with `action: "show"` and `type: "spec"` for each capability the overview shows is relevant; this read includes its scenarios.
   Name the capability and requirement each conclusion rests on. If the change contradicts an existing requirement, surface the conflict and ask instead of deciding it silently.
 - State the kebab-case change name, the artifacts it will produce, and the existing specs the change touches, then wait for the user's confirmation.
 
 ## Create
 
-Every `openspec_instructions` result may carry `context` and `rules` from `openspec/config.yaml`; apply them to the artifact you write.
+Every `openspec_inspect` result with `action: "instructions"` may carry `context` and `rules` from `openspec/config.yaml`; apply them to the artifact you write.
 
 1. Call `openspec_new_change` with the confirmed name, and a description or goal when the user gave one.
-2. Call `openspec_instructions` for `proposal`. Read the instruction and write `proposal.md` at the returned `outputPath`, following the template.
-3. Call `openspec_instructions` for `specs`. Write one delta spec per capability listed in the proposal, using `## Purpose` for a new capability and `## ADDED` / `## MODIFIED` / `## REMOVED` / `## RENAMED Requirements` for the deltas.
-4. Call `openspec_instructions` for `design`. Write `design.md` only when the change crosses modules, adds a dependency, changes data, or needs a technical decision.
-5. Call `openspec_instructions` for `tasks`. Write `tasks.md` with numbered checkbox tasks grouped by `## 1. ...` headings.
-6. Call `openspec_validate` for the change. Fix findings and re-validate.
+2. Call `openspec_inspect` with `action: "instructions"` for `proposal`. Read the instruction and write `proposal.md` at the returned `outputPath`, following the template.
+3. Call `openspec_inspect` with `action: "instructions"` for `specs`. Write one delta spec per capability listed in the proposal, using `## Purpose` for a new capability and `## ADDED` / `## MODIFIED` / `## REMOVED` / `## RENAMED Requirements` for the deltas.
+4. Call `openspec_inspect` with `action: "instructions"` for `design`. Write `design.md` only when the change crosses modules, adds a dependency, changes data, or needs a technical decision.
+5. Call `openspec_inspect` with `action: "instructions"` for `tasks`. Write `tasks.md` with numbered checkbox tasks grouped by `## 1. ...` headings.
+6. Call `openspec_inspect` with `action: "validate"` for the change. Fix findings and re-validate.
 
 ## Then stop
 

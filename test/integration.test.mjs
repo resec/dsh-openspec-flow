@@ -18,17 +18,12 @@ const PROBE_ROOT = fileURLToPath(new URL('../../.probe/proj/openspec', import.me
 const TOOL_NAMES = [
   'openspec_apply_next',
   'openspec_archive',
-  'openspec_context',
   'openspec_init',
-  'openspec_instructions',
-  'openspec_list',
+  'openspec_inspect',
   'openspec_mark_task_done',
   'openspec_new_change',
   'openspec_schemas',
-  'openspec_show',
-  'openspec_status',
   'openspec_store_list',
-  'openspec_validate',
 ]
 
 const CLI = resolveBundledCli()
@@ -80,6 +75,10 @@ async function call(fake, name, args) {
   })
 }
 
+async function inspectCall(fake, action, args = {}) {
+  return await call(fake, 'openspec_inspect', { action, ...args })
+}
+
 function jsonBytes(value) {
   return Buffer.byteLength(JSON.stringify(value))
 }
@@ -122,9 +121,9 @@ test('verifies the bundled CLI once per process', async () => {
   clearCliVerification()
   const fake = setup(root)
 
-  await call(fake, 'openspec_status', { change: CHANGE })
+  await inspectCall(fake, 'status', { change: CHANGE })
   const afterFirst = fake.stats.spawns
-  await call(fake, 'openspec_status', { change: CHANGE })
+  await inspectCall(fake, 'status', { change: CHANGE })
 
   assert.equal(fake.stats.spawns, afterFirst + 1, 'the second status reuses the verification')
 })
@@ -143,7 +142,7 @@ test('ignores PATH and project-local openspec decoys', async () => {
   try {
     clearCliVerification()
     const fake = setup(root)
-    const status = await call(fake, 'openspec_status', { change: CHANGE })
+    const status = await inspectCall(fake, 'status', { change: CHANGE })
     assert.equal(status.schema, 'spec-driven')
   } finally {
     process.env.PATH = previousPath
@@ -155,11 +154,11 @@ test('reports blockedBy and the blocking artifact instruction while planning is 
   rmSync(join(root, CHANGE_DIR, 'design.md'))
   const fake = setup(root)
 
-  const status = await call(fake, 'openspec_status', { change: CHANGE })
+  const status = await inspectCall(fake, 'status', { change: CHANGE })
   assert.equal(status.isPlanningComplete, false)
   assert.deepEqual(status.blockedBy, ['design'])
   assert.deepEqual(status.nextSteps, [
-    { tool: 'openspec_instructions', arguments: { change: CHANGE, artifact: 'design' } },
+    { tool: 'openspec_inspect', arguments: { change: CHANGE, action: 'instructions', artifact: 'design' } },
   ])
   assert.doesNotMatch(JSON.stringify(status), /Run openspec /)
 })
@@ -168,7 +167,7 @@ test('reports an apply_next action and no blocker once planning is complete', as
   const root = fixture()
   const fake = setup(root)
 
-  const status = await call(fake, 'openspec_status', { change: CHANGE })
+  const status = await inspectCall(fake, 'status', { change: CHANGE })
   assert.equal(status.isPlanningComplete, true)
   assert.equal(status.blockedBy, undefined)
   assert.deepEqual(status.nextSteps, [
@@ -194,11 +193,11 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   ].join('\n'))
   const fake = setup(root)
 
-  const list = await call(fake, 'openspec_list', {})
+  const list = await inspectCall(fake, 'list', {})
   assert.equal(list.setup, true)
   assert.equal(list.changes[0].name, CHANGE)
 
-  const status = await call(fake, 'openspec_status', { change: CHANGE })
+  const status = await inspectCall(fake, 'status', { change: CHANGE })
   assert.equal(status.schema, 'spec-driven')
   assert.equal(status.isPlanningComplete, true)
   assert.equal(status.artifacts.length, 4)
@@ -263,7 +262,7 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
     /was not found/,
   )
 
-  const validation = await call(fake, 'openspec_validate', { change: CHANGE })
+  const validation = await inspectCall(fake, 'validate', { change: CHANGE })
   assert.equal(validation.valid, true)
   assert.deepEqual(validation.issues, [])
 })
@@ -410,11 +409,11 @@ test('rejects a custom schema in status and validate', async () => {
   const fake = setup(root)
 
   await assert.rejects(
-    call(fake, 'openspec_status', { change: CHANGE }),
+    inspectCall(fake, 'status', { change: CHANGE }),
     /Unsupported OpenSpec schema 'custom' for change 'add-dark-mode'/,
   )
   await assert.rejects(
-    call(fake, 'openspec_validate', { change: CHANGE }),
+    inspectCall(fake, 'validate', { change: CHANGE }),
     /Unsupported OpenSpec schema 'custom' for change 'add-dark-mode'/,
   )
 })
@@ -425,7 +424,7 @@ test('rejects a project-local spec-driven schema in status', async () => {
   const fake = setup(root)
 
   await assert.rejects(
-    call(fake, 'openspec_status', { change: CHANGE }),
+    inspectCall(fake, 'status', { change: CHANGE }),
     /shadowed by the project schema at .*openspec\/schemas\/spec-driven\/schema\.yaml/,
   )
 })
@@ -519,7 +518,7 @@ test('39-task apply loop stays compact and spawns once', async () => {
   )
   assert.ok(total < naive * 0.02, `expected <2% of the repeated-query bytes, got ${total}/${naive}`)
 
-  const validation = await call(fake, 'openspec_validate', { change: CHANGE })
+  const validation = await inspectCall(fake, 'validate', { change: CHANGE })
   assert.equal(validation.valid, true)
 })
 
@@ -546,7 +545,7 @@ test('lists capability specs through openspec_list', async () => {
   ].join('\n'))
   const fake = setup(root)
 
-  const result = await call(fake, 'openspec_list', { specs: true })
+  const result = await inspectCall(fake, 'list', { specs: true })
   assert.equal(result.setup, true)
   assert.deepEqual(result.specs.map((spec) => spec.id), ['theme'])
   assert.equal(result.specs[0].requirementCount, 1)
@@ -576,33 +575,34 @@ test('validates specs and single specs through scope', async () => {
   ].join('\n'))
   const fake = setup(root)
 
-  const report = await call(fake, 'openspec_validate', { scope: 'specs' })
+  const report = await inspectCall(fake, 'validate', { scope: 'specs' })
   assert.equal(report.scope, 'specs')
   assert.equal(report.valid, true)
   assert.ok(report.items.some((item) => item.id === 'theme'))
 
-  const single = await call(fake, 'openspec_validate', { scope: 'spec', change: 'theme' })
+  const single = await inspectCall(fake, 'validate', { scope: 'spec', change: 'theme' })
   assert.equal(single.scope, 'spec')
   assert.equal(single.items.length, 1)
   assert.equal(single.items[0].id, 'theme')
 
   await assert.rejects(
-    call(fake, 'openspec_validate', { scope: 'bogus', change: 'theme' }),
+    inspectCall(fake, 'validate', { scope: 'bogus', change: 'theme' }),
     /Unsupported validate scope/,
   )
 })
 
-test('reads planning instructions through openspec_instructions', async () => {
+test('reads planning instructions through openspec_inspect', async () => {
   const root = fixture()
   const fake = setup(root)
 
-  const result = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  const result = await inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'proposal' })
   assert.equal(result.change, CHANGE)
   assert.equal(result.artifact, 'proposal')
   assert.equal(result.schema, 'spec-driven')
   assert.match(result.instruction, /proposal/i)
   assert.doesNotMatch(result.instruction, /`openspec (list|show|validate|instructions)/)
-  assert.match(result.instruction, /openspec_list/)
+  assert.match(result.instruction, /openspec_inspect/)
+  assert.match(result.instruction, /action: "list"/)
   assert.match(result.instruction, /`store: "<id>"`/)
   assert.match(result.instruction, /`type: "spec"`/)
   assert.match(result.instruction, /`specs: true`/)
@@ -617,7 +617,7 @@ test('reads planning instructions through openspec_instructions', async () => {
     tasks: { dependencies: ['specs', 'design'], unlocks: [] },
   }
   for (const [artifact, values] of Object.entries(expected)) {
-    const other = await call(fake, 'openspec_instructions', { change: CHANGE, artifact })
+    const other = await inspectCall(fake, 'instructions', { change: CHANGE, artifact })
     assert.equal(other.artifact, artifact)
     assert.doesNotMatch(other.instruction, /`--(store|type|specs)\b/)
     assert.deepEqual(other.dependencies, values.dependencies)
@@ -627,7 +627,7 @@ test('reads planning instructions through openspec_instructions', async () => {
   }
 
   await assert.rejects(
-    call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'bogus' }),
+    inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'bogus' }),
     /artifact must be one of/,
   )
 })
@@ -643,7 +643,7 @@ test('does not rewrite configured context or rules', async () => {
   ].join('\n'))
   const fake = setup(root)
 
-  const result = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  const result = await inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'proposal' })
   assert.equal(result.context, 'Use `--store` when the project is store-selected.')
   assert.deepEqual(result.rules, ['Keep `--type` literal in examples.'])
   assert.doesNotMatch(result.instruction, /`--(store|type|specs)\b/)
@@ -668,12 +668,12 @@ test('surfaces project context, rules and operation guidance', async () => {
   ].join('\n'))
   const fake = setup(root)
 
-  const proposal = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  const proposal = await inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'proposal' })
   assert.equal(proposal.context, 'Follow the project glossary.')
   assert.deepEqual(proposal.rules, ['Keep the proposal under one page.'])
   assert.equal(proposal.artifact, 'proposal')
 
-  const archive = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'archive' })
+  const archive = await inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'archive' })
   assert.equal(archive.change, CHANGE)
   assert.equal(archive.artifact, 'archive')
   assert.equal(archive.context, 'Follow the project glossary.')
@@ -692,11 +692,11 @@ test('omits project configuration when the config has none', async () => {
   const root = fixture()
   const fake = setup(root)
 
-  const proposal = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'proposal' })
+  const proposal = await inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'proposal' })
   assert.equal(proposal.context, undefined)
   assert.equal(proposal.rules, undefined)
 
-  const archive = await call(fake, 'openspec_instructions', { change: CHANGE, artifact: 'archive' })
+  const archive = await inspectCall(fake, 'instructions', { change: CHANGE, artifact: 'archive' })
   assert.deepEqual(Object.keys(archive).sort(), ['artifact', 'change', 'root'])
   assert.equal(archive.context, undefined)
   assert.equal(archive.guidance, undefined)
@@ -729,18 +729,18 @@ test('shows changes and specs through one tool', async () => {
   ].join('\n'))
   const fake = setup(root)
 
-  const change = await call(fake, 'openspec_show', { name: CHANGE })
+  const change = await inspectCall(fake, 'show', { name: CHANGE })
   assert.equal(change.kind, 'change')
   assert.ok(change.deltaCount >= 1)
   assert.ok(change.deltas[0].requirements.length >= 1)
 
-  const spec = await call(fake, 'openspec_show', { name: 'theme', type: 'spec' })
+  const spec = await inspectCall(fake, 'show', { name: 'theme', type: 'spec' })
   assert.equal(spec.kind, 'spec')
   assert.equal(spec.name, 'theme')
   assert.equal(spec.requirements[0].name, 'Theme selection')
   assert.equal(spec.requirements[0].scenarios.length, 1)
 
-  const noScenarios = await call(fake, 'openspec_show', { name: 'theme', type: 'spec', noScenarios: true })
+  const noScenarios = await inspectCall(fake, 'show', { name: 'theme', type: 'spec', noScenarios: true })
   assert.equal(noScenarios.requirements[0].scenarios.length, 0)
 })
 
@@ -748,7 +748,7 @@ test('reads context, schemas and registered stores', async () => {
   const root = fixture()
   const fake = setup(root)
 
-  const context = await call(fake, 'openspec_context', {})
+  const context = await inspectCall(fake, 'context', {})
   assert.equal(context.setup, true)
   assert.equal(context.root.path, root)
   assert.equal(context.root.store_id, undefined)
@@ -913,7 +913,7 @@ test('reads a delta section heading closed with a hash run', async () => {
   )
   const fake = setup(root)
 
-  const shown = await call(fake, 'openspec_show', { name })
+  const shown = await inspectCall(fake, 'show', { name })
   assert.equal(shown.kind, 'change')
   assert.equal(shown.deltaCount, 1)
   assert.deepEqual(
@@ -921,7 +921,7 @@ test('reads a delta section heading closed with a hash run', async () => {
     ['Demo behavior'],
   )
 
-  const validated = await call(fake, 'openspec_validate', { change: name })
+  const validated = await inspectCall(fake, 'validate', { change: name })
   assert.equal(validated.valid, true)
   assert.deepEqual(validated.issues, [])
 })
@@ -955,7 +955,7 @@ test('refuses a requirement under an unrecognized delta section', async () => {
   )
   const fake = setup(root)
 
-  const validated = await call(fake, 'openspec_validate', { change: name })
+  const validated = await inspectCall(fake, 'validate', { change: name })
   assert.equal(validated.valid, false)
   const error = validated.issues.find(
     (issue) => issue.level === 'ERROR' && issue.message.includes('Retired behavior'),

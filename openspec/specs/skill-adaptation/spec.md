@@ -7,12 +7,12 @@ Defines how the plugin initializes an OpenSpec project and keeps its shipped ins
 
 ### Requirement: Instructions output maps CLI commands to tools
 
-The `openspec_instructions` result SHALL replace known CLI command fragments in the instruction text with the corresponding tool names.
+The `instructions` action of `openspec_inspect` SHALL replace known CLI command fragments in the instruction text with `openspec_inspect` calls that name the matching action.
 
 #### Scenario: Proposal instruction is read
 
-- **WHEN** `openspec_instructions` returns the proposal instruction on the bundled OpenSpec CLI
-- **THEN** the text names `openspec_list`, `openspec_show` and `openspec_validate` instead of `openspec list --specs`, `openspec show` and `openspec validate`
+- **WHEN** the `instructions` action returns the proposal instruction on the bundled OpenSpec CLI
+- **THEN** the text names `openspec_inspect` with the `list`, `show` and `validate` actions instead of `openspec list --specs`, `openspec show` and `openspec validate`
 
 ### Requirement: Init creates the OpenSpec project structure
 
@@ -44,12 +44,12 @@ The `openspec_instructions` result SHALL replace known CLI command fragments in 
 
 ### Requirement: Workflow skills consume returned project configuration
 
-The shipped workflow skills SHALL tell the agent to use the project `context`, per-artifact `rules` and operation `guidance` returned by the tools. The archive skill SHALL read the archive inputs with `openspec_instructions` before calling `openspec_archive`.
+The shipped workflow skills SHALL tell the agent to use the project `context`, per-artifact `rules` and operation `guidance` returned by the tools. The archive skill SHALL read the archive inputs with the `instructions` action before calling `openspec_archive`.
 
 #### Scenario: Propose and update use artifact context and rules
 
 - **WHEN** the propose or update skill writes or revises an artifact
-- **THEN** it tells the agent to follow the `context` and `rules` returned by `openspec_instructions` for that artifact
+- **THEN** it tells the agent to follow the `context` and `rules` returned by the `instructions` action for that artifact
 
 #### Scenario: Apply uses apply context and guidance
 
@@ -59,13 +59,13 @@ The shipped workflow skills SHALL tell the agent to use the project `context`, p
 #### Scenario: Archive reads archive inputs first
 
 - **WHEN** the archive skill starts for a change
-- **THEN** it calls `openspec_instructions` with `artifact: "archive"` before `openspec_archive`
+- **THEN** it calls `openspec_inspect` with `action: "instructions"` and `artifact: "archive"` before `openspec_archive`
 - **AND** it tells the agent to follow the returned `context` and `guidance` when present
 - **AND** it proceeds when both fields are absent
 
 ### Requirement: Propose skill reads existing specs before proposing scope
 
-The `openspec-propose` skill SHALL instruct the agent to inventory capabilities with `openspec_list` (`specs: true`), take a filtered overview with `openspec_show` (`type: "spec"`, `noScenarios: true`), and read each relevant capability in full with `openspec_show` (`type: "spec"`) before stating the change scope. It SHALL require the agent to surface a conflict with an existing requirement and ask instead of deciding it silently.
+The `openspec-propose` skill SHALL instruct the agent to inventory capabilities with `openspec_inspect` (`action: "list"`, `specs: true`), take a filtered overview with `openspec_inspect` (`action: "show"`, `type: "spec"`, `noScenarios: true`), and read each relevant capability in full with `openspec_inspect` (`action: "show"`, `type: "spec"`) before stating the change scope. It SHALL require the agent to surface a conflict with an existing requirement and ask instead of deciding it silently.
 
 #### Scenario: Proposal scope is prepared
 
@@ -75,7 +75,7 @@ The `openspec-propose` skill SHALL instruct the agent to inventory capabilities 
 
 ### Requirement: Explore skill reads relevant specs in full
 
-The `openspec-explore` skill SHALL state that a filtered `openspec_show` read is only an overview and SHALL require a full read of every relevant spec, including scenarios, before the agent says what a capability covers or what should change. It SHALL keep the read bounded to what the question needs.
+The `openspec-explore` skill SHALL state that a filtered `show` action read is only an overview and SHALL require a full read of every relevant spec, including scenarios, before the agent says what a capability covers or what should change. It SHALL keep the read bounded to what the question needs.
 
 #### Scenario: Capability coverage is assessed
 
@@ -93,7 +93,7 @@ A packaged skill that needs a management tool SHALL tell the agent to ask the us
 
 #### Scenario: Proposing finds a project that is not set up
 
-- **WHEN** `openspec_list` returns `setup: false` and `openspec_init` is not exposed
+- **WHEN** the `list` action returns `setup: false` and `openspec_init` is not exposed
 - **THEN** the propose skill directs the agent to offer `/opsx-admin init`, a store target, or skipping OpenSpec
 
 #### Scenario: The block is already open

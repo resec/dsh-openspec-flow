@@ -190,7 +190,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | 覆盖率门禁 | `npm run coverage:check`（Node 24） | 通过，不低于基线 |
 | JSON 契约 | `npm run contract:check -- --candidate <version>` | 退出码 0 |
 | 严格校验 | `npm run openspec:check`（Node 无需 24） | 退出码 0，活动 change 与主 specs 无警告 |
-| OpenSpec 校验 | `openspec_validate`（插件工具，`change` 参数，`strict: true`） | `valid: true` |
+| OpenSpec 校验 | `openspec_inspect`（`action: "validate"`，`change` 参数，`strict: true`） | `valid: true` |
 
 目标版本可能新增警告，例如更严的需求长度或场景步骤检查。新增警告属于升级改动的一部分：先修好受影响的工件，再让 `npm run openspec:check` 通过。
 
@@ -206,15 +206,15 @@ npm test
 
 负向检查至少覆盖以下场景：
 
-- **版本不匹配**：保留旧 `node_modules`，只把 `package.json` 改为目标版本，`openspec_status` 应报 reported 与 pinned 不一致（`lib/openspec.js:159`），而不是继续执行。
-- **schema 覆盖**：在项目创建 `openspec/schemas/spec-driven/schema.yaml`，change 作用域的 `openspec_status`、`openspec_apply_next`、`openspec_validate` 应拒绝（`lib/schema.js:128`）。
+- **版本不匹配**：保留旧 `node_modules`，只把 `package.json` 改为目标版本，`openspec_inspect`（`action: "status"`）应报 reported 与 pinned 不一致（`lib/openspec.js:159`），而不是继续执行。
+- **schema 覆盖**：在项目创建 `openspec/schemas/spec-driven/schema.yaml`，change 作用域的 `openspec_inspect`（`action: "status"`、`action: "validate"`）与 `openspec_apply_next` 应拒绝（`lib/schema.js:128`）。
 - **未知 delta section**：当前 pin 下 `validate` 失败、`archive` 拒绝。用候选 CLI 在 fixture 上验证；插件应在 `openspec_archive` 前置校验阶段返回 `valid: false`，且不移动文件（`lib/tools/write.js:200`）。
 - **指令映射**：`test/projections.test.mjs` 的映射用例应确认输出中没有残留的 `` `openspec list` ``、`` `openspec show` ``、`` `openspec validate` `` 片段。
 
 手工冒烟在自动测试之后：
 
 1. 重启 DSH，确认 stderr 没有 `dsh: skipping profile bundle "dsh-openspec-flow"`。
-2. 在一个 OpenSpec 项目依次调用 `openspec_list`、`openspec_status`、`openspec_apply_next`、`openspec_mark_task_done`、`openspec_validate`。
+2. 在一个 OpenSpec 项目依次调用 `openspec_inspect`（`action: "list"`、`"status"`、`"validate"`）、`openspec_apply_next`、`openspec_mark_task_done`。
 3. 对一个已完成 change 调用 `openspec_archive`，确认归档目录、合并后的主 specs 与 `specsUpdated` 符合预期。
 4. 检查工具输出中的 `schema`、`progress`、`instruction`、`issues` 仍是预期形状。
 
@@ -293,7 +293,7 @@ npm run contract:check -- --candidate <version> --json
 
 发布顺序：
 
-1. 所有任务完成，`openspec_validate` 传 `strict: true`、`npm test`、`npm run coverage:check`、`npm run openspec:check`、`npm run contract:check` 通过。
+1. 所有任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm test`、`npm run coverage:check`、`npm run openspec:check`、`npm run contract:check` 通过。
 2. 升插件版本。`package.json` 的 `version` 决定技能 frontmatter 的 `dsh-openspec-flow@<version>`（`lib/skills.js:23`），`test/skills.test.mjs` 会校验两者一致；只升 CLI 而不升插件版本时，技能元数据仍指向旧插件版本，需要判断是否接受。
 3. 归档 change，提交归档、文档、脚本与合并后的 specs，推送 `origin/main`。
 4. 重启 DSH，确认没有 `skipping profile bundle`，并完成手工冒烟。
@@ -313,7 +313,7 @@ npm run contract:check -- --candidate <version> --json
 - [ ] `package.json`、`package-lock.json`、版本断言、五份技能、README、AGENTS、`cordis.patch.yml` 已更新。
 - [ ] Node 24 上 `npm test` 通过。
 - [ ] Node 24 上 `npm run coverage:check` 通过。
-- [ ] `openspec_validate` 传 `strict: true` 通过，`npm run openspec:check` 通过。
+- [ ] `openspec_inspect`（`action: "validate"`）传 `strict: true` 通过，`npm run openspec:check` 通过。
 - [ ] DSH 会话冒烟通过，工具输出字段符合预期。
 - [ ] 回滚步骤已演练或有明确记录。
 

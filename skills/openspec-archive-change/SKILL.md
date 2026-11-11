@@ -3,7 +3,7 @@ name: openspec-archive-change
 description: Archive a completed OpenSpec change with the openspec_* tools, merging its delta specs into the main specs. Use when the user asks to archive or finalize a change.
 whenToUse: The user explicitly asks to archive a finished change.
 metadata:
-  generatedBy: dsh-openspec-flow@0.2.1
+  generatedBy: dsh-openspec-flow@0.3.0
   upstream: openspec@1.16.1
 ---
 
@@ -15,14 +15,14 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 
 ## Preconditions
 
-1. Call `openspec_list` and find the change. If `completedTasks` is less than `totalTasks`, report the remaining count and stop; archive waits for a completed change.
-2. Call `openspec_status` to confirm planning is complete.
-3. Call `openspec_validate`. Report every finding and stop when `valid` is false.
+1. Call `openspec_inspect` with `action: "list"` and find the change. If `completedTasks` is less than `totalTasks`, report the remaining count and stop; archive waits for a completed change.
+2. Call `openspec_inspect` with `action: "status"` to confirm planning is complete.
+3. Call `openspec_inspect` with `action: "validate"`. Report every finding and stop when `valid` is false.
 4. If the change is doc-only or tooling-only and does not alter spec-level behavior, ask whether to archive with `skipSpecs: true`.
 
 ## Archive inputs
 
-- Call `openspec_instructions` with `artifact: "archive"` before archiving.
+- Call `openspec_inspect` with `action: "instructions"` and `artifact: "archive"` before archiving.
 - Follow the returned `context` and `guidance` when present; when both are absent, continue.
 
 ## Archive

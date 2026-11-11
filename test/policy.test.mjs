@@ -43,9 +43,9 @@ test('detects an OpenSpec root and rejects other directories', (t) => {
 test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /openspec_apply_next/)
   assert.match(POLICY_TEXT, /openspec_mark_task_done/)
-  assert.match(POLICY_TEXT, /openspec_validate/)
+  assert.match(POLICY_TEXT, /action: "validate"/)
   assert.match(POLICY_TEXT, /openspec_new_change/)
-  assert.match(POLICY_TEXT, /openspec_instructions/)
+  assert.match(POLICY_TEXT, /action: "instructions"/)
   assert.match(POLICY_TEXT, /openspec_archive/)
   assert.match(POLICY_TEXT, /openspec_init/)
   assert.match(POLICY_TEXT, /\/opsx-admin/)

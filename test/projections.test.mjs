@@ -63,9 +63,10 @@ test('maps CLI fragments in instruction text without touching paths', () => {
     unlocks: [],
     root: ROOT,
   }, 'proposal')
-  assert.match(result.instruction, /openspec_list/)
-  assert.match(result.instruction, /openspec_show/)
-  assert.match(result.instruction, /openspec_validate/)
+  assert.match(result.instruction, /openspec_inspect/)
+  assert.match(result.instruction, /action: "list"/)
+  assert.match(result.instruction, /action: "show"/)
+  assert.match(result.instruction, /action: "validate"/)
   assert.match(result.instruction, /openspec\/specs/)
   assert.doesNotMatch(result.instruction, /`openspec (list|show|validate|instructions)/)
 })
@@ -80,7 +81,7 @@ test('maps prose CLI flags in instruction text to tool parameters', () => {
       'Append `--store "<id>"` to both commands.',
       'Keep `--type',
       'spec` for an ambiguous name.',
-      '`openspec_list` without `--specs` lists changes.',
+      '`openspec_inspect` without `--specs` lists changes.',
       'It came from `--store`, a project `store:` pointer.',
     ].join('\n'),
     context: 'Use `--store` when the project is store-selected.',
@@ -278,9 +279,9 @@ test('projectContext keeps store identity and turns member fetch into a tool act
 
   assert.deepEqual(result.root, { path: '/stores/team', source: 'store', store_id: 'team' })
   assert.deepEqual(result.members[0].fetch, {
-    tool: 'openspec_show',
-    arguments: { type: 'spec', store: 'docs' },
-    note: 'Set name to a spec id from this store; openspec_list with specs: true and the same store lists them.',
+    tool: 'openspec_inspect',
+    arguments: { action: 'show', type: 'spec', store: 'docs' },
+    note: 'Set name to a spec id from this store; openspec_inspect with action: "list" and specs: true lists them.',
   })
   assert.deepEqual(result.members[0].status, [])
   assert.equal(result.members[1].path, undefined)

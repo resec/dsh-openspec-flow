@@ -272,7 +272,7 @@ test('projectStatus names ready artifacts and their instruction action', () => {
   })
   assert.deepEqual(result.blockedBy, ['specs', 'design'])
   assert.deepEqual(result.nextSteps, [
-    { tool: 'openspec_instructions', arguments: { change: 'c', artifact: 'specs' } },
+    { tool: 'openspec_inspect', arguments: { change: 'c', action: 'instructions', artifact: 'specs' } },
   ])
 })
 
@@ -285,7 +285,7 @@ test('projectStatus carries an explicit store into every next step', () => {
   }, { store: 's1' })
   assert.deepEqual(incomplete.blockedBy, ['design'])
   assert.deepEqual(incomplete.nextSteps, [
-    { tool: 'openspec_instructions', arguments: { change: 'c', artifact: 'design', store: 's1' } },
+    { tool: 'openspec_inspect', arguments: { change: 'c', action: 'instructions', artifact: 'design', store: 's1' } },
   ])
 
   const complete = projectStatus({
@@ -404,9 +404,9 @@ test('projectContext tolerates malformed members and diagnostics', () => {
   assert.deepEqual(result.members[1], { role: 'referenced_store', id: '', status: [] })
   assert.equal(result.members[2].role, undefined)
   assert.deepEqual(result.members[2].fetch, {
-    tool: 'openspec_show',
-    arguments: { type: 'spec', store: 'no-role' },
-    note: 'Set name to a spec id from this store; openspec_list with specs: true and the same store lists them.',
+    tool: 'openspec_inspect',
+    arguments: { action: 'show', type: 'spec', store: 'no-role' },
+    note: 'Set name to a spec id from this store; openspec_inspect with action: "list" and specs: true lists them.',
   })
   assert.deepEqual(result.status, [{ message: 'plain' }])
 })
@@ -468,7 +468,7 @@ test('projectInstructions handles missing fields and non-array lists', () => {
     root: null,
   }, 'proposal')
   assert.deepEqual(result.existingOutputPaths, ['a'])
-  assert.match(result.instruction, /openspec_list/)
+  assert.match(result.instruction, /openspec_inspect/)
   assert.deepEqual(result.dependencies, [])
   assert.deepEqual(result.unlocks, [])
   assert.equal(result.resolvedOutputPath, undefined)
