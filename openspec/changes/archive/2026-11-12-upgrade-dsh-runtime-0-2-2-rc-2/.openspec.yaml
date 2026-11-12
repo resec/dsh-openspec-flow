@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-11-12
+skip_specs: true
+goal: Ship plugin 0.3.1 pinned to DSH 0.2.2-rc.2, with the manifest, lockfile,
+  README and both upgrade guides naming the new runtime, Node baseline
+  unchanged, and the candidate runtime verified in an isolated profile before
+  release.

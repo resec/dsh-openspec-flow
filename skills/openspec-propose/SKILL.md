@@ -3,7 +3,7 @@ name: openspec-propose
 description: Propose a new OpenSpec change with the openspec_* tools, creating the change, reading each artifact instruction, writing proposal, specs, design and tasks, then validating. Use when the user wants to plan a change.
 whenToUse: The user wants a new OpenSpec change created end to end and the planning artifacts ready for review.
 metadata:
-  generatedBy: dsh-openspec-flow@0.3.0
+  generatedBy: dsh-openspec-flow@0.3.1
   upstream: openspec@1.16.1
 ---
 

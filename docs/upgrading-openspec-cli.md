@@ -2,12 +2,12 @@
 
 本文档面向维护者，说明把 `dsh-openspec-flow` 的 `@fission-ai/openspec` 精确依赖从一个版本升到另一个版本时，需要检查什么、改哪些文件、跑哪些测试，以及如何发布和回滚。
 
-当前基线（2026-11-08 工作树）：
+当前基线（2026-11-12 工作树）：
 
 - CLI：`@fission-ai/openspec` 1.16.1（`package.json:42`）
 - Node：`>=24.9.0`（`package.json` 的 `engines.node`）
-- DSH：`=0.2.2-rc.1`（`package.json` 的 `engines.dsh`）
-- 插件版本：0.2.1（`package.json:3`）
+- DSH：`=0.2.2-rc.2`（`package.json` 的 `engines.dsh`）
+- 插件版本：0.3.1（`package.json:3`）
 
 插件只运行自己安装树内的 CLI（`lib/openspec.js:106`），首次调用校验精确版本与 `schemaVersion: 1`（`lib/openspec.js:143`）。因此升级必须同时移动依赖、版本断言与文档，不能只改 `package.json`。
 
@@ -319,7 +319,7 @@ npm run contract:check -- --candidate <version> --json
 
 ## 来源
 
-本地文件与行号（2026-11-08 工作树）：
+本地文件与行号（2026-11-12 工作树）：
 
 - `package.json:42`、`package.json:3`：CLI pin 与插件版本。
 - `lib/openspec.js:47`、`:106`、`:143`、`:153`、`:159`、`:351`、`:379`、`:393`、`:413`：CLI 解析、版本闸门、调用与错误处理。

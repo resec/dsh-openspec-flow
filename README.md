@@ -119,8 +119,8 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 `package.json` 的 `engines` 声明两项：
 
-- `dsh`：`=0.2.2-rc.1`。只接受该 DSH 运行时；其他版本在安装或 profile 启动检查时被拒绝，除非 profile 的 `compatibility.json` 中有针对该精确版本的豁免。DSH 仍处 alpha，逐个版本验证后再调整。
-- `node`：`>=24.9.0`。与 DSH 0.2.2-rc.1 的 Node 下限一致；插件与 DSH 同进程运行，不单独支持更低的 Node。
+- `dsh`：`=0.2.2-rc.2`。只接受该 DSH 运行时；其他版本在安装或 profile 启动检查时被拒绝，除非 profile 的 `compatibility.json` 中有针对该精确版本的豁免。DSH 仍处 alpha，逐个版本验证后再调整。
+- `node`：`>=24.9.0`。与 DSH 0.2.2-rc.2 的 Node 下限一致；插件与 DSH 同进程运行，不单独支持更低的 Node。
 
 升级 `engines.dsh` 的检查、候选运行时验证与回滚步骤见 [docs/upgrading-dsh-runtime.md](docs/upgrading-dsh-runtime.md)。
 
@@ -128,7 +128,7 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 
 ### 测试运行时
 
-测试和覆盖率只允许运行在 Node 24 上，且具体版本必须满足 `engines.node`。大版本 24 对齐 DSH 0.2.2-rc.1 的 `PRIMARY_NODE_VERSION`。
+测试和覆盖率只允许运行在 Node 24 上，且具体版本必须满足 `engines.node`。大版本 24 对齐 DSH 0.2.2-rc.2 的 `PRIMARY_NODE_VERSION`。
 
 命令只检查当前 `PATH` 上的 `node`，不会调用 fnm、nvm、volta，也不读取 `.nvmrc`。如果当前 `node` 不是 24，或具体版本低于 `>=24.9.0`，命令会在测试启动前报错退出。本机默认 `node` 可能是 26，运行前需手动激活 Node 24。
 
@@ -171,7 +171,7 @@ CLI 来源固定：
 
 ## 验证
 
-在 OpenSpec 1.16.1、本机 DSH 0.2.2-rc.1、Node 24.22.2 上：
+在 OpenSpec 1.16.1、本机 DSH 0.2.2-rc.2、Node 24.22.2 上：
 
 - `npm test` 覆盖工具投影、参数校验、apply 循环、schema 闸门、写入类工具、init、技能 provider 与指令映射。
 - 39 任务变更：`instructions apply --json` 单次 13,664 B；`apply_next` 780 B，每 4 个任务一批共 10 次 mark，平均 448 B，合计 5,258 B，约为「每任务重跑」53.3 万字节的 1.0%。

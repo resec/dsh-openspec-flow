@@ -2,9 +2,9 @@
 
 本文档面向维护者，说明把 `dsh-openspec-flow` 的 `engines.dsh` 从一个精确 DSH 版本移到另一个版本时，需要核对什么、改哪些文件、如何验证候选运行时，以及如何发布和回滚。OpenSpec CLI 的升级是另一条流程，见 [升级 OpenSpec CLI](upgrading-openspec-cli.md)。
 
-当前基线（2026-11-11 工作树）：
+当前基线（2026-11-12 工作树）：
 
-- DSH：`=0.2.2-rc.1`（`package.json:10`）
+- DSH：`=0.2.2-rc.2`（`package.json:10`）
 - Node：`>=24.9.0`（`package.json:9`）
 - 测试主版本：24（`coverage.config.json:2`）
 - OpenSpec CLI：`@fission-ai/openspec` 1.16.1（`package.json` 的 `dependencies`）
@@ -39,7 +39,7 @@ DSH 在加载 profile 时逐个读取 bundle 的 `package.json`，用运行中�
 - 插件 manifest 有 `engines.dsh` 时，只用它决定；`peerDependencies` 中的 `@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` 不再参与。
 - 没有 `engines.dsh` 时，逐个检查 `peerDependencies` 中的 DSH 包。
 - 比较使用 `semver.satisfies(runtimeVersion, range, { includePrerelease: true })`。`runtimeVersion` 取自 `dsh-app-boot` 自己的 `package.json` 版本；正常安装中它与 `dsh --version` 一致。
-- 预发布版本参与匹配。`=0.2.2-rc.1` 只接受该版本；`^0.2.2` 在 `includePrerelease` 下会接受后续预发布版本，例如 `0.2.3-rc.1`。manifest 必须写 `=<version>`，不能用 `^`、`~` 或 `>=`。
+- 预发布版本参与匹配。`=0.2.2-rc.2` 只接受该版本；`^0.2.2` 在 `includePrerelease` 下会接受后续预发布版本，例如 `0.2.3-rc.1`。manifest 必须写 `=<version>`，不能用 `^`、`~` 或 `>=`。
 
 ### 不匹配的后果
 
@@ -102,7 +102,7 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 
 ## DSH 耦合面
 
-行号基于 2026-11-11 工作树；升级后先用 `grep` 重新定位。
+行号基于 2026-11-12 工作树；升级后先用 `grep` 重新定位。
 
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
