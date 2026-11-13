@@ -13,7 +13,8 @@
   "exports": {
     ".": "./index.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./reviewer": "./reviewer.js"
   },
   "dsh": {
     "bundle": {
@@ -23,6 +24,7 @@
   "files": [
     "index.js",
     "lib/**",
+    "reviewer.js",
     "skills/**",
     "locale/*.json",
     "icon.svg",

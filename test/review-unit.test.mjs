@@ -19,6 +19,7 @@ import {
   reviewKey,
   sha256,
   withReviewLock,
+  withReviewLockAsync,
   writeJsonAtomic,
 } from '../lib/review/store.js'
 import { normalizeReviews, draftSettings } from '../lib/review/config.js'
@@ -32,6 +33,7 @@ import {
   summarizeFindings,
 } from '../lib/review/report.js'
 import { draftReadiness } from '../lib/review/readiness.js'
+import { submitReport } from '../lib/review/submit.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
 
 const CREATED = []
@@ -116,7 +118,7 @@ test('review config normalizes defaults and limits', () => {
     draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
     apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
   })
-  const invalid = normalizeReviews({ draft: { enabled: 'yes', reviewers: 1, maxRounds: 0, waitMinutes: 121 } })
+  const invalid = normalizeReviews({ draft: { enabled: 'yes', reviewers: 2, maxRounds: 0, waitMinutes: 121 } })
   assert.equal(invalid.issues.length, 4)
   assert.deepEqual(draftSettings({ reviews: { draft: { enabled: false } } }), {
     enabled: false,
@@ -522,4 +524,47 @@ test('store rejects a non-string segment and a missing git tree', () => {
   assert.throws(() => assertSafeSegment(1, 'change'), /path segment/)
   const root = temp()
   assert.equal(gitTree(root, 'HEAD'), undefined)
+})
+
+test('the async review lock is exclusive and releases', async () => {
+  const root = temp()
+  const directory = join(root, 'review')
+  await assert.doesNotReject(withReviewLockAsync(directory, 'test', async () => {}))
+  await assert.rejects(
+    withReviewLockAsync(directory, 'outer', async () => {
+      await withReviewLockAsync(directory, 'inner', async () => {})
+    }),
+    /another write holds/,
+  )
+})
+
+test('submitReport covers missing rounds, duplicate reports and empty findings', () => {
+  const root = temp()
+  const directory = join(root, 'review')
+  mkdirSync(join(directory, 'round-1'), { recursive: true })
+  const base = { rounds: [{ round: 1, objectHash: 'hash', startedAt: new Date().toISOString() }], findings: [] }
+  assert.throws(
+    () => submitReport({ directory, kind: 'draft', record: { rounds: [], findings: [] }, report: { verdict: 'pass', summary: 'ok', findings: [] }, currentHash: 'hash' }),
+    /has no round/,
+  )
+  assert.throws(
+    () => submitReport({
+      directory,
+      kind: 'draft',
+      record: { ...base, rounds: [{ ...base.rounds[0], report: { path: 'x' } }] },
+      report: { verdict: 'pass', summary: 'ok', findings: [] },
+      currentHash: 'hash',
+    }),
+    /already has a report/,
+  )
+  const record = { objectHash: 'hash', rounds: [{ round: 1, objectHash: 'hash', startedAt: new Date().toISOString() }] }
+  const result = submitReport({
+    directory,
+    kind: 'draft',
+    record,
+    report: { verdict: 'pass', summary: 'ok', findings: [] },
+    currentHash: 'hash',
+  })
+  assert.equal(result.record.findings.length, 0)
+  assert.equal(result.record.state, 'passed')
 })

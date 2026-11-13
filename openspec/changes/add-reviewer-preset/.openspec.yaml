@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-13
+goal: Let a single independent read-only reviewer run draft and apply reviews
+  through a dedicated preset and reviewer tool, with synchronous wait, retry,
+  replace and waiver.

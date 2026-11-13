@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process'
  *   agents already live at load time.
  * @returns the fake context plus the registries and helpers tests read.
  */
-export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [], commands: withCommands = false } = {}) {
+export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [], commands: withCommands = false, subagents = undefined } = {}) {
   const tools = new Map()
   const toolOptions = new Map()
   const skills = []
@@ -173,6 +173,7 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       }
       if (name === 'systemPrompt') return globalSystemPrompt
       if (name === 'agents') return ctx.agents
+      if (name === 'subagents') return subagents
       if (name === 'commands') return commandRegistry
       return undefined
     },

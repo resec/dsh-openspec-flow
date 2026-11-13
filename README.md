@@ -14,7 +14,8 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | 管理 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能；管理块，`/opsx-admin` 后可见 |
 | apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles、指令与项目 `context`/`guidance` |
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
-| 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`、`status`、`self-report`、`report`、`dispose`、`waive`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
+| 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
+| 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝；`openspec_archive` 在 apply review 未就绪时拒绝；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
@@ -148,11 +149,11 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 | --- | --- | --- |
 | `timeoutMs` | `30000` | 单次 CLI 调用的墙钟上限，1000–300000。 |
 | `reviews.draft.enabled` | `true` | 新 change 是否锁定 draft review。 |
-| `reviews.draft.reviewers` | `0` | 当前只支持 0（changer 自评审）；独立评审者在后续变更加入。 |
+| `reviews.draft.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
 | `reviews.draft.maxRounds` | `3` | draft review 的默认轮次上限，1–50。 |
 | `reviews.draft.waitMinutes` | `15` | draft review 的默认等待上限，1–120。 |
 | `reviews.apply.enabled` | `true` | 新 change 是否锁定 apply review；非 git 项目自动不可用。 |
-| `reviews.apply.reviewers` | `0` | 当前只支持 0（changer 自评审）。 |
+| `reviews.apply.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
 | `reviews.apply.maxRounds` | `5` | apply review 的默认轮次上限，1–50。 |
 | `reviews.apply.waitMinutes` | `15` | apply review 的默认等待上限，1–120。 |
 
@@ -254,7 +255,8 @@ lib/tools/query.js       list、status、show、instructions、context、schemas
 lib/tools/apply.js       apply_next、mark_task_done
 lib/tools/write.js       new_change、archive
 lib/tools/review.js      draft review 工具与 apply 闸门
-lib/review/              评审存储、policy、工件哈希、brief、报告与 readiness
+lib/review/              评审存储、policy、工件哈希、brief、报告、readiness 与 reviewer 工具
+reviewer.js              openspec-reviewer preset 的 Host 入口
 lib/tools/shared.js      共享 schema 与参数校验
 lib/init.js              init 工具、init --tools none、项目结构创建
 lib/skills.js            打包技能的路径、frontmatter 解析、版本常量

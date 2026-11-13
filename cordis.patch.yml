@@ -1,4 +1,4 @@
-# One Host row. The tools and the openspec-flow skill are registered from index.js.
+# One Host row and one reviewer preset.
 #
 # The plugin runs its bundled @fission-ai/openspec 1.16.1. There is no cliPath
 # setting: PATH, project-local .bin, and config overrides are not consulted.
@@ -7,3 +7,26 @@
     - id: openspec-flow
       name: dsh-openspec-flow
       config: {}
+    - id: preset-openspec-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: openspec-reviewer
+        order: 6
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: 'You are an independent read-only reviewer. You did not write the change. Read the brief and the workspace, do not edit files, do not delegate, and submit one report.'
+              complete: true
+              includeRuntimeContext: false
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: false
+              write: false
+              edit: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+          - id: reviewer
+            name: 'dsh-openspec-flow/reviewer'

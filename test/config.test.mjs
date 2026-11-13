@@ -46,7 +46,7 @@ test('accepts a disabled draft review and bounded limits', () => {
 })
 
 test('rejects an independent reviewer count in this change', () => {
-  const result = validate({ reviews: { draft: { reviewers: 1 } } })
+  const result = validate({ reviews: { draft: { reviewers: 2 } } })
   assert.ok(Array.isArray(result.issues))
   assert.match(result.issues[0].message, /reviews\.draft\.reviewers/)
 })
