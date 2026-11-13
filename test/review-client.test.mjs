@@ -1,0 +1,407 @@
+/**
+ * The browser half: the review configuration page bundle.
+ *
+ * The bundle is a loader artifact, so the test captures the registration the
+ * page performs, drives the pure form transitions the page calls between
+ * renders, and compares the endpoint literals against the Host contract.
+ */
+
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { REVIEW_CHANNEL, REVIEW_ENDPOINTS } from '../lib/client/channel.js'
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+/**
+ * Load the bundle with a recording module loader.
+ * @returns the loader's captured registration and the package manifest.
+ */
+let cached = undefined
+
+async function loadBundle() {
+  if (cached !== undefined) return cached
+  const loaded = []
+  globalThis.window = {
+    __ModuleLoader__: {
+      load(entry) {
+        loaded.push(entry)
+      },
+    },
+  }
+  await import(new URL('../client.js', import.meta.url).href)
+  const entry = loaded[0]
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useEffect: () => {},
+    useCallback: (fn) => fn,
+    useMemo: (fn) => fn(),
+  }
+  const plugin = entry.factory((name) => {
+    assert.equal(name, 'react')
+    return react
+  })
+  cached = { entry, plugin }
+  return cached
+}
+
+/**
+ * Build the client context the bundle's `apply` reads.
+ * @returns the context, registered dictionaries and registrations.
+ */
+function clientContext() {
+  const dictionaries = []
+  const registrations = []
+  const injections = []
+  const effects = []
+  const ctx = {
+    locale: {
+      register(namespace, dicts) {
+        dictionaries.push({ namespace, dicts })
+        return () => {}
+      },
+      bind(namespace) {
+        return (key) => `${namespace}:${key}`
+      },
+    },
+    slots: {
+      inject(name, factory) {
+        injections.push(name)
+        return factory()
+      },
+      register(options, component) {
+        registrations.push({ options, component })
+        return () => {}
+      },
+    },
+    connection: {
+      rpc: {
+        async call(channel, endpoint, payload) {
+          return { ok: true, value: { channel, endpoint, payload } }
+        },
+      },
+    },
+    effect(fn) {
+      const disposer = fn()
+      effects.push(disposer)
+      return disposer
+    },
+  }
+  return { ctx, dictionaries, registrations, injections, effects }
+}
+
+test('the bundle registers one row configuration page', async () => {
+  const { entry, plugin } = await loadBundle()
+  assert.equal(entry.id, 'dsh-openspec-flow')
+  assert.deepEqual(plugin.inject, ['slots', 'locale', 'connection'])
+
+  const { ctx, dictionaries, registrations, injections } = clientContext()
+  plugin.apply(ctx)
+  assert.equal(dictionaries.length, 1)
+  assert.equal(dictionaries[0].namespace, 'openspecReview')
+  assert.equal(typeof dictionaries[0].dicts.zh.title, 'string')
+  assert.equal(typeof dictionaries[0].dicts.en.title, 'string')
+  assert.deepEqual(Object.keys(dictionaries[0].dicts.zh).sort(), Object.keys(dictionaries[0].dicts.en).sort())
+
+  assert.deepEqual(injections, ['plugins.row.config'])
+  assert.equal(registrations.length, 1)
+  assert.equal(registrations[0].options.name, 'plugins.row.config')
+  assert.equal(registrations[0].options.key, 'dsh-openspec-flow#openspec-flow')
+  assert.equal(registrations[0].options.locale, 'openspecReview')
+
+  // The owner asks for a one-line summary and for the page itself.
+  assert.equal(registrations[0].component({ view: 'summary' }), 'openspecReview:summary')
+  const page = registrations[0].component({ view: 'page' })
+  assert.equal(typeof page, 'object')
+  assert.equal(page.type.name, 'Page')
+})
+
+test('the bundle repeats the channel and endpoint literals exactly', () => {
+  const text = readFileSync(join(ROOT, 'client.js'), 'utf8')
+  assert.match(text, new RegExp(`const CHANNEL = '${REVIEW_CHANNEL}'`))
+  for (const value of Object.values(REVIEW_ENDPOINTS)) {
+    assert.ok(text.includes(`'${value}'`), `client.js names ${value}`)
+  }
+})
+
+test('the form sections default and copy independently', async () => {
+  const { plugin } = await loadBundle()
+  const { initialForm } = plugin.__test
+  const form = initialForm(undefined)
+  assert.deepEqual(form, {
+    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+  })
+
+  const copied = initialForm({
+    draft: {
+      enabled: false,
+      reviewers: 1,
+      maxRounds: 4,
+      waitMinutes: 20,
+      reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
+    },
+    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'explicit', provider: 'p', model: '' } },
+  })
+  assert.equal(copied.draft.enabled, false)
+  assert.equal(copied.draft.reviewers, 1)
+  assert.deepEqual(copied.draft.reviewerModel, {
+    source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+  })
+  assert.deepEqual(copied.apply.reviewerModel, { source: 'explicit', provider: 'p', model: '' })
+})
+
+test('the cascade clears the fields a choice no longer names', async () => {
+  const { plugin } = await loadBundle()
+  const { initialForm, chooseProvider, chooseModel, chooseEffort, patchSection, setModel } = plugin.__test
+  let form = initialForm(undefined)
+
+  form = patchSection(form, 'draft', { enabled: false, maxRounds: 4 })
+  assert.equal(form.draft.enabled, false)
+  assert.equal(form.apply.enabled, true)
+
+  form = chooseProvider(form, 'draft', 'deepseek')
+  assert.deepEqual(form.draft.reviewerModel, { source: 'explicit', provider: 'deepseek', model: '' })
+
+  form = chooseModel(form, 'draft', 'deepseek-flash')
+  assert.deepEqual(form.draft.reviewerModel, { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash' })
+
+  form = chooseEffort(form, 'draft', 'max')
+  assert.equal(form.draft.reviewerModel.reasoningEffort, 'max')
+
+  // Selecting the adapter default drops the effort rather than storing an empty string.
+  form = chooseEffort(form, 'draft', '')
+  assert.equal('reasoningEffort' in form.draft.reviewerModel, false)
+
+  // A new provider clears the model and the effort it belonged to.
+  form = chooseProvider(form, 'apply', 'other')
+  assert.deepEqual(form.apply.reviewerModel, { source: 'explicit', provider: 'other', model: '' })
+  form = setModel(form, 'apply', { source: 'inherit' })
+  assert.deepEqual(form.apply.reviewerModel, { source: 'inherit' })
+})
+
+test('the save payload carries both sections', async () => {
+  const { plugin } = await loadBundle()
+  const { initialForm, savePayload } = plugin.__test
+  const form = initialForm(undefined)
+  assert.deepEqual(savePayload(form), { reviews: { draft: form.draft, apply: form.apply } })
+})
+
+test('a locked section is described in one line', async () => {
+  const { plugin } = await loadBundle()
+  const { lockLine } = plugin.__test
+  const t = (key, params) => (params?.n === undefined ? key : `${key}:${String(params.n)}`)
+  const line = lockLine(t, { enabled: true, reviewers: 1, maxRounds: 3, waitMinutes: 15 }, 'draft')
+  assert.equal(line, 'lockDraft: enabledOn · reviewersText:1 · 3×15m')
+  assert.match(lockLine(t, { enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15 }, 'apply'), /lockApply: enabledOff/)
+})
+
+/**
+ * Drive the page controller with a scripted channel.
+ * @param answers - endpoint to answer function; a thrown error models a transport failure.
+ * @returns the controller, its calls and a wait helper for its queued work.
+ */
+async function controllerWith(answers) {
+  const { plugin } = await loadBundle()
+  const calls = []
+  /** Answer one endpoint from the script. */
+  async function call(endpoint, payload) {
+    calls.push({ endpoint, payload })
+    const answer = answers[endpoint]
+    if (answer === undefined) throw new Error(`unexpected endpoint ${endpoint}`)
+    return await answer(payload)
+  }
+  const t = (key) => key
+  const controller = plugin.__test.createController({ call, t })
+  return { controller, calls }
+}
+
+test('the controller loads settings, providers and project facts', async () => {
+  const settings = {
+    reviews: {
+      draft: { enabled: true, reviewers: 1, maxRounds: 4, waitMinutes: 20, reviewerModel: { source: 'inherit' } },
+      apply: { enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    },
+    bounds: { reviewers: { min: 0, max: 1 }, maxRounds: { min: 1, max: 50 }, waitMinutes: { min: 1, max: 120 } },
+    canSave: true,
+  }
+  const { controller, calls } = await controllerWith({
+    'reviewSettings/get': () => ({ ok: true, value: settings }),
+    'reviewPolicies/list': () => ({
+      ok: true,
+      value: { projects: [{ path: '/p', git: false, changes: [] }] },
+    }),
+    'reviewModels/providers': () => ({ ok: true, value: [{ id: 'deepseek', name: 'DeepSeek' }] }),
+  })
+  const seen = []
+  controller.subscribe(() => { seen.push(controller.getState().status) })
+  await controller.load()
+  assert.deepEqual(calls.map((entry) => entry.endpoint).sort(), [
+    'reviewModels/providers', 'reviewPolicies/list', 'reviewSettings/get',
+  ])
+  const state = controller.getState()
+  assert.equal(state.status, 'ready')
+  assert.equal(state.form.draft.reviewers, 1)
+  assert.equal(state.form.apply.enabled, false)
+  assert.equal(state.form.apply.maxRounds, 5)
+  assert.equal(state.canSave, true)
+  assert.deepEqual(state.providers, [{ id: 'deepseek', name: 'DeepSeek' }])
+  assert.deepEqual(state.projects, [{ path: '/p', git: false, changes: [] }])
+  assert.ok(seen.includes('ready'))
+
+  // A failed settings read is the one failure that stops the page.
+  const failing = await controllerWith({
+    'reviewSettings/get': () => ({ ok: false, error: { code: 'reviewSettings/unavailable', message: 'no config' } }),
+    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
+    'reviewModels/providers': () => ({ ok: false, error: { code: 'reviewModels/unavailable', message: 'no catalog' } }),
+  })
+  await failing.controller.load()
+  assert.equal(failing.controller.getState().status, 'error')
+  assert.match(failing.controller.getState().error, /no config/)
+})
+
+test('a save reports acceptance and the Host rejection verbatim', async () => {
+  const base = {
+    'reviewSettings/get': () => ({
+      ok: true,
+      value: {
+        reviews: {
+          draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+          apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+        },
+        bounds: undefined,
+        canSave: true,
+      },
+    }),
+    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
+    'reviewModels/providers': () => ({ ok: true, value: [] }),
+  }
+
+  const accepted = await controllerWith({
+    ...base,
+    'reviewSettings/update': (payload) => ({ ok: true, value: payload }),
+  })
+  await accepted.controller.load()
+  accepted.controller.onChange('draft', { reviewers: 1 })
+  const saved = await accepted.controller.save()
+  assert.equal(saved.ok, true)
+  const update = accepted.calls.find((entry) => entry.endpoint === 'reviewSettings/update')
+  assert.equal(update.payload.reviews.draft.reviewers, 1)
+  assert.equal(update.payload.reviews.apply.enabled, true)
+  assert.deepEqual(accepted.controller.getState().message, { kind: 'ok', text: 'saved' })
+
+  const rejected = await controllerWith({
+    ...base,
+    'reviewSettings/update': () => ({
+      ok: false,
+      error: { code: 'reviewSettings/invalid', message: 'reviews.draft.reviewers must be an integer between 0 and 1' },
+    }),
+  })
+  await rejected.controller.load()
+  const refused = await rejected.controller.save()
+  assert.equal(refused.ok, false)
+  assert.deepEqual(rejected.controller.getState().message, {
+    kind: 'error',
+    text: 'reviews.draft.reviewers must be an integer between 0 and 1',
+  })
+  assert.equal(rejected.controller.getState().busy, false)
+
+  // A transport failure is folded into the same shape rather than thrown at the page.
+  const broken = await controllerWith({
+    ...base,
+    'reviewSettings/update': () => {
+      throw new Error('connection lost')
+    },
+  })
+  await broken.controller.load()
+  const lost = await broken.controller.save()
+  assert.equal(lost.ok, false)
+  assert.match(broken.controller.getState().message.text, /connection lost/)
+})
+
+test('the provider and model cascade loads the next selectors', async () => {
+  const { controller, calls } = await controllerWith({
+    'reviewSettings/get': () => ({
+      ok: true,
+      value: { reviews: {}, bounds: undefined, canSave: true },
+    }),
+    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
+    'reviewModels/providers': () => ({ ok: true, value: [{ id: 'other', name: 'Other' }] }),
+    'reviewModels/models': () => ({
+      ok: true,
+      value: [{ provider: 'other', id: 'm1', name: 'M1' }, { provider: 'other', id: 'm2', name: 'M2' }],
+    }),
+    'reviewModels/efforts': () => ({
+      ok: true,
+      value: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' },
+    }),
+  })
+  await controller.load()
+  await controller.onProvider('apply', 'other')
+  const state = controller.getState()
+  assert.deepEqual(state.form.apply.reviewerModel, {
+    source: 'explicit', provider: 'other', model: 'm1', reasoningEffort: 'low',
+  })
+  assert.deepEqual(state.models.apply.map((entry) => entry.id), ['m1', 'm2'])
+
+  await controller.onModel('apply', 'm2')
+  assert.equal(controller.getState().form.apply.reviewerModel.model, 'm2')
+  controller.onEffort('apply', 'high')
+  assert.equal(controller.getState().form.apply.reviewerModel.reasoningEffort, 'high')
+  controller.onEffort('apply', '')
+  assert.equal('reasoningEffort' in controller.getState().form.apply.reviewerModel, false)
+
+  // A failing catalog keeps the form and reports it instead of throwing.
+  const failing = await controllerWith({
+    'reviewSettings/get': () => ({ ok: true, value: { reviews: {}, canSave: true } }),
+    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
+    'reviewModels/providers': () => ({ ok: true, value: [] }),
+    'reviewModels/models': () => ({ ok: false, error: { code: 'reviewModels/unavailable', message: 'catalog down' } }),
+    'reviewModels/efforts': () => ({ ok: true, value: { efforts: [], defaultEffort: null } }),
+  })
+  await failing.controller.load()
+  await failing.controller.onProvider('draft', 'other')
+  assert.deepEqual(failing.controller.getState().models.draft, [])
+  assert.match(failing.controller.getState().message.text, /modelsFailed/)
+  assert.ok(calls.some((entry) => entry.endpoint === 'reviewModels/models'))
+})
+
+test('the package exports the client half and packs it', () => {
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(manifest.exports['./client'], './client.js')
+  assert.ok(manifest.files.includes('client.js'))
+  assert.equal(manifest.dsh.client.platform, 'web')
+  assert.deepEqual(manifest.dsh.client.inject, [
+    '@deepseek-ai/dsh-client-ui-plugin-manager',
+    '@deepseek-ai/dsh-client-ui-slots',
+  ])
+  assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
+
+  // npm keeps its cache outside the workspace; point it at a temporary directory
+  // so a sandboxed run never writes into the home directory.
+  const cache = mkdtempSync(join(tmpdir(), 'dsh-openspec-pack-'))
+  const packed = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      npm_config_cache: cache,
+      npm_config_update_notifier: 'false',
+      npm_config_audit: 'false',
+      npm_config_fund: 'false',
+    },
+  })
+  rmSync(cache, { recursive: true, force: true })
+  assert.equal(packed.status, 0, packed.stderr)
+  const [entry] = JSON.parse(packed.stdout)
+  const path = entry.files.map((file) => file.path)
+  assert.ok(path.includes('client.js'), 'the packed file list includes client.js')
+  assert.ok(path.includes('index.js'))
+  assert.ok(path.some((name) => name.startsWith('lib/review/settings.js')))
+  assert.ok(path.some((name) => name.startsWith('lib/client/channel.js')))
+})

@@ -11,8 +11,12 @@ test('defaults timeoutMs and accepts an explicit value', () => {
     value: {
       timeoutMs: 30_000,
       reviews: {
-        draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
-        apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+        draft: {
+          enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
+        apply: {
+          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
       },
     },
   })
@@ -20,8 +24,12 @@ test('defaults timeoutMs and accepts an explicit value', () => {
     value: {
       timeoutMs: 5_000,
       reviews: {
-        draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
-        apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+        draft: {
+          enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
+        apply: {
+          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
       },
     },
   })
@@ -30,19 +38,63 @@ test('defaults timeoutMs and accepts an explicit value', () => {
 test('accepts a disabled draft review and bounded limits', () => {
   const result = validate({
     reviews: {
-        draft: { enabled: false, reviewers: 0, maxRounds: 4, waitMinutes: 20 },
-        apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+        draft: {
+          enabled: false, reviewers: 0, maxRounds: 4, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+        },
+        apply: {
+          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
       },
   })
   assert.deepEqual(result, {
     value: {
       timeoutMs: 30_000,
       reviews: {
-        draft: { enabled: false, reviewers: 0, maxRounds: 4, waitMinutes: 20 },
-        apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+        draft: {
+          enabled: false, reviewers: 0, maxRounds: 4, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+        },
+        apply: {
+          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
       },
     },
   })
+})
+
+test('accepts an explicit reviewer model and rejects a malformed one', () => {
+  const explicit = validate({
+    reviews: {
+      draft: {
+        reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
+      },
+    },
+  })
+  assert.deepEqual(explicit.value.reviews.draft.reviewerModel, {
+    source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+  })
+
+  const noRoute = validate({ reviews: { draft: { reviewerModel: { source: 'explicit' } } } })
+  assert.match(noRoute.issues[0].message, /reviews\.draft\.reviewerModel\.provider/)
+  assert.match(noRoute.issues[1].message, /reviews\.draft\.reviewerModel\.model/)
+
+  const badSource = validate({ reviews: { apply: { reviewerModel: { source: 'other' } } } })
+  assert.match(badSource.issues[0].message, /reviewerModel\.source must be "inherit" or "explicit"/)
+
+  const inheritedRoute = validate({
+    reviews: { apply: { reviewerModel: { source: 'inherit', provider: 'deepseek' } } },
+  })
+  assert.match(inheritedRoute.issues[0].message, /not allowed when source is "inherit"/)
+
+  const unknownKey = validate({ reviews: { draft: { reviewerModel: { source: 'inherit', extra: 1 } } } })
+  assert.match(unknownKey.issues[0].message, /reviewerModel\.extra is not supported/)
+
+  const notObject = validate({ reviews: { draft: { reviewerModel: 'deepseek' } } })
+  assert.match(notObject.issues[0].message, /reviewerModel must be an object/)
+
+  const emptyEffort = validate({
+    reviews: { draft: { reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'm', reasoningEffort: '  ' } } },
+  })
+  assert.match(emptyEffort.issues[0].message, /reasoningEffort must be a non-empty string/)
 })
 
 test('rejects an independent reviewer count in this change', () => {

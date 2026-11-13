@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-13
+goal: Let users edit both review sections and the reviewer model from the Web
+  configuration page, while keeping each change's review policy locked.

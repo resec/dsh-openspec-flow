@@ -152,16 +152,44 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 | `reviews.draft.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
 | `reviews.draft.maxRounds` | `3` | draft review 的默认轮次上限，1–50。 |
 | `reviews.draft.waitMinutes` | `15` | draft review 的默认等待上限，1–120。 |
+| `reviews.draft.reviewerModel` | `{ source: "inherit" }` | reviewer 模型：`inherit` 在锁定 policy 时解析为执行变更的模型；`explicit` 需 `provider` 与 `model`，模型有可选努力时还需 `reasoningEffort`。 |
 | `reviews.apply.enabled` | `true` | 新 change 是否锁定 apply review；非 git 项目自动不可用。 |
 | `reviews.apply.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
 | `reviews.apply.maxRounds` | `5` | apply review 的默认轮次上限，1–50。 |
 | `reviews.apply.waitMinutes` | `15` | apply review 的默认等待上限，1–120。 |
+| `reviews.apply.reviewerModel` | `{ source: "inherit" }` | 同 `reviews.draft.reviewerModel`，锁定到 apply review 的 policy。 |
 
 CLI 来源固定：
 
 - 只运行插件安装树内的 `@fission-ai/openspec`，精确版本 `1.16.1`；不读取 `PATH`、项目本地 `node_modules/.bin/openspec` 或 `cliPath`。
 - 首次 CLI 调用执行 `openspec version --json`，要求 `version` 为 `1.16.1` 且 `schemaVersion` 为 `1`；不匹配时在运行目标命令前失败。
 - 安装树缺少 CLI 时提示重装插件。旧配置中的 `cliPath` 会被配置校验拒绝。
+
+## 评审配置页
+
+profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需要改 `cordis.patch.yml`：Plugins → `dsh-openspec-flow` 行 → Configure，打开 `dsh-openspec-flow#openspec-flow` 这一页。
+
+页面分 draft 与 apply 两段，字段为 enabled、reviewers（0/1）、maxRounds、waitMinutes 与 reviewer 模型。模型有两种来源：
+
+- `inherit`：新 change 锁定 policy 时解析执行变更的模型（先 `agentDefaultModel`，再当前 agent 的模型），把 provider、model 与 effort 写进 `openspec/.review/<store>#<change>/policy.json`；解析不到时拒绝创建 change。
+- `explicit`：provider 与 model 必填；模型暴露可选努力时 effort 必填，否则省略并按适配器默认。
+
+保存分两阶段校验：先按 Config schema 校验完整候选（形状与上下界），再用 `llm` 目录校验 provider、model 与 effort；两次都通过才调用 `configEditor.edit` 写入 profile。被拒绝时不改文件并把原因返回页面。保存成功后该插件行会重启，已锁定 change 的 policy 不受影响。
+
+页面数据来自插件自己的 `/openspec-review` 通道（注册在 `webServer` 的 prefix 路由上，由 `connection.admit` 施加与平台 API 相同的 Host/Origin 与 cookie 校验），端点与错误包络在 `lib/client/channel.js` 里声明一次：
+
+| 方法 | 端点 | 作用 |
+| --- | --- | --- |
+| `reviewModels.providers` | `reviewModels/providers` | 已注册的 LLM provider |
+| `reviewModels.models` | `reviewModels/models` | 某 provider 的模型 |
+| `reviewModels.efforts` | `reviewModels/efforts` | 某 provider/model 的可选努力与默认努力 |
+| `reviewSettings.get` | `reviewSettings/get` | 当前 draft/apply 设置、字段上下界、是否可保存 |
+| `reviewSettings.update` | `reviewSettings/update` | 校验并保存完整候选 |
+| `reviewPolicies.list` | `reviewPolicies/list` | 当前活动 agent 所在 OpenSpec 项目的锁定策略摘要 |
+
+模型目录按端点缓存 60 秒；查询失败返回错误并保留上一次的值。`reviewPolicies.list` 只读取 `policy.json`，不返回 review 记录、报告或 finding；项目来自活动 agent 的工作目录（向上找到含 `openspec/` 的目录），去重后按路径排序。无 git 的项目在该项目下标注“应用评审不可用”，draft 设置不受影响。
+
+客户端半个是手写的 loader bundle（`client.js`，`dsh.client` 声明、`./client` 导出），不需要构建步骤，也不引入新依赖；页面文案经 Client locale 服务注册（命名空间 `openspecReview`）。
 
 ## 设计要点
 
@@ -245,17 +273,24 @@ npm test
 - Windows 下通过 `process.execPath` 运行插件自带的 JS 入口，未在 Windows 实机验证。
 - 流程规则只识别当前工作目录下的本地 `openspec/` 根，不解析 store 声明；store 模式的项目不会获得该规则。
 - 规则是提示层约束，不阻止任何工具调用。
+- 评审配置页只在同时挂载 `connection` 与 `webServer` 的 profile（Web/Desktop）出现；headless profile 仍保留全部工具，只是没有配置页。
+- 页面标题与按钮文案依赖 `plugins.row.config` 槽位；Plugin Manager 未启用时看不到 Configure 入口。
 
 ## 文件
 
 ```text
-index.js                 插件入口、Config、注册 tools + skill provider + policy
+index.js                 插件入口、注册 tools + skill provider + policy + review 通道
 lib/tools/index.js       工具注册入口
 lib/tools/query.js       list、status、show、instructions、context、schemas、store_list、validate
 lib/tools/apply.js       apply_next、mark_task_done
 lib/tools/write.js       new_change、archive
 lib/tools/review.js      draft review 工具与 apply 闸门
 lib/review/              评审存储、policy、工件哈希、brief、报告、readiness 与 reviewer 工具
+lib/review/model.js      reviewer 模型解析、策略锁定与目录可用性校验
+lib/review/settings.js   /openspec-review 通道：模型目录、设置读写、锁定策略与项目事实
+lib/client/channel.js    通道路径、端点名与错误包络（两端共享声明）
+lib/config.js            行 Config 的 Standard Schema（同步、纯形状校验）
+client.js                Web GUI 评审配置页（手写 loader bundle，dsh.client）
 reviewer.js              openspec-reviewer preset 的 Host 入口
 lib/tools/shared.js      共享 schema 与参数校验
 lib/init.js              init 工具、init --tools none、项目结构创建

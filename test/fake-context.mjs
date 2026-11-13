@@ -5,8 +5,9 @@
  * `subprocess.spawn`, `workingDirectory.ensure` and `workingDirectory.get`,
  * `get('skills')` with `register` and `registerProvider`,
  * `get('systemPrompt')`/`systemPrompt`, `agents.list`,
- * `on('agent/created')`, `effect`, and `logger.warn`. The subprocess half
- * wraps Node's own `spawn` while honoring the collected-output contract.
+ * `get('agentDefaultModel')`, `get('llm')`, `on('agent/created')`, `effect`,
+ * and `logger.warn`. The subprocess half wraps Node's own `spawn` while
+ * honoring the collected-output contract.
  *
  * Policy tests create agents through `createAgent`; each agent carries its own
  * scoped context whose `systemPrompt.section` records sections for assertions.
@@ -20,7 +21,15 @@ import { spawn } from 'node:child_process'
  *   agents already live at load time.
  * @returns the fake context plus the registries and helpers tests read.
  */
-export function createFakeContext({ cwd, skills: withSkills = true, agents: seedAgents = [], commands: withCommands = false, subagents = undefined } = {}) {
+export function createFakeContext({
+  cwd,
+  skills: withSkills = true,
+  agents: seedAgents = [],
+  commands: withCommands = false,
+  subagents = undefined,
+  modelSelection = { provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
+  catalog = undefined,
+} = {}) {
   const tools = new Map()
   const toolOptions = new Map()
   const skills = []
@@ -59,6 +68,29 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
     sections: [],
     getSectionOrder() {
       return 500
+    },
+  }
+
+  // The model catalog the review tools read: one provider, one model, one effort.
+  const models = new Map([
+    ['deepseek', [{ provider: 'deepseek', id: 'deepseek-flash', name: 'DeepSeek Flash' }]],
+  ])
+  const llm = catalog ?? {
+    listProviders() {
+      return [...models.keys()].map((id) => ({ id, name: id }))
+    },
+    async listModels(provider) {
+      return models.get(provider) ?? []
+    },
+    async resolveModelInfo(provider, model) {
+      const entry = (models.get(provider) ?? []).find((candidate) => candidate.id === model)
+      if (entry === undefined) throw new Error(`model '${provider}/${model}' is not in the catalog`)
+      return { ...entry, reasoning: { efforts: [{ id: 'max', name: 'Max' }], defaultEffort: 'max' } }
+    },
+  }
+  const agentDefaultModel = {
+    currentSelection() {
+      return { ...modelSelection }
     },
   }
 
@@ -173,6 +205,8 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       }
       if (name === 'systemPrompt') return globalSystemPrompt
       if (name === 'agents') return ctx.agents
+      if (name === 'agentDefaultModel') return agentDefaultModel
+      if (name === 'llm') return llm
       if (name === 'subagents') return subagents
       if (name === 'commands') return commandRegistry
       return undefined
@@ -221,6 +255,11 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
       session,
       ctx: agentContext,
       status: 'idle',
+      model: {
+        current() {
+          return { ...modelSelection }
+        },
+      },
       steer(message) {
         steered.push(message)
       },
@@ -260,6 +299,9 @@ export function createFakeContext({ cwd, skills: withSkills = true, agents: seed
 
   return {
     ctx,
+    llm,
+    models,
+    agentDefaultModel,
     tools,
     toolOptions,
     skills,

@@ -240,6 +240,111 @@ test('new change locks a policy and ignores later settings', async () => {
   assert.match(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), /\.review\//)
 })
 
+test('a change created without a model fails closed and leaves no policy', async () => {
+  const root = fixture()
+  clearCache()
+  const fake = createFakeContext({ cwd: root, modelSelection: null })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: false } } })
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'add-light-mode' }),
+    /no current model is available/,
+  )
+  assert.equal(existsSync(join(root, 'openspec', 'changes', 'add-light-mode')), false)
+  assert.equal(existsSync(join(root, 'openspec', '.review', 'local#add-light-mode')), false)
+})
+
+test('the policy locks the reviewer model and ignores a later settings edit', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: true } })
+  const created = await call(fake, 'openspec_new_change', { name: 'add-locked-model' })
+  assert.equal(created.change.id, 'add-locked-model')
+  const policyPath = join(root, 'openspec', '.review', 'local#add-locked-model', 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.deepEqual(policy.reviews.draft.reviewerModel, {
+    source: 'inherit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+  })
+
+  // A later settings revision names another model; a review start does not move
+  // the locked route, because the policy already carries one.
+  const later = setup(root, {
+    draft: { enabled: true, reviewerModel: { source: 'explicit', provider: 'other', model: 'other-model' } },
+  })
+  await call(later, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Review the fixture change.',
+  })
+  const unchanged = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.deepEqual(unchanged.reviews.draft.reviewerModel, policy.reviews.draft.reviewerModel)
+  const fresh = JSON.parse(readFileSync(join(reviewDir(root), 'policy.json'), 'utf8'))
+  assert.deepEqual(fresh.reviews.draft.reviewerModel, {
+    source: 'explicit', provider: 'other', model: 'other-model',
+  })
+})
+
+test('an old policy gains its reviewer model on the first review start', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const policyPath = join(reviewDir(root), 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.deepEqual(policy.reviews.draft.reviewerModel, {
+    source: 'inherit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+  })
+
+  // Strip the field to mimic a record written before this capability existed.
+  delete policy.reviews.draft.reviewerModel
+  writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.equal(migrated.reviews.draft.reviewerModel.provider, 'deepseek')
+
+  // A second start keeps the migrated value even when the settings now name another model.
+  migrated.reviews.draft.reviewerModel = {
+    source: 'explicit', provider: 'other', model: 'other-model',
+  }
+  writeFileSync(policyPath, `${JSON.stringify(migrated, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  assert.equal(JSON.parse(readFileSync(policyPath, 'utf8')).reviews.draft.reviewerModel.provider, 'other')
+})
+
+test('the reviewer activation carries the locked model and refuses an unavailable one', async () => {
+  const root = fixture()
+  const { fake, activations } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  assert.deepEqual(activations[0].request.agentOptions, {
+    provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+  })
+
+  // An explicit model the catalog does not know is refused before an activation exists.
+  const missing = fixture()
+  const missingSetup = externalSetup(missing, {
+    draft: {
+      enabled: true,
+      reviewers: 1,
+      reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'missing-model' },
+    },
+  })
+  await assert.rejects(
+    call(missingSetup.fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' }),
+    /model 'deepseek\/missing-model' is unavailable/,
+  )
+  assert.equal(missingSetup.activations.length, 0)
+
+  // An unknown effort is refused the same way.
+  const effort = fixture()
+  const effortSetup = externalSetup(effort, {
+    draft: {
+      enabled: true,
+      reviewers: 1,
+      reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'low' },
+    },
+  })
+  await assert.rejects(
+    call(effortSetup.fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' }),
+    /reasoning effort 'low' is unavailable/,
+  )
+  assert.equal(effortSetup.activations.length, 0)
+})
+
 test('the review tool is absent when disabled', async () => {
   const root = fixture()
   const fake = setup(root, { draft: { enabled: false, reviewers: 0 } })
@@ -897,12 +1002,12 @@ test('apply start fails closed when a locked policy needs a reviewer but the ser
   )
 })
 
-function externalSetup(root) {
+function externalSetup(root, reviews = { draft: { enabled: true, reviewers: 1 }, apply: { enabled: true, reviewers: 1 } }) {
   const activations = []
   const messages = []
   const subagents = {
     getProvider() {
-      return { capabilities: { agentPreset: true } }
+      return { capabilities: { agentPreset: true, agentOptions: true } }
     },
     async startActivation(spec) {
       activations.push(spec)
@@ -914,13 +1019,7 @@ function externalSetup(root) {
   }
   clearCache()
   const fake = createFakeContext({ cwd: root, subagents })
-  apply(fake.ctx, {
-    timeoutMs: 30_000,
-    reviews: {
-      draft: { enabled: true, reviewers: 1 },
-      apply: { enabled: true, reviewers: 1 },
-    },
-  })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews })
   return { fake, activations, messages }
 }
 
@@ -1187,7 +1286,7 @@ test('a provider without agent preset support refuses the reviewer', async () =>
   const root = fixture()
   const subagents = {
     getProvider() {
-      return { capabilities: { agentPreset: false } }
+      return { capabilities: { agentPreset: false, agentOptions: true } }
     },
     async startActivation() {
       throw new Error('must not start')
@@ -1401,7 +1500,7 @@ test('a reviewer activation without a child id fails closed', async () => {
   const root = fixture()
   const subagents = {
     getProvider() {
-      return { capabilities: { agentPreset: true } }
+      return { capabilities: { agentPreset: true, agentOptions: true } }
     },
     async startActivation() {
       return {}

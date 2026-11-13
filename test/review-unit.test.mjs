@@ -115,8 +115,12 @@ test('the lock is exclusive and released', () => {
 
 test('review config normalizes defaults and limits', () => {
   assert.deepEqual(normalizeReviews(undefined).value, {
-    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
-    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+    draft: {
+      enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    },
+    apply: {
+      enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    },
   })
   const invalid = normalizeReviews({ draft: { enabled: 'yes', reviewers: 2, maxRounds: 0, waitMinutes: 121 } })
   assert.equal(invalid.issues.length, 4)
@@ -125,6 +129,7 @@ test('review config normalizes defaults and limits', () => {
     reviewers: 0,
     maxRounds: 3,
     waitMinutes: 15,
+    reviewerModel: { source: 'inherit' },
   })
 })
 
@@ -240,6 +245,7 @@ test('recordFinding keeps the report fields and starts open', () => {
 test('policy helpers lock, read and remove one change', () => {
   const root = temp()
   mkdirSync(join(root, 'openspec'))
+  const resolveModel = () => ({ provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' })
   const locked = ensurePolicy({
     projectRoot: root,
     change: 'demo',
@@ -247,17 +253,24 @@ test('policy helpers lock, read and remove one change', () => {
     settings: { reviews: { draft: { enabled: true, reviewers: 0, maxRounds: 4, waitMinutes: 20 } } },
     gitEnabled: false,
     lockedBy: 'new-change',
+    resolveModel,
   })
   assert.equal(locked.created, true)
   assert.equal(locked.policy.reviews.draft.maxRounds, 4)
+  assert.deepEqual(locked.policy.reviews.draft.reviewerModel, {
+    source: 'inherit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+  })
   assert.equal(draftEnabled(locked.policy), true)
-  assert.deepEqual(policyDraft({}), { enabled: false, reviewers: 0, maxRounds: 3, waitMinutes: 15 })
+  assert.deepEqual(policyDraft({}), {
+    enabled: false, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+  })
   const again = ensurePolicy({
     projectRoot: root,
     change: 'demo',
     settings: { reviews: { draft: { enabled: false } } },
     gitEnabled: false,
     lockedBy: 'first-review',
+    resolveModel,
   })
   assert.equal(again.created, false)
   assert.equal(again.policy.reviews.draft.enabled, true)
@@ -498,7 +511,9 @@ test('apply policy helpers migrate and default', () => {
   })
   assert.equal(migrated.reviews.apply.maxRounds, 6)
   assert.equal(readPolicy(directory).reviews.apply.maxRounds, 6)
-  assert.deepEqual(policyApply({}), { enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15 })
+  assert.deepEqual(policyApply({}), {
+    enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+  })
 })
 
 test('git merge base resolves and fails cleanly', () => {
