@@ -138,3 +138,17 @@ The registered flow rule SHALL require an apply review before archive when the c
 
 - **WHEN** the project has no git repository
 - **THEN** the flow rule states that apply review is unavailable
+
+### Requirement: The rule states the independent reviewer mode
+
+The flow rule SHALL state that `reviewers: 1` starts one independent reviewer, that the changer waits for its report, and that the reviewer is read-only and cannot edit the worktree.
+
+#### Scenario: Reviewers is one
+
+- **WHEN** the change policy sets `reviewers: 1`
+- **THEN** the flow rule tells the changer to start the review and wait for the reviewer
+
+#### Scenario: Reviewers is zero
+
+- **WHEN** the change policy sets `reviewers: 0`
+- **THEN** the flow rule keeps the self-review path
