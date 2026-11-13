@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-13
+goal: Add docs/review.md, link it from README, require the review gates in
+  AGENTS.md and add a documentation consistency test.

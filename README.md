@@ -48,6 +48,17 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
 | 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，`openspec/.gitignore` 忽略 `.review/` |
 
+## 评审
+
+变更在实施前与归档前各过一次评审，两处都是强制闸门：
+
+- **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。
+- **apply review** 审已提交的 git tree 与变更工件是否一致；未就绪时 `openspec_archive` 拒绝。
+
+每个评审段的 `reviewers` 决定评审方式：`0` 由 changer 用 `openspec_review` 的 `action: "self-report"` 自评；`1` 由插件启动一个只读的 `openspec-reviewer` 子会话，它只能通过 `openspec_reviewer` 读 brief 并提交报告。评审策略在 `openspec_new_change` 时锁定，包含 reviewer 模型（`inherit` 或显式 provider/model/effort）与轮次、等待上限；之后修改配置只影响新变更。
+
+就绪度不是报告的 `verdict` 本身：对象哈希必须未变、最新报告为 `pass`、且没有未关闭的 finding（`critical`/`major` 不能 deferred 或 rejected，用户 `waive` 需显式批准）。完整说明、记录布局、失败处理与两个端到端示例见 [docs/review.md](docs/review.md)。
+
 ## CLI 对照
 
 对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 9 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
@@ -306,6 +317,7 @@ lib/hash.js              SHA-1 指纹
 skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
+docs/review.md           评审系统完整说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```
 
