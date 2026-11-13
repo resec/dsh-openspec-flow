@@ -33,7 +33,17 @@ Every `openspec_inspect` result with `action: "instructions"` may carry `context
 5. Call `openspec_inspect` with `action: "instructions"` for `tasks`. Write `tasks.md` with numbered checkbox tasks grouped by `## 1. ...` headings.
 6. Call `openspec_inspect` with `action: "validate"` for the change. Fix findings and re-validate.
 
+## Draft review
+
+Run the draft review before presenting the proposal. The draft object is the change artifacts and the user's intent, not a commit or a git tree; do not require a commit.
+
+1. Call `openspec_review` with `action: "start"`, `review: "draft"`, the change name and an `intent` that states the user's goal and acceptance conditions.
+2. Read the returned `brief`. Check coherence, the user's goal, conflicts with the main specs, artifact form, feasibility and scope.
+3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report: `verdict`, `summary`, `findings`, `verifications`, `outOfScope` and `residualRisks`. Use the report format in the brief.
+4. If the result is not ready, fix the findings and start another round. Do not present the proposal while a blocker is open.
+5. If a finding is fixed, verify it in a later round; if it is waived, record the user's approval and the waiver text.
+
 ## Then stop
 
-- Present the proposal, specs, design and tasks, and the validation result.
+- Present the proposal, specs, design and tasks, the validation result and the draft review status.
 - Do not start implementation. Apply begins only when the user asks.

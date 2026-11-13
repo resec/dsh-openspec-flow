@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-13
+goal: Review the applied commit tree before archiving, record the apply base,
+  require a clean committed tree, and refuse archive until the apply review is
+  ready.

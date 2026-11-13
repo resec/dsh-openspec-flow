@@ -45,6 +45,9 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /openspec_mark_task_done/)
   assert.match(POLICY_TEXT, /action: "validate"/)
   assert.match(POLICY_TEXT, /openspec_new_change/)
+  assert.match(POLICY_TEXT, /openspec_review/)
+  assert.match(POLICY_TEXT, /self-report/)
+  assert.match(POLICY_TEXT, /draft object is the change artifacts/)
   assert.match(POLICY_TEXT, /action: "instructions"/)
   assert.match(POLICY_TEXT, /openspec_archive/)
   assert.match(POLICY_TEXT, /openspec_init/)
@@ -127,4 +130,10 @@ test('both attachment paths register one section', (t) => {
   fake.emit('agent/created', { agent })
 
   assert.equal(sections.length, 1)
+})
+
+test('the policy text states the apply review gate', () => {
+  assert.match(POLICY_TEXT, /review: "apply"/)
+  assert.match(POLICY_TEXT, /committed git tree/)
+  assert.match(POLICY_TEXT, /no apply review/)
 })

@@ -24,6 +24,7 @@ import { registerAdminGate } from './lib/admin.js'
 import { registerPolicy } from './lib/policy.js'
 import { registerSkillProvider } from './lib/skill.js'
 import { registerTools } from './lib/tools/index.js'
+import { normalizeReviews } from './lib/review/config.js'
 
 /** Cordis plugin name. */
 export const name = 'openspec-flow'
@@ -67,10 +68,13 @@ export const Config = {
       ) {
         issues.push({ message: 'timeoutMs must be an integer between 1000 and 300000' })
       }
+      const reviews = normalizeReviews(input.reviews)
+      issues.push(...reviews.issues)
       if (issues.length > 0) return { issues }
       return {
         value: {
           timeoutMs: input.timeoutMs ?? DEFAULT_CONFIG.timeoutMs,
+          reviews: reviews.value,
         },
       }
     },
@@ -86,6 +90,7 @@ export const Config = {
 export function apply(ctx, config) {
   const settings = {
     timeoutMs: Number.isInteger(config?.timeoutMs) ? config.timeoutMs : DEFAULT_CONFIG.timeoutMs,
+    reviews: config?.reviews ?? normalizeReviews(undefined).value,
   }
   registerAdminGate(ctx)
   registerTools(ctx, settings)

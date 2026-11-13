@@ -80,7 +80,7 @@ function project() {
 function setup(root) {
   clearCache()
   const fake = createFakeContext({ cwd: root })
-  apply(fake.ctx, { timeoutMs: 30_000 })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: false } } })
   return fake
 }
 

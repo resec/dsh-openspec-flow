@@ -83,3 +83,24 @@ test('skills route gated tools through the admin command', () => {
   assert.match(readFileSync(packagedSkillPath('openspec-propose'), 'utf8'), /\/opsx-admin init/)
   assert.match(readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8'), /\/opsx-admin init/)
 })
+
+test('the propose skill runs the draft review before presenting', () => {
+  const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
+  assert.match(propose, /## Draft review/)
+  assert.match(propose, /openspec_review/)
+  assert.match(propose, /action: "start"/)
+  assert.match(propose, /self-report/)
+  assert.match(propose, /reviewers: 0/)
+  assert.match(propose, /Do not present the proposal while a blocker is open/)
+})
+
+test('the apply and archive skills run the apply review', () => {
+  const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
+  assert.match(apply, /## Apply review/)
+  assert.match(apply, /review: "apply"/)
+  assert.match(apply, /self-report/)
+  const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
+  assert.match(archive, /openspec_review/)
+  assert.match(archive, /review: "apply"/)
+  assert.match(archive, /no apply review/)
+})

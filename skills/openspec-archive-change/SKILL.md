@@ -16,9 +16,10 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 ## Preconditions
 
 1. Call `openspec_inspect` with `action: "list"` and find the change. If `completedTasks` is less than `totalTasks`, report the remaining count and stop; archive waits for a completed change.
-2. Call `openspec_inspect` with `action: "status"` to confirm planning is complete.
-3. Call `openspec_inspect` with `action: "validate"`. Report every finding and stop when `valid` is false.
-4. If the change is doc-only or tooling-only and does not alter spec-level behavior, ask whether to archive with `skipSpecs: true`.
+2. Check the apply review with `openspec_review` and `action: "status"`, `review: "apply"`. When it is enabled and not ready, report its blockers and stop. A project without git has no apply review; say so and continue.
+3. Call `openspec_inspect` with `action: "status"` to confirm planning is complete.
+4. Call `openspec_inspect` with `action: "validate"`. Report every finding and stop when `valid` is false.
+5. If the change is doc-only or tooling-only and does not alter spec-level behavior, ask whether to archive with `skipSpecs: true`.
 
 ## Archive inputs
 

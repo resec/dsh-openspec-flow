@@ -22,6 +22,7 @@ const TOOL_NAMES = [
   'openspec_inspect',
   'openspec_mark_task_done',
   'openspec_new_change',
+  'openspec_review',
   'openspec_schemas',
   'openspec_store_list',
 ]

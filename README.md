@@ -1,6 +1,6 @@
 # dsh-openspec-flow
 
-DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 8 个 `openspec_*` 工具完成 propose、new、inspect、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 5 个工具属于核心变更流程并默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
+DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 工具完成 propose、new、inspect、draft review、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 6 个工具属于核心变更流程并默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
 
 ## 能力
 
@@ -14,14 +14,15 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 8 个 `openspec_*` 
 | 管理 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能；管理块，`/opsx-admin` 后可见 |
 | apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles、指令与项目 `context`/`guidance` |
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
+| 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`、`status`、`self-report`、`report`、`dispose`、`waive`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
 
-写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
+写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝；`openspec_archive` 在 apply review 未就绪时拒绝；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
 `openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_inspect` 的 `action: "instructions"` 配合 `artifact: "archive"` 返回归档 `context`/`guidance`，不是空的产物字段。
 
 ## 管理块
 
-核心变更流程的 5 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
+核心变更流程的 6 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
 
 - `/opsx-admin <意图>`：打开管理块，并把意图作为当次请求提交；该回合结束（agent 回到 idle）自动关闭。
 - `/opsx-admin off`：提前关闭。
@@ -39,15 +40,16 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 流程 | 入口 | 说明 |
 | --- | --- | --- |
 | 探索与读取 | `openspec-explore`；`openspec_inspect`（`action: "list"`、`"status"`、`"show"`、`"context"`） | 只读，不写项目文件 |
-| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_inspect`（`action: "instructions"`、`"validate"`） | 创建 change，写 proposal、specs、design、tasks |
-| 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done` | 紧凑 apply 循环；批量翻转任务 |
+| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_inspect`（`action: "instructions"`、`"validate"`）、`openspec_review`（`action: "start"`、`"self-report"`） | 创建 change，写 proposal、specs、design、tasks，并完成 draft review |
+| 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done`、`openspec_review`（`review: "apply"`） | 紧凑 apply 循环；批量翻转任务；提交后完成 apply review |
 | 修订规划 | `openspec-update-change`；`openspec_inspect`（`action: "instructions"`、`"validate"`） | 修改现有 artifacts；没有专用写工具 |
-| 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_archive` | 先读归档 `context`/`guidance`、校验、检查任务，再移动并合并 delta specs |
+| 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_review`（`review: "apply"`）、`openspec_archive` | 先读归档 `context`/`guidance`、检查 apply review、校验、检查任务，再移动并合并 delta specs |
 | 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
+| 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，`openspec/.gitignore` 忽略 `.review/` |
 
 ## CLI 对照
 
-对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 8 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
+对照对象为插件内置的 OpenSpec 1.16.1 CLI 与插件注册的 9 个工具。命令与选项清单来自 [tag v1.16.1 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v1.16.1/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
 
 「命令性质」按读写对象标注：`规格读` 读取变更、主规格或生成它们所需的工作流元数据；`规格写` 创建变更内容，或写入、移动主规格与变更目录；`Store 管理` 管理本机 store 注册与 store 目录；`Workset 管理` 管理本机个人工作视图；`OpenSpec 管理` 管理项目初始化、工具集成、全局配置、schema 定义、CLI 版本检查/安装/补全/反馈；`只读诊断` 只读根、store 引用或工作上下文。分组命令（`config`、`schema`、`store`、`workset`、`completion`）按域标注，不拆分读写子命令；`context --code-workspace` 是唯一会写文件的例外。这里的「只读」指不写规格内容，不代表 CLI 进程没有任何 I/O。
 
@@ -145,6 +147,14 @@ plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `timeoutMs` | `30000` | 单次 CLI 调用的墙钟上限，1000–300000。 |
+| `reviews.draft.enabled` | `true` | 新 change 是否锁定 draft review。 |
+| `reviews.draft.reviewers` | `0` | 当前只支持 0（changer 自评审）；独立评审者在后续变更加入。 |
+| `reviews.draft.maxRounds` | `3` | draft review 的默认轮次上限，1–50。 |
+| `reviews.draft.waitMinutes` | `15` | draft review 的默认等待上限，1–120。 |
+| `reviews.apply.enabled` | `true` | 新 change 是否锁定 apply review；非 git 项目自动不可用。 |
+| `reviews.apply.reviewers` | `0` | 当前只支持 0（changer 自评审）。 |
+| `reviews.apply.maxRounds` | `5` | apply review 的默认轮次上限，1–50。 |
+| `reviews.apply.waitMinutes` | `15` | apply review 的默认等待上限，1–120。 |
 
 CLI 来源固定：
 
@@ -163,6 +173,7 @@ CLI 来源固定：
 - **一次取数**：`openspec_apply_next` 执行一次 `instructions apply --json`，把完整载荷留在进程内，只向模型返回投影。
 - **每批 O(1)**：`openspec_mark_task_done` 先解析整批 id 并逐行翻转目标复选框，任一 id 缺失则整批不写；进度按缓存增量更新，下一任务从缓存任务表选取。
 - **写操作可恢复**：`openspec_archive` 先校验后移动；`openspec_init` 只在缺少配置时创建目录，不覆盖已有配置。
+- **评审先于实施**：`openspec_new_change` 先锁定 review policy；draft review 的工件哈希、finding 与 readiness 决定 `openspec_apply_next` 是否放行；apply review 的 tree 哈希决定 `openspec_archive` 是否放行；评审记录在 `openspec/.review/` 并由 `openspec/.gitignore` 忽略。
 - **按项目注入规则**：流程规则通过 agent 自己的 context 注册为作用域内 system prompt 段；非 OpenSpec 项目返回空文本。
 
 ## 真实模型评测
@@ -242,6 +253,8 @@ lib/tools/index.js       工具注册入口
 lib/tools/query.js       list、status、show、instructions、context、schemas、store_list、validate
 lib/tools/apply.js       apply_next、mark_task_done
 lib/tools/write.js       new_change、archive
+lib/tools/review.js      draft review 工具与 apply 闸门
+lib/review/              评审存储、policy、工件哈希、brief、报告与 readiness
 lib/tools/shared.js      共享 schema 与参数校验
 lib/init.js              init 工具、init --tools none、项目结构创建
 lib/skills.js            打包技能的路径、frontmatter 解析、版本常量

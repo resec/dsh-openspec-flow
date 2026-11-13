@@ -34,8 +34,17 @@ Mark a task only when its specified behavior is fully implemented, not when it i
 
 Ask before continuing when a task is unclear, the implementation reveals a design issue, the work needs scope beyond the spec and tasks, or a check fails repeatedly.
 
+## Apply review
+
+After the loop reaches `all_done`, and before reporting completion:
+
+1. Commit the implementation. The apply review object is the committed git tree, so an uncommitted working tree is not reviewable.
+2. Call `openspec_review` with `action: "start"`, `review: "apply"` and the change name. Read the returned brief and the generated diff.
+3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report. Fix every blocker and start another round until the review is ready.
+4. If the project has no git repository, say that apply review is unavailable and skip it.
+
 ## Finish
 
 - Call `openspec_inspect` with `action: "validate"` for the change.
-- Report the completed count, the remaining tasks, and every validation issue.
+- Report the completed count, the remaining tasks, every validation issue and the apply review status.
 - Archiving belongs to `openspec-archive-change`; use it only when the user asks.

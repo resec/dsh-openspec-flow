@@ -76,7 +76,7 @@ test.after(() => {
 test('registers one read entry and no former read tools', () => {
   const fake = setup()
   const names = [...fake.tools.keys()]
-  assert.equal(names.length, 8)
+  assert.equal(names.length, 9)
   assert.ok(names.includes('openspec_inspect'))
   for (const old of ['openspec_list', 'openspec_status', 'openspec_show', 'openspec_instructions', 'openspec_context', 'openspec_validate']) {
     assert.ok(!names.includes(old), `${old} is not registered`)
