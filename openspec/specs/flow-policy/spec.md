@@ -100,3 +100,41 @@ The registered flow rule SHALL state that `openspec_init`, `openspec_store_list`
 
 - **WHEN** the test suite reads the registered flow section
 - **THEN** the section still contains no `CLI` token and no command fallback for the core flow
+
+### Requirement: The flow rule states the draft review gate
+
+The registered flow rule SHALL require a draft review before apply when the change enables it. It SHALL state that the draft review object is the change artifacts and the intent, that `reviewers: 0` means the changer writes the report, and that `openspec_apply_next` refuses a change whose review is not ready.
+
+#### Scenario: Draft review is enabled
+
+- **WHEN** an OpenSpec-project agent's system prompt is assembled and the change enables draft review
+- **THEN** the flow rule names `openspec_review` and the draft review gate before apply
+
+#### Scenario: Draft review is disabled
+
+- **WHEN** the change policy disables draft review
+- **THEN** the flow rule does not require a draft review for that change
+
+#### Scenario: The rule does not require a commit for draft review
+
+- **WHEN** the flow rule describes the draft review object
+- **THEN** it states that the draft object is the change artifacts, not a git tree or commit
+
+### Requirement: The flow rule states the apply review gate
+
+The registered flow rule SHALL require an apply review before archive when the change enables it. It SHALL state that the apply object is the committed git tree, that the working tree must be clean, and that a project without git has no apply review.
+
+#### Scenario: Apply review is enabled
+
+- **WHEN** an OpenSpec-project agent's system prompt is assembled and the change enables apply review
+- **THEN** the flow rule names `openspec_review` and the apply review gate before `openspec_archive`
+
+#### Scenario: Apply review is disabled
+
+- **WHEN** the change policy disables apply review
+- **THEN** the flow rule does not require an apply review
+
+#### Scenario: The project has no git
+
+- **WHEN** the project has no git repository
+- **THEN** the flow rule states that apply review is unavailable

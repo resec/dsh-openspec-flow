@@ -526,3 +526,104 @@ Each `openspec_inspect` action SHALL return the same projection, with the same f
 
 - **WHEN** an action's projection changes shape without its branch changing
 - **THEN** the output validation fails and names the action
+
+### Requirement: Draft review is exposed as one tool
+
+The plugin SHALL expose `openspec_review` for the draft review. Its `action` parameter SHALL select `start`, `status`, `self-report`, `report`, `dispose`, `waive`, `extend` or `abandon`. The tool SHALL return the review id, the current round, the artifact hash, the status and the next action. It SHALL NOT expose reviewer-subagent actions until the independent reviewer is added.
+
+#### Scenario: Draft review starts
+
+- **WHEN** an agent calls `openspec_review` with `action: "start"` and `review: "draft"`
+- **THEN** the result names the review id, round, artifact hash and a brief
+- **AND** the brief lists the draft review axes and the artifact paths
+
+#### Scenario: Review status is read
+
+- **WHEN** an agent calls `openspec_review` with `action: "status"`
+- **THEN** the result reports the state, whether the review is ready, the blockers and the next action
+
+#### Scenario: Self-review report is submitted
+
+- **WHEN** an agent calls `self-report` with a valid report for a `reviewers: 0` review
+- **THEN** the report is stored and the status reflects its verdict
+
+#### Scenario: Unknown action is refused
+
+- **WHEN** `openspec_review` receives an action outside the supported set
+- **THEN** the parameter schema rejects the call before execution
+
+### Requirement: Draft review tool is absent when disabled
+
+The plugin SHALL register `openspec_review` only while the draft review is enabled. When the draft review is disabled, an agent's tool catalog SHALL contain no `openspec_review` entry.
+
+#### Scenario: Draft review is disabled
+
+- **WHEN** the plugin loads with `reviews.draft.enabled` false
+- **THEN** the tool catalog contains no `openspec_review`
+
+#### Scenario: Draft review is enabled
+
+- **WHEN** the plugin loads with `reviews.draft.enabled` true
+- **THEN** the tool catalog contains `openspec_review`
+
+### Requirement: Apply waits for a ready draft review
+
+`openspec_apply_next` SHALL check the draft review before it reads or advances the apply state. When the change has an enabled draft review policy that is not ready, the tool SHALL fail without changing the apply state and SHALL name `openspec_review` as the next step. When the review is ready in a git project, the tool SHALL record the current `HEAD` as the apply base commit.
+
+#### Scenario: Review is not ready
+
+- **WHEN** `openspec_apply_next` runs for a change whose draft review is not ready
+- **THEN** the call fails, the apply state is unchanged and the error names `openspec_review`
+
+#### Scenario: Review is ready
+
+- **WHEN** `openspec_apply_next` runs for a change whose draft review is ready
+- **THEN** the call proceeds and returns the apply projection
+
+#### Scenario: Review is disabled
+
+- **WHEN** the change policy disables draft review
+- **THEN** `openspec_apply_next` proceeds without a review check
+
+#### Scenario: Change has no policy
+
+- **WHEN** a legacy change has no review policy
+- **THEN** `openspec_apply_next` proceeds without a review check until the first review start writes the policy
+
+### Requirement: Apply review is exposed through openspec_review
+
+`openspec_review` SHALL accept `review: "apply"` for `start`, `status`, `self-report`, `report`, `dispose`, `waive`, `extend` and `abandon`. The result SHALL name the commit, tree, base tree and readiness. The tool SHALL refuse an apply start outside a git repository.
+
+#### Scenario: Apply review starts
+
+- **WHEN** an agent calls `openspec_review` with `action: "start"` and `review: "apply"` on a clean commit
+- **THEN** the result names the review id, round, commit, tree and base tree
+
+#### Scenario: Apply review is unavailable
+
+- **WHEN** an agent requests apply review without git
+- **THEN** the call fails with an actionable error
+
+#### Scenario: Apply report is submitted
+
+- **WHEN** an agent submits a valid apply report
+- **THEN** the report is stored and the status reflects its verdict
+
+### Requirement: Archive waits for a ready apply review
+
+`openspec_archive` SHALL check the apply review before it reads the change list or runs validation. When apply review is enabled and not ready, the tool SHALL return no archive result and SHALL not move the change. When apply review is disabled or the project has no git, the tool SHALL proceed without that check.
+
+#### Scenario: Apply review is not ready
+
+- **WHEN** `openspec_archive` runs for a change whose apply review is not ready
+- **THEN** the call fails, no file moves and the error names `openspec_review`
+
+#### Scenario: Apply review is ready
+
+- **WHEN** the apply review is ready and the tree matches
+- **THEN** `openspec_archive` may proceed
+
+#### Scenario: Apply review is disabled
+
+- **WHEN** the change policy disables apply review
+- **THEN** `openspec_archive` proceeds without an apply check
