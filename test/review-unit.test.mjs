@@ -133,10 +133,12 @@ test('the draft object is stable and changes with an artifact', () => {
   const first = draftObject(changeRoot, 'goal')
   const second = draftObject(changeRoot, 'goal')
   assert.deepEqual(first, second)
-  writeFileSync(join(changeRoot, 'tasks.md'), '- [x] 1.1 Done\n')
+  writeFileSync(join(changeRoot, 'tasks.md'), '- [x] 1.1 Do it\n')
+  const checkboxOnly = draftObject(changeRoot, 'goal')
+  assert.equal(first.objectHash, checkboxOnly.objectHash)
+  writeFileSync(join(changeRoot, 'tasks.md'), '- [ ] 1.2 Different task\n')
   const changed = draftObject(changeRoot, 'goal')
   assert.notEqual(first.objectHash, changed.objectHash)
-  assert.equal(changed.files.find((file) => file.path === 'tasks.md').sha256, sha256('- [x] 1.1 Done\n'))
 })
 
 test('the brief names the axes and the report contract', () => {
