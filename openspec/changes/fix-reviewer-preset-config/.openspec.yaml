@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-14
+goal: The openspec-reviewer preset starts on DSH 0.2.2-rc.2 because its
+  tool-fs-search entry configures sampleOverCapGlobResults, with a regression
+  test and no other preset behavior change.

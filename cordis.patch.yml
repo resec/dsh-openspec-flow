@@ -28,5 +28,7 @@
               edit: false
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
           - id: reviewer
             name: 'dsh-openspec-flow/reviewer'

@@ -1784,6 +1784,10 @@ test('the reviewer preset is read-only and exported as a subpath', () => {
   assert.match(patch, /read: true/)
   assert.match(patch, /write: false/)
   assert.match(patch, /edit: false/)
+  assert.match(
+    patch,
+    /- id: tool-fs-search\n\s+name: '@deepseek-ai\/dsh-tool-fs-search'\n\s+config:\n\s+sampleOverCapGlobResults: false/,
+  )
   assert.doesNotMatch(patch, /dsh-tool-bash/)
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(manifest.exports['./reviewer'], './reviewer.js')
