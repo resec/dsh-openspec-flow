@@ -1759,6 +1759,48 @@ test('a draft start activates a reviewer when the record has no slots', async ()
   assert.equal(saved.reviewers.slots[0].agentId, 'reviewer-2')
 })
 
+test('a new draft round activates a fresh reviewer and resumes do not', async () => {
+  const root = fixture()
+  const { fake, activations } = externalSetup(root)
+  const intent = 'Add a theme selector.'
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
+  assert.equal(activations.length, 1)
+
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' },
+    signal: new AbortController().signal,
+  })
+  const submitted = await execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  assert.equal(submitted.round, 1)
+
+  const second = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
+  assert.equal(second.round, 2)
+  assert.equal(activations.length, 2)
+
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  const slot = record.reviewers.slots[0]
+  assert.equal(slot.agentId, 'reviewer-2')
+  assert.equal(slot.round, 2)
+  assert.equal(slot.retries, 0)
+  assert.deepEqual(slot.replacements.map((entry) => [entry.from, entry.to]), [['reviewer-1', 'reviewer-2']])
+  assert.match(slot.replacements[0].reason, /new draft round 2/)
+
+  const resumed = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
+  assert.equal(resumed.round, 2)
+  assert.equal(activations.length, 2)
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', report: report() }),
+    /not the reviewer/,
+  )
+})
+
 test('an apply start activates a reviewer when the record has no slots', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
@@ -1783,6 +1825,46 @@ test('an apply start activates a reviewer when the record has no slots', async (
   const saved = JSON.parse(readFileSync(file, 'utf8'))
   assert.equal(saved.reviewers.slots[0].agentId, 'reviewer-2')
   assert.equal(saved.state, 'in-review')
+})
+
+test('a new apply round activates a fresh reviewer and resumes do not', async () => {
+  const { root, run } = gitFixture()
+  const { fake, activations } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await passDraft(fake, root, run)
+  const first = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(first.round, 1)
+  assert.equal(activations.length, 1)
+
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' },
+    signal: new AbortController().signal,
+  })
+  const submitted = await execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'apply',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  assert.equal(submitted.round, 1)
+
+  const second = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(second.round, 2)
+  assert.equal(activations.length, 2)
+
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  const slot = record.reviewers.slots[0]
+  assert.equal(slot.agentId, 'reviewer-2')
+  assert.equal(slot.round, 2)
+  assert.match(slot.replacements[0].reason, /new apply round 2/)
+
+  const resumed = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(resumed.round, 2)
+  assert.equal(activations.length, 2)
 })
 
 test('retry refuses a self review and a record without a reviewer slot', async () => {

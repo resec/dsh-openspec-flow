@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-14
+goal: Every new draft or apply review round with reviewers 1 starts a new
+  reviewer and points the recorded slot at it; resuming a round without a report
+  does not start another, and the prior agent and activation reason are
+  recorded.

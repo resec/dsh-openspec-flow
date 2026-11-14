@@ -164,6 +164,8 @@ test('the review document explains the apply status states', () => {
   assert.match(text, /没有 git 的项目只能用 draft review/)
   assert.match(text, /旧的策略文件可能仍记录/)
   assert.match(text, /无策略或只有 draft 段/)
+  assert.match(text, /每个新的 draft\/apply 轮次/)
+  assert.match(text, /不会重复启动/)
   assert.doesNotMatch(text, /归档会一直等到 apply review 就绪/)
 })
 
