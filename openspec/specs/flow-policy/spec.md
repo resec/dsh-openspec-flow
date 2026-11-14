@@ -122,7 +122,7 @@ The registered flow rule SHALL require a draft review before apply when the chan
 
 ### Requirement: The flow rule states the apply review gate
 
-The registered flow rule SHALL require an apply review before archive when the change enables it. It SHALL state that the apply object is the committed git tree, that the working tree must be clean, and that a project without git has no apply review.
+The registered flow rule SHALL require an apply review before archive when the change enables it and the project has git. It SHALL state that the apply object is the committed git tree, that the working tree must be clean, that a project without git has no apply review, and that archive proceeds without one when the review is disabled or unavailable.
 
 #### Scenario: Apply review is enabled
 
@@ -137,7 +137,7 @@ The registered flow rule SHALL require an apply review before archive when the c
 #### Scenario: The project has no git
 
 - **WHEN** the project has no git repository
-- **THEN** the flow rule states that apply review is unavailable
+- **THEN** the flow rule states that apply review is unavailable and archive does not wait for it
 
 ### Requirement: The rule states the independent reviewer mode
 
