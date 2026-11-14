@@ -310,9 +310,12 @@ test('the reviewer activation carries the locked model and refuses an unavailabl
   const root = fixture()
   const { fake, activations } = externalSetup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
-  assert.deepEqual(activations[0].request.agentOptions, {
+  assert.deepEqual(activations[0].agentOptions, {
     provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
   })
+  assert.equal(activations[0].agentPreset, 'openspec-reviewer')
+  assert.equal(activations[0].parent.id, 'review-test')
+  assert.equal(activations[0].request, undefined)
 
   // An explicit model the catalog does not know is refused before an activation exists.
   const missing = fixture()
@@ -1033,7 +1036,7 @@ test('an independent reviewer reads the brief, submits and unblocks apply', asyn
   assert.equal(started.mode, 'reviewer')
   assert.equal(started.independent, true)
   assert.equal(activations.length, 1)
-  assert.equal(activations[0].request.agentPreset, 'openspec-reviewer')
+  assert.equal(activations[0].agentPreset, 'openspec-reviewer')
 
   const reviewer = createFakeContext({ cwd: root })
   reviewerApply(reviewer.ctx)
@@ -1493,7 +1496,7 @@ test('a reviewer service without provider lookup still activates a reviewer', as
   })
   assert.equal(started.mode, 'reviewer')
   assert.equal(activations.length, 1)
-  assert.equal(activations[0].request.agentPreset, 'openspec-reviewer')
+  assert.equal(activations[0].agentPreset, 'openspec-reviewer')
 })
 
 test('a reviewer activation without a child id fails closed', async () => {
