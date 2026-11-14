@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-14
+goal: The draft brief no longer claims the reader wrote the planning material in
+  either review mode, the stale reviewers comment matches the 0/1 range, and
+  both modes are covered by regression tests.

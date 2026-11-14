@@ -12,6 +12,7 @@ import { createFakeContext } from './fake-context.mjs'
 
 const PROBE_ROOT = fileURLToPath(new URL('../../.probe/proj/openspec', import.meta.url))
 const CHANGE = 'add-dark-mode'
+const DRAFT_OPENING = 'You are reviewing a change before implementation starts. Review this planning material adversarially. Do not assume the proposal is correct. Read the artifacts yourself; the hashes below bind the version you are reviewing.'
 const CREATED = []
 
 function fixture() {
@@ -97,6 +98,8 @@ test('self review passes the apply gate', async () => {
   assert.equal(started.round, 1)
   assert.ok(started.objectHash)
   assert.match(started.brief, /Draft review brief/)
+  assert.equal(started.brief.split('\n')[2], DRAFT_OPENING)
+  assert.doesNotMatch(started.brief, /you (wrote|drafted|planned)|as the changer/i)
 
   const submitted = await call(fake, 'openspec_review', {
     action: 'self-report',
@@ -1178,6 +1181,8 @@ test('an independent reviewer reads the brief, submits and unblocks apply', asyn
     action: 'read', target: 'brief', change: CHANGE, review: 'draft',
   }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
   assert.match(read.brief, /Draft review brief/)
+  assert.equal(read.brief.split('\n')[2], DRAFT_OPENING)
+  assert.doesNotMatch(read.brief, /you (wrote|drafted|planned)|as the changer/i)
 
   const submitted = await reviewer.tools.get('openspec_reviewer').execute({
     action: 'submit',

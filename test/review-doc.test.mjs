@@ -177,6 +177,7 @@ test('the document covers both review kinds and both reviewer modes', () => {
   }
   assert.match(text, /reviewers`?.*`?0/s)
   assert.match(text, /reviewers`?.*`?1/s)
+  assert.match(text, /draft brief 的开头在两种模式下相同/)
 })
 
 test('a stale tool, default or record path is reported by name', () => {
