@@ -2094,10 +2094,22 @@ test('the reviewer preset is read-only and exported as a subpath', () => {
 
 test('the reviewer preset composes the web tools without a provider', () => {
   const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  const lines = patch.split('\n')
+  const start = lines.findIndex((line) => line.trim() === '- id: preset-openspec-reviewer')
+  assert.ok(start >= 0, 'the reviewer preset row exists')
+  const sibling = lines.findIndex((line, index) => index > start && /^ {4}- id: /.test(line))
+  const preset = lines.slice(start, sibling < 0 ? lines.length : sibling).join('\n')
+  const fsSearch = preset.indexOf("name: '@deepseek-ai/dsh-tool-fs-search'")
+  const toolWeb = preset.indexOf("name: '@deepseek-ai/dsh-tool-web'")
+  const reviewer = preset.indexOf("name: 'dsh-openspec-flow/reviewer'")
+  assert.ok(fsSearch >= 0 && toolWeb > fsSearch && reviewer > toolWeb, 'tool-web sits between fs search and reviewer')
   assert.match(
-    patch,
+    preset,
     /- id: tool-web\n\s+name: '@deepseek-ai\/dsh-tool-web'\n\s+config:\n\s+search: true\n\s+fetch: true\n\s+searchTimeoutMs: 60000/,
   )
+  assert.doesNotMatch(preset, /name: '@deepseek-ai\/dsh-web'/)
+  assert.doesNotMatch(preset, /dsh-web-(?:search|fetch|deepseek-api)/)
+  assert.doesNotMatch(preset, /(?:search|fetch)Provider:/)
   assert.doesNotMatch(patch, /name: '@deepseek-ai\/dsh-web'/)
   assert.doesNotMatch(patch, /dsh-web-(?:search|fetch|deepseek-api)/)
   assert.doesNotMatch(patch, /(?:search|fetch)Provider:/)
