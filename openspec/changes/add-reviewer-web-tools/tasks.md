@@ -16,7 +16,7 @@
 - [x] 3.1 Run the full test suite on Node 24. Verify: `npm test` exits 0.
 - [x] 3.2 Run the coverage gate on Node 24. Verify: `npm run coverage:check` exits 0.
 - [x] 3.3 Run the contract and spec checks. Verify: `npm run contract:check` and `npm run openspec:check` both exit 0.
-- [ ] 3.4 Live verification after the plugin bundle is reloaded or DSH restarts: start a reviewer for a new change (or `replace` an existing reviewer) with a provider that is ready for the reviewer's model route, and confirm at least one `web_search` or `web_fetch` call appears in the reviewer session log. Verify: the reviewer activates and the log shows the call; if no provider can be readied, mark this task blocked or waive it — a run without a web call does not satisfy it.
+- [x] 3.4 Live verification after the plugin bundle is reloaded or DSH restarts: start a reviewer for a new change (or `replace` an existing reviewer) with a provider that is ready for the reviewer's model route, and confirm at least one `web_search` or `web_fetch` call appears in the reviewer session log. Verify: the reviewer activates and the log shows the call; if no provider can be readied, mark this task blocked or waive it — a run without a web call does not satisfy it.
 
 ## Workflow follow-up
 
