@@ -55,7 +55,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 - **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。
 - **apply review** 审已提交的 git tree 与变更工件是否一致；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。
 
-每个评审段的 `reviewers` 决定评审方式：`0` 由 changer 用 `openspec_review` 的 `action: "self-report"` 自评；`1` 由插件启动一个只读的 `openspec-reviewer` 子会话，它只能通过 `openspec_reviewer` 读 brief 并提交报告。评审策略在 `openspec_new_change` 时锁定，包含 reviewer 模型（`inherit` 或显式 provider/model/effort）与轮次、等待上限；之后修改配置只影响新变更。没有 git 的项目在锁定策略时忽略 `reviews.apply.enabled`，把新策略的 apply 段关闭；旧策略可能仍记录启用，随后由 `openspec_review` 的 apply status 报告 `policy`/`enabled`/`available`，归档不等待不可用、无策略或禁用的评审。
+每个评审段的 `reviewers` 决定评审方式：`0` 由 changer 用 `openspec_review` 的 `action: "self-report"` 自评；`1` 由插件启动一个只读的 `openspec-reviewer` 子会话，它通过 `openspec_reviewer` 读 brief 并提交报告，并可搜索与抓取网页：`web_search` 与 `web_fetch` 分别使用部署为 Host `web` 服务为 search 与 fetch 选择的 provider，preset 不指定 provider。默认匿名 HTTP provider 不限制目标地址，需要隔离时应更换 provider 或加工具策略；Host 未提供 `web` 服务时 reviewer 无法启动。评审策略在 `openspec_new_change` 时锁定，包含 reviewer 模型（`inherit` 或显式 provider/model/effort）与轮次、等待上限；之后修改配置只影响新变更。没有 git 的项目在锁定策略时忽略 `reviews.apply.enabled`，把新策略的 apply 段关闭；旧策略可能仍记录启用，随后由 `openspec_review` 的 apply status 报告 `policy`/`enabled`/`available`，归档不等待不可用、无策略或禁用的评审。
 
 就绪度不是报告的 `verdict` 本身：对象哈希必须未变、最新报告为 `pass`、且没有未关闭的 finding（`critical`/`major` 不能 deferred 或 rejected，用户 `waive` 需显式批准）。完整说明、记录布局、失败处理与两个端到端示例见 [docs/review.md](docs/review.md)。
 

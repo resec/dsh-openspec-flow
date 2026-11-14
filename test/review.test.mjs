@@ -2091,3 +2091,14 @@ test('the reviewer preset is read-only and exported as a subpath', () => {
   assert.equal(manifest.exports['./reviewer'], './reviewer.js')
   assert.ok(manifest.files.includes('reviewer.js'))
 })
+
+test('the reviewer preset composes the web tools without a provider', () => {
+  const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  assert.match(
+    patch,
+    /- id: tool-web\n\s+name: '@deepseek-ai\/dsh-tool-web'\n\s+config:\n\s+search: true\n\s+fetch: true\n\s+searchTimeoutMs: 60000/,
+  )
+  assert.doesNotMatch(patch, /name: '@deepseek-ai\/dsh-web'/)
+  assert.doesNotMatch(patch, /dsh-web-(?:search|fetch|deepseek-api)/)
+  assert.doesNotMatch(patch, /(?:search|fetch)Provider:/)
+})

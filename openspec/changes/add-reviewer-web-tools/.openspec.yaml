@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-14
+goal: The openspec-reviewer preset composes web_search and web_fetch, resolves
+  no web provider, and keeps the read-only tool surface.
