@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-14
+goal: 评审只校验必填与结构，不对报告文本长度、outOfScope/residualRisks 条数、reviewer
+  重试与替换次数设置上限；规格与文档记录该契约。
