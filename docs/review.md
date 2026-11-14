@@ -26,7 +26,7 @@ apply review 需要 git 仓库、干净工作区与至少一个提交。没有 g
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`。
 3. draft review 就绪后 `openspec_apply_next` 才返回下一任务。
 4. 实现并提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`），审阅 brief 与 diff。
-5. apply review 就绪后，或 apply review 不可用、禁用或不存在时，`openspec_archive` 执行归档并合并 delta specs。
+5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs。
 
 任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
 

@@ -102,6 +102,7 @@ test('the apply and archive skills run the apply review', () => {
   assert.match(apply, /available/)
   assert.match(apply, /policy/)
   assert.match(apply, /locks or migrates/)
+  assert.match(apply, /disables apply review/)
   const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
   assert.match(archive, /openspec_review/)
   assert.match(archive, /review: "apply"/)

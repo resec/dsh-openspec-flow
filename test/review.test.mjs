@@ -807,6 +807,17 @@ test('archive proceeds in a no-git project with a legacy enabled apply policy', 
   assert.equal(archived.archived, true)
 })
 
+test('a locked enabled policy still gates archive after settings disable apply review', async () => {
+  const { root, run } = gitFixture()
+  const first = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  await passDraft(first, root, run)
+  const later = setup(root, { draft: { enabled: true }, apply: { enabled: false } })
+  await assert.rejects(
+    call(later, 'openspec_archive', { change: CHANGE }),
+    /apply review has not started/,
+  )
+})
+
 test('a ready apply review allows archive and a blocker refuses it', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
@@ -1023,7 +1034,9 @@ test('apply status reports disabled, enabled and unset git policies', async () =
   assert.equal(enabled.policy, true)
   assert.equal(enabled.enabled, true)
   assert.equal(enabled.available, true)
-  assert.match(enabled.nextAction, /openspec_review action=start/)
+  assert.equal(enabled.nextAction, 'openspec_review action=start review=apply')
+  assert.equal(enabled.currentObjectHash, undefined)
+  assert.match(enabled.reasons.join(' '), /apply review has not started/)
 
   const unset = await call(enabledFake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
   assert.equal(unset.policy, false)

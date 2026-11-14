@@ -50,7 +50,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 ## 评审
 
-变更在实施前与归档前各过一次评审，两处都是强制闸门：
+变更在实施前与归档前各过一次评审；draft review 始终是强制闸门，apply review 在启用且项目有 git 时是强制闸门：
 
 - **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。
 - **apply review** 审已提交的 git tree 与变更工件是否一致；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。
