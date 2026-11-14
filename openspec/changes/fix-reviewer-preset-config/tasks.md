@@ -7,7 +7,7 @@
 
 ## 2. 验证独立 reviewer 可启动
 
-- [ ] 2.1 重新加载插件或重启 DSH 使新的 preset 生效，然后启动一个 `reviewers: 1` 的 draft review（可在恢复 `fix-apply-review-without-git` 后执行），确认不再出现 `$.sampleOverCapGlobResults missing required value`。验证：`openspec_review` 的 `action: "start"` 成功，`action: "status"` 显示 `mode: "reviewer"`。
+- [x] 2.1 重新加载插件或重启 DSH 使新的 preset 生效，然后启动一个 `reviewers: 1` 的 draft review（可在恢复 `fix-apply-review-without-git` 后执行），确认不再出现 `$.sampleOverCapGlobResults missing required value`。验证：`openspec_review` 的 `action: "start"` 成功，`action: "status"` 显示 `mode: "reviewer"`。
 
 ## 3. 集成验证
 
