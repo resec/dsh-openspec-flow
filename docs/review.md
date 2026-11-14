@@ -65,6 +65,8 @@ reviewer 侧只有三个动作：`read`（读 brief 或报告）、`submit`（�
 - `axis`：`intent`、`coherence`、`spec-conflict`、`standards`、`feasibility`、`quality`。
 - `verifications`：后续轮次逐条声明上一轮 finding 的状态：`verified-fixed`、`still-open`、`regressed`。
 
+字段只校验类型与非空：`summary`、finding 的文本字段、`verification.evidence` 以及 `outOfScope`/`residualRisks` 的条目都不设字符上限，后两个数组也不设条数上限。报告在写入前整体校验，任一结构错误都会拒绝整份报告。
+
 finding 的处置：
 
 | 动作 | 要求 | 语义 |
@@ -96,7 +98,7 @@ finding 的处置：
 ## 失败处理
 
 - **等待超时**：`action: "wait"` 在 `waitMinutes` 内没有报告时返回等待片段与剩余时间；可继续 `action: "wait"`、`action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`。
-- **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，只允许一次；`replace` 用新子会话替换并记录原因，只允许一次。
+- **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
 - **轮次上限**：达到 `maxRounds` 后 `start` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
 - **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review。

@@ -1084,10 +1084,8 @@ test('retry, replace and waive-reviewer handle a missing reviewer report', async
   })
   await call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' })
   assert.equal(messages.length, 1)
-  await assert.rejects(
-    call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' }),
-    /already retried/,
-  )
+  await call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' })
+  assert.equal(messages.length, 2)
   await call(fake, 'openspec_review', {
     action: 'replace', change: CHANGE, review: 'draft', reason: 'stuck',
   })
@@ -1101,6 +1099,28 @@ test('retry, replace and waive-reviewer handle a missing reviewer report', async
   })
   assert.equal(waived.ready, true)
   assert.equal(waived.coverageGap, true)
+})
+
+test('retry and replace are not capped by a count', async () => {
+  const root = fixture()
+  const { fake, activations, messages } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  assert.equal(activations.length, 1)
+  await call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' })
+  await call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' })
+  assert.equal(messages.length, 2)
+  await call(fake, 'openspec_review', {
+    action: 'replace', change: CHANGE, review: 'draft', reason: 'first replacement',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'replace', change: CHANGE, review: 'draft', reason: 'second replacement',
+  })
+  assert.equal(activations.length, 3)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.reviewers.slots[0].retries, 2)
+  assert.equal(record.reviewers.slots[0].replacements.length, 2)
 })
 
 test('the reviewer reads its report and status and refuses a duplicate submit', async () => {
@@ -1196,7 +1216,7 @@ test('wait can time out and can return after a later submission', async () => {
 
 test('replace and waive-reviewer validate their preconditions', async () => {
   const root = fixture()
-  const { fake } = externalSetup(root)
+  const { fake, activations } = externalSetup(root)
   await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, intent: 'Add a theme selector.',
   })
@@ -1207,12 +1227,10 @@ test('replace and waive-reviewer validate their preconditions', async () => {
   await call(fake, 'openspec_review', {
     action: 'replace', change: CHANGE, review: 'draft', reason: 'stuck',
   })
-  await assert.rejects(
-    call(fake, 'openspec_review', {
-      action: 'replace', change: CHANGE, review: 'draft', reason: 'again',
-    }),
-    /already replaced/,
-  )
+  await call(fake, 'openspec_review', {
+    action: 'replace', change: CHANGE, review: 'draft', reason: 'again',
+  })
+  assert.equal(activations.length, 3)
   await assert.rejects(
     call(fake, 'openspec_review', {
       action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'ok',

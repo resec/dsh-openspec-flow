@@ -304,7 +304,7 @@ test('the brief lists a related main spec when it exists', () => {
   assert.match(brief, /openspec\/specs\/theme\/spec\.md/)
 })
 
-test('report validation covers unknown ids, duplicates and limits', () => {
+test('report validation covers unknown ids, duplicates and verdict conflicts', () => {
   const existing = [finding({ status: 'fixed' })]
   assert.throws(
     () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'still-open', evidence: 'x' }] }, { round: 1, findings: [] }),
@@ -320,9 +320,8 @@ test('report validation covers unknown ids, duplicates and limits', () => {
     }, { round: 1, findings: existing }),
     /more than once/,
   )
-  assert.throws(
-    () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], outOfScope: ['1', '2', '3', '4'] }, { round: 1, findings: [] }),
-    /at most 3/,
+  assert.doesNotThrow(
+    () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], outOfScope: ['1', '2', '3', '4', '5'] }, { round: 1, findings: [] }),
   )
   assert.throws(
     () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 1, findings: [finding({ status: 'open' })] }),
@@ -464,14 +463,27 @@ test('git review paths are checked and a commit resolves', () => {
   )
 })
 
-test('report text limits and deferred dispositions cover their branches', () => {
+test('report text and entry counts are unbounded and deferred dispositions cover their branches', () => {
+  assert.doesNotThrow(() => assertReport({
+    verdict: 'pass',
+    summary: 'x'.repeat(5_000),
+    findings: [finding({
+      severity: 'minor',
+      location: 'l'.repeat(5_000),
+      problem: 'p'.repeat(5_000),
+      evidence: 'e'.repeat(5_000),
+      suggestion: 's'.repeat(500),
+      impact: 'i'.repeat(500),
+      rule: 'r'.repeat(500),
+      failure: 'f'.repeat(500),
+    })],
+    verifications: [],
+    outOfScope: ['x'.repeat(500), '2', '3', '4', '5'],
+    residualRisks: ['a', 'b', 'c', 'd'],
+  }, { round: 1, findings: [] }))
   assert.throws(
-    () => assertReport({ verdict: 'pass', summary: 'x'.repeat(121), findings: [] }, { round: 1, findings: [] }),
-    /at most 120/,
-  )
-  assert.throws(
-    () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], outOfScope: ['x'.repeat(61)] }, { round: 1, findings: [] }),
-    /at most 60/,
+    () => assertReport({ verdict: 'pass', summary: '  ', findings: [] }, { round: 1, findings: [] }),
+    /non-empty/,
   )
   const minor = finding({ id: 'R1-02', severity: 'minor' })
   assert.throws(() => disposeFinding(minor, { status: 'deferred' }), /needs a note or an issue/)
