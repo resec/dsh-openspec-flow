@@ -397,6 +397,7 @@ test('status reports a not-started review', async () => {
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
   assert.equal(status.state, 'not-started')
   assert.equal(status.ready, false)
+  assert.equal(status.nextAction, 'openspec_review action=start review=draft')
   assert.match(status.reasons.join(' '), /has not started/)
 })
 
@@ -624,7 +625,7 @@ test('self-report refuses artifacts changed before the report', async () => {
   writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. New\n\n- [ ] 1.1 New task\n')
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() }),
-    /changed since this round started/,
+    /changed since this round started; run openspec_review action=resume review=draft/,
   )
 })
 
@@ -2132,10 +2133,15 @@ test('start refuses a recorded review and resume refuses an unstarted one', asyn
   const root = fixture()
   const fake = setup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const intentPath = join(reviewDir(root), 'intent.md')
+  const before = readFileSync(intentPath)
+  const recorded = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' }),
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'A different goal.' }),
     /the draft review already started; run openspec_review action=resume review=draft/,
   )
+  assert.deepEqual(readFileSync(intentPath), before)
+  assert.equal(JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8')).intent.sha256, recorded.intent.sha256)
   const other = fixture()
   const otherFake = setup(other)
   await assert.rejects(
