@@ -365,7 +365,24 @@ test('readiness reports abandoned, empty and deferred blockers', () => {
     findings: [finding({ status: 'fixed' })],
   }, 'hash')
   assert.equal(fixed.ready, false)
-  assert.match(fixed.nextAction, /next review round/)
+  assert.match(fixed.nextAction, /openspec_review action=resume review=draft/)
+
+  const stale = draftReadiness({
+    state: 'in-review',
+    objectHash: 'old',
+    rounds: [{ round: 1, verdict: 'pass', report: { path: 'report.json' } }],
+    findings: [],
+  }, 'new', 'apply')
+  assert.equal(stale.ready, false)
+  assert.match(stale.nextAction, /openspec_review action=resume review=apply/)
+
+  const disposable = draftReadiness({
+    state: 'in-review',
+    objectHash: 'hash',
+    rounds: [{ round: 1, verdict: 'changes-requested', report: { path: 'report.json' } }],
+    findings: [finding({ status: 'open' })],
+  }, 'hash')
+  assert.equal(disposable.nextAction, 'openspec_review action=dispose')
 })
 
 test('store helpers read files, detect git and write JSON', () => {

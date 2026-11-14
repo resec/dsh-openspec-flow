@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-15
+goal: Draft and apply reviews get a resume action for later rounds. start
+  refuses when a review record exists, resume refuses without one, and the draft
+  intent is read from intent.md instead of being supplied or rewritten on each
+  round.

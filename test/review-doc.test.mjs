@@ -31,7 +31,7 @@ const DOC_PATH = join(ROOT, 'docs', 'review.md')
 const REQUIRED_TOOLS = ['openspec_review', 'openspec_reviewer', 'openspec_apply_next', 'openspec_archive']
 
 /** Review actions the document must show, because every phase names one. */
-const REQUIRED_ACTIONS = ['start', 'wait', 'status', 'self-report', 'report', 'dispose', 'extend', 'abandon']
+const REQUIRED_ACTIONS = ['start', 'resume', 'wait', 'status', 'self-report', 'report', 'dispose', 'extend', 'abandon']
 
 /** OpenSpec CLI verbs a document must not present as an instruction. */
 const CLI_COMMAND = /\bopenspec (?:validate|archive|list|status|show|new|init|update|view|diff|schemas|instructions|config|store|completion)\b/

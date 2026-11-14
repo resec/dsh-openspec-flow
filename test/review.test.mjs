@@ -137,7 +137,7 @@ test('an open blocker refuses apply', async () => {
 
   await assert.rejects(
     call(fake, 'openspec_apply_next', { change: CHANGE }),
-    /draft review is not ready/,
+    /draft review is not ready: .*resume the next round/,
   )
 })
 
@@ -162,9 +162,8 @@ test('a later round verifies a fixed blocker and passes apply', async () => {
     note: 'Added the missing task.',
   })
   const next = await call(fake, 'openspec_review', {
-    action: 'start',
+    action: 'resume',
     change: CHANGE,
-    intent: 'Add a theme selector.',
     round: 2,
   })
   assert.equal(next.round, 2)
@@ -202,9 +201,8 @@ test('a user waiver closes a blocker', async () => {
   })
   assert.equal(waived.ready, false)
   await call(fake, 'openspec_review', {
-    action: 'start',
+    action: 'resume',
     change: CHANGE,
-    intent: 'Add a theme selector.',
     round: 2,
   })
   const passed = await call(fake, 'openspec_review', {
@@ -330,7 +328,7 @@ test('an old policy gains its reviewer model on the first review start', async (
   // Strip the field to mimic a record written before this capability existed.
   delete policy.reviews.draft.reviewerModel
   writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
   assert.equal(migrated.reviews.draft.reviewerModel.provider, 'deepseek')
 
@@ -339,7 +337,7 @@ test('an old policy gains its reviewer model on the first review start', async (
     source: 'explicit', provider: 'other', model: 'other-model',
   }
   writeFileSync(policyPath, `${JSON.stringify(migrated, null, 2)}\n`)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   assert.equal(JSON.parse(readFileSync(policyPath, 'utf8')).reviews.draft.reviewerModel.provider, 'other')
 })
 
@@ -454,10 +452,16 @@ test('abandon closes the review', async () => {
     action: 'abandon', change: CHANGE, reason: 'superseded',
   })
   assert.equal(abandoned.state, 'abandoned')
+  assert.equal(abandoned.nextAction, 'openspec_new_change')
+  assert.match(abandoned.reasons.join(' '), /remove the review record/)
   await assert.rejects(
     call(fake, 'openspec_review', {
       action: 'start', change: CHANGE, intent: 'Add a theme selector.',
     }),
+    /already started/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
     /abandoned/,
   )
 })
@@ -577,10 +581,11 @@ test('a passed review is idempotent and a capped review refuses another round', 
     action: 'self-report', change: CHANGE, report: report(),
   })
   const again = await call(fake, 'openspec_review', {
-    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+    action: 'resume', change: CHANGE,
   })
   assert.equal(again.state, 'passed')
   assert.equal(again.ready, true)
+  assert.match(again.brief, /Draft review brief/)
 
   const cappedRoot = fixture()
   const capped = setup(cappedRoot, { draft: { enabled: true, reviewers: 0, maxRounds: 1 } })
@@ -593,7 +598,7 @@ test('a passed review is idempotent and a capped review refuses another round', 
   })
   await assert.rejects(
     call(capped, 'openspec_review', {
-      action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+      action: 'resume', change: CHANGE,
     }),
     /1-round cap/,
   )
@@ -685,7 +690,7 @@ test('the apply gate refuses a missing intent file', async () => {
   rmSync(join(reviewDir(root), 'intent.md'))
   await assert.rejects(
     call(fake, 'openspec_apply_next', { change: CHANGE }),
-    /intent file is missing/,
+    /intent file is missing; remove the review record/,
   )
 })
 
@@ -831,7 +836,7 @@ test('a ready apply review allows archive and a blocker refuses it', async () =>
     id: 'R1-01', waiver: 'accepted by the user', approvedBy: 'user',
   })
   await call(fake, 'openspec_review', {
-    action: 'start', change: CHANGE, review: 'apply', round: 2,
+    action: 'resume', change: CHANGE, review: 'apply', round: 2,
   })
   const passed = await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', round: 2, report: report(),
@@ -888,9 +893,10 @@ test('apply review is idempotent after pass and refuses a capped round', async (
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
   const again = await call(fake, 'openspec_review', {
-    action: 'start', change: CHANGE, review: 'apply',
+    action: 'resume', change: CHANGE, review: 'apply',
   })
   assert.equal(again.state, 'passed')
+  assert.match(again.brief, /Apply review brief/)
 
   const cappedRoot = gitFixture()
   const capped = setup(cappedRoot.root, {
@@ -903,7 +909,7 @@ test('apply review is idempotent after pass and refuses a capped round', async (
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   await assert.rejects(
-    call(capped, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    call(capped, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
     /1-round cap/,
   )
 })
@@ -937,6 +943,10 @@ test('apply review supports status, report, extend, dispose and abandon', async 
   assert.equal(abandoned.state, 'abandoned')
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /already started/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
     /abandoned/,
   )
 })
@@ -1065,7 +1075,7 @@ test('starting the same round twice before a report resumes it', async () => {
     action: 'start', change: CHANGE, intent: 'Add a theme selector.',
   })
   const second = await call(fake, 'openspec_review', {
-    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+    action: 'resume', change: CHANGE,
   })
   assert.equal(second.round, first.round)
 
@@ -1076,7 +1086,7 @@ test('starting the same round twice before a report resumes it', async () => {
     action: 'start', change: CHANGE, review: 'apply',
   })
   const applySecond = await call(gitFake, 'openspec_review', {
-    action: 'start', change: CHANGE, review: 'apply',
+    action: 'resume', change: CHANGE, review: 'apply',
   })
   assert.equal(applySecond.round, applyFirst.round)
 })
@@ -1121,9 +1131,7 @@ test('start fails closed when a locked policy needs a reviewer but the service i
   policy.reviews.draft.reviewers = 1
   writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
   await assert.rejects(
-    call(fake, 'openspec_review', {
-      action: 'start', change: CHANGE, intent: 'Add a theme selector.',
-    }),
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
     /reviewer service is unavailable/,
   )
 })
@@ -1756,7 +1764,7 @@ test('a draft start activates a reviewer when the record has no slots', async ()
   delete record.reviewers
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
   const restarted = await call(fake, 'openspec_review', {
-    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+    action: 'resume', change: CHANGE,
   })
   assert.equal(restarted.mode, 'reviewer')
   assert.equal(activations.length, 2)
@@ -1793,7 +1801,7 @@ test('a new draft round wakes the same reviewer and resumes do not', async () =>
     note: 'Round 2 resolves it.',
   })
 
-  const second = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
+  const second = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   assert.equal(second.round, 2)
   assert.equal(activations.length, 1)
   assert.equal(messages.length, 1)
@@ -1808,7 +1816,7 @@ test('a new draft round wakes the same reviewer and resumes do not', async () =>
   assert.equal(slot.retries, undefined)
   assert.equal(typeof slot.lastWokenAt, 'string')
 
-  const resumed = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   assert.equal(resumed.round, 2)
   assert.equal(activations.length, 1)
   assert.equal(messages.length, 1)
@@ -1845,7 +1853,7 @@ test('a new-round wake fails closed without the reviewer service or the changer 
   })
   await assert.rejects(
     noService.tools.get('openspec_review').execute(
-      { action: 'start', change: CHANGE, intent },
+      { action: 'resume', change: CHANGE },
       { agent: { id: 'changer' }, signal: new AbortController().signal },
     ),
     /reviewer service is unavailable/,
@@ -1858,7 +1866,7 @@ test('a new-round wake fails closed without the reviewer service or the changer 
   })
   await assert.rejects(
     noParent.tools.get('openspec_review').execute(
-      { action: 'start', change: CHANGE, intent },
+      { action: 'resume', change: CHANGE },
       { agent: null, signal: new AbortController().signal },
     ),
     /needs the changer agent/,
@@ -1883,7 +1891,7 @@ test('an apply start activates a reviewer when the record has no slots', async (
   delete record.reviewers
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
   await call(external.fake, 'openspec_review', {
-    action: 'start', change: CHANGE, review: 'apply',
+    action: 'resume', change: CHANGE, review: 'apply',
   })
   assert.equal(external.activations.length, 2)
   const saved = JSON.parse(readFileSync(file, 'utf8'))
@@ -1924,7 +1932,7 @@ test('a new apply round wakes the same reviewer and resumes do not', async () =>
     note: 'Round 2 resolves it.',
   })
 
-  const second = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const second = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
   assert.equal(second.round, 2)
   assert.equal(activations.length, 1)
   assert.equal(messages.length, 1)
@@ -1938,7 +1946,7 @@ test('a new apply round wakes the same reviewer and resumes do not', async () =>
   assert.equal(slot.replacements, undefined)
   assert.equal(typeof slot.lastWokenAt, 'string')
 
-  const resumed = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
   assert.equal(resumed.round, 2)
   assert.equal(activations.length, 1)
   assert.equal(messages.length, 1)
@@ -2118,4 +2126,131 @@ test('the reviewer preset composes the web tools without a provider', () => {
   assert.doesNotMatch(patch, /name: '@deepseek-ai\/dsh-web'/)
   assert.doesNotMatch(patch, /dsh-web-(?:search|fetch|deepseek-api)/)
   assert.doesNotMatch(patch, /(?:search|fetch)Provider:/)
+})
+
+test('start refuses a recorded review and resume refuses an unstarted one', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' }),
+    /the draft review already started; run openspec_review action=resume review=draft/,
+  )
+  const other = fixture()
+  const otherFake = setup(other)
+  await assert.rejects(
+    call(otherFake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /the draft review has not started; run openspec_review action=start review=draft/,
+  )
+})
+
+test('apply start and resume refuse the other round entry', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /the apply review already started; run openspec_review action=resume review=apply/,
+  )
+  const other = gitFixture()
+  const otherFake = setup(other.root)
+  await passDraft(otherFake, other.root, other.run)
+  await assert.rejects(
+    call(otherFake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /the apply review has not started; run openspec_review action=start review=apply/,
+  )
+})
+
+test('resume refuses an intent and leaves the recorded intent unchanged', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const intentPath = join(reviewDir(root), 'intent.md')
+  const before = readFileSync(intentPath)
+  const recorded = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, intent: 'A different goal.' }),
+    /resume takes no intent/,
+  )
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.deepEqual(readFileSync(intentPath), before)
+  const after = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(after.intent.sha256, recorded.intent.sha256)
+  assert.equal(after.rounds.length, 1)
+})
+
+test('resume refuses an intent file edited after the review started', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  writeFileSync(join(reviewDir(root), 'intent.md'), 'A rewritten goal.\n')
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /intent file changed after the review started; remove the review record/,
+  )
+})
+
+test('resume refuses a record whose policy file is missing', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  rmSync(join(reviewDir(root), 'policy.json'))
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /draft review policy is missing; remove the review record/,
+  )
+})
+
+test('status names resume with the review kind after a fixed finding', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+  })
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.nextAction, 'openspec_review action=resume review=draft')
+})
+
+test('apply status names resume with the apply kind when the tree moved', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'design.md'), '# Design\n\nChanged after the pass.\n')
+  run(['add', 'openspec'])
+  run(['commit', '-m', 'move the tree'])
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(status.nextAction, 'openspec_review action=resume review=apply')
+})
+
+test('resume refuses a missing intent file', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  rmSync(join(reviewDir(root), 'intent.md'))
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /intent file is missing; remove the review record/,
+  )
+})
+
+test('apply resume refuses a record without a policy', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  rmSync(join(reviewDir(root), 'policy.json'))
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /apply review policy is missing; remove the review record/,
+  )
 })

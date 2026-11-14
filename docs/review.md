@@ -15,17 +15,17 @@
 
 | 评审 | 对象 | 何时确定 |
 | --- | --- | --- |
-| draft | 变更工件（`.openspec.yaml`、`design.md`、`proposal.md`、`specs/**/*.md`、`tasks.md`）加本次意图文本 | 每次 `start` 重新计算；`tasks.md` 的复选框状态被归一化，勾选任务不改变哈希 |
-| apply | 已提交的 git tree（`HEAD^{tree}`） | 每次 `start` 读取；工作区必须干净，提交之外的内容不进入评审 |
+| draft | 变更工件（`.openspec.yaml`、`design.md`、`proposal.md`、`specs/**/*.md`、`tasks.md`）加首轮写入的意图文本 | 首轮 `start` 写入 `intent.md`，之后每次 `resume` 复用它；每次进入评审重新计算哈希；`tasks.md` 的复选框状态被归一化，勾选任务不改变哈希 |
+| apply | 已提交的 git tree（`HEAD^{tree}`） | 每次 `start` 或 `resume` 读取；工作区必须干净，提交之外的内容不进入评审 |
 
 apply review 需要 git 仓库、干净工作区与至少一个提交。没有 git 的项目只能用 draft review；`openspec_new_change` 在锁定策略时忽略 apply review 的启用设置，把新建策略的 apply 段关闭。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
 
 ## 阶段与闸门
 
 1. `openspec_new_change` 创建变更目录前先为本变更锁定评审策略（`policy.json`），并把已解析的 reviewer 模型写入策略。
-2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`。
-3. draft review 就绪后 `openspec_apply_next` 才返回下一任务。
-4. 实现并提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`），审阅 brief 与 diff。
+2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`；`start` 只用于首轮。
+3. draft review 就绪后 `openspec_apply_next` 才返回下一任务；需要下一轮时用 `action: "resume"`，不传 `intent`。
+4. 实现并提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`），审阅 brief 与 diff；后续轮次同样用 `resume`。
 5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs。
 
 任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
@@ -43,7 +43,7 @@ apply review 需要 git 仓库、干净工作区与至少一个提交。没有 g
 每个评审段有 `reviewers` 设置：
 
 - `0`：changer 自评审。用 `openspec_review` 的 `action: "self-report"` 提交本轮报告；这是唯一接受自报告的配置。
-- `1`：独立 reviewer。`start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话，该 preset 只挂 `read`、`fs` 搜索、`web_search`、`web_fetch` 与 `openspec_reviewer` 工具，不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。联网能力由部署为 Host `web` 服务选择的 provider 提供：preset 不挂载、不选择 provider，`web_search` 与 `web_fetch` 分别使用 Host 为 search 与 fetch 选择的 provider；每个工具是否出现在某一步，取决于为该项操作选择的 provider 对该步模型路由是否就绪，一个工具被隐藏不影响另一个。所选 provider 决定抓取的目标范围；默认匿名 HTTP provider 不限制目标地址，可达回环、私网与云元数据地址，需要隔离时应更换 provider 或添加 `tools/pre-execute` 策略。reviewer 的 persona 为 `complete: true`，工具自带的系统提示不会渲染，web 结果的不可信声明由每次工具结果携带。Host 未提供 `web` 服务时，该 preset 不能组装 reviewer 会话。每个新的 draft/apply 轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告的轮次再次 `start` 只会 resume，不会重复唤醒。
+- `1`：独立 reviewer。首轮 `start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话，该 preset 只挂 `read`、`fs` 搜索、`web_search`、`web_fetch` 与 `openspec_reviewer` 工具，不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。联网能力由部署为 Host `web` 服务选择的 provider 提供：preset 不挂载、不选择 provider，`web_search` 与 `web_fetch` 分别使用 Host 为 search 与 fetch 选择的 provider；每个工具是否出现在某一步，取决于为该项操作选择的 provider 对该步模型路由是否就绪，一个工具被隐藏不影响另一个。所选 provider 决定抓取的目标范围；默认匿名 HTTP provider 不限制目标地址，可达回环、私网与云元数据地址，需要隔离时应更换 provider 或添加 `tools/pre-execute` 策略。reviewer 的 persona 为 `complete: true`，工具自带的系统提示不会渲染，web 结果的不可信声明由每次工具结果携带。Host 未提供 `web` 服务时，该 preset 不能组装 reviewer 会话。每个新的 draft/apply 轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告的轮次再次 `resume` 只会复用该轮，不会重复唤醒。
 
 draft brief 的开头在两种模式下相同：要求对抗性审阅，不声明读者是作者；独立 reviewer 不会被提示它写过规划材料。
 
@@ -63,7 +63,7 @@ reviewer 侧只有三个动作：`read`（读 brief 或报告）、`submit`（�
 - `git.enabled`：创建时该目录是否有 git 仓库。
 - `change`、`store`、`lockedAt`、`lockedBy`、`configHash`。
 
-更早的 policy 没有 `reviewerModel` 时，下一次 `start` 会解析一次并补写字段；已有模型的策略不会被重写，所以事后修改配置页只影响新变更。改动默认值不会移动已锁定评审的模型或轮次上限。
+更早的 policy 没有 `reviewerModel` 时，下一次 `start` 或 `resume` 会解析一次并补写字段；已有模型的策略不会被重写，所以事后修改配置页只影响新变更。改动默认值不会移动已锁定评审的模型或轮次上限。
 
 ## 报告与 finding
 
@@ -96,7 +96,7 @@ finding 的处置：
 | 路径 | 内容 |
 | --- | --- |
 | `openspec/.review/<store>#<change>/policy.json` | 锁定的评审策略 |
-| `openspec/.review/<store>#<change>/intent.md` | draft review 的意图文本 |
+| `openspec/.review/<store>#<change>/intent.md` | 首轮 `start` 写入的 draft 意图文本；`resume` 只读取，不修改 |
 | `openspec/.review/<store>#<change>/review.json` | draft review 记录 |
 | `openspec/.review/<store>#<change>/apply-review.json` | apply review 记录 |
 | `openspec/.review/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
@@ -110,11 +110,12 @@ finding 的处置：
 - **等待超时**：`action: "wait"` 在 `waitMinutes` 内没有报告时返回等待片段与剩余时间；可继续 `action: "wait"`、`action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
-- **轮次上限**：达到 `maxRounds` 后 `start` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
-- **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review。
-- **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；需要新一轮评审或修正提交。
+- **轮次上限**：达到 `maxRounds` 后 `resume` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
+- **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。
+- **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；用 `resume` 开新一轮，或修正提交。
+- **意图文件缺失或被改动**：`resume` 拒绝并提示移除评审记录；`start` 不会为已有记录重写 `intent.md`。
 - **工作区不干净**：apply review 拒绝启动并列出未提交路径。
-- **策略缺失**：没有 `policy.json` 的旧变更会在首次 `start` 时按当前设置补锁；`ensurePolicy` 失败（例如 inherit 解析不到模型）不会留下目录或忽略行。
+- **策略缺失**：没有 `policy.json` 的旧变更会在首次 `start` 时按当前设置补锁；记录存在但策略缺失时 `resume` 拒绝，需移除记录后重新 `start`。`ensurePolicy` 失败（例如 inherit 解析不到模型）不会留下目录或忽略行。
 
 ## 配置
 
@@ -172,10 +173,10 @@ openspec_review { "action": "report", "change": "add-export-api" }
 # 有阻塞 finding 时逐条处置，然后开下一轮：
 openspec_review { "action": "dispose", "change": "add-export-api", "id": "R1-01",
                   "status": "fixed", "note": "Added the missing scenario." }
-openspec_review { "action": "start", "change": "add-export-api" }
+openspec_review { "action": "resume", "change": "add-export-api" }
 # 下一轮报告用 verifications 声明 R1-01 为 verified-fixed，就绪后：
 openspec_apply_next { "change": "add-export-api" }
-# 实现并提交后，apply review 同样以 start / wait / report 进行，最后：
+# 实现并提交后，apply review 首轮以 start、后续轮次以 resume，再 wait / report，最后：
 openspec_archive { "change": "add-export-api" }
 ```
 

@@ -14,7 +14,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | 管理 | `openspec_init` | 建 OpenSpec 项目结构与目录，不写技能；管理块，`/opsx-admin` 后可见 |
 | apply | `openspec_apply_next` | 一次取 apply 状态、下一任务、contextFiles、指令与项目 `context`/`guidance` |
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
-| 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
+| 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝；`openspec_archive` 在 apply review 启用且项目有 git、但评审未就绪时拒绝；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
@@ -41,7 +41,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 流程 | 入口 | 说明 |
 | --- | --- | --- |
 | 探索与读取 | `openspec-explore`；`openspec_inspect`（`action: "list"`、`"status"`、`"show"`、`"context"`） | 只读，不写项目文件 |
-| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_inspect`（`action: "instructions"`、`"validate"`）、`openspec_review`（`action: "start"`、`"self-report"`） | 创建 change，写 proposal、specs、design、tasks，并完成 draft review |
+| 提案 | `openspec-propose`；`openspec_new_change`、`openspec_inspect`（`action: "instructions"`、`"validate"`）、`openspec_review`（`action: "start"`、`"resume"`、`"self-report"`） | 创建 change，写 proposal、specs、design、tasks，并完成 draft review |
 | 实施 | `openspec-apply-change`；`openspec_apply_next`、`openspec_mark_task_done`、`openspec_review`（`review: "apply"`） | 紧凑 apply 循环；批量翻转任务；提交后完成 apply review |
 | 修订规划 | `openspec-update-change`；`openspec_inspect`（`action: "instructions"`、`"validate"`） | 修改现有 artifacts；没有专用写工具 |
 | 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_review`（`review: "apply"`）、`openspec_archive` | 先读归档 `context`/`guidance`、检查 apply review、校验、检查任务，再移动并合并 delta specs |
@@ -50,7 +50,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 ## 评审
 
-变更在实施前与归档前各过一次评审；draft review 始终是强制闸门，apply review 在启用且项目有 git 时是强制闸门：
+变更在实施前与归档前各过一次评审；draft review 始终是强制闸门，apply review 在启用且项目有 git 时是强制闸门。两个入口互斥：`start` 只在评审没有记录时可用，draft 首轮必须带 `intent`；`resume` 只对已有记录的评审可用，不接收 `intent`，draft 的 `intent.md` 由首轮写入后不再改写。
 
 - **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。
 - **apply review** 审已提交的 git tree 与变更工件是否一致；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。
