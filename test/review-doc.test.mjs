@@ -156,6 +156,17 @@ test('the README links the review document', () => {
   assert.deepEqual(checkReadme(readFileSync(join(ROOT, 'README.md'), 'utf8')), [])
 })
 
+test('the review document explains the apply status states', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of ['`policy`', '`enabled`', '`available`', 'draft-only']) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  assert.match(text, /没有 git 的项目只能用 draft review/)
+  assert.match(text, /旧的策略文件可能仍记录/)
+  assert.match(text, /无策略或只有 draft 段/)
+  assert.doesNotMatch(text, /归档会一直等到 apply review 就绪/)
+})
+
 test('the document covers both review kinds and both reviewer modes', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of ['draft review', 'apply review', 'reviewers 0', 'reviewers 1', 'openspec-reviewer']) {

@@ -44,6 +44,15 @@ function reviewDir(root) {
   return join(root, 'openspec', '.review', `local#${CHANGE}`)
 }
 
+function writePolicy(root, change, reviews) {
+  const directory = join(root, 'openspec', '.review', `local#${change}`)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(
+    join(directory, 'policy.json'),
+    `${JSON.stringify({ schemaVersion: 1, change, store: null, reviews }, null, 2)}\n`,
+  )
+}
+
 function report(extra = {}) {
   return {
     verdict: 'pass',
@@ -238,6 +247,31 @@ test('new change locks a policy and ignores later settings', async () => {
   const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
   assert.equal(policy.reviews.draft.enabled, false)
   assert.match(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), /\.review\//)
+})
+
+test('a no-git project locks apply review off even when settings enable it', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  await call(fake, 'openspec_new_change', { name: 'add-no-git-apply' })
+  const policy = JSON.parse(readFileSync(
+    join(root, 'openspec', '.review', 'local#add-no-git-apply', 'policy.json'),
+    'utf8',
+  ))
+  assert.equal(policy.git.enabled, false)
+  assert.equal(policy.reviews.apply.enabled, false)
+  assert.equal(policy.reviews.draft.enabled, true)
+})
+
+test('a git project locks apply review from the settings', async () => {
+  const { root } = gitFixture()
+  const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  await call(fake, 'openspec_new_change', { name: 'add-git-apply' })
+  const policy = JSON.parse(readFileSync(
+    join(root, 'openspec', '.review', 'local#add-git-apply', 'policy.json'),
+    'utf8',
+  ))
+  assert.equal(policy.git.enabled, true)
+  assert.equal(policy.reviews.apply.enabled, true)
 })
 
 test('a change created without a model fails closed and leaves no policy', async () => {
@@ -762,6 +796,17 @@ test('apply review refuses artifacts that differ from the draft', async () => {
   )
 })
 
+test('archive proceeds in a no-git project with a legacy enabled apply policy', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
+    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+  })
+  const archived = await call(fake, 'openspec_archive', { change: CHANGE })
+  assert.equal(archived.archived, true)
+})
+
 test('a ready apply review allows archive and a blocker refuses it', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
@@ -912,13 +957,100 @@ test('archive refuses before an apply review and after dirtying the tree', async
   )
 })
 
-test('apply status is unavailable without git', async () => {
+test('apply status reports unavailable without git and does not fail', async () => {
   const root = fixture()
   const fake = setup(root)
-  await assert.rejects(
-    call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' }),
-    /no git repository/,
-  )
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(status.policy, false)
+  assert.equal(status.enabled, false)
+  assert.equal(status.available, false)
+  assert.match(status.reasons.join(' '), /no git repository/)
+  assert.equal(status.nextAction, 'openspec_archive')
+})
+
+test('apply status separates new, legacy and draft-only no-git policies', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  await call(fake, 'openspec_new_change', { name: 'add-new-policy' })
+  const locked = await call(fake, 'openspec_review', {
+    action: 'status', change: 'add-new-policy', review: 'apply',
+  })
+  assert.equal(locked.policy, true)
+  assert.equal(locked.enabled, false)
+  assert.equal(locked.available, false)
+  assert.equal(locked.nextAction, 'openspec_archive')
+
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
+    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+  })
+  const legacy = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(legacy.policy, true)
+  assert.equal(legacy.enabled, true)
+  assert.equal(legacy.available, false)
+  assert.equal(legacy.nextAction, 'openspec_archive')
+
+  await call(fake, 'openspec_new_change', { name: 'add-draft-only' })
+  writePolicy(root, 'add-draft-only', {
+    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
+  })
+  const draftOnly = await call(fake, 'openspec_review', {
+    action: 'status', change: 'add-draft-only', review: 'apply',
+  })
+  assert.equal(draftOnly.policy, false)
+  assert.equal(draftOnly.enabled, false)
+  assert.equal(draftOnly.available, false)
+  assert.equal(draftOnly.nextAction, 'openspec_archive')
+})
+
+test('apply status reports disabled, enabled and unset git policies', async () => {
+  const { root } = gitFixture()
+  const disabledFake = setup(root, { draft: { enabled: true }, apply: { enabled: false } })
+  await call(disabledFake, 'openspec_new_change', { name: 'add-disabled-apply' })
+  const disabled = await call(disabledFake, 'openspec_review', {
+    action: 'status', change: 'add-disabled-apply', review: 'apply',
+  })
+  assert.equal(disabled.policy, true)
+  assert.equal(disabled.enabled, false)
+  assert.equal(disabled.available, true)
+  assert.equal(disabled.nextAction, 'openspec_archive')
+
+  const enabledFake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  await call(enabledFake, 'openspec_new_change', { name: 'add-enabled-apply' })
+  const enabled = await call(enabledFake, 'openspec_review', {
+    action: 'status', change: 'add-enabled-apply', review: 'apply',
+  })
+  assert.equal(enabled.policy, true)
+  assert.equal(enabled.enabled, true)
+  assert.equal(enabled.available, true)
+  assert.match(enabled.nextAction, /openspec_review action=start/)
+
+  const unset = await call(enabledFake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(unset.policy, false)
+  assert.equal(unset.enabled, false)
+  assert.equal(unset.available, true)
+  assert.match(unset.nextAction, /openspec_review action=start/)
+})
+
+test('a draft-only policy reports unset and migrates on the first apply start', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const policyPath = join(reviewDir(root), 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  delete policy.reviews.apply
+  writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
+
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(status.policy, false)
+  assert.equal(status.enabled, false)
+  assert.equal(status.available, true)
+  assert.match(status.nextAction, /openspec_review action=start/)
+
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.review, 'apply')
+  const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.equal(migrated.reviews.apply.enabled, true)
 })
 
 test('starting the same round twice before a report resumes it', async () => {

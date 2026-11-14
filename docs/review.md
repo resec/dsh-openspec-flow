@@ -7,7 +7,7 @@
 评审是流程闸门，不是建议：
 
 - **draft review** 在实施前检查规划工件（proposal、delta specs、design、tasks）与用户意图是否一致，`openspec_apply_next` 在它未就绪时拒绝。
-- **apply review** 在归档前检查已提交的实现与变更工件是否一致，`openspec_archive` 在它未就绪时拒绝。
+- **apply review** 在归档前检查已提交的实现与变更工件是否一致；当 apply review 启用且项目有 git 时，`openspec_archive` 在它未就绪时拒绝。
 
 两类评审都以「报告 + finding + 就绪度」表达结论。报告是模型写的，就绪度由插件按报告、finding 生命周期与对象哈希计算，`verdict: "pass"` 本身不构成就绪。
 
@@ -18,7 +18,7 @@
 | draft | 变更工件（`.openspec.yaml`、`design.md`、`proposal.md`、`specs/**/*.md`、`tasks.md`）加本次意图文本 | 每次 `start` 重新计算；`tasks.md` 的复选框状态被归一化，勾选任务不改变哈希 |
 | apply | 已提交的 git tree（`HEAD^{tree}`） | 每次 `start` 读取；工作区必须干净，提交之外的内容不进入评审 |
 
-apply review 需要 git 仓库、干净工作区与至少一个提交。没有 git 的项目只能用 draft review；若该变更的 policy 启用了 apply review，归档会一直等到 apply review 就绪，因此这类项目应在创建 change 前关闭 apply review。
+apply review 需要 git 仓库、干净工作区与至少一个提交。没有 git 的项目只能用 draft review；`openspec_new_change` 在锁定策略时忽略 apply review 的启用设置，把新建策略的 apply 段关闭。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
 
 ## 阶段与闸门
 
@@ -26,9 +26,17 @@ apply review 需要 git 仓库、干净工作区与至少一个提交。没有 g
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`。
 3. draft review 就绪后 `openspec_apply_next` 才返回下一任务。
 4. 实现并提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`），审阅 brief 与 diff。
-5. apply review 就绪后 `openspec_archive` 才执行归档并合并 delta specs。
+5. apply review 就绪后，或 apply review 不可用、禁用或不存在时，`openspec_archive` 执行归档并合并 delta specs。
 
-任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作，`action: "report"` 读回已提交的报告。
+任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
+
+### apply status 字段
+
+- `policy`：策略是否存在 apply 段；只有 draft 段的旧策略为 false。
+- `enabled`：apply 段是否启用；`policy` 为 false 时为 false。
+- `available`：项目是否有 git；为 false 时优先于无策略。
+
+不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或 draft-only 指向 `openspec_review` 的 `start`。
 
 ## reviewer 模式
 

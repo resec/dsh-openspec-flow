@@ -136,4 +136,5 @@ test('the policy text states the apply review gate', () => {
   assert.match(POLICY_TEXT, /review: "apply"/)
   assert.match(POLICY_TEXT, /committed git tree/)
   assert.match(POLICY_TEXT, /no apply review/)
+  assert.match(POLICY_TEXT, /does not hold archive/)
 })

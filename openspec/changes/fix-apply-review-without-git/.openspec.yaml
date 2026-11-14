@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-14
+goal: A project without git locks apply review disabled, reports it unavailable
+  through status instead of failing, and archives without waiting for it; docs,
+  skills and tests match.
