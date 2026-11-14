@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-14
+goal: A new draft or apply review round with reviewers 1 messages the existing
+  slot reviewer to read the new brief and submit; no new reviewer is activated,
+  resuming an unreported round does not re-wake it, and only replace starts a
+  new reviewer.

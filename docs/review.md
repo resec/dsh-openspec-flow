@@ -43,7 +43,7 @@ apply review 需要 git 仓库、干净工作区与至少一个提交。没有 g
 每个评审段有 `reviewers` 设置：
 
 - `0`：changer 自评审。用 `openspec_review` 的 `action: "self-report"` 提交本轮报告；这是唯一接受自报告的配置。
-- `1`：独立 reviewer。`start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话，该 preset 只挂 `read`、`fs` 搜索与 `openspec_reviewer` 工具，不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。每个新的 draft/apply 轮次都会启动新的 reviewer 并更新记录中的 slot；对尚无报告的轮次再次 `start` 只会 resume，不会重复启动。
+- `1`：独立 reviewer。`start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话，该 preset 只挂 `read`、`fs` 搜索与 `openspec_reviewer` 工具，不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。每个新的 draft/apply 轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告的轮次再次 `start` 只会 resume，不会重复唤醒。
 
 独立 reviewer 的模型来自本变更 policy 锁定的 reviewer 模型：
 

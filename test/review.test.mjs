@@ -1759,9 +1759,9 @@ test('a draft start activates a reviewer when the record has no slots', async ()
   assert.equal(saved.reviewers.slots[0].agentId, 'reviewer-2')
 })
 
-test('a new draft round activates a fresh reviewer and resumes do not', async () => {
+test('a new draft round wakes the same reviewer and resumes do not', async () => {
   const root = fixture()
-  const { fake, activations } = externalSetup(root)
+  const { fake, activations, messages } = externalSetup(root)
   const intent = 'Add a theme selector.'
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
   assert.equal(activations.length, 1)
@@ -1779,25 +1779,84 @@ test('a new draft round activates a fresh reviewer and resumes do not', async ()
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   assert.equal(submitted.round, 1)
+  await call(fake, 'openspec_review', {
+    action: 'dispose',
+    change: CHANGE,
+    review: 'draft',
+    id: 'R1-01',
+    status: 'fixed',
+    note: 'Round 2 resolves it.',
+  })
 
   const second = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
   assert.equal(second.round, 2)
-  assert.equal(activations.length, 2)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 1)
+  assert.equal(messages[0].target, 'reviewer-1')
+  assert.match(messages[0].content[0].text, /new draft review round 2/)
 
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
   const slot = record.reviewers.slots[0]
-  assert.equal(slot.agentId, 'reviewer-2')
+  assert.equal(slot.agentId, 'reviewer-1')
   assert.equal(slot.round, 2)
-  assert.equal(slot.retries, 0)
-  assert.deepEqual(slot.replacements.map((entry) => [entry.from, entry.to]), [['reviewer-1', 'reviewer-2']])
-  assert.match(slot.replacements[0].reason, /new draft round 2/)
+  assert.equal(slot.replacements, undefined)
+  assert.equal(slot.retries, undefined)
+  assert.equal(typeof slot.lastWokenAt, 'string')
 
   const resumed = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
   assert.equal(resumed.round, 2)
-  assert.equal(activations.length, 2)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 1)
+
+  const roundTwo = await execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    report: report({
+      verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'The round 2 report resolves it.' }],
+    }),
+  })
+  assert.equal(roundTwo.round, 2)
+})
+
+test('a new-round wake fails closed without the reviewer service or the changer agent', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  const intent = 'Add a theme selector.'
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+
+  const noService = createFakeContext({ cwd: root, subagents: {} })
+  apply(noService.ctx, {
+    timeoutMs: 30_000,
+    reviews: { draft: { enabled: true, reviewers: 1 } },
+  })
   await assert.rejects(
-    execute({ action: 'submit', change: CHANGE, review: 'draft', report: report() }),
-    /not the reviewer/,
+    noService.tools.get('openspec_review').execute(
+      { action: 'start', change: CHANGE, intent },
+      { agent: { id: 'changer' }, signal: new AbortController().signal },
+    ),
+    /reviewer service is unavailable/,
+  )
+
+  const noParent = createFakeContext({ cwd: root, subagents: { async sendMessage() {} } })
+  apply(noParent.ctx, {
+    timeoutMs: 30_000,
+    reviews: { draft: { enabled: true, reviewers: 1 } },
+  })
+  await assert.rejects(
+    noParent.tools.get('openspec_review').execute(
+      { action: 'start', change: CHANGE, intent },
+      { agent: null, signal: new AbortController().signal },
+    ),
+    /needs the changer agent/,
   )
 })
 
@@ -1827,9 +1886,9 @@ test('an apply start activates a reviewer when the record has no slots', async (
   assert.equal(saved.state, 'in-review')
 })
 
-test('a new apply round activates a fresh reviewer and resumes do not', async () => {
+test('a new apply round wakes the same reviewer and resumes do not', async () => {
   const { root, run } = gitFixture()
-  const { fake, activations } = externalSetup(root, {
+  const { fake, activations, messages } = externalSetup(root, {
     draft: { enabled: true, reviewers: 0 },
     apply: { enabled: true, reviewers: 1 },
   })
@@ -1851,20 +1910,43 @@ test('a new apply round activates a fresh reviewer and resumes do not', async ()
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   assert.equal(submitted.round, 1)
+  await call(fake, 'openspec_review', {
+    action: 'dispose',
+    change: CHANGE,
+    review: 'apply',
+    id: 'R1-01',
+    status: 'fixed',
+    note: 'Round 2 resolves it.',
+  })
 
   const second = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
   assert.equal(second.round, 2)
-  assert.equal(activations.length, 2)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 1)
+  assert.equal(messages[0].target, 'reviewer-1')
+  assert.match(messages[0].content[0].text, /new apply review round 2/)
 
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   const slot = record.reviewers.slots[0]
-  assert.equal(slot.agentId, 'reviewer-2')
+  assert.equal(slot.agentId, 'reviewer-1')
   assert.equal(slot.round, 2)
-  assert.match(slot.replacements[0].reason, /new apply round 2/)
+  assert.equal(slot.replacements, undefined)
+  assert.equal(typeof slot.lastWokenAt, 'string')
 
   const resumed = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
   assert.equal(resumed.round, 2)
-  assert.equal(activations.length, 2)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 1)
+
+  const roundTwo = await execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'apply',
+    report: report({
+      verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'The round 2 report resolves it.' }],
+    }),
+  })
+  assert.equal(roundTwo.round, 2)
 })
 
 test('retry refuses a self review and a record without a reviewer slot', async () => {
