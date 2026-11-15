@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
 import { buildApplyBrief } from '../lib/review/brief.js'
-import { apply as reviewerApply } from '../reviewer.js'
+import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
 import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { createFakeContext } from './fake-context.mjs'
 
@@ -828,9 +828,41 @@ test('apply review refuses a strict-only warning before it records a round', asy
   await passDraft(fake, root, run)
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
-    /apply review refuses a change that does not pass strict validation/,
+    /apply review refuses change 'add-dark-mode' that does not pass strict validation/,
   )
   assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
+})
+
+test('apply review refuses a disabled policy before strict validation', async () => {
+  const { root, run } = gitFixture()
+  const specDirectory = join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme')
+  mkdirSync(specDirectory, { recursive: true })
+  writeFileSync(join(specDirectory, 'spec.md'), [
+    '# Spec Delta',
+    '',
+    '## ADDED Requirements',
+    '',
+    '### Requirement: Theme probe',
+    '',
+    'The probe SHALL report its state.',
+    '',
+    '#### Scenario: Probe has a trigger only',
+    '',
+    '- **WHEN** the probe runs',
+    '',
+  ].join('\n'))
+  run(['add', 'openspec'])
+  run(['commit', '-m', 'add strict-only warning'])
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
+    apply: { enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /apply review is disabled for this change/,
+  )
 })
 
 test('apply review refuses a dirty tree', async () => {
@@ -2321,7 +2353,6 @@ test('the reviewer entry denies global Host tools and keeps the preset tools', (
     deny: ['openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree'],
   }])
   assert.equal(reviewer.tools.has('openspec_reviewer'), true)
-  assert.equal(reviewer.tools.has('openspec_review'), false)
 
   const changer = createFakeContext({ cwd: process.cwd(), globalTools: hostTools })
   apply(changer.ctx, {
@@ -2377,8 +2408,59 @@ test('buildApplyBrief records the host validation and handles its absent branch'
     /- validation: host strict pass \(0 issues\)/,
   )
   assert.match(
-    buildApplyBrief({ ...base, validation: { strict: false, issues: [{}] } }),
+    buildApplyBrief({ ...base, validation: { strict: false, issues: [{ level: 'WARNING' }] } }),
     /- validation: host non-strict pass \(1 issue\)/,
   )
+  assert.match(
+    buildApplyBrief({ ...base, validation: { strict: true, issues: [{ level: 'INFO' }] } }),
+    /- validation: host strict pass \(0 issues\)/,
+  )
   assert.match(buildApplyBrief({ ...base, validation: { strict: true, issues: [] } }), /- \(none\)/)
+})
+
+
+function reviewerPresetDeclaration() {
+  const lines = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8').split('\n')
+  const start = lines.findIndex((line) => line.trim() === '- id: preset-openspec-reviewer')
+  assert.ok(start >= 0, 'the reviewer preset row exists')
+  const plugins = []
+  let current
+  for (const line of lines.slice(start + 1)) {
+    if (/^ {4}- id: /.test(line)) break
+    const child = /^ {10}- id: (\S+)$/.exec(line)
+    if (child !== null) {
+      current = { id: child[1], config: '' }
+      plugins.push(current)
+      continue
+    }
+    if (current !== undefined) current.config += `${line}\n`
+  }
+  return plugins
+}
+
+function reviewerPresetToolNames(plugins) {
+  const names = new Set()
+  for (const plugin of plugins) {
+    if (plugin.id === 'tool-fs') {
+      if (/\bread:\s*true/.test(plugin.config)) names.add('read')
+      if (/\bwrite:\s*true/.test(plugin.config)) names.add('write')
+      if (/\bedit:\s*true/.test(plugin.config)) names.add('edit')
+    } else if (plugin.id === 'tool-fs-search') {
+      names.add('grep')
+      names.add('glob')
+    } else if (plugin.id === 'tool-web') {
+      if (/\bsearch:\s*true/.test(plugin.config)) names.add('web_search')
+      if (/\bfetch:\s*true/.test(plugin.config)) names.add('web_fetch')
+    } else if (plugin.id === 'reviewer') {
+      names.add('openspec_reviewer')
+    }
+  }
+  return names
+}
+
+
+test('the reviewer preset tool names match the declaration', () => {
+  const plugins = reviewerPresetDeclaration()
+  assert.deepEqual(plugins.map((plugin) => plugin.id), ['persona', 'tool-fs', 'tool-fs-search', 'tool-web', 'reviewer'])
+  assert.deepEqual([...reviewerPresetToolNames(plugins)].sort(), [...PRESET_TOOL_NAMES].sort())
 })

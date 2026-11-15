@@ -19,7 +19,7 @@ export const name = 'openspec-flow-reviewer'
 export const inject = ['tools', 'workingDirectory']
 
 /** Tool names the reviewer preset provides; the deny mask must not name them. */
-const PRESET_TOOL_NAMES = new Set([
+export const PRESET_TOOL_NAMES = new Set([
   'read',
   'grep',
   'glob',

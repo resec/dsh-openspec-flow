@@ -19,7 +19,7 @@ The plugin validates a change before a draft review (`validateChange` in `lib/to
 
 ### Deny the inherited Host tools by name, computed from the global registry
 
-The reviewer entry (`reviewer.js`) reads the global tool registry with `ctx.tools.definitions()` (the omitted scope is the global view) and registers `ctx.tools.restrict({ deny: names })` in its scoped context. The deny set names every tool registered in the global scope except the six names the preset itself provides: `read`, `grep`, `glob`, `web_search`, `web_fetch` and `openspec_reviewer`. Excluding those names keeps the preset's scoped tools visible even if a Host plugin also registers a tool under one of them (the scoped registration shadows the global one).
+The reviewer entry (`reviewer.js`) reads the global tool registry with `ctx.tools.definitions()` (the omitted scope is the global view) and registers `ctx.tools.restrict({ deny: names })` in its scoped context. The deny set names every tool registered in the global scope except the six names the preset itself provides: `read`, `grep`, `glob`, `web_search`, `web_fetch` and `openspec_reviewer`. Excluding those names is load-bearing: `restrict` rejects a name that is not a known global or ancestor name, and the restriction is evaluated on the merged agent view, so a deny that names a preset tool also removes that preset tool. A global tool with the same name is shadowed by the preset registration; the exclusion keeps the preset tool in the catalog.
 
 The earlier plan used `restrict({ allow: [] })`. That is wrong on the pinned runtime: a restriction is intersected over every tool the viewing scope inherits, and only the viewing scope's own registrations are exempt. An agent bound under the reviewer preset inherits the preset tools, so an empty allow mask removes them too and the reviewer starts with no tools. A deny set removes only the names it contains and leaves the preset tools alone.
 
@@ -45,7 +45,7 @@ After activation, the `tools/change` listener recomputes and restricts newly reg
 
 `validateChange` gains a strict option that adds `--strict` to the bundled CLI call. The draft entry keeps the default non-strict call; the apply entry calls it with `strict: true` before it writes a record or advances a round. Both apply `start` and `resume` go through `applyReviewEntry`, so a resume that opens a new round validates the committed tree again.
 
-On failure the plugin throws before the review lock and before any record or round write. The error names the change, states that apply review requires strict validation, and lists each issue path and message. The draft error remains its own message.
+On failure the plugin throws before the review lock and before any record or round write. The error names the change, states that apply review requires strict validation, and lists each issue path and message. The draft error remains its own message. A policy that disables apply review and an abandoned record are refused before the strict run, so their diagnostics keep precedence.
 
 The alternative — allowing `openspec_inspect` to the reviewer and keeping the current brief — was rejected: it preserves a Host tool in the reviewer catalog and makes a deterministic CLI check a model responsibility.
 
