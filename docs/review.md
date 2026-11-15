@@ -138,6 +138,10 @@ finding 的处置：
 
 配置页保存分两阶段校验：先按 Config schema 校验形状与上下界，再用 `llm` 目录校验显式模型的 provider、model 与 effort；两次都通过才调用 `configEditor.edit`。拒绝时文件不变，页面显示原因。保存成功后插件行重启，已锁定策略不受影响。
 
+### 轮询间隔
+
+`openspec_review` 的 `action: "wait"` 默认每 250 ms 读取一次评审记录。环境变量 `OPENSPEC_FLOW_REVIEW_POLL_MS` 可覆盖该间隔，取值为 10–60000 的整数；缺失、非数字、非整数或超出范围时回退到 250 ms。该变量只改变轮询频率，不改变 `waiting`、`ready`、`overdue` 的判定语义。
+
 ## 示例：reviewers 0（自评审）
 
 ```text

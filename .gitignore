@@ -12,6 +12,7 @@ npm-debug.log*
 # Test and pack artifacts
 coverage/
 .coverage/
+.cache/
 *.tgz
 
 # Local skill migration backups

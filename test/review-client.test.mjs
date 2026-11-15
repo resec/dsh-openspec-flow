@@ -398,7 +398,9 @@ test('the package exports the client half and packs it', () => {
   })
   rmSync(cache, { recursive: true, force: true })
   assert.equal(packed.status, 0, packed.stderr)
-  const [entry] = JSON.parse(packed.stdout)
+  const parsed = JSON.parse(packed.stdout)
+  const entry = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0]
+  assert.ok(entry !== undefined, 'npm pack reports one package entry')
   const path = entry.files.map((file) => file.path)
   assert.ok(path.includes('client.js'), 'the packed file list includes client.js')
   assert.ok(path.includes('index.js'))

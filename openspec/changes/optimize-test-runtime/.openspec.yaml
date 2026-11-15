@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-15
+goal: Reduce the full plugin test suite wall time from ~69s (parallel) without
+  weakening real-CLI coverage.

@@ -57,7 +57,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 每个评审段的 `reviewers` 决定评审方式：`0` 由 changer 用 `openspec_review` 的 `action: "self-report"` 自评；`1` 由插件启动一个只读的 `openspec-reviewer` 子会话，它通过 `openspec_reviewer` 读 brief 并提交报告；实际工具目录是 `read`、`grep`、`glob`、`read_image`、`web_search`、`web_fetch` 与 `openspec_reviewer`；`read_image` 需要 Host 的 `attachments` 服务与声明图片输入的模型路由，Host 未提供 `attachments` 时该工具不注册，目录只有其余六个工具。reviewer 入口按全局注册表 deny 所有 Host 工具并在 `tools/change` 时刷新，因此 `openspec_review`、`openspec_inspect`、`openspec_archive`、`issues_*` 等不可见。它可搜索与抓取网页：`web_search` 与 `web_fetch` 分别使用部署为 Host `web` 服务为 search 与 fetch 选择的 provider，preset 不指定 provider。默认匿名 HTTP provider 不限制目标地址，需要隔离时应更换 provider 或加工具策略；Host 未提供 `web` 服务时 reviewer 无法启动。评审策略在 `openspec_new_change` 时锁定，包含 reviewer 模型（`inherit` 或显式 provider/model/effort）与轮次、等待上限；之后修改配置只影响新变更。没有 git 的项目在锁定策略时忽略 `reviews.apply.enabled`，把新策略的 apply 段关闭；旧策略可能仍记录启用，随后由 `openspec_review` 的 apply status 报告 `policy`/`enabled`/`available`，归档不等待不可用、无策略或禁用的评审。
 
-就绪度不是报告的 `verdict` 本身：对象哈希必须未变、最新报告为 `pass`、且没有未关闭的 finding（`critical`/`major` 不能 deferred 或 rejected，用户 `waive` 需显式批准）。完整说明、记录布局、失败处理与两个端到端示例见 [docs/review.md](docs/review.md)。
+就绪度不是报告的 `verdict` 本身：对象哈希必须未变、最新报告为 `pass`、且没有未关闭的 finding（`critical`/`major` 不能 deferred 或 rejected，用户 `waive` 需显式批准）。`action: "wait"` 默认每 250 ms 轮询评审记录，可用环境变量 `OPENSPEC_FLOW_REVIEW_POLL_MS`（10–60000 的整数）覆盖；该变量只影响轮询频率，不改变 `waiting`、`ready`、`overdue` 的判定语义。完整说明、记录布局、失败处理与两个端到端示例见 [docs/review.md](docs/review.md)。
 
 ## CLI 对照
 
@@ -235,6 +235,8 @@ profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需�
 cd dsh-openspec-flow
 npm test
 ```
+
+测试入口为普通运行设置 `NODE_COMPILE_CACHE` 指向仓库内绝对路径 `.cache/node-compile`，供测试进程及其启动的 CLI 子进程复用；覆盖率运行会删除继承的该变量，因为 Node 文档说明反序列化字节码会降低 V8 覆盖率精度。`.cache/` 已被忽略。当前全量默认并行运行约 40 秒（Node 24.22.2、4 核）。
 
 ### 覆盖率
 

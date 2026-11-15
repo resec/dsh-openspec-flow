@@ -15,6 +15,8 @@ import { assertCurrentNode } from './node-version.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const COVERAGE_ENABLED = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
+/** Absolute compile-cache directory; a relative value would resolve inside fixtures. */
+const COMPILE_CACHE = join(ROOT, '.cache', 'node-compile')
 
 const SCOPES = {
   plugin: {
@@ -30,6 +32,27 @@ function listTests(directory) {
     .filter((name) => name.endsWith('.test.mjs'))
     .sort()
     .map((name) => join(directory, name))
+}
+
+/**
+ * Build the environment for the test runner.
+ *
+ * Plain runs reuse the compile cache for the runner and every CLI child. A
+ * coverage run drops an inherited value because Node documents that bytecode
+ * deserialised from the cache can make V8 coverage less precise.
+ *
+ * @param coverage - whether this run collects coverage.
+ * @returns the environment for the child process.
+ */
+function childEnv(coverage) {
+  const env = { ...process.env }
+  if (coverage) {
+    delete env.NODE_COMPILE_CACHE
+    return env
+  }
+  mkdirSync(COMPILE_CACHE, { recursive: true })
+  env.NODE_COMPILE_CACHE = COMPILE_CACHE
+  return env
 }
 
 function runScope(scope, coverage, extra = []) {
@@ -51,7 +74,7 @@ function runScope(scope, coverage, extra = []) {
   const result = spawnSync(process.execPath, args, {
     cwd: ROOT,
     stdio: 'inherit',
-    env: process.env,
+    env: childEnv(coverage),
   })
   if (result.error) throw result.error
   return result.status ?? 1
