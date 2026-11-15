@@ -4,8 +4,8 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
-import { apply } from '../index.js'
 import { apply as reviewerApply } from '../reviewer.js'
+import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
   CHANGE, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, cleanupFixtures,
@@ -454,5 +454,3 @@ test('resume refuses a missing intent file', async () => {
     /intent file is missing; remove the review record/,
   )
 })
-
-

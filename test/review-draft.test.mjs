@@ -4,8 +4,8 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
-import { apply } from '../index.js'
 import { cacheKey, clearCache, readCache } from '../lib/cache.js'
+import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
   CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, captureSpawn, cleanupFixtures,
@@ -550,5 +550,3 @@ test('a refused gate leaves no cached apply state', async () => {
   await assert.rejects(call(fake, 'openspec_apply_next', { change: CHANGE }), /draft review is not ready/)
   assert.equal(readCache(cacheKey(root, CHANGE, '')), undefined)
 })
-
-

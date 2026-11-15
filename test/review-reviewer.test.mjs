@@ -4,10 +4,10 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
-import { apply } from '../index.js'
 import { buildApplyBrief } from '../lib/review/brief.js'
 import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
 import { clearCache } from '../lib/cache.js'
+import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
   CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
@@ -792,5 +792,3 @@ test('the reviewer preset tool names match the declaration', () => {
   assert.deepEqual(plugins.map((plugin) => plugin.id), ['persona', 'tool-fs', 'tool-fs-search', 'tool-web', 'reviewer'])
   assert.deepEqual([...reviewerPresetToolNames(plugins)].sort(), [...PRESET_TOOL_NAMES].sort())
 })
-
-

@@ -5,7 +5,6 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
-import { apply } from '../index.js'
 import {
   CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
@@ -548,5 +547,3 @@ test('apply resume refuses a record without a policy', async () => {
     /apply review policy is missing; remove the review record/,
   )
 })
-
-
