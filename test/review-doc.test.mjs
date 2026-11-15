@@ -64,6 +64,7 @@ function liveCatalog() {
       root: `openspec/${REVIEW_DIRECTORY}/`,
       draftFile: DRAFT_REVIEW_FILE,
       applyFile: APPLY_REVIEW_FILE,
+      waiverFile: 'plan-change-waiver.json',
       ignore: REVIEW_IGNORE_LINE,
     },
   }
@@ -125,7 +126,7 @@ export function checkDocument(text, spec) {
   }
   if (!text.includes(spec.record.root)) problems.push(`missing record root ${spec.record.root}`)
   if (!text.includes('<store>#<change>')) problems.push('missing record key <store>#<change>')
-  for (const name of [spec.record.draftFile, spec.record.applyFile]) {
+  for (const name of [spec.record.draftFile, spec.record.applyFile, spec.record.waiverFile]) {
     if (!text.includes(name)) problems.push(`missing record file ${name}`)
   }
   if (!text.includes(spec.record.ignore)) problems.push(`missing ignore entry ${spec.record.ignore}`)
@@ -229,4 +230,12 @@ test('the review document states the reviewer catalog and the host strict valida
   assert.match(text, /--strict/)
   assert.match(text, /brief 头部记录/)
   assert.match(text, /reviewer 不再运行校验/)
+})
+
+test('the review document explains the seal, the freeze and the plan-change waiver', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /封存 commit/)
+  assert.match(text, /apply 开始后 draft review 冻结/)
+  assert.match(text, /scope: "plan-change"/)
+  assert.match(text, /plan-change-waiver\.json/)
 })

@@ -99,6 +99,8 @@ export function gitFixture() {
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   run(['add', 'openspec'])
+  // The change directory stays uncommitted so `passDraft` can seal it alone.
+  run(['rm', '-r', '--cached', '--quiet', `openspec/changes/${CHANGE}`])
   run(['commit', '-m', 'fixture'])
   return { root, run }
 }
@@ -110,14 +112,15 @@ export async function passDraft(fake, root, run) {
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, report: report(),
   })
-  await call(fake, 'openspec_apply_next', { change: CHANGE })
   if (run !== undefined) {
     const ignore = join(root, 'openspec', '.gitignore')
     if (existsSync(ignore) && run(['status', '--porcelain', '--', 'openspec/.gitignore']) !== '') {
       run(['add', 'openspec/.gitignore'])
-      run(['commit', '-m', 'add review ignore'])
     }
+    run(['add', `openspec/changes/${CHANGE}`])
+    run(['commit', '-m', 'seal the draft'])
   }
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
 }
 
 export function captureSpawn(fake) {

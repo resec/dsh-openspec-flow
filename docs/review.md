@@ -20,12 +20,14 @@
 
 apply review 需要 git 仓库、干净工作区与至少一个提交。没有 git 的项目只能用 draft review；`openspec_new_change` 在锁定策略时忽略 apply review 的启用设置，把新建策略的 apply 段关闭。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
 
+git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须提交封存 commit：变更目录连同插件写入的 `openspec/.gitignore`。工具要求工作区干净、`HEAD` 至少改一个变更目录内的文件、目录外只允许该忽略文件，且工件哈希仍等于 draft 记录；任一不满足即拒绝。封存 commit 记录为 apply 的 base。apply 开始后 draft review 冻结，不能再 `resume`；此时修改 planning 工件须先取得用户书面豁免，用 `openspec_review`（`action: "waive"`、`scope: "plan-change"`、`files`）记录，apply review 会拒绝不在豁免清单内的变更文件。
+
 ## 阶段与闸门
 
 1. `openspec_new_change` 创建变更目录前先为本变更锁定评审策略（`policy.json`），并把已解析的 reviewer 模型写入策略。
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`；`start` 只用于首轮。
-3. draft review 就绪后 `openspec_apply_next` 才返回下一任务；需要下一轮时用 `action: "resume"`，不传 `intent`。
-4. 实现并提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。
+3. draft review 未就绪时 `openspec_review` 需要下一轮：用 `action: "resume"`，不传 `intent`。就绪后，git 项目先把变更目录与 `openspec/.gitignore` 提交为封存 commit，再调用 `openspec_apply_next`；工具校验干净树、提交只含变更目录与该忽略文件、工件哈希未变，任一不满足即拒绝并记录该 commit 为 base。apply 开始后 draft review 冻结，不再接受 `resume`。
+4. 实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录；apply review 拒绝豁免清单之外的变更文件。
 5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs。
 
 任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
@@ -101,6 +103,7 @@ finding 的处置：
 | `openspec/.review/<store>#<change>/intent.md` | 首轮 `start` 写入的 draft 意图文本；`resume` 只读取，不修改 |
 | `openspec/.review/<store>#<change>/review.json` | draft review 记录 |
 | `openspec/.review/<store>#<change>/apply-review.json` | apply review 记录 |
+| `openspec/.review/<store>#<change>/plan-change-waiver.json` | apply 阶段规划变更的用户豁免：原文、批准者、时间与文件清单 |
 | `openspec/.review/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
 | `openspec/.review/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
 | `openspec/.review/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
@@ -154,8 +157,9 @@ openspec_review { "action": "self-report", "change": "add-export-api",
                   "report": { "verdict": "pass", "summary": "Artifacts are coherent.",
                               "findings": [], "verifications": [],
                               "outOfScope": [], "residualRisks": [] } }
+# draft 就绪后封存（git 项目）：只提交变更目录与 openspec/.gitignore
 openspec_apply_next { "change": "add-export-api" }
-# 实现、测试、提交后：
+# 实现、测试、逐轮提交后：
 openspec_review { "action": "start", "review": "apply", "change": "add-export-api" }
 openspec_review { "action": "self-report", "review": "apply", "change": "add-export-api",
                   "report": { "verdict": "pass", "summary": "The commit matches the reviewed plan.",
@@ -181,8 +185,9 @@ openspec_review { "action": "dispose", "change": "add-export-api", "id": "R1-01"
                   "status": "fixed", "note": "Added the missing scenario." }
 openspec_review { "action": "resume", "change": "add-export-api" }
 # 下一轮报告用 verifications 声明 R1-01 为 verified-fixed，就绪后：
+# draft 就绪后封存（git 项目）：只提交变更目录与 openspec/.gitignore
 openspec_apply_next { "change": "add-export-api" }
-# 实现并提交后，apply review 首轮以 start、后续轮次以 resume，再 wait / report，最后：
+# 实现并逐轮提交后，apply review 首轮以 start、后续轮次以 resume，再 wait / report，最后：
 openspec_archive { "change": "add-export-api" }
 ```
 

@@ -8,7 +8,7 @@ import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, captureSpawn, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, captureSpawn, gitFixture, passDraft, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -549,4 +549,25 @@ test('a refused gate leaves no cached apply state', async () => {
   })
   await assert.rejects(call(fake, 'openspec_apply_next', { change: CHANGE }), /draft review is not ready/)
   assert.equal(readCache(cacheKey(root, CHANGE, '')), undefined)
+})
+
+test('the draft review can resume before apply started', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'design.md'), '# Design changed before apply\n')
+  const second = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(second.round, 2)
+  assert.equal(second.state, 'in-review')
+})
+
+test('the draft review cannot resume once apply started', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /cannot be resumed once apply started/,
+  )
 })

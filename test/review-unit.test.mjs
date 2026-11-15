@@ -9,6 +9,7 @@ import {
   assertSafeSegment,
   ensureReviewIgnored,
   gitCommit,
+  gitCommitPaths,
   gitMergeBase,
   gitTree,
   isFile,
@@ -24,7 +25,7 @@ import {
 } from '../lib/review/store.js'
 import { normalizeReviews, draftSettings } from '../lib/review/config.js'
 import { buildDraftBrief } from '../lib/review/brief.js'
-import { draftObject } from '../lib/review/object.js'
+import { diffArtifactFiles, draftObject } from '../lib/review/object.js'
 import {
   applyVerificationsTo,
   assertReport,
@@ -35,7 +36,7 @@ import {
 import { draftReadiness } from '../lib/review/readiness.js'
 import { submitReport } from '../lib/review/submit.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
-import { DEFAULT_REVIEW_POLL_MS, reviewPollMs } from '../lib/tools/review.js'
+import { DEFAULT_REVIEW_POLL_MS, relativeChangePath, reviewPollMs, storeSealSkipWarning } from '../lib/tools/review.js'
 
 const CREATED = []
 
@@ -633,4 +634,99 @@ test('reviewPollMs reads the environment override and falls back to the default'
     if (previous === undefined) delete process.env.OPENSPEC_FLOW_REVIEW_POLL_MS
     else process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = previous
   }
+})
+
+function git(root, args) {
+  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim()
+}
+
+function gitRoot() {
+  const root = temp()
+  git(root, ['init', '-b', 'main'])
+  git(root, ['config', 'user.email', 'test@example.com'])
+  git(root, ['config', 'user.name', 'Test'])
+  return root
+}
+
+test('gitCommitPaths lists a normal commit against its first parent', () => {
+  const root = gitRoot()
+  writeFileSync(join(root, 'a.txt'), 'a\n')
+  writeFileSync(join(root, 'b.txt'), 'b\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'first'])
+  assert.deepEqual(gitCommitPaths(root, 'HEAD').sort(), ['a.txt', 'b.txt'])
+  writeFileSync(join(root, 'b.txt'), 'b2\n')
+  writeFileSync(join(root, 'c.txt'), 'c\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'second'])
+  assert.deepEqual(gitCommitPaths(root, 'HEAD').sort(), ['b.txt', 'c.txt'])
+})
+
+test('gitCommitPaths lists the initial commit against the empty tree', () => {
+  const root = gitRoot()
+  writeFileSync(join(root, 'only.txt'), 'only\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'initial'])
+  assert.deepEqual(gitCommitPaths(root, 'HEAD'), ['only.txt'])
+})
+
+test('gitCommitPaths compares a merge commit with its first parent', () => {
+  const root = gitRoot()
+  writeFileSync(join(root, 'base.txt'), 'base\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'base'])
+  git(root, ['checkout', '-b', 'feature'])
+  writeFileSync(join(root, 'feature.txt'), 'feature\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'feature'])
+  git(root, ['checkout', 'main'])
+  writeFileSync(join(root, 'main.txt'), 'main\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'main'])
+  git(root, ['merge', '--no-ff', 'feature', '-m', 'merge'])
+  assert.deepEqual(gitCommitPaths(root, 'HEAD').sort(), ['feature.txt'])
+})
+
+test('gitCommitPaths returns undefined for an unknown revision', () => {
+  const root = gitRoot()
+  writeFileSync(join(root, 'a.txt'), 'a\n')
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'first'])
+  assert.equal(gitCommitPaths(root, 'does-not-exist'), undefined)
+})
+
+test('relativeChangePath separates a project change from a store-backed one', () => {
+  const root = join(tmpdir(), 'proj')
+  assert.equal(relativeChangePath(root, join(root, 'openspec', 'changes', 'demo')), 'openspec/changes/demo')
+  assert.equal(relativeChangePath(root, join(tmpdir(), 'store', 'changes', 'demo')), undefined)
+  assert.equal(relativeChangePath(root, root), undefined)
+})
+
+test('the store seal skip warning names the change', () => {
+  assert.match(storeSealSkipWarning('demo'), /store-backed change outside the project root: demo/)
+})
+
+test('diffArtifactFiles reports modified, added and removed files', () => {
+  const changes = diffArtifactFiles(
+    [{ path: 'design.md', sha256: 'a' }, { path: 'proposal.md', sha256: 'b' }, { path: 'tasks.md', sha256: 'c' }],
+    [{ path: 'design.md', sha256: 'a2' }, { path: 'tasks.md', sha256: 'c' }, { path: 'specs/x/spec.md', sha256: 'd' }],
+  )
+  assert.deepEqual(changes, [
+    { path: 'design.md', status: 'modified' },
+    { path: 'proposal.md', status: 'removed' },
+    { path: 'specs/x/spec.md', status: 'added' },
+  ])
+})
+
+test('diffArtifactFiles treats a missing recorded list as all current files added', () => {
+  assert.deepEqual(
+    diffArtifactFiles(undefined, [{ path: 'design.md', sha256: 'a' }]),
+    [{ path: 'design.md', status: 'added' }],
+  )
+})
+
+test('diffArtifactFiles returns nothing when both lists are absent', () => {
+  assert.deepEqual(diffArtifactFiles(undefined, undefined), [])
 })

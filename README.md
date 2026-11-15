@@ -17,7 +17,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 
-写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝；`openspec_archive` 在 apply review 启用且项目有 git、但评审未就绪时拒绝；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
+写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝，并在 git 项目首次调用时要求封存 commit（干净树、只含变更目录与 `openspec/.gitignore`、工件哈希未变）；`openspec_archive` 在 apply review 启用且项目有 git、但评审未就绪时拒绝；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
 `openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_inspect` 的 `action: "instructions"` 配合 `artifact: "archive"` 返回归档 `context`/`guidance`，不是空的产物字段。
 
@@ -46,14 +46,14 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 修订规划 | `openspec-update-change`；`openspec_inspect`（`action: "instructions"`、`"validate"`） | 修改现有 artifacts；没有专用写工具 |
 | 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_review`（`review: "apply"`）、`openspec_archive` | 先读归档 `context`/`guidance`、检查 apply review、校验、检查任务，再移动并合并 delta specs |
 | 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
-| 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，`openspec/.gitignore` 忽略 `.review/` |
+| 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，含 `plan-change-waiver.json`；`openspec/.gitignore` 忽略 `.review/` |
 
 ## 评审
 
 变更在实施前与归档前各过一次评审；draft review 始终是强制闸门，apply review 在启用且项目有 git 时是强制闸门。两个入口互斥：`start` 只在评审没有记录时可用，draft 首轮必须带 `intent`；`resume` 只对已有记录的评审可用，不接收 `intent`，draft 的 `intent.md` 由首轮写入后不再改写。
 
-- **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。
-- **apply review** 审已提交的 git tree 与变更工件是否一致；插件在 `start`/`resume` 打开轮次前以 `--strict` 校验提交的变更，失败即拒绝，brief 记录 host strict 结果；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。
+- **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。git 项目中 draft 就绪后须先提交封存 commit（变更目录加 `openspec/.gitignore`），apply 开始后 draft review 冻结，不再接受 `resume`。
+- **apply review** 审已提交的 git tree 与变更工件是否一致；插件在 `start`/`resume` 打开轮次前以 `--strict` 校验提交的变更，失败即拒绝，brief 记录 host strict 结果；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。apply 开始后的规划变更须先记录用户书面豁免（`openspec_review` 的 `action: "waive"`、`scope: "plan-change"`、`files`），apply review 拒绝豁免清单之外的变更文件。
 
 每个评审段的 `reviewers` 决定评审方式：`0` 由 changer 用 `openspec_review` 的 `action: "self-report"` 自评；`1` 由插件启动一个只读的 `openspec-reviewer` 子会话，它通过 `openspec_reviewer` 读 brief 并提交报告；实际工具目录是 `read`、`grep`、`glob`、`read_image`、`web_search`、`web_fetch` 与 `openspec_reviewer`；`read_image` 需要 Host 的 `attachments` 服务与声明图片输入的模型路由，Host 未提供 `attachments` 时该工具不注册，目录只有其余六个工具。reviewer 入口按全局注册表 deny 所有 Host 工具并在 `tools/change` 时刷新，因此 `openspec_review`、`openspec_inspect`、`openspec_archive`、`issues_*` 等不可见。它可搜索与抓取网页：`web_search` 与 `web_fetch` 分别使用部署为 Host `web` 服务为 search 与 fetch 选择的 provider，preset 不指定 provider。默认匿名 HTTP provider 不限制目标地址，需要隔离时应更换 provider 或加工具策略；Host 未提供 `web` 服务时 reviewer 无法启动。评审策略在 `openspec_new_change` 时锁定，包含 reviewer 模型（`inherit` 或显式 provider/model/effort）与轮次、等待上限；之后修改配置只影响新变更。没有 git 的项目在锁定策略时忽略 `reviews.apply.enabled`，把新策略的 apply 段关闭；旧策略可能仍记录启用，随后由 `openspec_review` 的 apply status 报告 `policy`/`enabled`/`available`，归档不等待不可用、无策略或禁用的评审。
 
