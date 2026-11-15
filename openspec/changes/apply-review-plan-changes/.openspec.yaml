@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-15
+goal: 1) git 仓库 apply_next 首次要求封存 commit（只含 openspec/changes/<name>/、哈希匹配），apply
+  base 取该 commit；2) apply 已开始后 draft review resume 拒绝；3) apply 阶段的规划修改写入
+  draftDrift，须经 openspec_review waive scope=plan-change 记录用户豁免，且变更文件不超出白名单；4)
+  apply brief 增加规划变更段与规划轴；5) draft readiness 在 apply 开始后忽略 artifacts 哈希失配。
