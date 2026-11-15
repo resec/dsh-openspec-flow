@@ -2443,8 +2443,10 @@ function reviewerPresetToolNames(plugins) {
   for (const plugin of plugins) {
     if (plugin.id === 'tool-fs') {
       if (/\bread:\s*true/.test(plugin.config)) names.add('read')
+      if (/\breadImage:\s*true/.test(plugin.config)) names.add('read_image')
       if (/\bwrite:\s*true/.test(plugin.config)) names.add('write')
       if (/\bedit:\s*true/.test(plugin.config)) names.add('edit')
+      if (/\bapplyPatch:\s*true/.test(plugin.config)) names.add('apply_patch')
     } else if (plugin.id === 'tool-fs-search') {
       names.add('grep')
       names.add('glob')
