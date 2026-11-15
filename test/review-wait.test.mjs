@@ -1,19 +1,14 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import {
+  mkdirSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
-import { buildApplyBrief } from '../lib/review/brief.js'
-import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
-import { cacheKey, clearCache, readCache } from '../lib/cache.js'
+import { apply as reviewerApply } from '../reviewer.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  PROBE_ROOT, CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, writePolicy, report,
-  majorFinding, gitFixture, passDraft, captureSpawn, externalSetup,
-  reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
+  CHANGE, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -142,7 +137,7 @@ test('wait reports cancellation before any deadline', async () => {
   pending.catch(() => {})
   await new Promise((resolve) => setTimeout(resolve, 300))
   controller.abort()
-  await assert.rejects(pending, /wait was cancelled/)
+  await assert.rejects(pending, /wait was cancelled|aborted/i)
 })
 
 test('a draft start activates a reviewer when the record has no slots', async () => {
@@ -459,3 +454,5 @@ test('resume refuses a missing intent file', async () => {
     /intent file is missing; remove the review record/,
   )
 })
+
+

@@ -1,19 +1,16 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import {
+  mkdirSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
 import { buildApplyBrief } from '../lib/review/brief.js'
 import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
-import { cacheKey, clearCache, readCache } from '../lib/cache.js'
+import { clearCache } from '../lib/cache.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  PROBE_ROOT, CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, writePolicy, report,
-  majorFinding, gitFixture, passDraft, captureSpawn, externalSetup,
-  reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -795,3 +792,5 @@ test('the reviewer preset tool names match the declaration', () => {
   assert.deepEqual(plugins.map((plugin) => plugin.id), ['persona', 'tool-fs', 'tool-fs-search', 'tool-web', 'reviewer'])
   assert.deepEqual([...reviewerPresetToolNames(plugins)].sort(), [...PRESET_TOOL_NAMES].sort())
 })
+
+

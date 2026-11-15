@@ -1,19 +1,13 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import {
+  existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
-import { buildApplyBrief } from '../lib/review/brief.js'
-import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
-import { cacheKey, clearCache, readCache } from '../lib/cache.js'
-import { createFakeContext } from './fake-context.mjs'
 import {
-  PROBE_ROOT, CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, writePolicy, report,
-  majorFinding, gitFixture, passDraft, captureSpawn, externalSetup,
-  reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
+  CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -554,3 +548,5 @@ test('apply resume refuses a record without a policy', async () => {
     /apply review policy is missing; remove the review record/,
   )
 })
+
+
