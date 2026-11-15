@@ -14,6 +14,7 @@ coverage/
 .coverage/
 .cache/
 *.tgz
+dist/
 
 # Local skill migration backups
 .dsh/openspec-flow-backup/

@@ -1,6 +1,6 @@
 {
   "name": "dsh-openspec-flow",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Token-efficient OpenSpec workflow tools, reviews, and a review settings page for DeepSeek Harness",
   "license": "MIT",
@@ -48,7 +48,8 @@
     "coverage:baseline": "node scripts/coverage.mjs --update-baseline",
     "contract:check": "node scripts/check-cli-contract.mjs",
     "openspec:check": "openspec validate --all --strict && openspec validate --archived --strict",
-    "hooks:install": "node scripts/install-hooks.mjs"
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "bundle:pack": "node scripts/bundle-pack.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": "1.16.1"

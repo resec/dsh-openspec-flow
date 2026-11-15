@@ -181,6 +181,14 @@ test('the document covers both review kinds and both reviewer modes', () => {
   assert.match(text, /draft brief 的开头在两种模式下相同/)
 })
 
+test('the document explains the frozen reviewer', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of ['已安装副本', '不改变已装副本', '不会触发 HMR 重载', '评审按已装版本完整完成', 'installing-bundles.md']) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  assert.match(text, /重新打包、先在 Plugins 页面移除再安装/)
+})
+
 test('a stale tool, default or record path is reported by name', () => {
   const spec = liveCatalog()
   const text = readFileSync(DOC_PATH, 'utf8')

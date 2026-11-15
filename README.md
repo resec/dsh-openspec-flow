@@ -117,13 +117,19 @@ Agent 工作流全部由插件技能与工具覆盖。
 
 ## 安装
 
-在 DeepSeek Harness 中把本目录作为 bundle 安装：
+本仓库以本地 npm tarball 包安装，profile 不再用 `link:` 指向工作区。在仓库根目录执行：
 
 ```text
-plugin_manager action=install_bundle target=/path/to/dsh-openspec-flow
+npm run bundle:pack
 ```
 
-安装后插件行 id 为 `openspec-flow`。本包是 Host-only bundle，无构建脚本、无 `@deepseek-ai/*` 运行时依赖；工具、技能与策略都从 `index.js` 注册。安装时由包管理器安装 `@fission-ai/openspec` 1.16.1；以本地 linked 目录安装时，需要先在插件目录执行 `npm install`。
+命令只接受干净工作树，把当前提交打成 `dist/dsh-openspec-flow-<version>.tgz`，并在旁边写同名 `.json` 元数据；脏树、同版本产物已存在且未加 `--force`、缺少核心运行时文件或含测试与 OpenSpec 路径时拒绝。打包先写入 `.cache/pack/`，校验通过后才发布到 `dist/`，失败不会留在 `dist/`。
+
+安装：在 DSH 的 Plugins 页面先移除已安装的 bundle（若存在），再安装该 tarball，然后重启会话。安装后插件行 id 为 `openspec-flow`；本包是 Host-only bundle，无构建脚本、无 `@deepseek-ai/*` 运行时依赖，`@fission-ai/openspec` 由 profile 的包管理器一并安装。
+
+包形态冻结运行代码：工作区源码改动不改变已装副本，也不触发 HMR 重载，评审按已装版本完整完成。需要新插件逻辑生效时，重新打包、移除并安装；不需要为每个提交重装。
+
+[`docs/installing-bundles.md`](docs/installing-bundles.md) 说明产物、安装、重装与回退。
 
 对已有项目，`openspec_init` 只补项目结构；技能无需安装，插件加载后即可用。
 
@@ -316,10 +322,13 @@ lib/skill.js             skill provider 注册与按需读取
 lib/policy.js            流程规则文本、项目检测、agent 作用域注册
 lib/cache.js             进程内 LRU
 lib/hash.js              SHA-1 指纹
+lib/bundle.js            打包产物、元数据与 tarball 内容校验
+scripts/bundle-pack.mjs  打包入口：干净树校验、npm pack、发布到 dist/
 skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
 docs/review.md           评审系统完整说明（不进入发布包）
+docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```
 

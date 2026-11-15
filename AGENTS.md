@@ -22,7 +22,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 ## Plugin constraints
 
-- Plain ESM JavaScript with Node built-ins only. Runtime imports of `@deepseek-ai/*` break a linked profile install.
+- Plain ESM JavaScript with Node built-ins only. Runtime imports of `@deepseek-ai/*` break a packaged install, because the package declares no such dependency.
 - `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor; the floor is stated once in the `project-invariants` capability (`Runtime baseline`). When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
 - Tests and coverage run only on the primary Node major 24 and require a concrete version satisfying `engines.node`. Entrypoints check the `node` on PATH; they never call fnm, nvm, volta, or read `.nvmrc`. If the runtime does not qualify, they fail before starting tests.
 - The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 1.16.1, stated by the `project-invariants` `OpenSpec CLI pin` requirement). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
@@ -31,10 +31,16 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 - Keep the policy text in `lib/policy.js` consistent with the shipped skills. The policy is agent-scoped and must never be registered globally.
 - Add a regression test for every behavior change. The tests use a fake Host context and the real bundled OpenSpec CLI.
 
+## Bundle packaging
+
+The profile installs this repository as a local tarball under `dist/`, not as a linked directory. `npm run bundle:pack` packs a clean `HEAD` into `dist/dsh-openspec-flow-<version>.tgz` plus its `.json` metadata. The entrypoint refuses a dirty tree, an existing pair without `--force`, a tarball that misses an unconditional core runtime path or carries a test or OpenSpec path, and it leaves `dist/` unchanged on failure. It never writes the profile.
+
+The installed copy is frozen: editing plugin sources does not change it or reload the plugin, and a review completes on the installed version. Repack with `--force` and reinstall (remove the bundle in the Plugins page first, then add the tarball) only when new plugin logic must run. `docs/installing-bundles.md` carries the steps.
+
 ## Evaluation harness
 
 - The real-model harness lives in the separate `dsh-openspec-flow-eval` repository together with its spec, fixtures, offline tests and coverage gate. This repository no longer contains `eval/` or `eval:*` scripts.
 
 ## Verification
 
-A change is complete when every task is checked, `openspec_inspect` with `action: "validate"` and `strict: true` passes, `npm test` passes on Node 24, and `npm run coverage:check` passes. The pre-push hook runs `npm run openspec:check` over every active change and main spec, and checks archived task completion, before coverage; `COVERAGE_SKIP=1` skips only coverage. A packaged skill that omits `strict: true` does not lower this repository's gate. The installed plugin is linked into the `web` profile; re-enable the `include:openspec-flow` entry or restart DSH to load changed Host code in a live session.
+A change is complete when every task is checked, `openspec_inspect` with `action: "validate"` and `strict: true` passes, `npm test` passes on Node 24, and `npm run coverage:check` passes. The pre-push hook runs `npm run openspec:check` over every active change and main spec, and checks archived task completion, before coverage; `COVERAGE_SKIP=1` skips only coverage. A packaged skill that omits `strict: true` does not lower this repository's gate. The installed plugin runs from the tarball under `dist/`; editing plugin sources does not change it or reload it. Install a newly packed artifact and restart the session when new plugin logic must run.

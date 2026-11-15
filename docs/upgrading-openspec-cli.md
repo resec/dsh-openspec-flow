@@ -4,10 +4,10 @@
 
 当前基线（2026-11-12 工作树）：
 
-- CLI：`@fission-ai/openspec` 1.16.1（`package.json:42`）
+- CLI：`@fission-ai/openspec` 1.16.1（`package.json:55`）
 - Node：`>=24.9.0`（`package.json` 的 `engines.node`）
 - DSH：`=0.2.2-rc.2`（`package.json` 的 `engines.dsh`）
-- 插件版本：0.3.1（`package.json:3`）
+- 插件版本：0.4.0（`package.json:3`）
 
 插件只运行自己安装树内的 CLI（`lib/openspec.js:106`），首次调用校验精确版本与 `schemaVersion: 1`（`lib/openspec.js:143`）。因此升级必须同时移动依赖、版本断言与文档，不能只改 `package.json`。
 
@@ -80,7 +80,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
-| `package.json:42` | 精确版本 `1.16.1` | 改为目标精确版本 |
+| `package.json:55` | 精确版本 `1.16.1` | 改为目标精确版本 |
 | `lib/openspec.js:47` | 从 `package.json` 派生 `PINNED_CLI_VERSION` | 无需改代码，改 manifest 即生效 |
 | `lib/openspec.js:143` | `version --json` 的 `version` 与 `schemaVersion` | 目标 CLI 必须仍输出 `schemaVersion: 1`，且 `version` 与 pin 完全一致 |
 | `lib/openspec.js:351` | `runOpenSpec` 的 spawn 参数与 `--json` 解析 | 命令仍支持 `--json`，输出仍是单段 JSON |
@@ -122,16 +122,16 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `skills/*/SKILL.md:7` | `metadata.upstream: openspec@1.16.1` | 改为目标版本 |
 | `test/openspec.test.mjs:11` | 硬编码 `1.16.1` | 改为目标版本 |
 | `test/skills.test.mjs` | 硬编码 `upstream: openspec@1.16.1` | 改为目标版本 |
-| `README.md:39` | CLI 对照表的 v1.16.1 tag | 改为目标 tag，并重新核对命令与选项 |
-| `README.md:68` | 官方技能对照表的 v1.16.1 tag | 改为目标 tag，并重新核对 12 份技能 |
-| `README.md:137` | 精确版本与来源说明 | 更新版本号 |
-| `README.md:138` | 版本闸门说明 | 更新版本号 |
-| `README.md:144` | 设计要点中的版本 | 更新版本号 |
-| `README.md:160` | 验证环境 | 更新版本号与实测数据 |
-| `README.md:165` | 测试使用真实 CLI 的说明 | 更新版本号 |
-| `README.md:212` | 限制：CLI 固定版本 | 更新版本号 |
-| `README.md:214` | 限制：技能正文对齐 | 更新版本号 |
-| `AGENTS.md:26` | 精确版本 | 更新版本号 |
+| `README.md:64` | CLI 对照表的 v1.16.1 tag | 改为目标 tag，并重新核对命令与选项 |
+| `README.md:95` | 官方技能对照表的 v1.16.1 tag | 改为目标 tag，并重新核对 12 份技能 |
+| `README.md:179` | 精确版本与来源说明 | 更新版本号 |
+| `README.md:180` | 版本闸门说明 | 更新版本号 |
+| `README.md:212` | 设计要点中的版本 | 更新版本号 |
+| `README.md:229` | 验证环境 | 更新版本号与实测数据 |
+| `README.md:234` | 测试使用真实 CLI 的说明 | 更新版本号 |
+| `README.md:283` | 限制：CLI 固定版本 | 更新版本号 |
+| `README.md:285` | 限制：技能正文对齐 | 更新版本号 |
+| `AGENTS.md:28` | 精确版本 | 更新版本号 |
 | `cordis.patch.yml:3` | 注释中的精确版本 | 更新版本号 |
 | `package-lock.json` | `@fission-ai/openspec` 的版本与 integrity | 用 `npm install` 更新，不手改 |
 
@@ -147,7 +147,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
    判断标准见“契约检查”一节。失败时先判断是 fixture 问题、清单过期，还是 CLI 真的改了字段。
 
-2. 把 `package.json:42` 改为目标精确版本，不加 `^` 或 `~`。
+2. 把 `package.json:55` 改为目标精确版本，不加 `^` 或 `~`。
 
 3. 更新锁文件与安装树：
 
@@ -321,13 +321,13 @@ npm run contract:check -- --candidate <version> --json
 
 本地文件与行号（2026-11-12 工作树）：
 
-- `package.json:42`、`package.json:3`：CLI pin 与插件版本。
+- `package.json:55`、`package.json:3`：CLI pin 与插件版本。
 - `lib/openspec.js:47`、`:106`、`:143`、`:153`、`:159`、`:351`、`:379`、`:393`、`:413`：CLI 解析、版本闸门、调用与错误处理。
 - `lib/state.js:101`、`:133`、`:555`、`:607`、`:633`、`:657`、`:676`、`:697`、`:710`、`:729`、`:800`、`:814`、`:859`：CLI JSON 的投影读取点。
 - `lib/tasks.js:20`、`:24`：任务行解析。
 - `lib/schema.js:35`、`:115`、`:128`：schema 目录与闸门。
 - `lib/tools/query.js`、`lib/tools/write.js`、`lib/init.js`：命令与选项。
-- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`test/skills.test.mjs:18`、`README.md:39`、`README.md:68`、`AGENTS.md:26`、`cordis.patch.yml:3`：版本字样与对照表。
+- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`test/skills.test.mjs:18`、`README.md:64`、`README.md:95`、`AGENTS.md:28`、`cordis.patch.yml:3`：版本字样与对照表。
 - `scripts/cli-contract.json`、`scripts/check-cli-contract.mjs`、`test/cli-contract.test.mjs`：契约检查。
 
 上游文档与 release：
