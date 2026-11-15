@@ -133,9 +133,12 @@ export function captureSpawn(fake) {
   return argv
 }
 
-export function externalSetup(root, reviews = { draft: { enabled: true, reviewers: 1 }, apply: { enabled: true, reviewers: 1 } }) {
+export function externalSetup(root, reviews = { draft: { enabled: true, reviewers: 1 }, apply: { enabled: true, reviewers: 1 } }, options = {}) {
+  const { seedAgents = [], deliverSteer = false } = options
   const activations = []
   const messages = []
+  const steered = []
+  let fake
   const subagents = {
     getProvider() {
       return { capabilities: { agentPreset: true, agentOptions: true } }
@@ -146,12 +149,25 @@ export function externalSetup(root, reviews = { draft: { enabled: true, reviewer
     },
     async sendMessage(sender, target, content) {
       messages.push({ sender, target, content })
+      if (!deliverSteer) return
+      const agent = fake?.ctx.agents.get(target)
+      if (agent === undefined) return
+      const message = { id: `steer-${messages.length}`, content, source: { kind: 'reviewer' } }
+      agent.steer?.(message)
+      steered.push({ target, message })
     },
   }
   clearCache()
-  const fake = createFakeContext({ cwd: root, subagents })
+  fake = createFakeContext({ cwd: root, subagents, agents: seedAgents })
+  const disposers = []
+  const originalEffect = fake.ctx.effect
+  fake.ctx.effect = (fn) => {
+    const result = fn()
+    if (typeof result === 'function') disposers.push(result)
+    return result
+  }
   apply(fake.ctx, { timeoutMs: 30_000, reviews })
-  return { fake, activations, messages }
+  return { fake, activations, messages, steered, subagents, disposers }
 }
 
 export function reviewerPresetDeclaration() {

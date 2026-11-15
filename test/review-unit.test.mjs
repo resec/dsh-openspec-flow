@@ -36,7 +36,7 @@ import {
 import { draftReadiness } from '../lib/review/readiness.js'
 import { submitReport } from '../lib/review/submit.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
-import { DEFAULT_REVIEW_POLL_MS, relativeChangePath, reviewPollMs, storeSealSkipWarning } from '../lib/tools/review.js'
+import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
 
 const CREATED = []
 
@@ -615,25 +615,6 @@ test('submitReport covers missing rounds, duplicate reports and empty findings',
   })
   assert.equal(result.record.findings.length, 0)
   assert.equal(result.record.state, 'passed')
-})
-
-test('reviewPollMs reads the environment override and falls back to the default', () => {
-  const previous = process.env.OPENSPEC_FLOW_REVIEW_POLL_MS
-  try {
-    delete process.env.OPENSPEC_FLOW_REVIEW_POLL_MS
-    assert.equal(reviewPollMs(), DEFAULT_REVIEW_POLL_MS)
-    process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = '25'
-    assert.equal(reviewPollMs(), 25)
-    process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = '60000'
-    assert.equal(reviewPollMs(), 60_000)
-    for (const value of ['abc', '', '9', '60001', '12.5']) {
-      process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = value
-      assert.equal(reviewPollMs(), DEFAULT_REVIEW_POLL_MS, `value '${value}' falls back`)
-    }
-  } finally {
-    if (previous === undefined) delete process.env.OPENSPEC_FLOW_REVIEW_POLL_MS
-    else process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = previous
-  }
 })
 
 function git(root, args) {

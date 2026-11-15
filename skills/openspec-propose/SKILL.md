@@ -39,7 +39,7 @@ Run the draft review before presenting the proposal. The draft object is the cha
 
 1. Call `openspec_review` with `action: "start"`, `review: "draft"`, the change name and an `intent` that states the user's goal and acceptance conditions. `start` is the first round only.
 2. Read the returned `brief`. Check coherence, the user's goal, conflicts with the main specs, artifact form, feasibility and scope.
-3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report: `verdict`, `summary`, `findings`, `verifications`, `outOfScope` and `residualRisks`. Use the report format in the brief. When it uses `reviewers: 1`, call `action: "wait"` for the independent reviewer; do not submit a self-report.
+3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report: `verdict`, `summary`, `findings`, `verifications`, `outOfScope` and `residualRisks`. Use the report format in the brief. When it uses `reviewers: 1`, call `action: "wait"`; when it returns `waiting`, end the turn and continue after the wakeup (the reviewer submit or the wait deadline); do not submit a self-report.
 4. If the result is not ready, fix the findings and call `openspec_review` with `action: "resume"` to open the next round; do not pass an `intent` and do not call `start` again. Do not present the proposal while a blocker is open.
 5. If a finding is fixed, verify it in a later round; if it is waived, record the user's approval and the waiver text.
 

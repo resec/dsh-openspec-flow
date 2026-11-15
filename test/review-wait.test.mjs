@@ -6,31 +6,31 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { apply as reviewerApply } from '../reviewer.js'
 import { apply } from '../index.js'
+import { clearReviewDeadlines, pendingDeadline } from '../lib/review/wakeup.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
   CHANGE, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
+test.after(() => clearReviewDeadlines())
 
 /**
- * Run `fn` with a short poll interval so the wait cases do not sleep on the
- * default 250 ms cadence, and restore the previous value afterwards.
- * @param fn - the work that runs while the interval is set.
- * @returns the work's result.
+ * Wait until a predicate holds or the timeout expires.
+ * @param predicate - condition to check.
+ * @param timeoutMs - maximum wait.
+ * @returns whether the predicate held.
  */
-async function withPollInterval(fn) {
-  const previous = process.env.OPENSPEC_FLOW_REVIEW_POLL_MS
-  process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = '10'
-  try {
-    return await fn()
-  } finally {
-    if (previous === undefined) delete process.env.OPENSPEC_FLOW_REVIEW_POLL_MS
-    else process.env.OPENSPEC_FLOW_REVIEW_POLL_MS = previous
+async function waitFor(predicate, timeoutMs = 3000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) return true
+    await new Promise((resolve) => setTimeout(resolve, 25))
   }
+  return predicate()
 }
 
-test('wait can time out and can return after a later submission', async () => {
+test('wait returns overdue at the deadline', async () => {
   const root = fixture()
   const { fake } = externalSetup(root)
   await call(fake, 'openspec_review', {
@@ -44,47 +44,52 @@ test('wait can time out and can return after a later submission', async () => {
   const overdue = await call(fake, 'openspec_review', {
     action: 'wait', change: CHANGE, review: 'draft',
   })
+  assert.equal(overdue.waitState, 'overdue')
   assert.match(overdue.reasons.join(' '), /did not submit/)
-
-  const secondRoot = fixture()
-  const second = externalSetup(secondRoot)
-  await call(second.fake, 'openspec_review', {
-    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
-  })
-  const reviewer = createFakeContext({ cwd: secondRoot })
-  reviewerApply(reviewer.ctx)
-  const waiting = withPollInterval(async () => {
-    const pending = call(second.fake, 'openspec_review', {
-      action: 'wait', change: CHANGE, review: 'draft',
-    })
-    await reviewer.tools.get('openspec_reviewer').execute({
-      action: 'submit', change: CHANGE, review: 'draft', report: report(),
-    }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
-    return await pending
-  })
-  const ready = await waiting
-  assert.equal(ready.ready, true)
 })
 
-test('wait returns a waiting segment result', async () => {
+test('wait returns ready after a submission', async () => {
   const root = fixture()
   const { fake } = externalSetup(root)
   await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, intent: 'Add a theme selector.',
   })
-  const realNow = Date.now
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const ready = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'draft',
+  })
+  assert.equal(ready.ready, true)
+  assert.equal(ready.waitState, 'ready')
+})
+
+test('wait returns waiting without blocking', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const controller = new AbortController()
+  const pending = fake.tools.get('openspec_review').execute({
+    action: 'wait', change: CHANGE, review: 'draft',
+  }, { agent: { id: 'review-test' }, signal: controller.signal })
+  pending.catch(() => {})
+  let timer
   try {
-    let calls = 0
-    Date.now = () => {
-      calls += 1
-      return calls === 1 ? realNow() : realNow() + 91_000
-    }
-    const waiting = await call(fake, 'openspec_review', {
-      action: 'wait', change: CHANGE, review: 'draft',
-    })
-    assert.match(waiting.reasons.join(' '), /not submitted yet/)
+    const waiting = await Promise.race([
+      pending,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('wait blocked instead of returning waiting')), 1500)
+      }),
+    ])
+    assert.equal(waiting.waitState, 'waiting')
+    assert.match(waiting.reasons.join(' '), /end the turn|not submitted/)
   } finally {
-    Date.now = realNow
+    clearTimeout(timer)
+    controller.abort()
   }
 })
 
@@ -105,39 +110,6 @@ test('wait refuses a missing record and a self review', async () => {
     call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' }),
     /only available for an independent reviewer/,
   )
-})
-
-test('wait fails closed when the review record disappears', async () => {
-  const root = fixture()
-  const { fake } = externalSetup(root)
-  await call(fake, 'openspec_review', {
-    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
-  })
-  const pending = withPollInterval(async () => await call(fake, 'openspec_review', {
-    action: 'wait', change: CHANGE, review: 'draft',
-  }))
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  rmSync(join(reviewDir(root), 'review.json'))
-  await assert.rejects(pending, /no draft review is recorded/)
-})
-
-test('wait reports cancellation before any deadline', async () => {
-  const root = fixture()
-  mkdirSync(reviewDir(root), { recursive: true })
-  writeFileSync(join(reviewDir(root), 'review.json'), JSON.stringify({
-    schemaVersion: 1, id: 'x', change: CHANGE, review: 'draft', state: 'in-review',
-    mode: 'reviewer', independent: true, objectHash: 'hash', rounds: [], findings: [],
-    reviewers: { count: 1, slots: [{ slot: 1, agentId: 'reviewer-1' }] },
-  }))
-  const fake = setup(root)
-  const controller = new AbortController()
-  const pending = withPollInterval(async () => fake.tools.get('openspec_review').execute({
-    action: 'wait', change: CHANGE, review: 'draft',
-  }, { agent: { id: 'review-test' }, signal: controller.signal }))
-  pending.catch(() => {})
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  controller.abort()
-  await assert.rejects(pending, /wait was cancelled|aborted/i)
 })
 
 test('a draft start activates a reviewer when the record has no slots', async () => {
@@ -453,4 +425,395 @@ test('resume refuses a missing intent file', async () => {
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
     /intent file is missing; remove the review record/,
   )
+})
+
+test('a reviewer submit steers an idle changer', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const { fake, steered, subagents } = externalSetup(root, undefined, {
+    seedAgents: [changer],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(steered.length, 1)
+  assert.equal(steered[0].target, 'review-test')
+  assert.equal(changer.steered.length, 1)
+  assert.match(changer.steered[0].content[0].text, /submitted/i)
+})
+
+test('wait declares waitState and returns only schema keys', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const tool = fake.tools.get('openspec_review')
+  assert.equal(tool.output.schema.properties.waitState.type, 'string')
+  assert.deepEqual(tool.output.schema.properties.waitState.enum, ['waiting', 'ready', 'overdue'])
+  const waiting = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'draft',
+  })
+  for (const key of Object.keys(waiting)) {
+    assert.ok(
+      Object.hasOwn(tool.output.schema.properties, key),
+      `wait returned an undeclared key: ${key}`,
+    )
+  }
+})
+
+test('wait records the latest caller', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  const tool = fake.tools.get('openspec_review')
+  const run = (args, agent) => tool.execute(args, { agent, signal: new AbortController().signal })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).changerSessionId, 'review-test')
+  await run({ action: 'resume', change: CHANGE }, { id: 'other-session' })
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).changerSessionId, 'other-session')
+  await run({ action: 'wait', change: CHANGE, review: 'draft' }, { id: 'third-session' })
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).changerSessionId, 'third-session')
+})
+
+test('a held review lock does not fail wait', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const lock = join(reviewDir(root), '.lock')
+  mkdirSync(lock)
+  try {
+    const waiting = await call(fake, 'openspec_review', {
+      action: 'wait', change: CHANGE, review: 'draft',
+    })
+    assert.equal(waiting.waitState, 'waiting')
+    assert.match(fake.warnings.join(' '), /could not record the changer session/)
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
+})
+
+test('a legacy record wakes the reviewer parent session', async () => {
+  const root = fixture()
+  const legacy = {
+    id: 'legacy-parent',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const { fake, steered, subagents } = externalSetup(root, undefined, {
+    seedAgents: [legacy],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  delete record.changerSessionId
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, {
+    agent: { id: 'reviewer-1', session: { header: { parentSession: 'legacy-parent' } } },
+    signal: new AbortController().signal,
+  })
+  assert.deepEqual(steered.map((entry) => entry.target), ['legacy-parent'])
+})
+
+test('a review without a changer session logs and skips the wakeup', async () => {
+  const root = fixture()
+  const { fake, steered, subagents } = externalSetup(root, undefined, { deliverSteer: true })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  delete record.changerSessionId
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(steered.length, 0)
+  assert.match(reviewer.warnings.join(' '), /no changer session/)
+})
+
+test('a failed wakeup target does not skip the live waiter', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const { fake, steered, subagents } = externalSetup(root, undefined, {
+    seedAgents: [changer],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.changerSessionId = 'dead-session'
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const original = subagents.sendMessage.bind(subagents)
+  subagents.sendMessage = async (sender, target, content, options) => {
+    if (target === 'dead-session') throw new Error('dead target')
+    return original(sender, target, content, options)
+  }
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(changer.steered.length, 1)
+  assert.equal(steered.length, 1)
+  assert.match(reviewer.warnings.join(' '), /wakeup to dead-session failed/)
+})
+
+test('a failed wakeup keeps the report', async () => {
+  const root = fixture()
+  const { fake, subagents } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  subagents.sendMessage = async () => {
+    throw new Error('delivery refused')
+  }
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const ready = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'draft',
+  })
+  assert.equal(ready.ready, true)
+})
+
+test('the wait deadline steers the waiter', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const reviewerAgent = { id: 'reviewer-1', status: 'idle' }
+  const { fake, steered } = externalSetup(root, undefined, {
+    seedAgents: [changer, reviewerAgent],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rounds[0].startedAt = new Date(Date.now() - (10 * 60_000 - 2000)).toISOString()
+  record.limits.waitMinutes = 10
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.ok(pendingDeadline(reviewDir(root), 'draft'))
+  assert.equal(await waitFor(() => changer.steered.length === 1, 5000), true)
+  assert.match(changer.steered[0].content[0].text, /wait limit/)
+})
+
+test('a submission cancels the deadline', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const reviewerAgent = { id: 'reviewer-1', status: 'idle' }
+  const { fake, subagents } = externalSetup(root, undefined, {
+    seedAgents: [changer, reviewerAgent],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rounds[0].startedAt = new Date(Date.now() - (10 * 60_000 - 2000)).toISOString()
+  record.limits.waitMinutes = 10
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(await waitFor(() => changer.steered.length >= 1, 5000), true)
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  assert.equal(changer.steered.length, 1)
+  assert.doesNotMatch(changer.steered[0].content[0].text, /wait limit/)
+})
+
+test('a repeated wait replaces the deadline', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const reviewerAgent = { id: 'reviewer-1', status: 'idle' }
+  const { fake } = externalSetup(root, undefined, {
+    seedAgents: [changer, reviewerAgent],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rounds[0].startedAt = new Date(Date.now() - (10 * 60_000 - 2000)).toISOString()
+  record.limits.waitMinutes = 10
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(await waitFor(() => changer.steered.length >= 1, 5000), true)
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  assert.equal(changer.steered.length, 1)
+})
+
+test('the wait session write keeps a concurrent report', async () => {  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const ready = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'draft',
+  })
+  assert.equal(ready.ready, true)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.ok(record.rounds.at(-1).report, 'the wait session write kept the report pointer')
+})
+
+test('the deadline skips when the reviewer is not live', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const { fake } = externalSetup(root, undefined, {
+    seedAgents: [changer],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rounds[0].startedAt = new Date(Date.now() - (10 * 60_000 - 2000)).toISOString()
+  record.limits.waitMinutes = 10
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(await waitFor(() => fake.warnings.join(' ').includes('reviewer is not live'), 5000), true)
+  assert.equal(changer.steered.length, 0)
+})
+
+test('wait accepts a caller without an agent id', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const waiting = await fake.tools.get('openspec_review').execute({
+    action: 'wait', change: CHANGE, review: 'draft',
+  }, { signal: new AbortController().signal })
+  assert.equal(waiting.waitState, 'waiting')
+})
+
+test('wait without a changer session falls back to the record', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  delete record.changerSessionId
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const waiting = await fake.tools.get('openspec_review').execute({
+    action: 'wait', change: CHANGE, review: 'draft',
+  }, { signal: new AbortController().signal })
+  assert.equal(waiting.waitState, 'waiting')
+  assert.ok(pendingDeadline(reviewDir(root), 'draft'))
+})
+
+test('the plugin effect clears pending deadlines', async () => {
+  const root = fixture()
+  const { fake, disposers } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.ok(pendingDeadline(reviewDir(root), 'draft'))
+  const cleanup = disposers.at(-1)
+  assert.equal(typeof cleanup, 'function')
+  cleanup()
+  assert.equal(pendingDeadline(reviewDir(root), 'draft'), undefined)
+})
+
+test('wait uses the default deadline and limit when the record omits them', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  delete record.rounds[0].startedAt
+  delete record.limits
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const waiting = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'draft',
+  })
+  assert.equal(waiting.waitState, 'waiting')
+  assert.ok(pendingDeadline(reviewDir(root), 'draft'))
 })

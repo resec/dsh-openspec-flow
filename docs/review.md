@@ -114,7 +114,7 @@ finding 的处置：
 
 ## 失败处理
 
-- **等待超时**：`action: "wait"` 在 `waitMinutes` 内没有报告时返回等待片段与剩余时间；可继续 `action: "wait"`、`action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`。
+- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
 - **轮次上限**：达到 `maxRounds` 后 `resume` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
@@ -143,9 +143,9 @@ finding 的处置：
 
 配置页保存分两阶段校验：先按 Config schema 校验形状与上下界，再用 `llm` 目录校验显式模型的 provider、model 与 effort；两次都通过才调用 `configEditor.edit`。拒绝时文件不变，页面显示原因。保存成功后插件行重启，已锁定策略不受影响。
 
-### 轮询间隔
+### 等待与唤醒
 
-`openspec_review` 的 `action: "wait"` 默认每 250 ms 读取一次评审记录。环境变量 `OPENSPEC_FLOW_REVIEW_POLL_MS` 可覆盖该间隔，取值为 10–60000 的整数；缺失、非数字、非整数或超出范围时回退到 250 ms。该变量只改变轮询频率，不改变 `waiting`、`ready`、`overdue` 的判定语义。
+`openspec_review` 的 `action: "wait"` 不轮询：它读取一次评审记录，返回 `waiting`、`ready` 或 `overdue`。`waiting` 时 changer 结束当前轮次；reviewer 提交报告后，插件通过 `subagents.sendMessage` 的 steer 消息唤醒记录中的 changer（以及等待中的 waiter）；`waitMinutes` 到期仍未提交时，插件同样唤醒 waiter，并提示 `extend` 或 `abandon`。等待计时器是进程内的：插件或 Host 重启会丢失未触发的计时器，恢复后由 `status` 或下一次 `wait` 重新判断。
 
 ## 示例：reviewers 0（自评审）
 
@@ -193,7 +193,7 @@ openspec_apply_next { "change": "add-export-api" }
 openspec_archive { "change": "add-export-api" }
 ```
 
-独立 reviewer 未按时提交时：先 `openspec_review { "action": "wait", ... }` 继续等，再 `retry`；仍无报告时用 `replace` 换人，或由用户批准后 `waive-reviewer`。
+独立 reviewer 未按时提交时：`wait` 返回 `waiting` 后结束本轮，等 reviewer 提交或超时唤醒；仍无报告时用 `retry` 重试，再用 `replace` 换人，或由用户批准后 `waive-reviewer`。
 
 ## 相关文档
 

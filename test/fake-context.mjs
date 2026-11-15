@@ -110,6 +110,9 @@ export function createFakeContext({
       list() {
         return [...liveAgents]
       },
+      get(id) {
+        return liveAgents.find((agent) => agent.id === id)
+      },
     },
     workingDirectory: {
       defaultDirectory: cwd,
@@ -246,7 +249,7 @@ export function createFakeContext({
    * @param {object} options - agent id and initial directory.
    * @returns the agent and the sections registered in its scope.
    */
-  function createAgent({ id = `session-${liveAgents.length + 1}`, directory } = {}) {
+  function createAgent({ id = `session-${liveAgents.length + 1}`, directory, parentSession, status = 'idle' } = {}) {
     const sections = []
     const steered = []
     const agentContext = {
@@ -266,12 +269,18 @@ export function createFakeContext({
         return name === 'systemPrompt' ? agentContext.systemPrompt : undefined
       },
     }
-    const session = { id }
+    const session = {
+      id,
+      header: {
+        id,
+        ...(parentSession === undefined ? {} : { parentSession }),
+      },
+    }
     const agent = {
       id,
       session,
       ctx: agentContext,
-      status: 'idle',
+      status,
       model: {
         current() {
           return { ...modelSelection }

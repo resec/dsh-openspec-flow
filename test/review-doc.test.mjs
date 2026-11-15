@@ -250,3 +250,12 @@ test('the review document explains the seal, the freeze and the plan-change waiv
   assert.match(text, /intent fit/)
   assert.match(text, /scope control/)
 })
+
+test('the review document explains the non-polling wait and the wakeup', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /不轮询/)
+  assert.match(text, /waiting.*结束当前轮次/s)
+  assert.match(text, /subagents\.sendMessage/)
+  assert.match(text, /waitMinutes.*到期/s)
+  assert.ok(!text.includes('OPENSPEC_FLOW_REVIEW_POLL_MS'))
+})
