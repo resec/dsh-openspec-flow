@@ -930,3 +930,95 @@ test('the deadline falls back to the reviewer parent session', async () => {
   assert.equal(await waitFor(() => fallback.steered.length === 1, 5000), true)
   assert.match(fallback.steered[0].content[0].text, /wait limit/)
 })
+
+/**
+ * Write a minimal apply review record without running a reviewer.
+ * @param root - fixture root.
+ * @param record - the apply record to write.
+ */
+function writeApplyReview(root, record) {
+  const directory = reviewDir(root)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'apply-review.json'), `${JSON.stringify(record, null, 2)}\n`)
+}
+
+test('an apply wait reports archive when ready and a qualified overdue action', async () => {
+  const readyRoot = fixture()
+  const readyFake = setup(readyRoot)
+  writeApplyReview(readyRoot, {
+    schemaVersion: 1,
+    id: 'apply-ready',
+    change: CHANGE,
+    review: 'apply',
+    state: 'in-review',
+    mode: 'reviewer',
+    independent: true,
+    objectHash: 'tree-hash',
+    rounds: [{ round: 1, objectHash: 'tree-hash', startedAt: new Date().toISOString() }],
+    findings: [],
+    reviewers: { count: 1, slots: [{ slot: 1, agentId: 'reviewer-1' }] },
+    reviewerWaived: {
+      slot: 1, reason: null, waiver: 'user waiver', approvedBy: 'user', at: new Date().toISOString(),
+    },
+  })
+  const ready = await call(readyFake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(ready.waitState, 'ready')
+  assert.equal(ready.nextAction, 'openspec_archive')
+
+  const overdueRoot = fixture()
+  const overdueFake = setup(overdueRoot)
+  writeApplyReview(overdueRoot, {
+    schemaVersion: 1,
+    id: 'apply-overdue',
+    change: CHANGE,
+    review: 'apply',
+    state: 'in-review',
+    mode: 'reviewer',
+    independent: true,
+    objectHash: 'tree-hash',
+    rounds: [{
+      round: 1,
+      objectHash: 'tree-hash',
+      startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    }],
+    findings: [],
+    limits: { waitMinutes: 1, maxRounds: 5 },
+    reviewers: { count: 1, slots: [{ slot: 1, agentId: 'reviewer-1' }] },
+  })
+  const overdue = await call(overdueFake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(overdue.waitState, 'overdue')
+  assert.match(overdue.nextAction, /review=apply/)
+})
+
+test('an apply not-ready submit wakes with the apply dispose action', async () => {
+  const { root, run } = gitFixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const { fake, steered, subagents } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  }, { seedAgents: [changer], deliverSteer: true })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'apply',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(steered.length, 1)
+  assert.match(steered[0].message.content[0].text, /review="apply"/)
+  assert.match(steered[0].message.content[0].text, /dispose review=apply/)
+})
