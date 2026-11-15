@@ -3,7 +3,9 @@
  *
  * The `openspec-reviewer` preset composes this entry with read/search/image tools.
  * It registers `openspec_reviewer` and denies every Host tool the preset does
- * not provide, so the reviewer's model-facing catalog is the seven preset tools.
+ * not provide, so the reviewer's model-facing catalog is the seven declared
+ * preset tools; `read_image` exists only while the Host mounts `attachments`
+ * (the catalog is six otherwise).
  * The deny set is computed from the live global registry and refreshed when
  * that registry changes; a new Host tool must not silently join the catalog.
  *
