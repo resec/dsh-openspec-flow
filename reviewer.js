@@ -1,9 +1,9 @@
 /**
  * Reviewer-only plugin entry.
  *
- * The `openspec-reviewer` preset composes this entry with read/search tools.
+ * The `openspec-reviewer` preset composes this entry with read/search/image tools.
  * It registers `openspec_reviewer` and denies every Host tool the preset does
- * not provide, so the reviewer's model-facing catalog is the six preset tools.
+ * not provide, so the reviewer's model-facing catalog is the seven preset tools.
  * The deny set is computed from the live global registry and refreshed when
  * that registry changes; a new Host tool must not silently join the catalog.
  *
@@ -23,6 +23,7 @@ export const PRESET_TOOL_NAMES = new Set([
   'read',
   'grep',
   'glob',
+  'read_image',
   'web_search',
   'web_fetch',
   'openspec_reviewer',

@@ -219,10 +219,12 @@ test('a stale tool, default or record path is reported by name', () => {
 
 test('the review document states the reviewer catalog and the host strict validation', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
-  for (const name of ['`read`', '`grep`', '`glob`', '`web_search`', '`web_fetch`', '`openspec_reviewer`']) {
+  for (const name of ['`read`', '`grep`', '`glob`', '`read_image`', '`web_search`', '`web_fetch`', '`openspec_reviewer`']) {
     assert.ok(text.includes(name), `the document names reviewer tool ${name}`)
   }
-  assert.match(text, /实际目录只有上述六个工具/)
+  assert.match(text, /实际目录是上述七个工具/)
+  assert.match(text, /`read_image` 只在 Host 提供 `attachments` 服务时注册/)
+  assert.match(text, /要求该步模型路由声明图片输入/)
   assert.match(text, /Host 继承/)
   assert.match(text, /--strict/)
   assert.match(text, /brief 头部记录/)

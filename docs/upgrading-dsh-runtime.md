@@ -114,7 +114,8 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 | `index.js:45-84` | Standard Schema 形式的 `Config` | loader 仍按 Standard Schema 校验 |
 | `index.js:86` | `apply(ctx, config)` | Cordis 插件入口约定 |
 | `lib/tools/apply.js:35,117`、`lib/tools/query.js:630,694,913`、`lib/tools/write.js:27,125`、`lib/init.js:26` | `ctx.effect` 包裹的 `ctx.tools.register` | `ToolDefinition` 的 `name`、`description`、`parameters`、`output.schema`、`output.render`、`execute` 字段 |
-| `reviewer.js` | `ctx.tools.definitions()` 的全局视图、`ctx.tools.restrict({ deny })`、`tools/change` 事件 | `ToolRestriction` 的 deny 语义、scope 父链、禁用名集合；reviewer 目录只保留 preset 的六个工具 |
+| `reviewer.js` | `ctx.tools.definitions()` 的全局视图、`ctx.tools.restrict({ deny })`、`tools/change` 事件 | `ToolRestriction` 的 deny 语义、scope 父链、禁用名集合；reviewer 目录是 preset 的七个工具，`read_image` 只在 Host 提供 `attachments` 时注册 |
+| `cordis.patch.yml:22-28` | preset 的 `tool-fs` 子行开启 `readImage`；`read_image` 依赖 Host `attachments` 服务与声明图片输入的模型路由 | `readImage` 键、`ctx.attachments` 服务名、模型图片模态；缺 `attachments` 时工具不注册 |
 | `lib/tools/shared.js:108,110` | `workingDirectory.ensure`、`defaultDirectory` | 方法名与返回类型 |
 | `lib/tools/shared.js:221` | `output.render` 返回 `[{ type: 'text', text }]` | `ContentBlock` 结构 |
 | `lib/openspec.js:252-282` | `subprocess.spawn` 的 `argv`、`cwd`、`stdio`、`graceMs`、`signal`、`env`；`handle.done`；`collected.stdout.readFrom` | spawn 规格与收集输出接口 |

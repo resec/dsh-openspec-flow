@@ -2178,6 +2178,7 @@ test('the reviewer preset is read-only and exported as a subpath', () => {
   assert.match(patch, /id: preset-openspec-reviewer/)
   assert.match(patch, /id: openspec-reviewer/)
   assert.match(patch, /read: true/)
+  assert.match(patch, /readImage: true/)
   assert.match(patch, /write: false/)
   assert.match(patch, /edit: false/)
   assert.match(
@@ -2346,7 +2347,7 @@ test('apply resume refuses a record without a policy', async () => {
 })
 
 test('the reviewer entry denies global Host tools and keeps the preset tools', () => {
-  const hostTools = ['read', 'openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree']
+  const hostTools = ['read', 'read_image', 'openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree']
   const reviewer = createFakeContext({ cwd: process.cwd(), globalTools: hostTools })
   reviewerApply(reviewer.ctx)
   assert.deepEqual(reviewer.restrictions, [{
