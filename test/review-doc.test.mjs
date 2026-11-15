@@ -216,3 +216,15 @@ test('a stale tool, default or record path is reported by name', () => {
 
   assert.deepEqual(checkReadme('# README\n'), ['README does not link docs/review.md'])
 })
+
+test('the review document states the reviewer catalog and the host strict validation', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const name of ['`read`', '`grep`', '`glob`', '`web_search`', '`web_fetch`', '`openspec_reviewer`']) {
+    assert.ok(text.includes(name), `the document names reviewer tool ${name}`)
+  }
+  assert.match(text, /实际目录只有上述六个工具/)
+  assert.match(text, /Host 继承/)
+  assert.match(text, /--strict/)
+  assert.match(text, /brief 头部记录/)
+  assert.match(text, /reviewer 不再运行校验/)
+})

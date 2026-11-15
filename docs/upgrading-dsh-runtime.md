@@ -114,6 +114,7 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 | `index.js:45-84` | Standard Schema 形式的 `Config` | loader 仍按 Standard Schema 校验 |
 | `index.js:86` | `apply(ctx, config)` | Cordis 插件入口约定 |
 | `lib/tools/apply.js:35,117`、`lib/tools/query.js:630,694,913`、`lib/tools/write.js:27,125`、`lib/init.js:26` | `ctx.effect` 包裹的 `ctx.tools.register` | `ToolDefinition` 的 `name`、`description`、`parameters`、`output.schema`、`output.render`、`execute` 字段 |
+| `reviewer.js` | `ctx.tools.definitions()` 的全局视图、`ctx.tools.restrict({ deny })`、`tools/change` 事件 | `ToolRestriction` 的 deny 语义、scope 父链、禁用名集合；reviewer 目录只保留 preset 的六个工具 |
 | `lib/tools/shared.js:108,110` | `workingDirectory.ensure`、`defaultDirectory` | 方法名与返回类型 |
 | `lib/tools/shared.js:221` | `output.render` 返回 `[{ type: 'text', text }]` | `ContentBlock` 结构 |
 | `lib/openspec.js:252-282` | `subprocess.spawn` 的 `argv`、`cwd`、`stdio`、`graceMs`、`signal`、`env`；`handle.done`；`collected.stdout.readFrom` | spawn 规格与收集输出接口 |
@@ -122,7 +123,7 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 | `lib/admin.js:146,163` | `ctx.get('commands')` 与 `commands.register` | 可选服务仍存在；命令定义字段 |
 | `lib/admin.js:154` | `agent/status` 事件 | 事件名与载荷 |
 | `lib/skill.js:177` | `skills.registerProvider(factory)` | provider 工厂、candidate 字段与 `SkillProviderControl` |
-| `test/fake-context.mjs:23` | 上述服务的测试替身 | 真实契约变化时同步更新替身 |
+| `test/fake-context.mjs` | 上述服务的测试替身，包括 `tools.definitions`、`tools.restrict` 与 `tools/change` | 真实契约变化时同步更新替身；restriction 与全局工具快照用 fake 的 `restrictions`/`globalTools` 断言 |
 
 DSH 侧对应的声明文件与符号：
 
@@ -130,6 +131,8 @@ DSH 侧对应的声明文件与符号：
 | --- | --- | --- |
 | `dsh-app-boot` | `lib/index.js` | `evaluatePluginCompatibility`、`loadProfileDirectory`、`pluginCompatibilityWarning`、`readProfileVersionExemptions` |
 | `dsh-tools` | `lib/types/contracts.d.ts` | `ToolDefinition`、`ToolOutputDefinition` |
+| `dsh-tools` | `lib/types/index.d.ts` | `ToolsService.definitions`、`ToolsService.restrict`、`ToolRestriction`、`tools/change` 事件 |
+| `dsh-scope` | `lib/types/index.d.ts` | scope 父链绑定（`scopeOf`、`bindScopeParent` 的语义）；restriction 在 agent 视图上的交集行为 |
 | `dsh-subprocess` | `lib/types/types.d.ts` | `SubprocessSpawnSpec`、`SubprocessHandle`、`SubprocessCollectedOutputs` |
 | `dsh-working-directory` | `lib/types/index.d.ts` | `get`、`ensure`、`defaultDirectory` |
 | `dsh-system-prompt` | `lib/types/index.d.ts` | `section`、`getSectionOrder`、`PromptSectionOrderName` |

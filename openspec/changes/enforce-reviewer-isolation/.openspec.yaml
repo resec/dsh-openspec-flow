@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-15
+goal: "reviewer 入口按全局注册表 deny 所有 Host 工具（排除 preset 的六个名称），
+  并在 tools/change 时刷新；startApplyReview/resumeApplyReview 以 --strict
+  校验提交树，apply brief 携带校验结果，reviewer 不再自行运行 validate。"

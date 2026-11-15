@@ -29,9 +29,13 @@ export function createFakeContext({
   subagents = undefined,
   modelSelection = { provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
   catalog = undefined,
+  globalTools = [],
 } = {}) {
   const tools = new Map()
   const toolOptions = new Map()
+  const restrictions = []
+  const warnings = []
+  const hostToolNames = [...globalTools]
   const skills = []
   const providers = new Map()
   const commands = []
@@ -96,7 +100,9 @@ export function createFakeContext({
 
   const ctx = {
     logger: {
-      warn() {},
+      warn(message) {
+        warnings.push(message)
+      },
       info() {},
     },
     systemPrompt: globalSystemPrompt,
@@ -170,6 +176,17 @@ export function createFakeContext({
         return () => {
           tools.delete(definition.name)
           toolOptions.delete(definition.name)
+        }
+      },
+      definitions(scope) {
+        if (scope !== undefined) return []
+        return hostToolNames.map((name) => ({ name }))
+      },
+      restrict(filter) {
+        restrictions.push(filter)
+        return () => {
+          const index = restrictions.indexOf(filter)
+          if (index !== -1) restrictions.splice(index, 1)
         }
       },
     },
@@ -304,6 +321,9 @@ export function createFakeContext({
     agentDefaultModel,
     tools,
     toolOptions,
+    restrictions,
+    warnings,
+    globalTools: hostToolNames,
     skills,
     providers,
     commands,

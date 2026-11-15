@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
+import { buildApplyBrief } from '../lib/review/brief.js'
 import { apply as reviewerApply } from '../reviewer.js'
 import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { createFakeContext } from './fake-context.mjs'
@@ -89,6 +90,7 @@ test.after(() => {
 test('self review passes the apply gate', async () => {
   const root = fixture()
   const fake = setup(root)
+  const argv = captureSpawn(fake)
   const started = await call(fake, 'openspec_review', {
     action: 'start',
     change: CHANGE,
@@ -100,6 +102,9 @@ test('self review passes the apply gate', async () => {
   assert.match(started.brief, /Draft review brief/)
   assert.equal(started.brief.split('\n')[2], DRAFT_OPENING)
   assert.doesNotMatch(started.brief, /you (wrote|drafted|planned)|as the changer/i)
+  const validation = argv.find((args) => args.includes('validate'))
+  assert.ok(validation, 'the draft start validates the change')
+  assert.ok(!validation.includes('--strict'), 'the draft start stays non-strict')
 
   const submitted = await call(fake, 'openspec_review', {
     action: 'self-report',
@@ -765,10 +770,21 @@ async function passDraft(fake, root, run) {
   }
 }
 
+function captureSpawn(fake) {
+  const argv = []
+  const original = fake.ctx.subprocess.spawn
+  fake.ctx.subprocess.spawn = (spec) => {
+    argv.push(spec.argv)
+    return original(spec)
+  }
+  return argv
+}
+
 test('apply review starts on the committed tree and records its base', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
+  const argv = captureSpawn(fake)
   const started = await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, review: 'apply',
   })
@@ -776,9 +792,45 @@ test('apply review starts on the committed tree and records its base', async () 
   assert.equal(started.treeSha, run(['rev-parse', 'HEAD^{tree}']))
   assert.ok(started.brief)
   assert.match(started.brief, /Apply review brief/)
+  assert.match(started.brief, /- validation: host strict pass \(0 issues\)/)
+  assert.match(started.brief, /host validated the committed change with strict validation/)
+  assert.match(started.brief, /do not run validation yourself/)
+  assert.doesNotMatch(started.brief, /strict validation passes/)
+  const validation = argv.find((args) => args.includes('validate'))
+  assert.ok(validation, 'the apply start validates the change')
+  assert.ok(validation.includes('--strict'), 'the apply start validates strictly')
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.objectKind, 'tree')
   assert.equal(record.baseTreeSha, run(['rev-parse', `${record.baseCommit}^{tree}`]))
+})
+
+test('apply review refuses a strict-only warning before it records a round', async () => {
+  const { root, run } = gitFixture()
+  const specDirectory = join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme')
+  mkdirSync(specDirectory, { recursive: true })
+  writeFileSync(join(specDirectory, 'spec.md'), [
+    '# Spec Delta',
+    '',
+    '## ADDED Requirements',
+    '',
+    '### Requirement: Theme probe',
+    '',
+    'The probe SHALL report its state.',
+    '',
+    '#### Scenario: Probe has a trigger only',
+    '',
+    '- **WHEN** the probe runs',
+    '',
+  ].join('\n'))
+  run(['add', 'openspec'])
+  run(['commit', '-m', 'add strict-only warning'])
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /apply review refuses a change that does not pass strict validation/,
+  )
+  assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
 })
 
 test('apply review refuses a dirty tree', async () => {
@@ -2259,4 +2311,74 @@ test('apply resume refuses a record without a policy', async () => {
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
     /apply review policy is missing; remove the review record/,
   )
+})
+
+test('the reviewer entry denies global Host tools and keeps the preset tools', () => {
+  const hostTools = ['read', 'openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree']
+  const reviewer = createFakeContext({ cwd: process.cwd(), globalTools: hostTools })
+  reviewerApply(reviewer.ctx)
+  assert.deepEqual(reviewer.restrictions, [{
+    deny: ['openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree'],
+  }])
+  assert.equal(reviewer.tools.has('openspec_reviewer'), true)
+  assert.equal(reviewer.tools.has('openspec_review'), false)
+
+  const changer = createFakeContext({ cwd: process.cwd(), globalTools: hostTools })
+  apply(changer.ctx, {
+    timeoutMs: 30_000,
+    reviews: { draft: { enabled: true }, apply: { enabled: true } },
+  })
+  assert.deepEqual(changer.restrictions, [])
+})
+
+test('the reviewer entry retries a Host tool after a failed refresh restriction', () => {
+  const reviewer = createFakeContext({ cwd: process.cwd(), globalTools: ['openspec_review'] })
+  reviewerApply(reviewer.ctx)
+  assert.deepEqual(reviewer.restrictions, [{ deny: ['openspec_review'] }])
+
+  const original = reviewer.ctx.tools.restrict
+  reviewer.ctx.tools.restrict = () => {
+    throw new Error('restrict failed')
+  }
+  reviewer.globalTools.push('issues_create')
+  reviewer.emit('tools/change', {})
+  assert.deepEqual(reviewer.restrictions, [{ deny: ['openspec_review'] }])
+  assert.match(reviewer.warnings.at(-1), /reviewer host-tool restriction failed: restrict failed/)
+
+  reviewer.ctx.tools.restrict = original
+  reviewer.emit('tools/change', {})
+  assert.deepEqual(reviewer.restrictions.at(-1), { deny: ['issues_create'] })
+  assert.equal(reviewer.tools.has('openspec_reviewer'), true)
+})
+
+test('the reviewer entry fails closed when the initial restriction throws', () => {
+  const reviewer = createFakeContext({ cwd: process.cwd(), globalTools: ['openspec_review'] })
+  reviewer.ctx.tools.restrict = () => {
+    throw new Error('restrict unavailable')
+  }
+  assert.throws(() => reviewerApply(reviewer.ctx), /restrict unavailable/)
+  assert.match(reviewer.warnings.at(-1), /reviewer host-tool restriction failed: restrict unavailable/)
+  assert.equal(reviewer.tools.has('openspec_reviewer'), false)
+})
+
+
+test('buildApplyBrief records the host validation and handles its absent branch', () => {
+  const base = {
+    change: CHANGE,
+    commitSha: 'a'.repeat(40),
+    treeSha: 'b'.repeat(40),
+    baseTreeSha: 'c'.repeat(40),
+    diffPath: 'apply-round-1/diff.patch',
+    changedPaths: [],
+  }
+  assert.match(buildApplyBrief({ ...base, validation: undefined }), /- validation: not recorded/)
+  assert.match(
+    buildApplyBrief({ ...base, validation: { strict: true, issues: [] } }),
+    /- validation: host strict pass \(0 issues\)/,
+  )
+  assert.match(
+    buildApplyBrief({ ...base, validation: { strict: false, issues: [{}] } }),
+    /- validation: host non-strict pass \(1 issue\)/,
+  )
+  assert.match(buildApplyBrief({ ...base, validation: { strict: true, issues: [] } }), /- \(none\)/)
 })
