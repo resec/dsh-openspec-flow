@@ -20,11 +20,11 @@
 
 ## 4. Verification
 
-- [x] 4.1 On the committed clean tree run the pack command and verify `dist/dsh-openspec-flow-0.4.0.json` has `revision` equal to `git rev-parse HEAD` and `dirty: false`, and that `git status --short` lists no `dist/` file.
+- [x] 4.1 On the committed clean tree run the pack command and verify `dist/dsh-openspec-flow-0.4.0/dsh-openspec-flow-0.4.0.json` has `revision` equal to `git rev-parse HEAD` and `dirty: false`, and that `git status --short` lists no `dist/` file.
 - [x] 4.2 Run `openspec_inspect` with `action: "validate"` and `strict: true` and verify it passes.
 - [x] 4.3 Run `npm test` on Node 24 and verify it passes.
 - [x] 4.4 Run `npm run coverage:check` on Node 24 and verify it passes.
-- [x] 4.5 With the user, remove the installed bundle and install `dist/dsh-openspec-flow-0.4.0.tgz` in the Plugins page; verify the plugin row reports `0.4.0` with its package directory under the profile's `node_modules`, then edit a plugin source file and verify the plugin does not reload and the running reviewer keeps its installed version. Revert that source edit (or make it in a throwaway file outside the repository), verify `git status --short` is clean, and record which part the Host could not observe, if any.
+- [x] 4.5 With the user, remove the installed bundle and install `dist/dsh-openspec-flow-0.4.0/dsh-openspec-flow-0.4.0.tgz` in the Plugins page; verify the plugin row reports `0.4.0` with its package directory under the profile's `node_modules`, then edit a plugin source file and verify the plugin does not reload and the running reviewer keeps its installed version. Revert that source edit (or make it in a throwaway file outside the repository), verify `git status --short` is clean, and record which part the Host could not observe, if any.
 
 ## Workflow follow-up
 

@@ -124,13 +124,13 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `test/skills.test.mjs` | 硬编码 `upstream: openspec@1.16.1` | 改为目标版本 |
 | `README.md:64` | CLI 对照表的 v1.16.1 tag | 改为目标 tag，并重新核对命令与选项 |
 | `README.md:95` | 官方技能对照表的 v1.16.1 tag | 改为目标 tag，并重新核对 12 份技能 |
-| `README.md:179` | 精确版本与来源说明 | 更新版本号 |
-| `README.md:180` | 版本闸门说明 | 更新版本号 |
-| `README.md:212` | 设计要点中的版本 | 更新版本号 |
-| `README.md:229` | 验证环境 | 更新版本号与实测数据 |
-| `README.md:234` | 测试使用真实 CLI 的说明 | 更新版本号 |
-| `README.md:283` | 限制：CLI 固定版本 | 更新版本号 |
-| `README.md:285` | 限制：技能正文对齐 | 更新版本号 |
+| `README.md:181` | 精确版本与来源说明 | 更新版本号 |
+| `README.md:182` | 版本闸门说明 | 更新版本号 |
+| `README.md:214` | 设计要点中的版本 | 更新版本号 |
+| `README.md:231` | 验证环境 | 更新版本号与实测数据 |
+| `README.md:236` | 测试使用真实 CLI 的说明 | 更新版本号 |
+| `README.md:285` | 限制：CLI 固定版本 | 更新版本号 |
+| `README.md:287` | 限制：技能正文对齐 | 更新版本号 |
 | `AGENTS.md:28` | 精确版本 | 更新版本号 |
 | `cordis.patch.yml:3` | 注释中的精确版本 | 更新版本号 |
 | `package-lock.json` | `@fission-ai/openspec` 的版本与 integrity | 用 `npm install` 更新，不手改 |
@@ -172,7 +172,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处 `v1.16.1` 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化，同步调整“官方技能对照”。
 
-11. 更新 `AGENTS.md:26` 与 `cordis.patch.yml:3` 的版本字样。
+11. 更新 `AGENTS.md:28` 与 `cordis.patch.yml:3` 的版本字样。
 
 12. 更新本文档的基线、示例与来源。
 

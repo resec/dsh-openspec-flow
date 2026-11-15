@@ -28,7 +28,7 @@ Rejected alternatives: writing the profile manifest and patch from the script (b
 
 ### `npm pack` produces the bytes in a scratch directory and the pair is published into `dist/`
 
-`npm pack --pack-destination <temp>` applies the manifest's `files` field and npm's own ignore rules, so the tarball matches what a registry install would receive. The script packs into `.cache/pack/`, already covered by the ignored `.cache/`, reads and verifies the produced file, and only then renames the tarball and metadata into `dist/`; `dist/` is the published location, never npm's destination. The scratch directory is removed on both success and failure, so a rejected pack cannot leave an untracked directory that the dirty-tree gate would report next time. It also passes `--json --cache .cache/npm`. An interrupted publish therefore cannot leave a new tarball beside an old metadata file. Reimplementing tar creation would drift from npm's semantics.
+`npm pack --pack-destination <temp>` applies the manifest's `files` field and npm's own ignore rules, so the tarball matches what a registry install would receive. The script packs into `.cache/pack/`, already covered by the ignored `.cache/`, reads and verifies the produced file, and only then publishes a version directory into `dist/`; `dist/` is the published location, never npm's destination. The pair is staged as `dist/<name>-<version>.staging-<id>/` and swapped in with one directory rename, so an interruption cannot leave a new tarball beside old metadata. The scratch directory is removed on both success and failure, so a rejected pack cannot leave an untracked directory that the dirty-tree gate would report next time. It also passes `--json --cache .cache/npm`. Reimplementing tar creation would drift from npm's semantics.
 
 Rejected alternatives: a hand-written tar writer (more code, same drift risk); `pnpm pack` (the pack semantics needed here are npm's, and the sibling `dsh-plugins` repository already uses `npm pack`).
 
@@ -70,7 +70,7 @@ The install form change is breaking for anyone following the README, so the vers
 
 1. Implement the script, raise the version to `0.4.0`, refresh `package-lock.json` and the plugin version line in `docs/upgrading-openspec-cli.md`, and update the docs in one change.
 2. Commit the implementation, so the pack runs on the clean tree its gate requires.
-3. Run the pack command so `dist/dsh-openspec-flow-0.4.0.tgz` exists for that commit.
+3. Run the pack command so `dist/dsh-openspec-flow-0.4.0/dsh-openspec-flow-0.4.0.tgz` exists for that commit.
 4. In the Plugins page, remove the linked bundle and install the tarball.
 5. Verify the plugin row reports `0.4.0` and its package directory is inside the profile's `node_modules`, then verify a source edit no longer reloads the plugin.
 6. To make later plugin logic run, repack and repeat the remove-then-install step; without an install the running copy keeps its version.

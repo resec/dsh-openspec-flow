@@ -180,10 +180,16 @@ test('refuses a truncated archive', () => {
   assert.throws(() => tarballPaths(bytes), /cannot read the tarball/)
 })
 
+test('refuses an archive without the end-of-archive marker', () => {
+  const body = Buffer.alloc(512)
+  const blocks = Buffer.concat([header('package/index.js', 4), body])
+  assert.throws(() => tarballPaths(gzipSync(blocks)), /missing its end-of-archive marker/)
+})
+
 test('refuses an archive that ends inside an entry', () => {
   const body = Buffer.alloc(512)
   const blocks = Buffer.concat([header('package/index.js', 2048), body])
-  assert.throws(() => tarballPaths(gzipSync(blocks)), /ends inside an entry/)
+  assert.throws(() => tarballPaths(gzipSync(blocks)), /missing its end-of-archive marker/)
 })
 
 test('parses the dirty paths of a status listing', () => {
@@ -193,8 +199,9 @@ test('parses the dirty paths of a status listing', () => {
 
 test('computes the artifact paths and the sha512 digest', () => {
   assert.deepEqual(artifactPaths('/repo/dist', 'pkg', '1.0.0'), {
-    tarball: '/repo/dist/pkg-1.0.0.tgz',
-    metadata: '/repo/dist/pkg-1.0.0.json',
+    directory: '/repo/dist/pkg-1.0.0',
+    tarball: '/repo/dist/pkg-1.0.0/pkg-1.0.0.tgz',
+    metadata: '/repo/dist/pkg-1.0.0/pkg-1.0.0.json',
   })
   assert.equal(sha512Hex(Buffer.from('x')).length, 128)
   assert.equal(DIST_DIR, 'dist')
@@ -205,6 +212,7 @@ test('refuses an existing pair unless forced', () => {
   const dist = mkdtempSync(join(tmpdir(), 'openspec-flow-dist-'))
   assertFresh(dist, 'pkg', '1.0.0', false)
   const paths = artifactPaths(dist, 'pkg', '1.0.0')
+  mkdirSync(paths.directory, { recursive: true })
   writeFileSync(paths.tarball, 't')
   assert.throws(() => assertFresh(dist, 'pkg', '1.0.0', false), /already exists/)
   assertFresh(dist, 'pkg', '1.0.0', true)
@@ -234,19 +242,21 @@ test('publishes a verified pair only after the check passes', () => {
   const empty = mkdtempSync(join(tmpdir(), 'openspec-flow-publish-empty-'))
   const manifest = { name: 'pkg', version: '1.0.0' }
   try {
+    const { tarball: tarballPath, metadata } = artifactPaths(dist, 'pkg', '1.0.0')
     const first = publishVerified(dist, manifest, tarball([['index.js', 'x']]), ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z')
     assert.equal(first.revision, 'a'.repeat(40))
-    assert.ok(existsSync(join(dist, 'pkg-1.0.0.tgz')))
+    assert.ok(existsSync(tarballPath))
 
     assert.throws(() => publishVerified(empty, manifest, tarball([['index.js', 'x']]), ['client.js'], 'b'.repeat(40), 'later'), /missing/)
     assert.deepEqual(readdirSync(empty), [])
 
     assert.throws(() => publishVerified(dist, manifest, tarball([['index.js', 'z']]), ['client.js'], 'b'.repeat(40), 'later'), /missing/)
-    assert.equal(JSON.parse(readFileSync(join(dist, 'pkg-1.0.0.json'), 'utf8')).revision, 'a'.repeat(40))
+    assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).revision, 'a'.repeat(40))
 
     const second = publishVerified(dist, manifest, tarball([['index.js', 'z']]), ['index.js'], 'b'.repeat(40), 'later')
     assert.equal(second.revision, 'b'.repeat(40))
-    assert.equal(JSON.parse(readFileSync(join(dist, 'pkg-1.0.0.json'), 'utf8')).revision, 'b'.repeat(40))
+    assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).revision, 'b'.repeat(40))
+    assert.deepEqual(readdirSync(dist).filter((name) => name !== 'pkg-1.0.0'), [])
   } finally {
     rmSync(dist, { recursive: true, force: true })
     rmSync(empty, { recursive: true, force: true })

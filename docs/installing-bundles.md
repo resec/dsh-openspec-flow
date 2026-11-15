@@ -4,12 +4,12 @@
 
 ## 产物
 
-一次打包产生两个文件，位于仓库的 `dist/` 目录：
+一次打包产生版本目录 `dist/<name>-<version>/`，其中两个文件：
 
 | 文件 | 内容 |
 | --- | --- |
-| `<name>-<version>.tgz` | 由 `npm pack` 生成的安装包，含 `package.json` 及其 `files` 列出的文件（`README.md`、`LICENSE` 为文档） |
-| `<name>-<version>.json` | 元数据：`name`、`version`、`file`、`sha512`、`bytes`、`files`、`revision`、`dirty`、`at` |
+| `dist/<name>-<version>/<name>-<version>.tgz` | 由 `npm pack` 生成的安装包，含 `package.json` 及其 `files` 列出的文件（`README.md`、`LICENSE` 为文档） |
+| `dist/<name>-<version>/<name>-<version>.json` | 元数据：`name`、`version`、`file`、`sha512`、`bytes`、`files`、`revision`、`dirty`、`at` |
 
 `revision` 记录打包时的 `HEAD` 提交，是产物来源的标识；成功产物中 `dirty` 恒为 `false`。`dist/` 被版本控制忽略，产物可由提交重新生成。
 
@@ -25,7 +25,7 @@ npm run bundle:pack
 
 - 工作树必须干净；未提交的改动会让 `revision` 不描述包内容，命令列出脏路径并退出非零。
 - 同一版本已存在产物时拒绝覆盖；确实需要重发同一版本时加 `--force`，两个文件一起替换并记录新的 `revision`。
-- 打包先写入 `.cache/pack/`，读取 tarball 字节校验必含内容与禁含路径；校验通过后才发布到 `dist/`，失败时 `dist/` 保持原样，临时目录在成功和失败后都会删除。
+- 打包先写入 `.cache/pack/`，读取 tarball 字节校验必含内容与禁含路径；校验通过后才把版本目录整体发布到 `dist/`，失败时 `dist/` 保持原样，临时目录在成功和失败后都会删除。发布以目录为单位替换，中断不会留下新 tarball 配旧元数据。
 - 必含内容分两层：无条件核心集（`package.json`、`index.js`、`client.js`、`reviewer.js`、`cordis.patch.yml`、`icon.svg`、`lib/` 全部文件、`skills/` 全部文件、`locale/*.json`）与 `files` 列出的文件；核心集不依赖 `files`，所以清单删掉入口文件也会被拒绝。
 - 禁含 `test/`、`openspec/`、`scripts/`、`node_modules/`、`dist/`。
 - 脚本不写 profile、不调用插件管理器，也不在 profile 目录运行包管理器。
@@ -35,7 +35,7 @@ npm run bundle:pack
 ## 安装
 
 1. 在 DSH 的 Plugins 页面移除已安装的 `dsh-openspec-flow`（首次从 `link:` 切换时必须移除，否则管理器会拒绝同一依赖规格）。
-2. 安装 `dist/` 中刚生成的 tarball。
+2. 安装 `dist/<name>-<version>/` 中刚生成的 tarball。
 3. 重启会话，让新安装的 Host 代码生效。
 
 安装后插件行 id 为 `openspec-flow`，依赖 `@fission-ai/openspec` 由 profile 的包管理器一并安装。
