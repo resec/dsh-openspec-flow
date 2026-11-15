@@ -44,6 +44,13 @@ Defines the single user-facing review document and the checks that keep it align
 - **WHEN** the reader reaches the status description
 - **THEN** it explains `policy`, `enabled` and `available`, including that unavailable takes precedence over an unset policy
 
+#### Scenario: The document explains the frozen reviewer
+
+- **WHEN** the reader reaches the reviewer section
+- **THEN** it states that the reviewer runs the installed plugin artifact
+- **AND** it states that editing plugin sources does not change the installed copy or reload the reviewer
+- **AND** it states that new plugin logic takes effect only after a reinstall
+
 ### Requirement: The document names the live tools and actions
 
 The document SHALL name `openspec_review`, `openspec_reviewer`, their actions, `openspec_apply_next` and `openspec_archive` exactly as registered. It SHALL NOT name a removed tool or an OpenSpec CLI command.
