@@ -238,4 +238,7 @@ test('the review document explains the seal, the freeze and the plan-change waiv
   assert.match(text, /apply 开始后 draft review 冻结/)
   assert.match(text, /scope: "plan-change"/)
   assert.match(text, /plan-change-waiver\.json/)
+  assert.match(text, /plan coherence/)
+  assert.match(text, /intent fit/)
+  assert.match(text, /scope control/)
 })
