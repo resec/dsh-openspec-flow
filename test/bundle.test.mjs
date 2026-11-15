@@ -16,6 +16,7 @@ import {
   expectedPublishedPaths,
   metadataFor,
   publishVerified,
+  recoverArtifacts,
   readManifest,
   SCRATCH_DIR,
   sha512Hex,
@@ -184,6 +185,36 @@ test('refuses an archive without the end-of-archive marker', () => {
   const body = Buffer.alloc(512)
   const blocks = Buffer.concat([header('package/index.js', 4), body])
   assert.throws(() => tarballPaths(gzipSync(blocks)), /missing its end-of-archive marker/)
+})
+
+test('refuses an archive with only one end-of-archive block', () => {
+  const blocks = Buffer.concat([header('package/index.js', 4), Buffer.alloc(512), Buffer.alloc(512)])
+  assert.throws(() => tarballPaths(gzipSync(blocks)), /missing its end-of-archive marker/)
+})
+
+test('recovers an interrupted directory swap', () => {
+  const dist = mkdtempSync(join(tmpdir(), 'openspec-flow-recover-'))
+  try {
+    const { directory } = artifactPaths(dist, 'pkg', '1.0.0')
+    const staging = `${directory}.staging-old`
+    const previous = `${directory}.previous-old`
+    mkdirSync(staging, { recursive: true })
+    recoverArtifacts(dist, 'pkg', '1.0.0')
+    assert.ok(!existsSync(staging))
+
+    mkdirSync(previous, { recursive: true })
+    recoverArtifacts(dist, 'pkg', '1.0.0')
+    assert.ok(existsSync(directory))
+    assert.ok(!existsSync(previous))
+
+    const other = `${directory}.previous-other`
+    mkdirSync(other, { recursive: true })
+    recoverArtifacts(dist, 'pkg', '1.0.0')
+    assert.ok(!existsSync(other))
+    assert.ok(existsSync(directory))
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
 })
 
 test('refuses an archive that ends inside an entry', () => {

@@ -28,7 +28,7 @@ A packaged install freezes the installed version. Source edits no longer change 
 
 ## Impact
 
-- New files: `lib/bundle.js`, `scripts/bundle-pack.mjs`, `docs/installing-bundles.md`, `test/bundle.test.mjs`.
+- New files: `lib/bundle.js`, `lib/pack.js`, `scripts/bundle-pack.mjs`, `docs/installing-bundles.md`, `test/bundle.test.mjs`, `test/pack.test.mjs`.
 - Changed files: `package.json`, `package-lock.json`, `.gitignore`, `README.md`, `AGENTS.md`, `docs/review.md`, `docs/upgrading-openspec-cli.md`, the five skills' front matter.
-- Changed tests: `test/bundle.test.mjs`, `test/skills.test.mjs`, `test/review-doc.test.mjs`.
+- Changed tests: `test/bundle.test.mjs`, `test/pack.test.mjs`, `test/skills.test.mjs`, `test/review-doc.test.mjs`.
 - The installed bundle's own dependency `@fission-ai/openspec` now installs into the profile instead of the working tree.

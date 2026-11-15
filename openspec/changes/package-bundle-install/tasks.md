@@ -3,7 +3,7 @@
 ## 1. Packaging module
 
 - [x] 1.1 Add `lib/bundle.js` and `test/bundle.test.mjs` with the unconditional core path set, the manifest expansion, the metadata builder and the tarball reader (gunzip plus tar header walk over `node:zlib`), and verify the test covers metadata fields, a missing core path (`index.js`), a missing `lib/` path, a forbidden path and a truncated archive.
-- [x] 1.2 Add the dirty-tree refusal, the existing-artifact refusal with `--force` replacement, and the temporary-destination content check that leaves `dist/` unchanged on failure; verify `test/bundle.test.mjs` covers a clean tree, a dirty tree, an existing pair without `--force`, a `--force` repack recording the new revision, a rejected first pack leaving no tarball, metadata or scratch directory, and a rejected `--force` repack leaving the previous pair intact.
+- [x] 1.2 Add the dirty-tree refusal, the existing-artifact refusal with `--force` replacement, and the temporary-destination content check that leaves `dist/` unchanged on failure; verify `test/pack.test.mjs` covers a clean tree, a dirty tree, an existing pair without `--force`, a `--force` repack recording the new revision, a rejected first pack leaving no tarball, metadata or scratch directory, and a rejected `--force` repack leaving the previous pair intact.
 - [x] 1.3 Verify `test/bundle.test.mjs` packs a fixture with the real `npm pack --pack-destination` into a temporary directory and asserts the required entrypoints, a skill and the locale resources are present and the tests are absent.
 
 ## 2. Packaging entrypoint

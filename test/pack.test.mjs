@@ -117,6 +117,7 @@ test('prints the usage and exits zero', () => {
     const result = runPack({ root, argv: ['--help'], exec })
     assert.equal(result.code, 0)
     assert.deepEqual(result.lines.map((line) => line.text), USAGE_LINES)
+    assert.ok(result.lines.some((line) => line.text.includes('dist/<name>-<version>/<name>-<version>.tgz')))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

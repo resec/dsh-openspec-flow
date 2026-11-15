@@ -322,8 +322,9 @@ lib/skill.js             skill provider 注册与按需读取
 lib/policy.js            流程规则文本、项目检测、agent 作用域注册
 lib/cache.js             进程内 LRU
 lib/hash.js              SHA-1 指纹
-lib/bundle.js            打包产物、元数据与 tarball 内容校验
-scripts/bundle-pack.mjs  打包入口：干净树校验、npm pack、发布到 dist/
+lib/bundle.js            打包产物、元数据、tarball 内容校验与发布恢复
+lib/pack.js              打包编排：脏树、npm pack、发布、退出码（入口脚本调用）
+scripts/bundle-pack.mjs  薄入口：解析参数并打印 lib/pack.js 的结果
 skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
