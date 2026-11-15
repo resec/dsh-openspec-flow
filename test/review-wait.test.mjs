@@ -1021,4 +1021,32 @@ test('an apply not-ready submit wakes with the apply dispose action', async () =
   assert.equal(steered.length, 1)
   assert.match(steered[0].message.content[0].text, /review="apply"/)
   assert.match(steered[0].message.content[0].text, /dispose review=apply/)
+  const waited = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(waited.waitState, 'ready')
+  assert.equal(waited.ready, false)
+  assert.equal(waited.nextAction, 'openspec_review action=dispose review=apply')
+})
+
+test('a not-ready draft wait points at dispose', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const waited = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'draft',
+  })
+  assert.equal(waited.waitState, 'ready')
+  assert.equal(waited.ready, false)
+  assert.equal(waited.nextAction, 'openspec_review action=dispose')
 })
