@@ -664,12 +664,12 @@ The plugin SHALL register `openspec_reviewer` only from the `openspec-reviewer` 
 
 ### Requirement: The reviewer preset is read-only
 
-The `openspec-reviewer` preset SHALL compose only `read`, `grep`, `glob`, `web_search`, `web_fetch` and `openspec_reviewer`; the reviewer entry SHALL deny every other global Host tool by name and keep the six visible. It SHALL NOT compose `bash`, `write`, `edit`, `subagent`, `workflow` or `openspec_review`. Activation SHALL fail when the initial deny set cannot be applied.
+The `openspec-reviewer` preset SHALL compose `read`, `grep`, `glob`, `read_image`, `web_search`, `web_fetch` and `openspec_reviewer`; `read_image` SHALL register only while the Host provides the `attachments` service. The reviewer entry SHALL deny every other global Host tool by name and keep the preset's registered tools visible. It SHALL NOT compose `bash`, `write`, `edit`, `subagent`, `workflow` or `openspec_review`. Activation SHALL fail when the initial deny set cannot be applied.
 
 #### Scenario: Reviewer inspects its catalog
 
-- **WHEN** the reviewer's model-facing catalog is read
-- **THEN** it contains only `read`, `grep`, `glob`, `web_search`, `web_fetch` and `openspec_reviewer`
+- **WHEN** the reviewer's model-facing catalog is read on a Host that provides the `attachments` service
+- **THEN** it contains only `read`, `grep`, `glob`, `read_image`, `web_search`, `web_fetch` and `openspec_reviewer`
 
 #### Scenario: Reviewer calls an inherited Host tool
 
@@ -832,3 +832,22 @@ A next action that names `openspec_review` with `start` or `resume` SHALL carry 
 
 - **WHEN** an apply review has a record and the current tree differs from the recorded tree
 - **THEN** `nextAction` is `openspec_review action=resume review=apply`
+
+### Requirement: Reviewer image reads require deployment support
+
+The reviewer's `read_image` SHALL be available only when the Host provides the `attachments` service; a call SHALL fail without changing the review when the step's route does not declare image input.
+
+#### Scenario: Reviewer reads an image cited by the brief
+
+- **WHEN** the brief cites an image path, the Host provides the `attachments` service, and the step's route declares image input
+- **THEN** `read_image` is in the reviewer's tool surface and returns the image
+
+#### Scenario: The Host has no attachments service
+
+- **WHEN** the Host provides no `attachments` service
+- **THEN** `read_image` is absent from the reviewer's tool surface, its other tools remain available, and the preset still activates
+
+#### Scenario: The route cannot accept images
+
+- **WHEN** the reviewer calls `read_image` on a step whose route does not declare image input
+- **THEN** the call fails with an error, the review record is unchanged, and the reviewer keeps its other read tools
