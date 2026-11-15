@@ -114,7 +114,7 @@ finding 的处置：
 
 ## 失败处理
 
-- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`。
+- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
 - **轮次上限**：达到 `maxRounds` 后 `resume` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
@@ -145,7 +145,7 @@ finding 的处置：
 
 ### 等待与唤醒
 
-`openspec_review` 的 `action: "wait"` 不轮询：它读取一次评审记录，返回 `waiting`、`ready` 或 `overdue`。`waiting` 时 changer 结束当前轮次；reviewer 提交报告后，插件通过 `subagents.sendMessage` 的 steer 消息唤醒记录中的 changer（以及等待中的 waiter）；`waitMinutes` 到期仍未提交时，插件同样唤醒 waiter，并提示 `extend` 或 `abandon`。等待计时器是进程内的：插件或 Host 重启会丢失未触发的计时器，恢复后由 `status` 或下一次 `wait` 重新判断。
+`openspec_review` 的 `action: "wait"` 不轮询：它读取评审记录（守卫读、锁内写入重读与写入后结果读），返回 `waiting`、`ready` 或 `overdue`。`waiting` 时 changer 结束当前轮次；reviewer 提交报告后，插件通过 `subagents.sendMessage` 的 steer 消息唤醒记录中的 changer（以及等待中的 waiter）；`waitMinutes` 到期仍未提交且 reviewer slot 仍 live 时，插件唤醒 waiter 并提示 `extend` 或 `abandon`；slot 不再 live 时跳过唤醒并记录 warning。`extend` 之后应再次 `wait` 以重新登记计时器。等待计时器是进程内的：插件或 Host 重启会丢失未触发的计时器，恢复后由 `status` 或下一次 `wait` 重新判断。
 
 ## 示例：reviewers 0（自评审）
 

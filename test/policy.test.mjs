@@ -63,6 +63,8 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /resumed until apply starts; after that it is frozen/)
   assert.match(POLICY_TEXT, /scope: "plan-change"/)
   assert.match(POLICY_TEXT, /openspec-sync-specs/)
+  assert.match(POLICY_TEXT, /end the turn when it returns `waiting`/)
+  assert.match(POLICY_TEXT, /deadline wakeup resumes you/)
 })
 
 test('the policy text names no CLI', () => {
