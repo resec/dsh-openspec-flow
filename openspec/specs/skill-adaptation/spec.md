@@ -127,7 +127,7 @@ The shipped propose skill SHALL run the draft review after validating the planni
 
 ### Requirement: Apply finishes with an apply review
 
-The shipped apply skill SHALL run the apply review after the last task and before reporting completion. It SHALL commit, start the first round, read the brief, resume later rounds, submit the self-review report when `reviewers` is 0, and stop while not ready. It SHALL start the review when no policy is locked in a git project so the first start locks one. It SHALL skip the review only when the project has no git repository or a locked policy disables it, stating which.
+Apply skill SHALL seal the change directory and the plugin's ignore file before the first task, commit each round, and run the apply review after the last task. It SHALL start, read the brief, resume later rounds, self-report when `reviewers` is 0, and stop while not ready. A plan change during apply SHALL be user-approved and recorded with `openspec_review` `waive` `scope: "plan-change"` before editing. It SHALL start a review with no locked policy and skip it only without git or when disabled.
 
 #### Scenario: Apply reaches the review gate
 
@@ -158,6 +158,26 @@ The shipped apply skill SHALL run the apply review after the last task and befor
 
 - **WHEN** a git project's change has no policy and the settings disable apply review
 - **THEN** the first start locks a disabled policy and the skill reports that the review cannot run and continues
+
+#### Scenario: The skill seals the draft before apply
+
+- **WHEN** the draft review is ready in a git project
+- **THEN** the skill commits `openspec/changes/<name>/` and, when the plugin created or changed it, `openspec/.gitignore`, before the first apply task
+
+#### Scenario: The skill commits each round
+
+- **WHEN** an apply round is about to start or resume
+- **THEN** the skill commits the changed files first
+
+#### Scenario: A plan change during apply is waived first
+
+- **WHEN** the implementation needs a change to the planning artifacts after apply started
+- **THEN** the skill explains the change, gets the user's written approval and records the waiver before editing
+
+#### Scenario: A project without git skips the review
+
+- **WHEN** the project has no git repository
+- **THEN** the skill states apply review is unavailable and skips it
 
 ### Requirement: Archive requires the apply review
 

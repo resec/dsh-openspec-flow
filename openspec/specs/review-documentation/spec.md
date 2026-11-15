@@ -23,7 +23,14 @@ Defines the single user-facing review document and the checks that keep it align
 
 - **WHEN** the reader reaches the gates
 - **THEN** it states that `openspec_apply_next` waits for draft review
+- **AND** it states that a git project seals the draft with a commit that contains the change directory and its OpenSpec ignore file
 - **AND** it states that `openspec_archive` waits for apply review when the review is enabled and the project has git, and proceeds without it otherwise
+
+#### Scenario: The document explains the phase boundary
+
+- **WHEN** the reader reaches the phase boundary
+- **THEN** it states that the draft review can be resumed before apply started and cannot be resumed after
+- **AND** it states that a plan change during apply needs the user's written waiver
 
 #### Scenario: The document explains the no-git exception
 
