@@ -115,9 +115,15 @@ test('verify and coverage:check run the same command', () => {
   assert.equal(manifest.scripts.verify, 'node scripts/coverage.mjs --check')
 })
 
-test('the hook installer names the verification entrypoint and the stamp check', () => {
+test('the hook installer names the stamp file and every invalidator', () => {
   const source = readFileSync(join(ROOT, 'scripts', 'install-hooks.mjs'), 'utf8')
   assert.match(source, /npm run verify/)
   assert.match(source, /scripts\/coverage-stamp\.mjs check/)
+  assert.match(source, /\.cache\/coverage-stamp\.json/)
+  assert.match(source, /missing or corrupt stamp/)
+  assert.match(source, /dirty tree/)
+  assert.match(source, /fingerprint mismatch/)
+  assert.match(source, /merge base/)
+  assert.match(source, /different Node version/)
   assert.doesNotMatch(source, /coverage:check/)
 })

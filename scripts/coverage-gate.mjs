@@ -288,9 +288,9 @@ export function resolveBase(root, base) {
  * @param isSource - scope source predicate.
  * @returns map path -> Set of added line numbers, or null for a fully new file.
  */
-export function collectAddedLines(root, base, isSource) {
-  const mergeBase = resolveBase(root, base)
-  const diff = runGit(root, ['-c', 'core.quotePath=false', 'diff', '--unified=0', '--no-color', '--no-ext-diff', '--find-renames', mergeBase])
+export function collectAddedLines(root, base, isSource, mergeBase = null) {
+  const resolved = mergeBase ?? resolveBase(root, base)
+  const diff = runGit(root, ['-c', 'core.quotePath=false', 'diff', '--unified=0', '--no-color', '--no-ext-diff', '--find-renames', resolved])
   const added = parseUnifiedDiff(diff.stdout)
   const untracked = runGit(root, ['ls-files', '-z', '--others', '--exclude-standard']).stdout
     .split('\0')
@@ -502,7 +502,7 @@ export async function runGate({
   }
 
   const resolvedBase = resolveBase(root, base)
-  const added = collectAddedLines(root, base, (file) => Object.values(SCOPES).some((scope) => scope.isSource(file)))
+  const added = collectAddedLines(root, base, (file) => Object.values(SCOPES).some((scope) => scope.isSource(file)), resolvedBase)
   const scopes = {}
   const newCode = {}
   const missing = []

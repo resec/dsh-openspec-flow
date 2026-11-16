@@ -4,7 +4,7 @@
 
 ### Requirement: Coverage stamp on a passing enforce run
 
-After an enforce-mode verification run passes, the entrypoint SHALL write a stamp to `.cache/coverage-stamp.json` under the repository root. The file SHALL be ignored by version control. The stamp SHALL be written only when the effective mode is enforce, the invocation does not update the baseline, the gate reports no violation, and the working tree is clean apart from uncommitted paths under other `openspec/changes/` directories, which do not take part in a coverage verdict.
+After an enforce-mode verification run passes, the entrypoint SHALL write a stamp to `.cache/coverage-stamp.json` under the repository root. The file SHALL be ignored by version control. The stamp SHALL be written only when the effective mode is enforce, the invocation does not update the baseline, the gate reports no violation, and the working tree is clean apart from uncommitted paths under `openspec/changes/`, which do not take part in a coverage verdict.
 
 #### Scenario: A passing enforce run on a clean tree writes the stamp
 
@@ -34,7 +34,7 @@ After an enforce-mode verification run passes, the entrypoint SHALL write a stam
 
 #### Scenario: A dirty tree keeps the stamp
 
-- **WHEN** an enforce run fails while `git status --porcelain` reports an entry
+- **WHEN** an enforce run fails while `git status --porcelain` reports an entry outside `openspec/changes/`
 - **THEN** the clear is refused and the existing stamp is left untouched
 
 #### Scenario: A baseline update does not write the stamp
@@ -53,14 +53,15 @@ The writer SHALL refuse a dirty working tree. Because the write runs inside the 
 
 #### Scenario: A dirty tree does not write the stamp
 
-- **WHEN** the gate passes while `git status --porcelain` reports an entry outside another change's directory
+- **WHEN** the gate passes while `git status --porcelain` reports an entry outside `openspec/changes/`
 - **THEN** the writer refuses, reports the reason, and no stamp is written
 - **AND** the run keeps the exit code the gate produced
 
-#### Scenario: Another change's uncommitted planning files do not block the stamp
+#### Scenario: Uncommitted planning files do not block the stamp
 
-- **WHEN** the only uncommitted path is under `openspec/changes/<other>/`
-- **THEN** the tree counts as clean for the stamp and the writer records it
+- **WHEN** the only uncommitted paths are under `openspec/changes/`, including this change's own directory
+- **THEN** the tree counts as clean for the write, the clear and the reuse check
+- **AND** the writer records the stamp
 
 ### Requirement: Coverage stamp fingerprint covers the verdict inputs
 
@@ -104,7 +105,7 @@ The stamp SHALL record the merge-base commit the gate actually resolved for the 
 
 ### Requirement: Coverage stamp reuse on push
 
-Apart from `COVERAGE_SKIP=1`, the pre-push hook SHALL skip `npm run verify` only when the stamp parses, the working tree is clean, the committed fingerprint equals the stamped fingerprint, the checked commit is readable, the resolved merge base matches, and the running Node version equals the stamped version. Every other stamp outcome SHALL run verification.
+Apart from `COVERAGE_SKIP=1`, the pre-push hook SHALL skip `npm run verify` only when the stamp parses, the working tree is clean apart from uncommitted paths under `openspec/changes/`, the committed fingerprint equals the stamped fingerprint, the checked commit is readable, the resolved merge base matches, and the running Node version equals the stamped version. Every other stamp outcome SHALL run verification.
 
 #### Scenario: A matching stamp skips verification
 
@@ -128,7 +129,7 @@ Apart from `COVERAGE_SKIP=1`, the pre-push hook SHALL skip `npm run verify` only
 
 #### Scenario: An unverifiable stamp runs verification
 
-- **WHEN** the stamp is missing, unreadable, unsupported or the working tree is dirty
+- **WHEN** the stamp is missing, unreadable, unsupported or the working tree is dirty outside `openspec/changes/`
 - **THEN** the hook runs verification
 
 #### Scenario: COVERAGE_SKIP still wins
