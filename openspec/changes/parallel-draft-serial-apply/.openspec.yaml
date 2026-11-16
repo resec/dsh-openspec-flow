@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-16
+goal: Multiple changes can hold draft reviews at the same time, while only one
+  change runs apply and archive at a time.
