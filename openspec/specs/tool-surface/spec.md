@@ -578,7 +578,7 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 
 ### Requirement: Apply waits for a ready draft review
 
-`openspec_apply_next` SHALL check the draft review before it reads or advances the apply state. When the change has an enabled draft review policy that is not ready, the tool SHALL fail without changing the apply state and SHALL name `openspec_review` as the next step. On the first apply after a ready draft review in a git project it SHALL require the sealed draft commit and record it as the apply base; once apply started it SHALL NOT refuse on a draft artifact hash mismatch.
+`openspec_apply_next` SHALL check the draft review and the apply locks before reading or advancing the apply state. An unready review fails the call and names `openspec_review`; a lock naming another identity fails it and names the holder and lock paths, regardless of git, store, draft switch or policy. The first apply after a ready review in a git project requires the seal commit and records it as the base; a later draft artifact mismatch no longer refuses.
 
 #### Scenario: Review is not ready
 
@@ -593,12 +593,12 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 #### Scenario: Review is disabled
 
 - **WHEN** the change policy disables draft review
-- **THEN** `openspec_apply_next` proceeds without a review check
+- **THEN** `openspec_apply_next` proceeds without a review check and still enforces the apply lock
 
 #### Scenario: Change has no policy
 
 - **WHEN** a legacy change has no review policy
-- **THEN** `openspec_apply_next` proceeds without a review check until the first review start writes the policy
+- **THEN** `openspec_apply_next` proceeds without a review check and still enforces the apply lock
 
 #### Scenario: Ready review passes apply
 
@@ -607,18 +607,43 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 
 #### Scenario: Dirty tree is refused before the seal
 
-- **WHEN** the change directory or another file has uncommitted changes before the first apply
+- **WHEN** the change directory or a file outside `openspec/changes/` has uncommitted changes before the first apply
 - **THEN** the tool fails without changing the apply state and asks for a commit
+
+#### Scenario: Another change's uncommitted artifacts are accepted
+
+- **WHEN** only uncommitted files under another `openspec/changes/**` directory remain before the first apply
+- **THEN** the tool proceeds
 
 #### Scenario: Mixed seal commit is refused
 
-- **WHEN** `HEAD` changes files outside the change directory and `openspec/.gitignore` before the first apply
-- **THEN** the tool fails and asks for a commit containing only the change directory and its ignore file
+- **WHEN** `HEAD` changes files outside the change directory, `openspec/.gitignore` and `openspec/changes/` before the first apply
+- **THEN** the tool fails and asks for a commit containing only OpenSpec change paths
 
 #### Scenario: Apply resync after a plan change proceeds
 
 - **WHEN** apply already started and the draft artifact hash no longer matches
 - **THEN** the tool does not refuse the call on that mismatch
+
+#### Scenario: Another identity holds the apply lock
+
+- **WHEN** a change whose draft review is ready calls `openspec_apply_next` while a lock names a different identity
+- **THEN** the call fails, the apply state is unchanged and the error names the holder
+
+#### Scenario: A store change from another project is refused
+
+- **WHEN** a store change is applied from a second project while the store lock records the first project
+- **THEN** the call fails because the implementation roots differ
+
+#### Scenario: A non-git project enforces the lock
+
+- **WHEN** a second change calls `openspec_apply_next` in a project without git while the lock names the first change
+- **THEN** the call fails and names the holder
+
+#### Scenario: The same implementation root re-enters apply
+
+- **WHEN** `openspec_apply_next` runs again from the same implementation root for the change named by an apply lock
+- **THEN** the call proceeds
 
 ### Requirement: Apply review is exposed through openspec_review
 
@@ -656,7 +681,7 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 
 ### Requirement: Archive waits for a ready apply review
 
-`openspec_archive` SHALL check the apply review before it reads the change list or runs validation. When apply review is enabled and not ready, the tool SHALL return no archive result and SHALL not move the change. When apply review is disabled or the project has no git, the tool SHALL proceed without that check.
+`openspec_archive` SHALL check the apply locks and the apply review before reading the change list or running validation. A lock naming another identity fails the call and moves nothing. An enabled unready apply review returns no archive result and moves nothing; a disabled review or a project without git skips that check. With no lock it proceeds without writing one, and after a successful archive it releases the locks naming the archived change.
 
 #### Scenario: Apply review is not ready
 
@@ -672,6 +697,31 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 
 - **WHEN** the change policy disables apply review
 - **THEN** `openspec_archive` proceeds without an apply check
+
+#### Scenario: Another identity holds the apply lock
+
+- **WHEN** `openspec_archive` runs for a change whose identity differs from a present lock's identity
+- **THEN** the call fails and no file moves
+
+#### Scenario: A store change from another project does not archive
+
+- **WHEN** a store change is archived from a project other than the store lock's implementation root
+- **THEN** the call fails and no file moves
+
+#### Scenario: No lock naming another identity is required to archive
+
+- **WHEN** no apply lock names another identity for a ready change
+- **THEN** `openspec_archive` proceeds and writes no lock
+
+#### Scenario: Archive releases its locks
+
+- **WHEN** `openspec_archive` archives the change named by the present locks
+- **THEN** every lock that names the change is removed after the archive succeeds
+
+#### Scenario: Another change's uncommitted artifacts do not block archive
+
+- **WHEN** only uncommitted files under another `openspec/changes/**` directory remain
+- **THEN** archive proceeds
 
 ### Requirement: The reviewer tool is exposed only through the preset
 
