@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-16
+goal: 单一验证命令一次运行同时给出测试结果与覆盖率判定；同步 AGENTS.md、development-workflow
+  规格、README、pre-push 钩子与钩子测试
