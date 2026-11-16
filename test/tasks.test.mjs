@@ -44,6 +44,66 @@ test('parses every OpenSpec list marker and ignores link bullets', () => {
   )
 })
 
+test('reads a wrapped task as its whole first paragraph', () => {
+  const content = [
+    '- [ ] 1.1 A task that',
+    '  wraps onto a second line',
+    '- [ ] 1.2 Next task',
+  ].join('\n')
+  const tasks = parseTaskLines(content)
+  assert.equal(tasks.length, 2)
+  assert.equal(tasks[0].description, '1.1 A task that wraps onto a second line')
+  assert.equal(tasks[1].description, '1.2 Next task')
+})
+
+test('drops a trailing hard break before joining the next line', () => {
+  const content = ['- [ ] 1.1 A task that \\', '  continues after a break'].join('\n')
+  const tasks = parseTaskLines(content)
+  assert.equal(tasks.length, 1)
+  assert.equal(tasks[0].description, '1.1 A task that continues after a break')
+})
+
+test('ends the text at a sibling checkbox', () => {
+  const content = ['- [ ] 1.1 Wrapped \\', '  continues', '- [ ] 1.2 Second'].join('\n')
+  const tasks = parseTaskLines(content)
+  assert.equal(tasks.length, 2)
+  assert.equal(tasks[0].description, '1.1 Wrapped continues')
+  assert.equal(tasks[1].description, '1.2 Second')
+})
+
+test('ends the text at a plain list item or heading without making it a task', () => {
+  const content = [
+    '- [ ] 1.1 Wrapped',
+    '  detail',
+    '- plain note',
+    '## Heading',
+    '- [ ] 1.2 Next',
+  ].join('\n')
+  const tasks = parseTaskLines(content)
+  assert.equal(tasks.length, 2)
+  assert.equal(tasks[0].description, '1.1 Wrapped detail')
+  assert.equal(tasks[1].description, '1.2 Next')
+})
+
+test('takes the continuation text into an empty checkbox', () => {
+  const content = ['- [ ]', '  the continuation text'].join('\n')
+  const tasks = parseTaskLines(content)
+  assert.equal(tasks.length, 1)
+  assert.equal(tasks[0].description, 'the continuation text')
+  assert.equal(tasks[0].id, '1')
+})
+
+test('counts continuation lines as one task', () => {
+  const content = ['- [ ] 1.1 one', '  continued', '  more', '- [x] 1.2 two'].join('\n')
+  const tasks = parseTaskLines(content)
+  const summary = summarize(tasks)
+  assert.deepEqual(summary.progress, { total: 2, complete: 1, remaining: 1 })
+  assert.deepEqual(
+    tasks.map((task) => task.description),
+    ['1.1 one continued more', '1.2 two'],
+  )
+})
+
 test('reads numeric ids without confusing 1.1 and 1.10', () => {
   assert.equal(numericIdOf('1.1 Install'), '1.1')
   assert.equal(numericIdOf('1.10 Install'), '1.10')

@@ -98,6 +98,21 @@ function rawApplyBytes(root) {
   return Buffer.byteLength(result.stdout)
 }
 
+/** The tasks the bundled CLI itself reports for the fixture change. */
+function cliApplyTasks(root) {
+  const result = spawnSync(
+    process.execPath,
+    [CLI, 'instructions', 'apply', '--change', CHANGE, '--json'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    },
+  )
+  assert.equal(result.status, 0, result.stderr)
+  return JSON.parse(result.stdout).tasks
+}
+
 test.after(() => {
   for (const root of created) rmSync(root, { recursive: true, force: true })
 })
@@ -266,6 +281,55 @@ test('runs the apply loop, keeps 1.1 and 1.10 distinct, and finishes all_done', 
   const validation = await inspectCall(fake, 'validate', { change: CHANGE })
   assert.equal(validation.valid, true)
   assert.deepEqual(validation.issues, [])
+})
+
+test('agrees with the CLI on the text of a wrapped task', async () => {
+  const root = fixture()
+  writeTasks(root, [
+    '## 1. Wrapped group',
+    '',
+    '- [ ] 1.1 A task that',
+    '  wraps onto a second line',
+    '- [ ] An unnumbered task',
+    '  whose text continues',
+    '- [ ] 1.2 Hard break \\',
+    '  continues after it',
+    '- plain note',
+    '- [ ] 1.3 Last task',
+    '',
+  ].join('\n'))
+  const fake = setup(root)
+
+  const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const cliTasks = cliApplyTasks(root)
+  const parsed = parseTaskLines(readFileSync(tasksPath(root), 'utf8'))
+
+  assert.equal(cliTasks.length, 4)
+  assert.equal(parsed.length, cliTasks.length)
+  for (const task of cliTasks) {
+    const local = parsed.find((candidate) => candidate.line === task.line)
+    assert.ok(local, `the plugin parses the task at line ${task.line}`)
+    assert.equal(local.description, task.description, `line ${task.line} description`)
+  }
+
+  const wrapped = cliTasks[0]
+  assert.equal(wrapped.line, 3)
+  assert.equal(wrapped.description, '1.1 A task that wraps onto a second line')
+  assert.equal(applied.next.line, wrapped.line)
+  assert.equal(applied.next.description, wrapped.description)
+
+  const result = await call(fake, 'openspec_mark_task_done', {
+    change: CHANGE,
+    taskIds: [applied.next.id],
+    sourcePath: applied.next.sourcePath,
+    line: applied.next.line,
+  })
+  assert.deepEqual(result.results, [{ id: '1.1', status: 'flipped' }])
+
+  const lines = readFileSync(tasksPath(root), 'utf8').split('\n')
+  assert.equal(lines[wrapped.line - 1], '- [x] 1.1 A task that')
+  assert.equal(lines.filter((line) => line.includes('[x]')).length, 1)
+  assert.equal(lines[wrapped.line], '  wraps onto a second line')
 })
 
 test('marks a task with an absolute source path as well', async () => {

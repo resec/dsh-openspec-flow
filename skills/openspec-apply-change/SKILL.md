@@ -3,8 +3,8 @@ name: openspec-apply-change
 description: Implement tasks from an OpenSpec change with the openspec_* tools. Use when the user wants to start, continue, or finish implementation.
 whenToUse: The user wants to implement, continue, or finish an OpenSpec change in a project that has the dsh-openspec-flow plugin.
 metadata:
-  generatedBy: dsh-openspec-flow@0.5.0
-  upstream: openspec@1.16.1
+  generatedBy: dsh-openspec-flow@0.6.0
+  upstream: openspec@2.0.0
 ---
 
 # Apply a change with the plugin tools
@@ -22,7 +22,7 @@ Use the `openspec_*` tools for every step. If a core tool is unavailable, report
 ## Loop
 
 - Work through the pending tasks in order; keep each change scoped to its task.
-- Verify the checkbox at `next.sourcePath` and `next.line` still matches `next.description`; `sourcePath` is relative to `root.path`, so resolve it against that root first. If it moved, call `openspec_apply_next` once to resync.
+- Verify the checkbox's whole paragraph at `next.sourcePath` and `next.line` still matches `next.description`; a task that wraps onto following lines reads as one paragraph, and `sourcePath` is relative to `root.path`, so resolve it against that root first. If it moved, call `openspec_apply_next` once to resync.
 - Mark finished tasks with `openspec_mark_task_done`, passing every id finished since the last call in `taskIds`; include `next.sourcePath` and `next.line` when the batch starts at `next`.
 - Continue with the `next` returned by that call. Do not re-run `openspec_apply_next` between tasks.
 - If a result entry is `already-done`, that task needed no change; continue with the returned `next`.

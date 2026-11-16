@@ -2,12 +2,12 @@
 
 本文档面向维护者，说明把 `dsh-openspec-flow` 的 `@fission-ai/openspec` 精确依赖从一个版本升到另一个版本时，需要检查什么、改哪些文件、跑哪些测试，以及如何发布和回滚。
 
-当前基线（2026-11-12 工作树）：
+当前基线（2026-11-16 工作树）：
 
-- CLI：`@fission-ai/openspec` 1.16.1（`package.json:55`）
+- CLI：`@fission-ai/openspec` 2.0.0（`package.json:55`）
 - Node：`>=24.9.0`（`package.json` 的 `engines.node`）
 - DSH：`=0.2.2-rc.2`（`package.json` 的 `engines.dsh`）
-- 插件版本：0.5.0（`package.json:3`）
+- 插件版本：0.6.0（`package.json:3`）
 
 插件只运行自己安装树内的 CLI（`lib/openspec.js:106`），首次调用校验精确版本与 `schemaVersion: 1`（`lib/openspec.js:143`）。因此升级必须同时移动依赖、版本断言与文档，不能只改 `package.json`。
 
@@ -54,7 +54,7 @@ npm_config_cache="$(mktemp -d)" npm view @fission-ai/openspec@<version> engines.
 
 `npm view` 对该字段返回单元素数组，例如 `[">=22.12.0"]`。
 
-记录目标版本的 `engines.node`。插件与 DSH 同进程运行，实际 Node 由 DSH 决定；只有当目标 CLI 的下限高于插件当前 `engines.node` 时，才需要评估是否同步调整插件与 DSH 的 Node 下限。当前插件要求 Node 24，CLI 1.16.1 要求 `>=22.12.0`。
+记录目标版本的 `engines.node`。插件与 DSH 同进程运行，实际 Node 由 DSH 决定；只有当目标 CLI 的下限高于插件当前 `engines.node` 时，才需要评估是否同步调整插件与 DSH 的 Node 下限。当前插件要求 Node 24，CLI 2.0.0 要求 `>=22.12.0`。
 
 同时确认目标 CLI 的 `version --json` 仍输出 `schemaVersion: 1`。插件在 `lib/openspec.js:153` 硬性要求该值；它变化时插件会在运行任何目标命令前失败。
 
@@ -80,7 +80,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
-| `package.json:55` | 精确版本 `1.16.1` | 改为目标精确版本 |
+| `package.json:55` | 精确版本 `2.0.0` | 改为目标精确版本 |
 | `lib/openspec.js:47` | 从 `package.json` 派生 `PINNED_CLI_VERSION` | 无需改代码，改 manifest 即生效 |
 | `lib/openspec.js:143` | `version --json` 的 `version` 与 `schemaVersion` | 目标 CLI 必须仍输出 `schemaVersion: 1`，且 `version` 与 pin 完全一致 |
 | `lib/openspec.js:351` | `runOpenSpec` 的 spawn 参数与 `--json` 解析 | 命令仍支持 `--json`，输出仍是单段 JSON |
@@ -89,18 +89,19 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `lib/openspec.js:413` | `throwIfOnlyStatus`（`status` 数组 + 无成功字段） | 成功载荷不会只带 `status` |
 | `lib/state.js:101` | `instructions apply` 的必填字段与 `tasks[]` | `changeName`、`schemaName`、`state`、`progress`、`tasks` 仍在 |
 | `lib/state.js:133` | apply 命令 `instructions apply --change ... --json` | 命令与选项仍存在 |
-| `lib/state.js:555` | `status --json` 的 `changeName`、`schemaName`、`artifacts`、`actionContext` | 字段名与类型不变 |
-| `lib/state.js:607` | `list --json` 的 `changes[]`、`root`、`status` | `completedTasks`、`totalTasks`、`status` 仍在 |
-| `lib/state.js:633` | `list --specs --json` 的 `specs[]` | `id`、`requirementCount` 仍在 |
-| `lib/state.js:657` | `context --json` 的 `root`、`members`、`status` | 字段不变 |
-| `lib/state.js:676` | `schemas --json` 的数组元素 | `name`、`description`、`artifacts`、`source` 仍在 |
-| `lib/state.js:697` | 只保留 `source: "package"` 的 `spec-driven` | `source` 的取值不变 |
-| `lib/state.js:710` | `store list --json` 的 `stores[]` 与 `metadata_path` | 字段名不变 |
-| `lib/state.js:729` | `show --json` 的 change/spec 两种形态 | `deltas[]` 与 `requirements[]` 的嵌套字段仍在 |
-| `lib/state.js:800` | 指令正文中的 7 个 CLI 片段 | 目标版本的指令文本仍包含这些片段，或补新映射 |
-| `lib/state.js:814` | `instructions <artifact> --json` 的字段 | `outputPath`、`resolvedOutputPath`、`instruction`、`dependencies`、`unlocks` 仍在 |
-| `lib/state.js:859` | `validate --json` 的 `items[].issues[]` | `level`、`path`、`message` 仍在 |
-| `lib/tasks.js:20` | 任务行正则，镜像 CLI 的 `task-progress` | 与目标 CLI 的解析规则一致 |
+| `lib/state.js:561` | `status --json` 的 `changeName`、`schemaName`、`artifacts`、`actionContext` | 字段名与类型不变 |
+| `lib/state.js:636` | `list --json` 的 `changes[]`、`root`、`status` | `completedTasks`、`totalTasks`、`status` 仍在 |
+| `lib/state.js:662` | `list --specs --json` 的 `specs[]` | `id`、`requirementCount` 仍在 |
+| `lib/state.js:741` | `context --json` 的 `root`、`members`、`status` | 字段不变 |
+| `lib/state.js:762` | `schemas --json` 的数组元素 | `name`、`description`、`artifacts`、`source` 仍在 |
+| `lib/state.js:783` | 只保留 `source: "package"` 的 `spec-driven` | `source` 的取值不变 |
+| `lib/state.js:796` | `store list --json` 的 `stores[]` 与 `metadata_path` | 字段名不变 |
+| `lib/state.js:815` | `show --json` 的 change/spec 两种形态 | `deltas[]` 与 `requirements[]` 的嵌套字段仍在 |
+| `lib/state.js:868` | 指令正文中的 7 个 CLI 片段 | 目标版本的指令文本仍包含这些片段，或补新映射 |
+| `lib/state.js:980` | `instructions <artifact> --json` 的字段 | `outputPath`、`resolvedOutputPath`、`instruction`、`dependencies`、`unlocks` 仍在 |
+| `lib/state.js:1028` | `validate --json` 的 `items[].issues[]` | `level`、`path`、`message` 仍在 |
+| `lib/tasks.js:24` | 任务行正则，镜像 CLI 的 `task-progress` | 与目标 CLI 的解析规则一致 |
+| `lib/tasks.js:42` | 任务文本的断行与硬换行规则 | 与目标 CLI 的 `parseLocatedTaskLines` 一致 |
 | `lib/schema.js:35` | 用户 schema 目录（XDG、Windows、`~/.local/share`） | 目录规则不变 |
 | `lib/schema.js:115` | 内置 `spec-driven` 闸门与项目/用户覆盖检测 | 解析顺序与覆盖判定不变 |
 | `lib/tools/query.js:107` | `list` / `list --specs` 的参数 | 选项仍存在 |
@@ -119,18 +120,18 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `lib/tools/write.js:204` | `archive` 前的 `validate --json` | `items[].valid` 仍在 |
 | `lib/tools/write.js:213` | `archive ... --yes --json` 与 `--skip-specs` | 选项仍存在 |
 | `lib/init.js:76` | `init --tools none --no-animation` | 选项仍存在，仍不生成技能 |
-| `skills/*/SKILL.md:7` | `metadata.upstream: openspec@1.16.1` | 改为目标版本 |
-| `test/openspec.test.mjs:11` | 硬编码 `1.16.1` | 改为目标版本 |
-| `test/skills.test.mjs` | 硬编码 `upstream: openspec@1.16.1` | 改为目标版本 |
-| `README.md:64` | CLI 对照表的 v1.16.1 tag | 改为目标 tag，并重新核对命令与选项 |
-| `README.md:95` | 官方技能对照表的 v1.16.1 tag | 改为目标 tag，并重新核对 12 份技能 |
-| `README.md:181` | 精确版本与来源说明 | 更新版本号 |
-| `README.md:182` | 版本闸门说明 | 更新版本号 |
-| `README.md:214` | 设计要点中的版本 | 更新版本号 |
-| `README.md:231` | 验证环境 | 更新版本号与实测数据 |
-| `README.md:236` | 测试使用真实 CLI 的说明 | 更新版本号 |
-| `README.md:285` | 限制：CLI 固定版本 | 更新版本号 |
-| `README.md:287` | 限制：技能正文对齐 | 更新版本号 |
+| `skills/*/SKILL.md:7` | `metadata.upstream: openspec@2.0.0` | 改为目标版本 |
+| `test/openspec.test.mjs:11`、`:35` | 硬编码 `2.0.0`（版本断言与错误信息） | 改为目标版本 |
+| `test/skills.test.mjs:46` | 硬编码 `upstream: openspec@2.0.0` | 改为目标版本 |
+| `README.md:66` | CLI 对照表的 v2.0.0 tag | 改为目标 tag，并重新核对命令与选项 |
+| `README.md:97` | 官方技能对照表的 v2.0.0 tag | 改为目标 tag，并重新核对 12 份技能 |
+| `README.md:183` | 精确版本与来源说明 | 更新版本号 |
+| `README.md:184` | 版本闸门说明 | 更新版本号 |
+| `README.md:216` | 设计要点中的版本 | 更新版本号 |
+| `README.md:233` | 验证环境 | 更新版本号与实测数据 |
+| `README.md:238` | 测试使用真实 CLI 的说明 | 更新版本号 |
+| `README.md:287` | 限制：CLI 固定版本 | 更新版本号 |
+| `README.md:289` | 限制：技能正文对齐 | 更新版本号 |
 | `AGENTS.md:28` | 精确版本 | 更新版本号 |
 | `cordis.patch.yml:3` | 注释中的精确版本 | 更新版本号 |
 | `package-lock.json` | `@fission-ai/openspec` 的版本与 integrity | 用 `npm install` 更新，不手改 |
@@ -162,15 +163,15 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 5. 按契约检查结果改投影。涉及 `lib/state.js`、`lib/tools/query.js`、`lib/tools/write.js`、`lib/schema.js`、`lib/tasks.js`。每改一处，补一个回归测试。
 
-6. 如果 `instructions` 正文变化，更新 `lib/state.js:800` 的 `INSTRUCTION_COMMAND_MAP`，并在 `test/projections.test.mjs` 的映射用例里补片段。
+6. 如果 `instructions` 正文变化，更新 `lib/state.js:868` 的 `INSTRUCTION_COMMAND_MAP`，并在 `test/projections.test.mjs` 的映射用例里补片段。
 
-7. 如果任务行解析变化，更新 `lib/tasks.js:20` 与 `lib/tasks.js:24`，并在 `test/tasks.test.mjs` 补用例。
+7. 如果任务行解析或任务文本的断行规则变化，更新 `lib/tasks.js:24`、`lib/tasks.js:42` 与 `lib/tasks.js:58`，并在 `test/tasks.test.mjs` 与 `test/integration.test.mjs` 补用例。
 
 8. 更新五份 `skills/*/SKILL.md` 的 `metadata.upstream`。正文只应出现 `openspec_*` 工具名，不应出现 CLI 命令；`test/skills.test.mjs` 会拦截 CLI 提及。
 
 9. 更新 `test/skills.test.mjs` 的 upstream 断言。
 
-10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处 `v1.16.1` 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化，同步调整“官方技能对照”。
+10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处 `v2.0.0` 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化，同步调整“官方技能对照”。
 
 11. 更新 `AGENTS.md:28` 与 `cordis.patch.yml:3` 的版本字样。
 
@@ -323,11 +324,11 @@ npm run contract:check -- --candidate <version> --json
 
 - `package.json:55`、`package.json:3`：CLI pin 与插件版本。
 - `lib/openspec.js:47`、`:106`、`:143`、`:153`、`:159`、`:351`、`:379`、`:393`、`:413`：CLI 解析、版本闸门、调用与错误处理。
-- `lib/state.js:101`、`:133`、`:555`、`:607`、`:633`、`:657`、`:676`、`:697`、`:710`、`:729`、`:800`、`:814`、`:859`：CLI JSON 的投影读取点。
-- `lib/tasks.js:20`、`:24`：任务行解析。
+- `lib/state.js:101`、`:133`、`:561`、`:636`、`:662`、`:741`、`:762`、`:783`、`:796`、`:815`、`:868`、`:980`、`:1028`：CLI JSON 的投影读取点。
+- `lib/tasks.js:24`、`:42`、`:58`：任务行解析、文本断行与硬换行规则。
 - `lib/schema.js:35`、`:115`、`:128`：schema 目录与闸门。
 - `lib/tools/query.js`、`lib/tools/write.js`、`lib/init.js`：命令与选项。
-- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`test/skills.test.mjs:18`、`README.md:64`、`README.md:95`、`AGENTS.md:28`、`cordis.patch.yml:3`：版本字样与对照表。
+- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`:35`、`test/skills.test.mjs:46`、`README.md:64`、`README.md:95`、`AGENTS.md:28`、`cordis.patch.yml:3`：版本字样与对照表。
 - `scripts/cli-contract.json`、`scripts/check-cli-contract.mjs`、`test/cli-contract.test.mjs`：契约检查。
 
 上游文档与 release：

@@ -7,7 +7,7 @@
 - DSH：`=0.2.2-rc.2`（`package.json:10`）
 - Node：`>=24.9.0`（`package.json:9`）
 - 测试主版本：24（`coverage.config.json:2`）
-- OpenSpec CLI：`@fission-ai/openspec` 1.16.1（`package.json` 的 `dependencies`）
+- OpenSpec CLI：`@fission-ai/openspec` 2.0.0（`package.json` 的 `dependencies`）
 
 DSH 在加载 profile 时逐个读取 bundle 的 `package.json`，用运行中的 DSH 版本检查 `engines.dsh`。不匹配时，安装可能被拒绝，已安装的 bundle 会在启动时被跳过；工具、技能与流程规则都不会注册。兼容声明是启动闸门，不是文档约定，因此升级必须同时移动声明、Node 基线与验证证据。
 
