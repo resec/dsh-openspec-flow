@@ -113,6 +113,17 @@ test('an openspec-only commit keeps the fingerprint', () => {
   assert.equal(checkStamp({ root }).ok, true, 'an archive-style commit must not invalidate the stamp')
 })
 
+test('an uncommitted planning directory of another change does not block the stamp', () => {
+  const root = makeRepo()
+  mkdirSync(join(root, 'openspec', 'changes', 'other', 'specs'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'other', 'proposal.md'), '# Proposal\n')
+  const result = writeStamp({ root, base: baseOf(root) })
+  assert.equal(result.written, true, 'a parallel change directory must not count as a dirty tree')
+  assert.equal(checkStamp({ root }).ok, true)
+  writeFileSync(join(root, 'lib', 'a.js'), 'export function a() { return 9 }\n')
+  assert.equal(writeStamp({ root, base: baseOf(root) }).written, false)
+})
+
 test('a lib change invalidates the stamp', () => {
   const root = makeRepo()
   writeStamp({ root, base: baseOf(root) })

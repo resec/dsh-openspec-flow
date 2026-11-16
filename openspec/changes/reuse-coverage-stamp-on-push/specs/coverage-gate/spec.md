@@ -4,7 +4,7 @@
 
 ### Requirement: Coverage stamp on a passing enforce run
 
-After an enforce-mode verification run passes, the entrypoint SHALL write a stamp to `.cache/coverage-stamp.json` under the repository root. The file SHALL be ignored by version control. The stamp SHALL be written only when the effective mode is enforce, the invocation does not update the baseline, the gate reports no violation, and `git status --porcelain` is empty.
+After an enforce-mode verification run passes, the entrypoint SHALL write a stamp to `.cache/coverage-stamp.json` under the repository root. The file SHALL be ignored by version control. The stamp SHALL be written only when the effective mode is enforce, the invocation does not update the baseline, the gate reports no violation, and the working tree is clean apart from uncommitted paths under other `openspec/changes/` directories, which do not take part in a coverage verdict.
 
 #### Scenario: A passing enforce run on a clean tree writes the stamp
 
@@ -53,9 +53,14 @@ The writer SHALL refuse a dirty working tree. Because the write runs inside the 
 
 #### Scenario: A dirty tree does not write the stamp
 
-- **WHEN** the gate passes while `git status --porcelain` reports an entry
+- **WHEN** the gate passes while `git status --porcelain` reports an entry outside another change's directory
 - **THEN** the writer refuses, reports the reason, and no stamp is written
 - **AND** the run keeps the exit code the gate produced
+
+#### Scenario: Another change's uncommitted planning files do not block the stamp
+
+- **WHEN** the only uncommitted path is under `openspec/changes/<other>/`
+- **THEN** the tree counts as clean for the stamp and the writer records it
 
 ### Requirement: Coverage stamp fingerprint covers the verdict inputs
 

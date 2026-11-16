@@ -84,9 +84,18 @@ export function stampPath(root = ROOT) {
  * @returns true when the tree is dirty or cannot be inspected.
  */
 export function isDirty(root = ROOT) {
-  const result = runGit(root, ['status', '--porcelain'], { allowFailure: true })
+  const result = runGit(root, ['status', '--porcelain', '--untracked-files=all'], { allowFailure: true })
   if (result.status !== 0) return true
-  return (result.stdout ?? '').trim() !== ''
+  return (result.stdout ?? '')
+    .split('\n')
+    .filter((line) => line !== '')
+    .some((line) => {
+      const path = line.slice(3)
+      const target = path.includes(' -> ') ? path.split(' -> ')[1] : path
+      // A parallel change's planning directory cannot move a coverage verdict,
+      // and the repository's seal rules already ignore it.
+      return !target.startsWith('openspec/changes/')
+    })
 }
 
 /**

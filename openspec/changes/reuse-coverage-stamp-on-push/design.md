@@ -67,7 +67,7 @@ Alternative rejected: fingerprinting all of `scripts/`. It would invalidate on `
 
 ### Require a clean tree in the writers
 
-The fingerprint is taken from `HEAD`, but the gate measured the working tree. Both `writeStamp` and `clearStamp` refuse when `git status --porcelain` is non-empty, so the guard lives in the exported writers and a fixture can test it. Requiring a clean tree makes the two objects the same and closes the revert loophole: a test edit that passes while uncommitted cannot mint a stamp for a commit that never contained it.
+The fingerprint is taken from `HEAD`, but the gate measured the working tree. Both `writeStamp` and `clearStamp` refuse when the tree is dirty, so the guard lives in the exported writers and a fixture can test it. Uncommitted paths under other `openspec/changes/` directories are exempt: the repository supports parallel changes, the directory carries no coverage input, and the pre-push seal rules already ignore it. Without the exemption a second untracked change directory would make every parallel change unable to mint a stamp. Requiring a clean tree makes the two objects the same and closes the revert loophole: a test edit that passes while uncommitted cannot mint a stamp for a commit that never contained it.
 
 This makes the verification order load-bearing: `AGENTS.md` moves "run `npm run verify`" after the implementation commit, so the normal flow (implement, commit, verify, review, archive, push) mints a stamp that the archive commit preserves. A verification that runs on a dirty tree writes nothing and costs the next push one rerun, which is the status quo.
 
