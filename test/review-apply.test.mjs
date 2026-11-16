@@ -302,6 +302,18 @@ test('apply start and resume reject dispositions and gate open findings', async 
   assert.equal(next.round, 2)
 })
 
+test('the apply gate points an abandoned review at a new change', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', { action: 'abandon', change: CHANGE, review: 'apply' })
+  await assert.rejects(
+    call(fake, 'openspec_archive', { change: CHANGE }),
+    /Next: openspec_new_change/,
+  )
+})
+
 test('apply review is idempotent after pass and refuses a capped round', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)

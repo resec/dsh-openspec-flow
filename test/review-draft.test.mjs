@@ -84,6 +84,19 @@ test('the draft gate names the report step before a report exists', async () => 
   )
 })
 
+test('the draft gate points an abandoned review at a new change', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', { action: 'abandon', change: CHANGE })
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /Next: openspec_new_change/,
+  )
+})
+
 test('start and resume reject dispositions', async () => {
   const root = fixture()
   const fake = setup(root)
