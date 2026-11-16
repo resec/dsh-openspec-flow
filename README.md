@@ -270,6 +270,7 @@ npm test
 - OpenSpec 根：`openspec/`；流程技能由插件 provider 提供，仓库不再保存副本；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
 - apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 按批 `openspec_mark_task_done`。
+- 分批验证：每批改动后跑 `npm run test:affected -- <改动路径>`，只执行导入这些模块的测试文件；不带路径时读工作区改动，`--list` 只打印选中文件，`--run` 执行并透传退出码，`--all` 强制全量。选中集只覆盖直接或经 helper 导入的测试，跨入口的集成测试由收尾的全量运行兜底。
 - 收尾：`openspec_inspect`（`action: "validate"`）传 `strict: true`，并跑 `npm run verify` 与 `npm run openspec:check`。
 - 归档：`openspec_archive`，只在用户明确要求时。
 

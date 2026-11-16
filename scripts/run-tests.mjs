@@ -12,11 +12,10 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertCurrentNode } from './node-version.mjs'
+import { testEnvFor } from './test-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const COVERAGE_ENABLED = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
-/** Absolute compile-cache directory; a relative value would resolve inside fixtures. */
-const COMPILE_CACHE = join(ROOT, '.cache', 'node-compile')
 
 const SCOPES = {
   plugin: {
@@ -35,26 +34,16 @@ function listTests(directory) {
 }
 
 /**
- * Build the environment for the test runner.
+ * Run one scope.
  *
- * Plain runs reuse the compile cache for the runner and every CLI child. A
- * coverage run drops an inherited value because Node documents that bytecode
- * deserialised from the cache can make V8 coverage less precise.
+ * The child environment comes from the shared test-env module, so the plain
+ * and scoped entrypoints cannot drift apart on the compile cache.
  *
+ * @param scope - scope name from `SCOPES`.
  * @param coverage - whether this run collects coverage.
- * @returns the environment for the child process.
+ * @param extra - extra arguments forwarded after the test paths.
+ * @returns the child exit status.
  */
-function childEnv(coverage) {
-  const env = { ...process.env }
-  if (coverage) {
-    delete env.NODE_COMPILE_CACHE
-    return env
-  }
-  mkdirSync(COMPILE_CACHE, { recursive: true })
-  env.NODE_COMPILE_CACHE = COMPILE_CACHE
-  return env
-}
-
 function runScope(scope, coverage, extra = []) {
   const definition = SCOPES[scope]
   const files = listTests(definition.testDir)
@@ -74,7 +63,7 @@ function runScope(scope, coverage, extra = []) {
   const result = spawnSync(process.execPath, args, {
     cwd: ROOT,
     stdio: 'inherit',
-    env: childEnv(coverage),
+    env: testEnvFor(coverage),
   })
   if (result.error) throw result.error
   return result.status ?? 1

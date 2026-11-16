@@ -43,6 +43,7 @@
   ],
   "scripts": {
     "test": "node scripts/run-tests.mjs plugin",
+    "test:affected": "node scripts/affected-tests.mjs --run",
     "verify": "node scripts/coverage.mjs --check",
     "coverage": "node scripts/coverage.mjs",
     "coverage:check": "node scripts/coverage.mjs --check",
