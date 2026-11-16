@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-16
+goal: Let the changer dispose or waive multiple findings atomically in one
+  openspec_review call, and delete the unused issue parameter so deferred
+  requires a note.
