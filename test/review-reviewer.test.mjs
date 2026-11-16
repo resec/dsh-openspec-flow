@@ -198,6 +198,49 @@ test('the reviewer reads its report and status and refuses a duplicate submit', 
   )
 })
 
+test('the reviewer reads an earlier round and the finding state', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 2 })
+
+  const before = readFileSync(join(reviewDir(root), 'review.json'), 'utf8')
+  const first = await execute({ action: 'read', target: 'own-report', change: CHANGE, review: 'draft', round: 1 })
+  assert.equal(first.round, 1)
+  assert.equal(first.report.verdict, 'changes-requested')
+  const findings = await execute({ action: 'read', target: 'findings', change: CHANGE, review: 'draft' })
+  assert.equal(findings.findings[0].id, 'R1-01')
+  assert.equal(findings.findings[0].status, 'fixed')
+  assert.equal(findings.findings[0].firstRound, 1)
+  assert.equal(findings.findings[0].verifiedInRound, null)
+  assert.equal(findings.findings[0].lastVerification, null)
+  assert.deepEqual(findings.rounds[0], { round: 1, verdict: 'changes-requested', hasReport: true })
+  assert.deepEqual(findings.rounds[1], { round: 2, verdict: null, hasReport: false })
+  await assert.rejects(
+    execute({ action: 'read', target: 'own-report', change: CHANGE, review: 'draft', round: 9 }),
+    /round 9 is not recorded/,
+  )
+  await assert.rejects(
+    execute({ action: 'read', target: 'own-report', change: CHANGE, review: 'draft', round: 2 }),
+    /round 2 has no report/,
+  )
+  assert.equal(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'), before)
+})
+
 test('the reviewer refuses a missing record, a missing slot and a changed object', async () => {
   const root = fixture()
   const reviewer = createFakeContext({ cwd: root })

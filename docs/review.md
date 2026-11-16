@@ -59,7 +59,7 @@ draft brief 的开头在两种模式下相同：要求对抗性审阅，不声�
 - `source: "explicit"` 使用配置里的 provider 与 model；模型暴露可选推理档位时带 `reasoningEffort`，否则按适配器默认。
 - 启动前插件会核对 provider、model 与 effort 仍在 `llm` 目录里，任一不可用都在创建子会话之前失败；子会话通过 `agentOptions` 收到锁定的路由。
 
-reviewer 侧只有三个动作：`read`（读 brief 或报告）、`submit`（提交一份报告）、`status`（看就绪度）。`openspec_reviewer` 只在 `openspec-reviewer` preset 里注册，changer 的目录中不可见。
+reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报告、读 finding 状态，或看就绪度）、`submit`（提交一份报告）、`status`（看就绪度）。`read` 的 `target` 为 `brief`、`own-report`（可带 `round`）、`findings` 与 `status`；`findings` 返回每条 finding 的 id、severity、status、title、首次轮次、验证轮次与最后验证状态，以及每轮的 verdict 与是否已有报告。`openspec_reviewer` 只在 `openspec-reviewer` preset 里注册，changer 的目录中不可见。
 
 ## 策略锁定
 
@@ -93,11 +93,11 @@ finding 的处置：
 | `waive` | 需要 `approvedBy: "user"` 与 waiver 文本 | 由用户明确豁免，记录在案 |
 | 后续报告 `verified-fixed` | 验证轮次必须晚于首次轮次 | 真正关闭 finding |
 
-`dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispose` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的条目只需 `id`，`status` 固定为 `waived`，`waiver` 与 `approvedBy` 可由顶层提供默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。
+`dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispose` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的条目只需 `id`，`status` 固定为 `waived`，`waiver` 与 `approvedBy` 可由顶层提供默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。`dispositions` 只属于 `action: "dispose"` 与 finding 的 `waive`；`start` 与 `resume` 不接受它，传入即拒绝并指向 `action: "dispose"`。
 
 `issue` 参数已移除：`deferred` 必须给 note，旧记录中的 `issue` 字段保留原样但不读取，新处置不再写入。plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`。
 
-就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。
+就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose`，即使对象已变化或有 finding 已是 `fixed`。
 
 ## 记录布局
 
@@ -122,6 +122,8 @@ finding 的处置：
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
 - **轮次上限**：达到 `maxRounds` 后 `resume` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
+- **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"`；先处置再 `resume`。
+- **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`。
 - **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。
 - **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；用 `resume` 开新一轮，或修正提交。
 - **意图文件缺失或被改动**：`resume` 拒绝并提示移除评审记录；`start` 不会为已有记录重写 `intent.md`。

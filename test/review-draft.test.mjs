@@ -72,6 +72,57 @@ test('an open blocker refuses apply', async () => {
   )
 })
 
+test('start and resume reject dispositions', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, intent: 'Add a theme selector.', dispositions: [],
+    }),
+    /start does not accept dispositions.*action=dispose/,
+  )
+  assert.equal(existsSync(reviewDir(root)), false)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'resume', change: CHANGE,
+      dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x' }],
+    }),
+    /resume does not accept dispositions.*action=dispose/,
+  )
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.round, 1)
+  assert.equal(status.findings.total, 0)
+  assert.equal(existsSync(join(reviewDir(root), 'round-2')), false)
+})
+
+test('resume refuses a new round while a finding is open', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /still open: R1-01.*action=dispose/,
+  )
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.round, 1)
+  assert.equal(status.findings.open, 1)
+  assert.equal(existsSync(join(reviewDir(root), 'round-2')), false)
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  const next = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(next.round, 2)
+})
+
 test('a later round verifies a fixed blocker and passes apply', async () => {
   const root = fixture()
   const fake = setup(root)
@@ -662,6 +713,15 @@ test('a passed review is idempotent and a capped review refuses another round', 
   await call(capped, 'openspec_review', {
     action: 'self-report', change: CHANGE,
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await assert.rejects(
+    call(capped, 'openspec_review', {
+      action: 'resume', change: CHANGE,
+    }),
+    /still open: R1-01/,
+  )
+  await call(capped, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
   await assert.rejects(
     call(capped, 'openspec_review', {

@@ -261,6 +261,16 @@ test('the review document explains batch disposition and the removed issue field
   assert.match(text, /plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`/)
 })
 
+test('the review document explains the reviewer read targets and the resume gate', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of ['`own-report`', '`findings`', '`round`', '`resume` 在有 `open` finding 时拒绝开新轮']) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  assert.match(text, /`read` 的 `target` 为 `brief`、`own-report`（可带 `round`）、`findings` 与 `status`/)
+  assert.match(text, /`start` 与 `resume` 不接受它/)
+  assert.match(text, /`resume` 在有 `open` finding 时拒绝开新轮/)
+})
+
 test('the review document explains the non-polling wait and the wakeup', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /不轮询/)

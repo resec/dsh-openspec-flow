@@ -263,6 +263,41 @@ test('apply review can run with draft review disabled and an explicit base', asy
   assert.equal(record.baseCommit, base)
 })
 
+test('apply start and resume reject dispositions and gate open findings', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, review: 'apply', dispositions: [],
+    }),
+    /start does not accept dispositions.*action=dispose/,
+  )
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'resume', change: CHANGE, review: 'apply',
+      dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x' }],
+    }),
+    /resume does not accept dispositions.*action=dispose/,
+  )
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /still open: R1-01.*action=dispose/,
+  )
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply', id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  const next = await call(fake, 'openspec_review', {
+    action: 'resume', change: CHANGE, review: 'apply',
+  })
+  assert.equal(next.round, 2)
+})
+
 test('apply review is idempotent after pass and refuses a capped round', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
@@ -286,6 +321,13 @@ test('apply review is idempotent after pass and refuses a capped round', async (
   await call(capped, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply',
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await assert.rejects(
+    call(capped, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /still open: R1-01/,
+  )
+  await call(capped, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply', id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
   await assert.rejects(
     call(capped, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),

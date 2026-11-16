@@ -205,6 +205,9 @@ test('a new-round wake fails closed without the reviewer service or the changer 
     review: 'draft',
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
 
   const noService = createFakeContext({ cwd: root, subagents: {} })
   apply(noService.ctx, {
@@ -231,6 +234,28 @@ test('a new-round wake fails closed without the reviewer service or the changer 
     ),
     /needs the changer agent/,
   )
+})
+
+test('an open finding blocks a new round before any reviewer wake', async () => {
+  const root = fixture()
+  const { fake, messages } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const before = messages.length
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    /still open: R1-01/,
+  )
+  assert.equal(messages.length, before)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds.length, 1)
 })
 
 test('an apply start activates a reviewer when the record has no slots', async () => {

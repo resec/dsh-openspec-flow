@@ -218,6 +218,17 @@ test('readiness accounts for verdict, blockers and stale hashes', () => {
     findings: [finding()],
   }, 'hash')
   assert.equal(blocked.ready, false)
+  const staleOpen = draftReadiness({
+    ...base,
+    objectHash: 'old',
+    findings: [finding({ status: 'open' })],
+  }, 'new')
+  assert.match(staleOpen.nextAction, /action=dispose/)
+  const fixedOpen = draftReadiness({
+    ...base,
+    findings: [finding({ status: 'fixed' }), finding({ id: 'R1-02', severity: 'minor', status: 'open' })],
+  }, 'hash')
+  assert.match(fixedOpen.nextAction, /action=dispose/)
   const waived = draftReadiness({
     ...base,
     findings: [finding({ status: 'waived', approvedBy: 'user', waiver: 'ok' })],
@@ -330,6 +341,18 @@ test('report validation covers unknown ids, duplicates and verdict conflicts', (
     () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 1, findings: [finding({ status: 'open' })] }),
     /not fixed/,
   )
+  for (const status of ['open', 'deferred', 'rejected']) {
+    assert.throws(
+      () => assertReport({ verdict: 'changes-requested', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })] }),
+      new RegExp(`${status}.*action=dispose.*status=fixed`),
+    )
+  }
+  for (const status of ['verified', 'waived']) {
+    assert.throws(
+      () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })] }),
+      new RegExp(`already ${status}.*closed`),
+    )
+  }
 })
 
 test('verification transitions and dispositions cover every status', () => {
