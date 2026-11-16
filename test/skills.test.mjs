@@ -110,7 +110,7 @@ test('the propose and apply skills dispose findings in one batch', () => {
     assert.match(text, /single `id` form/, name)
     assert.match(text, /action: "dispose"/, name)
     assert.match(text, /finding `action: "waive"`/, name)
-    assert.match(text, /`resume` never carries `dispositions`/, name)
+    assert.match(text, /`start` and `resume` reject `dispositions`/, name)
   }
   assert.match(apply, /`scope: "plan-change"`/)
   assert.match(apply, /not `dispositions`/)

@@ -348,10 +348,13 @@ test('report validation covers unknown ids, duplicates and verdict conflicts', (
     )
   }
   for (const status of ['verified', 'waived']) {
-    assert.throws(
-      () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })] }),
-      new RegExp(`already ${status}.*closed`),
-    )
+    try {
+      assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })] })
+      assert.fail(`expected the ${status} refusal`)
+    } catch (error) {
+      assert.match(error.message, new RegExp(`already ${status}.*closed`))
+      assert.doesNotMatch(error.message, /action=dispose/)
+    }
   }
 })
 

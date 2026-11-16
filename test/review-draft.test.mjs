@@ -68,7 +68,7 @@ test('an open blocker refuses apply', async () => {
 
   await assert.rejects(
     call(fake, 'openspec_apply_next', { change: CHANGE }),
-    /draft review is not ready: .*resume the next round/,
+    /draft review is not ready: .*openspec_review action=dispose/,
   )
 })
 

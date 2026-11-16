@@ -4,7 +4,7 @@
 
 ### Requirement: Dispositions travel only with dispose and waive
 
-`openspec_review` with `action: "start"` or `action: "resume"` SHALL reject a `dispositions` argument and name the action that owns it. `dispositions` SHALL be accepted only by `action: "dispose"` or a finding `action: "waive"`. A refused call SHALL NOT create a review record or advance a round. An empty `dispositions` array SHALL be rejected as well.
+`openspec_review` with `action: "start"` or `action: "resume"` SHALL reject a `dispositions` argument and name the action that owns it. The batch SHALL be consumed only by `action: "dispose"` or a finding `action: "waive"`. A refused call SHALL NOT create a review record or advance a round. An empty `dispositions` array SHALL be rejected as well.
 
 #### Scenario: Start carries dispositions
 

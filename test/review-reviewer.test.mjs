@@ -10,7 +10,7 @@ import { clearCache } from '../lib/cache.js'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -239,6 +239,50 @@ test('the reviewer reads an earlier round and the finding state', async () => {
     /round 2 has no report/,
   )
   assert.equal(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'), before)
+})
+
+test('the findings read returns verification rounds and last verification', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-02', status: 'fixed', note: 'Fixed.',
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 2 })
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 2,
+    report: report({
+      verdict: 'pass',
+      findings: [],
+      verifications: [
+        { id: 'R1-01', status: 'verified-fixed', evidence: 'Checked.' },
+        { id: 'R1-02', status: 'still-open', evidence: 'Still open.' },
+      ],
+    }),
+  })
+  const projected = await execute({ action: 'read', target: 'findings', change: CHANGE, review: 'draft' })
+  const verified = projected.findings.find((finding) => finding.id === 'R1-01')
+  const reopened = projected.findings.find((finding) => finding.id === 'R1-02')
+  assert.equal(verified.status, 'verified')
+  assert.equal(verified.verifiedInRound, 2)
+  assert.equal(verified.lastVerification, null)
+  assert.equal(reopened.status, 'open')
+  assert.equal(reopened.verifiedInRound, null)
+  assert.equal(reopened.lastVerification, 'still-open')
 })
 
 test('the reviewer refuses a missing record, a missing slot and a changed object', async () => {
