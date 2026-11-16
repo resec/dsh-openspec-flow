@@ -184,6 +184,9 @@ test('dispositions batch validation names the offending entry', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
   })
   const tool = fake.tools.get('openspec_review')
+  assert.equal(tool.parameters.properties.dispositions.type, 'array')
+  assert.equal(tool.parameters.properties.dispositions.minItems, 1)
+  assert.deepEqual(tool.parameters.properties.dispositions.items.required, ['id'])
   assert.equal(tool.parameters.properties.dispositions.items.additionalProperties, false)
   assert.deepEqual(
     Object.keys(tool.parameters.properties.dispositions.items.properties).sort(),
