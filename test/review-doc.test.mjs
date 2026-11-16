@@ -21,6 +21,7 @@ import {
   DEFAULT_REVIEWER_MODEL,
 } from '../lib/review/config.js'
 import { APPLY_REVIEW_FILE, DRAFT_REVIEW_FILE } from '../lib/review/record.js'
+import { LOCK_DIRECTORY_NAME, LOCK_FIELDS, LOCK_FILE_NAME } from '../lib/review/apply-lock.js'
 import { REVIEW_DIRECTORY, REVIEW_IGNORE_LINE } from '../lib/review/store.js'
 import { createFakeContext } from './fake-context.mjs'
 
@@ -66,6 +67,9 @@ function liveCatalog() {
       applyFile: APPLY_REVIEW_FILE,
       waiverFile: 'plan-change-waiver.json',
       ignore: REVIEW_IGNORE_LINE,
+      lockFile: LOCK_FILE_NAME,
+      lockDirectory: LOCK_DIRECTORY_NAME,
+      lockFields: LOCK_FIELDS,
     },
   }
 }
@@ -131,6 +135,11 @@ export function checkDocument(text, spec) {
   }
   if (!text.includes(spec.record.ignore)) problems.push(`missing ignore entry ${spec.record.ignore}`)
   if (!text.includes('openspec/.gitignore')) problems.push('missing the ignored review root file')
+  if (!text.includes(spec.record.lockFile)) problems.push(`missing lock file ${spec.record.lockFile}`)
+  if (!text.includes(spec.record.lockDirectory)) problems.push(`missing lock directory ${spec.record.lockDirectory}`)
+  for (const field of spec.record.lockFields) {
+    if (!text.includes(field)) problems.push(`missing lock field ${field}`)
+  }
   if (CLI_COMMAND.test(text)) {
     const match = CLI_COMMAND.exec(text)
     problems.push(`names an OpenSpec CLI command: ${String(match?.[0])}`)
@@ -278,4 +287,15 @@ test('the review document explains the non-polling wait and the wakeup', () => {
   assert.match(text, /subagents\.sendMessage/)
   assert.match(text, /waitMinutes.*到期/s)
   assert.ok(!text.includes('OPENSPEC_FLOW_REVIEW_POLL_MS'))
+})
+
+test('a missing lock layout is reported by name', () => {
+  const spec = liveCatalog()
+  const text = readFileSync(DOC_PATH, 'utf8')
+  const stripped = text.replaceAll('apply.lock.json', 'removed-lock.json')
+  const problems = checkDocument(stripped, spec)
+  assert.ok(
+    problems.some((problem) => problem.startsWith('missing lock file')),
+    problems.join('; '),
+  )
 })

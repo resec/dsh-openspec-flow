@@ -29,6 +29,7 @@ Use the `openspec_*` tools for every step. If a tool is unavailable, report it a
 ## Archive
 
 - Call `openspec_archive` with the change name. It re-validates, refuses on findings or incomplete tasks, and only then moves the change.
+- While another change holds an apply lock, archive is refused and names the holder; finish and archive that change first. A successful archive releases this change's locks. A paused change's lock is removed only by the user; ask them instead of deleting it.
 - Report `archivedAs`, `path`, `specsUpdated`, and any `warnings`.
 - When `specsUpdated` is false and `skipSpecs` was not set, say that no main spec changed.
 

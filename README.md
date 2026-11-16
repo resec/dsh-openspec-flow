@@ -17,7 +17,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 
-写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝，并在 git 项目首次调用时要求封存 commit（干净树、只含变更目录与 `openspec/.gitignore`、工件哈希未变）；`openspec_archive` 在 apply review 启用且项目有 git、但评审未就绪时拒绝；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
+写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝，在另一 change 持有 apply 锁时拒绝，并在 git 项目首次调用时要求封存 commit（干净树、只含变更目录与 `openspec/.gitignore` 或其他 `openspec/changes/` 路径、工件哈希未变）；`openspec_archive` 在另一 change 持有 apply 锁时拒绝，在 apply review 启用且项目有 git、但评审未就绪时拒绝，成功后释放本 change 的锁；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
 `openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_inspect` 的 `action: "instructions"` 配合 `artifact: "archive"` 返回归档 `context`/`guidance`，不是空的产物字段。
 
@@ -46,14 +46,14 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 修订规划 | `openspec-update-change`；`openspec_inspect`（`action: "instructions"`、`"validate"`） | 修改现有 artifacts；没有专用写工具 |
 | 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_review`（`review: "apply"`）、`openspec_archive` | 先读归档 `context`/`guidance`、检查 apply review、校验、检查任务，再移动并合并 delta specs |
 | 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
-| 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，含 `plan-change-waiver.json`；`openspec/.gitignore` 忽略 `.review/` |
+| 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，含 `plan-change-waiver.json`；`openspec/.gitignore` 忽略 `.review/`；apply 锁在 git 域的 worktree git directory 或非 git 域的 `openspec/.review/apply.lock.json` |
 
 ## 评审
 
-变更在实施前与归档前各过一次评审；draft review 始终是强制闸门，apply review 在启用且项目有 git 时是强制闸门。两个入口互斥：`start` 只在评审没有记录时可用，draft 首轮必须带 `intent`；`resume` 只对已有记录的评审可用，不接收 `intent`，draft 的 `intent.md` 由首轮写入后不再改写。
+变更在实施前与归档前各过一次评审；draft review 始终是强制闸门，apply review 在启用且项目有 git 时是强制闸门。多个 change 可以同时进行 draft review；apply 到归档按 change 串行：第一个通过 draft 闸门的 change 取得 apply 锁，另一 change 的 `openspec_apply_next`、apply review `start`/`resume` 与 `openspec_archive` 被拒绝，draft review 仍可继续。锁在成功归档后释放，失败归档保留；另一 change 的未提交规划文件不算脏树，不阻塞持有者。锁记录 `change`、`store`、`changeRoot`、`implementationRoot` 与 `startedAt`，身份为 `<store>#<change>`，store 锁还比较 `implementationRoot`。两个入口互斥：`start` 只在评审没有记录时可用，draft 首轮必须带 `intent`；`resume` 只对已有记录的评审可用，不接收 `intent`，draft 的 `intent.md` 由首轮写入后不再改写。
 
-- **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。git 项目中 draft 就绪后须先提交封存 commit（变更目录加 `openspec/.gitignore`），apply 开始后 draft review 冻结，不再接受 `resume`。
-- **apply review** 审已提交的 git tree 与变更工件是否一致；插件在 `start`/`resume` 打开轮次前以 `--strict` 校验提交的变更，失败即拒绝，brief 记录 host strict 结果；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。apply 开始后的规划变更须先记录用户书面豁免（`openspec_review` 的 `action: "waive"`、`scope: "plan-change"`、`files`），apply review 拒绝豁免清单之外的变更文件；规划变更按 plan coherence、intent fit、scope control 三条轴评审。
+- **draft review** 审 planning 工件（proposal、delta specs、design、tasks）与本次意图；未就绪时 `openspec_apply_next` 拒绝。git 项目中 draft 就绪后须先提交封存 commit（变更目录加 `openspec/.gitignore`，也可包含其他 `openspec/changes/` 路径），apply 开始后 draft review 冻结，不再接受 `resume`。
+- **apply review** 审已提交的 git tree 与变更工件是否一致；插件在 `start`/`resume` 打开轮次前以 `--strict` 校验提交的变更，失败即拒绝，brief 记录 host strict 结果；当 apply review 启用且项目有 git 时，未就绪会让 `openspec_archive` 拒绝。apply 与归档由 apply 锁串行，另一 change 的入口被拒绝而 draft review 不受影响。apply 开始后的规划变更须先记录用户书面豁免（`openspec_review` 的 `action: "waive"`、`scope: "plan-change"`、`files`），apply review 拒绝豁免清单之外的变更文件；规划变更按 plan coherence、intent fit、scope control 三条轴评审。
 
 finding 处置可一次调用 `dispositions` 批量完成：`dispose` 与 finding 的 `waive` 都接受该数组，整批原子生效，单条 `id` 写法保留；`deferred` 只需 note，旧 `issue` 字段不再接受。`start` 与 `resume` 不接受 `dispositions`；`resume` 在还有 `open` finding 时拒绝开新轮，需先 `dispose`。
 
@@ -221,7 +221,7 @@ profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需�
 - **一次取数**：`openspec_apply_next` 执行一次 `instructions apply --json`，把完整载荷留在进程内，只向模型返回投影。
 - **每批 O(1)**：`openspec_mark_task_done` 先解析整批 id 并逐行翻转目标复选框，任一 id 缺失则整批不写；进度按缓存增量更新，下一任务从缓存任务表选取。
 - **写操作可恢复**：`openspec_archive` 先校验后移动；`openspec_init` 只在缺少配置时创建目录，不覆盖已有配置。
-- **评审先于实施**：`openspec_new_change` 先锁定 review policy；draft review 的工件哈希、finding 与 readiness 决定 `openspec_apply_next` 是否放行；apply review 的 tree 哈希决定 `openspec_archive` 是否放行；评审记录在 `openspec/.review/` 并由 `openspec/.gitignore` 忽略。
+- **评审先于实施**：`openspec_new_change` 先锁定 review policy；draft review 的工件哈希、finding 与 readiness 决定 `openspec_apply_next` 是否放行；apply review 的 tree 哈希决定 `openspec_archive` 是否放行；评审记录在 `openspec/.review/` 并由 `openspec/.gitignore` 忽略；apply 锁在 git 域的 worktree git directory 或非 git 域的 `openspec/.review/apply.lock.json`。
 - **按项目注入规则**：流程规则通过 agent 自己的 context 注册为作用域内 system prompt 段；非 OpenSpec 项目返回空文本。
 
 ## 真实模型评测
