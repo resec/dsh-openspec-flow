@@ -104,6 +104,21 @@ test('counts continuation lines as one task', () => {
   )
 })
 
+test('counts a whitespace-only checkbox whose text starts with a link', () => {
+  // The pattern's second alternative, `\s+\]`, matches without capturing the
+  // marker, so a box followed by `(` or `[` leaves the group unset. The CLI
+  // counts both lines as unfinished tasks; the parser must not throw on them.
+  const tasks = parseTaskLines('- [ ](./doc.md)\n- [ ][note]')
+  assert.deepEqual(
+    tasks.map((task) => task.description),
+    ['(./doc.md)', '[note]'],
+  )
+  assert.deepEqual(
+    tasks.map((task) => task.done),
+    [false, false],
+  )
+})
+
 test('reads numeric ids without confusing 1.1 and 1.10', () => {
   assert.equal(numericIdOf('1.1 Install'), '1.1')
   assert.equal(numericIdOf('1.10 Install'), '1.10')

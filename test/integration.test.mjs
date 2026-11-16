@@ -296,6 +296,8 @@ test('agrees with the CLI on the text of a wrapped task', async () => {
     '  continues after it',
     '- plain note',
     '- [ ] 1.3 Last task',
+    '- [ ](../docs/plan.md)',
+    '- [ ][note]',
     '',
   ].join('\n'))
   const fake = setup(root)
@@ -304,7 +306,7 @@ test('agrees with the CLI on the text of a wrapped task', async () => {
   const cliTasks = cliApplyTasks(root)
   const parsed = parseTaskLines(readFileSync(tasksPath(root), 'utf8'))
 
-  assert.equal(cliTasks.length, 4)
+  assert.equal(cliTasks.length, 6)
   assert.equal(parsed.length, cliTasks.length)
   for (const task of cliTasks) {
     const local = parsed.find((candidate) => candidate.line === task.line)

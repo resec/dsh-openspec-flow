@@ -129,9 +129,9 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `README.md:184` | 版本闸门说明 | 更新版本号 |
 | `README.md:216` | 设计要点中的版本 | 更新版本号 |
 | `README.md:233` | 验证环境 | 更新版本号与实测数据 |
-| `README.md:238` | 测试使用真实 CLI 的说明 | 更新版本号 |
-| `README.md:287` | 限制：CLI 固定版本 | 更新版本号 |
-| `README.md:289` | 限制：技能正文对齐 | 更新版本号 |
+| `README.md:239` | 测试使用真实 CLI 的说明 | 更新版本号 |
+| `README.md:288` | 限制：CLI 固定版本 | 更新版本号 |
+| `README.md:290` | 限制：技能正文对齐 | 更新版本号 |
 | `AGENTS.md:28` | 精确版本 | 更新版本号 |
 | `cordis.patch.yml:3` | 注释中的精确版本 | 更新版本号 |
 | `package-lock.json` | `@fission-ai/openspec` 的版本与 integrity | 用 `npm install` 更新，不手改 |
@@ -320,7 +320,7 @@ npm run contract:check -- --candidate <version> --json
 
 ## 来源
 
-本地文件与行号（2026-11-12 工作树）：
+本地文件与行号（2026-11-16 工作树）：
 
 - `package.json:55`、`package.json:3`：CLI pin 与插件版本。
 - `lib/openspec.js:47`、`:106`、`:143`、`:153`、`:159`、`:351`、`:379`、`:393`、`:413`：CLI 解析、版本闸门、调用与错误处理。
@@ -328,7 +328,7 @@ npm run contract:check -- --candidate <version> --json
 - `lib/tasks.js:24`、`:42`、`:58`：任务行解析、文本断行与硬换行规则。
 - `lib/schema.js:35`、`:115`、`:128`：schema 目录与闸门。
 - `lib/tools/query.js`、`lib/tools/write.js`、`lib/init.js`：命令与选项。
-- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`:35`、`test/skills.test.mjs:46`、`README.md:64`、`README.md:95`、`AGENTS.md:28`、`cordis.patch.yml:3`：版本字样与对照表。
+- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`:35`、`test/skills.test.mjs:46`、`README.md:66`、`README.md:97`、`AGENTS.md:28`、`cordis.patch.yml:3`：版本字样与对照表。
 - `scripts/cli-contract.json`、`scripts/check-cli-contract.mjs`、`test/cli-contract.test.mjs`：契约检查。
 
 上游文档与 release：
