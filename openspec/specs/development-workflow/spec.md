@@ -26,14 +26,19 @@ The repository SHALL use the `openspec-apply-change` skill and the `openspec_app
 
 ### Requirement: Verification gates a change
 
-The repository SHALL require strict OpenSpec validation, the plugin test suite, and the coverage gate before a change is considered complete. Strict validation SHALL treat every warning as a failure.
+The repository SHALL require strict OpenSpec validation and one verification command before a change is considered complete. That command SHALL run the plugin test suite and the coverage gate in a single instrumented run, so a separate plain test pass is never required. Strict validation SHALL treat every warning as a failure.
 
 #### Scenario: A change is finished
 
 - **WHEN** every task is checked
 - **THEN** `openspec_validate` passes with `strict: true`
-- **AND** `npm test` passes on Node 24
-- **AND** `npm run coverage:check` passes
+- **AND** `npm run verify` passes on Node 24
+- **AND** its output carries both the test summary and the coverage verdict
+
+#### Scenario: The instrumented run fails a test
+
+- **WHEN** a test fails during the verification run
+- **THEN** `npm run verify` exits nonzero before the coverage gate is evaluated
 
 #### Scenario: A validation warning is present
 
@@ -106,7 +111,7 @@ The repository SHALL document one upgrade procedure for the `@fission-ai/openspe
 #### Scenario: An upgrade is verified and can be rolled back
 
 - **WHEN** the upgrade edits are complete or rejected
-- **THEN** the contract check, `npm test`, `npm run coverage:check` and `openspec validate` pass before release
+- **THEN** the contract check, `npm run verify` and `openspec validate` pass before release
 - **AND** a rejected upgrade restores the previous pin and documentation and reruns the same checks
 
 #### Scenario: The guide carries no upgrade record
