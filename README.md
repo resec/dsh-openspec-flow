@@ -261,7 +261,7 @@ npm test
 
 运行 `npm run hooks:install` 会把 `core.hooksPath` 指向 `.githooks`，pre-push 先执行 `npm run openspec:check`。`openspec:check` 用 `--all --strict` 检查活动 change 与主 specs，用 `--archived --strict` 检查归档 change 的任务完成状态；任一警告都会阻止推送。归档 change 的 delta 正文不在 CLI 的严格校验范围内。
 
-校验通过后，钩子执行 `node scripts/coverage-stamp.mjs check`：当 `.cache/coverage-stamp.json` 记录的戳验证通过时，跳过 `npm run verify`；否则照常运行它。戳由一次通过的 enforce 覆盖度运行写出，记录 Node 版本、被检查的提交、门禁实际解析的 merge base，以及 `lib/`、`index.js`、`test/`、`package.json`、`package-lock.json`、`coverage.config.json`、`coverage.baseline.json` 与门禁脚本的指纹。以下任一情况都会使戳失效并重跑验证：戳缺失或损坏、工作树不干净、指纹与已提交输入不一致、merge base 变化、Node 版本不同。戳只在干净工作树写入，因此在实现提交之前做的验证不会产生可复用的戳；通过后修改任何被指纹覆盖的输入都会让下次推送重跑。钩子不调用 fnm；Node 24 未激活时覆盖率步骤会直接报预检错误。`COVERAGE_SKIP=1` 只跳过覆盖率且不评估戳，整体跳过使用 `git push --no-verify`。
+校验通过后，钩子执行 `node scripts/coverage-stamp.mjs check`：当 `.cache/coverage-stamp.json` 记录的戳验证通过时，跳过 `npm run verify`；否则照常运行它。戳由一次通过的 enforce 覆盖度运行写出，记录 Node 版本、被检查的提交、门禁实际解析的 merge base，以及 `lib/`、`index.js`、`test/`、`package.json`、`package-lock.json`、`coverage.config.json`、`coverage.baseline.json` 与门禁脚本的指纹。以下任一情况都会使戳失效并重跑验证：戳缺失或损坏、工作树不干净（`openspec/changes/` 下的未提交路径除外）、指纹与已提交输入不一致、merge base 变化、Node 版本不同。戳只在干净工作树写入，因此在实现提交之前做的验证不会产生可复用的戳；通过后修改任何被指纹覆盖的输入都会让下次推送重跑。钩子不调用 fnm；Node 24 未激活时覆盖率步骤会直接报预检错误。`COVERAGE_SKIP=1` 只跳过覆盖率且不评估戳，整体跳过使用 `git push --no-verify`。
 
 ## 自举开发
 

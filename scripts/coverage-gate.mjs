@@ -286,6 +286,7 @@ export function resolveBase(root, base) {
  * @param root - repository root.
  * @param base - base revision or ref.
  * @param isSource - scope source predicate.
+ * @param mergeBase - resolved merge-base commit; resolved from base when omitted.
  * @returns map path -> Set of added line numbers, or null for a fully new file.
  */
 export function collectAddedLines(root, base, isSource, mergeBase = null) {
