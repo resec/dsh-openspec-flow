@@ -15,10 +15,15 @@ import {
   parseLcov,
   parseUnifiedDiff,
   percentage,
+  resolveBase,
+  resolveMode,
   runGate,
+  shouldRecordStamp,
   validateBaselineNode,
   writeBaseline,
 } from '../scripts/coverage-gate.mjs'
+import { runVerification } from '../scripts/coverage.mjs'
+import { readStamp as readStampFixture, writeStamp as writeStampFixture } from '../scripts/coverage-stamp.mjs'
 
 const isSource = (file) => file === 'lib/a.js'
 
@@ -315,6 +320,173 @@ test('report mode exits zero and enforce mode exits one for the same run', async
 
     assert.equal(await runGate({ root, mode: 'report', base: 'main' }), 0)
     assert.equal(await runGate({ root, mode: 'enforce', base: 'main' }), 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+function makePassingGateRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'coverage-pass-'))
+  git(root, ['init', '-b', 'main'])
+  git(root, ['config', 'user.email', 'test@example.com'])
+  git(root, ['config', 'user.name', 'Test'])
+  writeFileSync(join(root, 'index.js'), 'export const a = 1\n')
+  writeFileSync(join(root, '.gitignore'), '.cache/\n')
+  writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3}\n')
+  mkdirSync(join(root, 'lib'), { recursive: true })
+  writeFileSync(join(root, 'lib', 'a.js'), 'export const b = 2\n')
+  mkdirSync(join(root, 'test'), { recursive: true })
+  writeFileSync(join(root, 'test', 'fixture.test.mjs'), "import test from 'node:test'\n")
+  mkdirSync(join(root, 'scripts'), { recursive: true })
+  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'node-version.mjs']) {
+    writeFileSync(join(root, 'scripts', name), '// fixture\n')
+  }
+  writeJson(join(root, 'package.json'), { engines: { node: '>=24.9.0' } })
+  writeJson(join(root, 'coverage.config.json'), {
+    primaryNodeMajor: 24,
+    mode: 'enforce',
+    thresholds: {
+      absolute: { line: 90, branch: 85, function: 95 },
+      deltaMaxDrop: 1,
+      newCode: { line: 95, branch: 90, function: 100 },
+    },
+  })
+  writeJson(join(root, 'coverage.baseline.json'), {
+    version: 1,
+    node: { version: process.version, range: '>=24.9.0' },
+    scopes: {
+      plugin: {
+        line: { hits: 0, total: 0 },
+        branch: { hits: 0, total: 0 },
+        function: { hits: 0, total: 0 },
+      },
+    },
+  })
+  mkdirSync(join(root, '.coverage'), { recursive: true })
+  writeFileSync(
+    join(root, '.coverage', 'plugin.info'),
+    lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]) + lcov('lib/a.js', [[1, 1]], [[1, 0, 0, 1]], [['b', 1, 1]]),
+  )
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-m', 'passing'])
+  return root
+}
+
+test('the stamp predicate is true only for a clean enforce pass', () => {
+  const base = { mode: 'enforce', updateBaseline: false, code: 0, violations: [] }
+  assert.equal(shouldRecordStamp(base), true)
+  assert.equal(shouldRecordStamp({ ...base, mode: 'report' }), false)
+  assert.equal(shouldRecordStamp({ ...base, updateBaseline: true }), false)
+  assert.equal(shouldRecordStamp({ ...base, code: 1 }), false)
+  assert.equal(shouldRecordStamp({ ...base, violations: ['plugin line 89% < 90%'] }), false)
+})
+
+test('resolveMode prefers the request, falls back to the config and rejects an unknown mode', () => {
+  const root = mkdtempSync(join(tmpdir(), 'coverage-mode-'))
+  try {
+    writeJson(join(root, 'coverage.config.json'), { mode: 'report' })
+    writeJson(join(root, 'package.json'), { engines: { node: '>=24.9.0' } })
+    assert.equal(resolveMode(root, 'enforce'), 'enforce')
+    assert.equal(resolveMode(root, undefined), 'report')
+    assert.throws(() => resolveMode(root, 'audit'), /unknown coverage mode/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a passing enforce run reports the resolved base to onEnforcePass', async () => {
+  const root = makePassingGateRepo()
+  try {
+    const head = git(root, ['rev-parse', 'HEAD']).stdout.trim()
+    const passed = []
+    const failed = []
+    const code = await runGate({
+      root,
+      mode: 'enforce',
+      base: 'main',
+      onEnforcePass: (payload) => passed.push(payload),
+      onEnforceFail: (payload) => failed.push(payload),
+    })
+    assert.equal(code, 0)
+    assert.equal(passed.length, 1)
+    assert.equal(passed[0].base, head)
+    assert.equal(failed.length, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a violating enforce run reports to onEnforceFail and not onEnforcePass', async () => {
+  const root = makePassingGateRepo()
+  try {
+    writeFileSync(join(root, 'lib', 'a.js'), 'export const b = 2\nexport const c = 3\n')
+    mkdirSync(join(root, '.coverage'), { recursive: true })
+    writeFileSync(
+      join(root, '.coverage', 'plugin.info'),
+      lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]) + lcov('lib/a.js', [[1, 1], [2, 0]], [], []),
+    )
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'violating'])
+    const passed = []
+    const failed = []
+    const code = await runGate({
+      root,
+      mode: 'enforce',
+      base: 'main',
+      onEnforcePass: (payload) => passed.push(payload),
+      onEnforceFail: (payload) => failed.push(payload),
+    })
+    assert.equal(code, 1)
+    assert.equal(passed.length, 0)
+    assert.equal(failed.length, 1)
+    assert.ok(failed[0].violations.length > 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('an update-baseline run returns zero and fires neither callback', async () => {
+  const root = makePassingGateRepo()
+  try {
+    writeFileSync(join(root, 'lib', 'a.js'), 'export const b = 2\nexport const c = 3\n')
+    writeFileSync(
+      join(root, '.coverage', 'plugin.info'),
+      lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]) + lcov('lib/a.js', [[1, 1], [2, 0]], [], []),
+    )
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'violating'])
+    const passed = []
+    const failed = []
+    const code = await runGate({
+      root,
+      mode: 'enforce',
+      base: 'main',
+      updateBaseline: true,
+      onEnforcePass: (payload) => passed.push(payload),
+      onEnforceFail: (payload) => failed.push(payload),
+    })
+    assert.equal(code, 0)
+    assert.equal(passed.length, 0)
+    assert.equal(failed.length, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a preflight or argument failure leaves the recorded stamp untouched', async () => {
+  const root = makePassingGateRepo()
+  try {
+    writeJson(join(root, '.gitignore'), '.cache/\n')
+    writeFileSync(join(root, 'test-placeholder'), '')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'add ignore'])
+    const base = resolveBase(root, 'main')
+    writeStampFixture({ root, base })
+    assert.ok(readStampFixture(root) !== null)
+    await assert.rejects(runVerification({ root, argv: ['--bogus'] }), /unknown argument/)
+    assert.ok(readStampFixture(root) !== null, 'an argument failure must not clear the stamp')
+    await assert.rejects(runVerification({ root, argv: [], version: 'v22.0.0' }), /requires Node 24/)
+    assert.ok(readStampFixture(root) !== null, 'a preflight failure must not clear the stamp')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -270,7 +270,7 @@ function listSourceFiles(root, isSource) {
     .sort()
 }
 
-function resolveBase(root, base) {
+export function resolveBase(root, base) {
   for (const candidate of [base, 'origin/main', 'main']) {
     if (!candidate) continue
     const verify = runGit(root, ['rev-parse', '--verify', '--quiet', candidate], { allowFailure: true })
@@ -484,14 +484,13 @@ export async function runGate({
   updateBaseline = false,
   allowLower = false,
   reason = null,
+  onEnforcePass = null,
+  onEnforceFail = null,
 } = {}) {
   const requirements = readNodeRequirements(root)
   assertCurrentNode({ root })
   const config = readConfig(root)
-  const effectiveMode = mode ?? config.mode ?? 'report'
-  if (!['report', 'enforce'].includes(effectiveMode)) {
-    throw new GateError(`unknown coverage mode: ${effectiveMode}`)
-  }
+  const effectiveMode = resolveMode(root, mode)
 
   const parsed = {}
   for (const [scope, definition] of Object.entries(SCOPES)) {
@@ -502,6 +501,7 @@ export async function runGate({
     parsed[scope] = parseLcov(readFileSync(path, 'utf8'))
   }
 
+  const resolvedBase = resolveBase(root, base)
   const added = collectAddedLines(root, base, (file) => Object.values(SCOPES).some((scope) => scope.isSource(file)))
   const scopes = {}
   const newCode = {}
@@ -577,8 +577,45 @@ export async function runGate({
     return 0
   }
 
-  if (violations.length > 0 && effectiveMode === 'enforce') return 1
-  return 0
+  const code = violations.length > 0 && effectiveMode === 'enforce' ? 1 : 0
+  const record = shouldRecordStamp({ mode: effectiveMode, updateBaseline, code, violations })
+  if (record) onEnforcePass?.({ base: resolvedBase, violations })
+  if (code === 1) onEnforceFail?.({ violations })
+  return code
+}
+
+/**
+ * Resolve the effective coverage mode from one rule.
+ *
+ * @param root - repository root.
+ * @param requested - the mode the caller asked for, if any.
+ * @returns `report` or `enforce`.
+ * @throws GateError for an unknown mode.
+ */
+export function resolveMode(root = ROOT, requested) {
+  const config = readConfig(root)
+  const mode = requested ?? config.mode ?? 'report'
+  if (!['report', 'enforce'].includes(mode)) {
+    throw new GateError(`unknown coverage mode: ${mode}`)
+  }
+  return mode
+}
+
+/**
+ * True only when an enforce run passed with no violation and without a
+ * baseline update, so the stamp never attests a run that printed violations.
+ *
+ * @param options - mode, updateBaseline flag, exit code and violations.
+ * @returns whether the caller may record a stamp.
+ */
+export function shouldRecordStamp({ mode, updateBaseline, code, violations }) {
+  return (
+    mode === 'enforce' &&
+    updateBaseline === false &&
+    code === 0 &&
+    Array.isArray(violations) &&
+    violations.length === 0
+  )
 }
 
 function parseArgs(argv) {

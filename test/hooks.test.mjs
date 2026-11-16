@@ -32,44 +32,74 @@ function fakeNpm({ failValidation = false } = {}) {
 }
 
 /**
- * Run the hook with the fake npm.
- * @param options - fake npm behavior and extra hook environment.
- * @returns the spawn result and the recorded npm calls.
+ * Put a fake `node` on PATH that records the stamp check and returns a verdict.
+ * @param options - `stampExit` is the exit code the stamp check reports.
+ * @returns the fake bin directory and the call log path.
  */
-function runHook({ failValidation = false, env = {} } = {}) {
+function fakeNode({ stampExit = 1 } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'openspec-hook-node-'))
+  const bin = join(dir, 'node')
+  const body = [
+    '#!/bin/sh',
+    'printf "%s\\n" "$*" >> "$NODE_LOG"',
+    `exit ${stampExit}`,
+    '',
+  ].join('\n')
+  writeFileSync(bin, body)
+  chmodSync(bin, 0o755)
+  return { dir, log: join(dir, 'node.log') }
+}
+
+/**
+ * Run the hook with a fake npm and a fake node.
+ * @param options - fake behavior and extra hook environment.
+ * @returns the spawn result, the recorded npm calls and the recorded node calls.
+ */
+function runHook({ failValidation = false, stampExit = 1, env = {} } = {}) {
   const fake = fakeNpm({ failValidation })
+  const fakeBin = fakeNode({ stampExit })
   const result = spawnSync('sh', [HOOK], {
     cwd: ROOT,
     encoding: 'utf8',
     env: {
       ...process.env,
-      PATH: `${fake.dir}:${process.env.PATH}`,
+      PATH: `${fakeBin.dir}:${fake.dir}:${process.env.PATH}`,
       HOOK_LOG: fake.log,
+      NODE_LOG: fakeBin.log,
       ...env,
     },
   })
-  const calls = existsSync(fake.log)
-    ? readFileSync(fake.log, 'utf8').trim().split('\n').filter((line) => line !== '')
-    : []
-  return { result, calls }
+  const read = (path) =>
+    existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').filter((line) => line !== '') : []
+  return { result, calls: read(fake.log), nodeCalls: read(fakeBin.log) }
 }
 
-test('pre-push runs strict validation before the verification entrypoint', () => {
-  const { result, calls } = runHook()
+test('a failing stamp check runs strict validation and then verification', () => {
+  const { result, calls, nodeCalls } = runHook()
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('COVERAGE_SKIP still runs strict validation', () => {
-  const { result, calls } = runHook({ env: { COVERAGE_SKIP: '1' } })
+test('a matching stamp skips verification after validation', () => {
+  const { result, calls, nodeCalls } = runHook({ stampExit: 0 })
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check'])
+  assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('a failed validation blocks the push before coverage', () => {
-  const { result, calls } = runHook({ failValidation: true })
+test('COVERAGE_SKIP still runs strict validation without checking the stamp', () => {
+  const { result, calls, nodeCalls } = runHook({ env: { COVERAGE_SKIP: '1' } })
+  assert.equal(result.status, 0)
+  assert.deepEqual(calls, ['run openspec:check'])
+  assert.deepEqual(nodeCalls, [])
+})
+
+test('a failed validation blocks the push before the stamp check and coverage', () => {
+  const { result, calls, nodeCalls } = runHook({ failValidation: true, stampExit: 0 })
   assert.equal(result.status, 1)
   assert.deepEqual(calls, ['run openspec:check'])
+  assert.deepEqual(nodeCalls, [])
 })
 
 test('openspec:check validates active artifacts and archived task state', () => {
@@ -85,8 +115,9 @@ test('verify and coverage:check run the same command', () => {
   assert.equal(manifest.scripts.verify, 'node scripts/coverage.mjs --check')
 })
 
-test('the hook installer names the verification entrypoint', () => {
+test('the hook installer names the verification entrypoint and the stamp check', () => {
   const source = readFileSync(join(ROOT, 'scripts', 'install-hooks.mjs'), 'utf8')
   assert.match(source, /npm run verify/)
+  assert.match(source, /scripts\/coverage-stamp\.mjs check/)
   assert.doesNotMatch(source, /coverage:check/)
 })

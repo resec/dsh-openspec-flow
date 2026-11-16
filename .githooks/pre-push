@@ -1,10 +1,14 @@
 #!/bin/sh
 # Local gates: strict OpenSpec validation, then the verification entrypoint.
-# Requires node on PATH; no version manager is invoked. The coverage step
-# needs Node 24, validation does not.
+# The coverage stamp may skip a repeat of the verification entrypoint when the
+# same committed inputs already passed it; COVERAGE_SKIP=1 skips coverage
+# regardless. Requires node on PATH; no version manager is invoked.
 if [ "${COVERAGE_SKIP:-}" = "1" ]; then
   echo "coverage gate: skipped because COVERAGE_SKIP=1" >&2
   exec npm run openspec:check
 fi
 npm run openspec:check || exit $?
+if node scripts/coverage-stamp.mjs check; then
+  exit 0
+fi
 exec npm run verify
