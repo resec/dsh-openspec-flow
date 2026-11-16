@@ -197,6 +197,10 @@ test('a ready apply review allows archive and a blocker refuses it', async () =>
   const fake = setup(root)
   await passDraft(fake, root, run)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await assert.rejects(
+    call(fake, 'openspec_archive', { change: CHANGE }),
+    /Next: openspec_review action=self-report review=apply/,
+  )
   const blocked = await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply',
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
@@ -204,7 +208,7 @@ test('a ready apply review allows archive and a blocker refuses it', async () =>
   assert.equal(blocked.ready, false)
   await assert.rejects(
     call(fake, 'openspec_archive', { change: CHANGE }),
-    /apply review is not ready/,
+    /apply review is not ready: .*Next: openspec_review action=dispose review=apply/,
   )
   assert.equal(existsSync(join(root, 'openspec', 'changes', CHANGE)), true)
 
@@ -287,7 +291,7 @@ test('apply start and resume reject dispositions and gate open findings', async 
   })
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
-    /still open: R1-01.*action=dispose/,
+    /still open: R1-01.*action=dispose review=apply/,
   )
   await call(fake, 'openspec_review', {
     action: 'dispose', change: CHANGE, review: 'apply', id: 'R1-01', status: 'fixed', note: 'Fixed.',
