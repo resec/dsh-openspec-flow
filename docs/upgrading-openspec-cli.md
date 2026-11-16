@@ -4,7 +4,7 @@
 
 当前基线（2026-11-16 工作树）：
 
-- CLI：`@fission-ai/openspec` 2.0.0（`package.json:55`）
+- CLI：`@fission-ai/openspec` 2.0.0（`package.json:56`）
 - Node：`>=24.9.0`（`package.json` 的 `engines.node`）
 - DSH：`=0.2.2-rc.2`（`package.json` 的 `engines.dsh`）
 - 插件版本：0.7.0（`package.json:3`）
@@ -80,7 +80,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
-| `package.json:55` | 精确版本 `2.0.0` | 改为目标精确版本 |
+| `package.json:56` | 精确版本 `2.0.0` | 改为目标精确版本 |
 | `lib/openspec.js:47` | 从 `package.json` 派生 `PINNED_CLI_VERSION` | 无需改代码，改 manifest 即生效 |
 | `lib/openspec.js:143` | `version --json` 的 `version` 与 `schemaVersion` | 目标 CLI 必须仍输出 `schemaVersion: 1`，且 `version` 与 pin 完全一致 |
 | `lib/openspec.js:351` | `runOpenSpec` 的 spawn 参数与 `--json` 解析 | 命令仍支持 `--json`，输出仍是单段 JSON |
@@ -148,7 +148,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
    判断标准见“契约检查”一节。失败时先判断是 fixture 问题、清单过期，还是 CLI 真的改了字段。
 
-2. 把 `package.json:55` 改为目标精确版本，不加 `^` 或 `~`。
+2. 把 `package.json:56` 改为目标精确版本，不加 `^` 或 `~`。
 
 3. 更新锁文件与安装树：
 
@@ -187,8 +187,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | schema 闸门 | `node --test test/schema.test.mjs` | 全部通过 |
 | 真实 CLI 集成 | `node --test test/integration.test.mjs` | 全部通过 |
 | 工具与 CLI 字节对照 | `node --test test/e2e.test.mjs` | 归档后的 specs 与 tasks 逐字节一致 |
-| 全量测试 | `npm test`（Node 24） | 全部通过 |
-| 覆盖率门禁 | `npm run verify`（Node 24） | 退出 0，测试全部通过且不低于基线 |
+| 全量测试与覆盖率 | `npm run verify`（Node 24） | 退出 0，测试全部通过且不低于基线 |
 | JSON 契约 | `npm run contract:check -- --candidate <version>` | 退出码 0 |
 | 严格校验 | `npm run openspec:check`（Node 无需 24） | 退出码 0，活动 change 与主 specs 无警告 |
 | OpenSpec 校验 | `openspec_inspect`（`action: "validate"`，`change` 参数，`strict: true`） | `valid: true` |
@@ -200,7 +199,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 ```bash
 export PATH="<Node 24 的 bin 目录>:$PATH"
 node --version
-npm test
+npm run verify
 ```
 
 示例中的 `<Node 24 的 bin 目录>` 换成所在机器的实际路径；入口的预检会在启动测试前拒绝非 24 或低于下限的版本。
@@ -321,7 +320,7 @@ npm run contract:check -- --candidate <version> --json
 
 本地文件与行号（2026-11-16 工作树）：
 
-- `package.json:55`、`package.json:3`：CLI pin 与插件版本。
+- `package.json:56`、`package.json:3`：CLI pin 与插件版本。
 - `lib/openspec.js:47`、`:106`、`:143`、`:153`、`:159`、`:351`、`:379`、`:393`、`:413`：CLI 解析、版本闸门、调用与错误处理。
 - `lib/state.js:101`、`:133`、`:561`、`:636`、`:662`、`:741`、`:762`、`:783`、`:796`、`:815`、`:868`、`:980`、`:1028`：CLI JSON 的投影读取点。
 - `lib/tasks.js:24`、`:42`、`:58`：任务行解析、文本断行与硬换行规则。
