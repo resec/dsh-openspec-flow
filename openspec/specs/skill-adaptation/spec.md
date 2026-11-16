@@ -205,7 +205,7 @@ The shipped archive skill SHALL check the apply review status before calling `op
 
 ### Requirement: Workflow skills wait for the independent reviewer
 
-The propose, apply and archive skills SHALL branch on `reviewers`. With `reviewers: 1` they SHALL start or resume the review, call `wait`, and continue only after the reviewer submits or the user waives it. With `reviewers: 0` they SHALL keep the self-report path.
+The propose, apply and archive skills SHALL branch on `reviewers`. With `reviewers: 1` they SHALL start or resume the review, call `wait`, end the current turn when `wait` returns `waiting`, and continue only after the reviewer submit, the deadline wakeup, or the user waives the reviewer. With `reviewers: 0` they SHALL keep the self-report path.
 
 #### Scenario: Propose uses a reviewer
 
@@ -216,6 +216,16 @@ The propose, apply and archive skills SHALL branch on `reviewers`. With `reviewe
 
 - **WHEN** the apply review sets `reviewers: 1`
 - **THEN** the apply skill commits, starts or resumes the review and waits
+
+#### Scenario: A waiting result ends the turn
+
+- **WHEN** `wait` returns `waiting`
+- **THEN** the skill does not call `wait` again and ends the turn until the wakeup arrives
+
+#### Scenario: A waived reviewer continues
+
+- **WHEN** the user approves `waive-reviewer`
+- **THEN** the skill continues without waiting for a reviewer submit
 
 #### Scenario: Self-review is unchanged
 
