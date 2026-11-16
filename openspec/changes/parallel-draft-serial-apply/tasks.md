@@ -16,7 +16,7 @@
 
 ## 3. Archive integration
 
-- [x] 3.1 Check the locks in `openspec_archive` before validation: refuse only when one names another identity, proceed when none does (including when only one lock is present), release every lock that names its change after a successful archive, keep them on failure; verify each case in `test/review-apply.test.mjs`
+- [x] 3.1 Check the locks in `openspec_archive` before validation: refuse only when one names another identity, proceed when none does (including when only one lock is present), release every lock that names its change after a successful archive, keep them on failure; verify each case in `test/review-serial.test.mjs`
 
 ## 4. Seal and dirty-tree rules
 
@@ -26,7 +26,7 @@
 ## 5. Concurrent draft coverage
 
 - [x] 5.1 Add regression tests for two changes starting, resuming and reporting draft reviews side by side, including two independent reviewers; verify each record, reviewer slot and wait deadline stays per change
-- [x] 5.2 Add two-change integration coverage for a parallel draft's uncommitted artifacts during the holder's seal, apply review and archive, and for a store change running beside a local change; verify the holder proceeds, the other change stays in review, and only one apply proceeds
+- [x] 5.2 Add two-change integration coverage for a parallel draft's uncommitted artifacts during the holder's seal, apply review and archive; the lock module covers a store change running beside a local change. Verify the holder proceeds, the other change stays in review, and only one apply proceeds
 
 ## 6. Documentation and skills
 

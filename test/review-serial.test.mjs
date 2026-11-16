@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import {
-  cpSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { applyLockLocation } from '../lib/review/apply-lock.js'
 import {
-  CHANGE, call, cleanupFixtures, fixture, gitFixture, passDraft, report, setup, writePolicy,
+  CHANGE, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -187,4 +187,116 @@ test('a nested OpenSpec root seals with worktree-relative paths', async () => {
   run(['commit', '-m', 'seal the nested draft'])
   const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
   assert.equal(applied.state, 'all_done')
+})
+
+
+test("a parallel draft's uncommitted artifacts do not block the apply review", async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 0 },
+  })
+  await passDraft(fake, root, run)
+  copySecond(root)
+  const review = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply',
+  })
+  assert.equal(review.state, 'in-review')
+})
+
+test('a failed archive keeps the locks', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false } })
+  await passDraft(fake, root, run)
+  const lock = applyLockLocation(root)
+  assert.equal(existsSync(lock.file), true)
+  const tasksFile = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  const original = readFileSync(tasksFile, 'utf8')
+  writeFileSync(tasksFile, original.replace('- [x] 1.1', '- [ ] 1.1'))
+  try {
+    await assert.rejects(
+      () => call(fake, 'openspec_archive', { change: CHANGE }),
+      /incomplete task/,
+    )
+    assert.equal(existsSync(lock.file), true)
+  } finally {
+    writeFileSync(tasksFile, original)
+  }
+})
+
+test('a user-released lock lets another change proceed', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false } })
+  await passDraft(fake, root, run)
+  copySecond(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: SECOND, intent: 'The second change waits for its turn.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: SECOND, report: report(),
+  })
+  run(['add', `openspec/changes/${SECOND}`])
+  run(['commit', '-m', 'seal the second change'])
+  rmSync(applyLockLocation(root).file, { force: true })
+  const applied = await call(fake, 'openspec_apply_next', { change: SECOND })
+  assert.equal(applied.change, SECOND)
+})
+
+test('two changes start independent reviewers side by side', async () => {
+  const root = fixture()
+  copySecond(root)
+  const { fake, activations } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 1 },
+    apply: { enabled: false },
+  })
+  const first = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'The first change.',
+  })
+  const second = await call(fake, 'openspec_review', {
+    action: 'start', change: SECOND, intent: 'The second change.',
+  })
+  assert.equal(first.mode, 'reviewer')
+  assert.equal(second.mode, 'reviewer')
+  assert.equal(activations.length, 2)
+  const firstRecord = JSON.parse(readFileSync(
+    join(root, 'openspec', '.review', `local#${CHANGE}`, 'review.json'), 'utf8',
+  ))
+  const secondRecord = JSON.parse(readFileSync(
+    join(root, 'openspec', '.review', `local#${SECOND}`, 'review.json'), 'utf8',
+  ))
+  assert.notEqual(firstRecord.reviewers.slots[0].agentId, secondRecord.reviewers.slots[0].agentId)
+})
+
+test('a nested-root seal rejects the worktree-root ignore file', async () => {
+  const root = fixture()
+  mkdirSync(join(root, 'packages', 'x'), { recursive: true })
+  renameSync(join(root, 'openspec'), join(root, 'packages', 'x', 'openspec'))
+  const project = join(root, 'packages', 'x')
+  const run = (args) => {
+    const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  run(['init'])
+  run(['config', 'user.email', 'test@example.com'])
+  run(['config', 'user.name', 'Test'])
+  run(['add', 'packages/x/openspec'])
+  run(['rm', '-r', '--cached', '--quiet', `packages/x/openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'fixture'])
+  const fake = setup(project, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false } })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  mkdirSync(join(root, 'openspec'), { recursive: true })
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  if (existsSync(join(project, 'openspec', '.gitignore'))) run(['add', 'packages/x/openspec/.gitignore'])
+  run(['add', `packages/x/openspec/changes/${CHANGE}`, 'openspec/.gitignore'])
+  run(['commit', '-m', 'mixed nested seal'])
+  await assert.rejects(
+    () => call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /seal commit must contain only/,
+  )
 })

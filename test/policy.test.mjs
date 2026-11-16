@@ -143,4 +143,13 @@ test('the policy text states the apply review gate', () => {
   assert.match(POLICY_TEXT, /committed git tree/)
   assert.match(POLICY_TEXT, /no apply review/)
   assert.match(POLICY_TEXT, /does not hold archive/)
+  for (const phrase of [
+    "Another change's uncommitted planning files do not count as a dirty tree.",
+    'worktree git directory or `openspec/.review/`',
+    'a store change also locks its store domain',
+    'a lock whose change or implementation root is gone is stale',
+    'A store change applied from another project is refused until the first project archives.',
+  ]) {
+    assert.ok(POLICY_TEXT.includes(phrase), `the policy text states: ${phrase}`)
+  }
 })
