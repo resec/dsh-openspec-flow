@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-16
+goal: pre-push skips the coverage gate when a coverage:check that matches the
+  current source fingerprint has already passed, while strict validation still
+  runs and the gate still enforces on any source or runtime change.
