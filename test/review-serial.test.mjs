@@ -300,3 +300,40 @@ test('a nested-root seal rejects the worktree-root ignore file', async () => {
     /seal commit must contain only/,
   )
 })
+
+test("a seal commit with another change's directory is accepted", async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false } })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  copySecond(root)
+  if (existsSync(join(root, 'openspec', '.gitignore'))) run(['add', 'openspec/.gitignore'])
+  run(['add', `openspec/changes/${CHANGE}`, `openspec/changes/${SECOND}`])
+  run(['commit', '-m', 'seal with another change directory'])
+  const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  assert.equal(applied.state, 'all_done')
+})
+
+test("archive ignores another change's uncommitted planning files", async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 0 },
+  })
+  await passDraft(fake, root, run)
+  copySecond(root)
+  const review = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply',
+  })
+  assert.equal(review.state, 'in-review')
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const archived = await call(fake, 'openspec_archive', { change: CHANGE })
+  assert.equal(archived.archived, true)
+  assert.equal(existsSync(applyLockLocation(root).file), false)
+})

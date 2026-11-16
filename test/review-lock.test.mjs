@@ -203,6 +203,7 @@ test('a store change takes both the implementation and store locks', () => {
   assert.equal(storeLock.file, join(store, 'openspec', '.review', 'apply.lock.json'))
   assert.equal(readApplyLock(storeLock.file).implementationRoot, project)
   releaseApplyLocks(result.locks)
+  for (const lock of result.locks) assert.equal(existsSync(lock.file), false)
 })
 
 test('a second project applying the same store change is refused and rolls back', () => {
@@ -474,4 +475,31 @@ test('implementation root falls back when no OpenSpec root exists', () => {
   const empty = mkdtempSync(join(tmpdir(), 'openspec-flow-empty-'))
   CREATED.push(empty)
   assert.equal(implementationRootOf(empty, empty), empty)
+})
+
+test('two store changes from different stores serialize in one project', () => {
+  const project = gitTemporary()
+  const storeA = temporary()
+  const storeB = temporary()
+  const changeA = join(storeA, 'openspec', 'changes', 'a')
+  const changeB = join(storeB, 'openspec', 'changes', 'b')
+  mkdirSync(changeA, { recursive: true })
+  mkdirSync(changeB, { recursive: true })
+  const held = acquireApplyLocks({
+    cwd: project,
+    resolvedRoot: storeA,
+    store: 'team-a',
+    change: 'a',
+    changeRoot: changeA,
+    implementationRoot: project,
+  })
+  assert.throws(() => acquireApplyLocks({
+    cwd: project,
+    resolvedRoot: storeB,
+    store: 'team-b',
+    change: 'b',
+    changeRoot: changeB,
+    implementationRoot: project,
+  }), /team-a#a/)
+  releaseApplyLocks(held.locks)
 })
