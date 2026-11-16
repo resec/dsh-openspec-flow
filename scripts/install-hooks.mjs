@@ -33,4 +33,4 @@ const result = spawnSync('git', ['config', 'core.hooksPath', '.githooks'], {
 if (result.error) throw result.error
 if (result.status !== 0) process.exit(result.status ?? 1)
 console.log('pre-push gate: core.hooksPath=.githooks installed')
-console.log('pre-push runs npm run openspec:check, then npm run coverage:check; COVERAGE_SKIP=1 skips only coverage.')
+console.log('pre-push runs npm run openspec:check, then npm run verify; COVERAGE_SKIP=1 skips only coverage.')

@@ -54,10 +54,10 @@ function runHook({ failValidation = false, env = {} } = {}) {
   return { result, calls }
 }
 
-test('pre-push runs strict validation before coverage', () => {
+test('pre-push runs strict validation before the verification entrypoint', () => {
   const { result, calls } = runHook()
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run coverage:check'])
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
 })
 
 test('COVERAGE_SKIP still runs strict validation', () => {
@@ -77,4 +77,16 @@ test('openspec:check validates active artifacts and archived task state', () => 
   const script = manifest.scripts['openspec:check']
   assert.match(script, /validate --all --strict/)
   assert.match(script, /validate --archived --strict/)
+})
+
+test('verify and coverage:check run the same command', () => {
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(manifest.scripts.verify, manifest.scripts['coverage:check'])
+  assert.equal(manifest.scripts.verify, 'node scripts/coverage.mjs --check')
+})
+
+test('the hook installer names the verification entrypoint', () => {
+  const source = readFileSync(join(ROOT, 'scripts', 'install-hooks.mjs'), 'utf8')
+  assert.match(source, /npm run verify/)
+  assert.doesNotMatch(source, /coverage:check/)
 })

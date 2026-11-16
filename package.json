@@ -43,6 +43,7 @@
   ],
   "scripts": {
     "test": "node scripts/run-tests.mjs plugin",
+    "verify": "node scripts/coverage.mjs --check",
     "coverage": "node scripts/coverage.mjs",
     "coverage:check": "node scripts/coverage.mjs --check",
     "coverage:baseline": "node scripts/coverage.mjs --update-baseline",

@@ -258,8 +258,7 @@ DSH 侧对应的声明文件与符号：
 | 检查 | 命令 | 通过标准 |
 | --- | --- | --- |
 | Node 预检 | `node --version` | 主版本符合 `primaryNodeMajor`，具体版本满足 `engines.node` |
-| 插件测试 | `npm test` | 退出 0 |
-| 覆盖率 | `npm run coverage:check` | 退出 0，不低于基线 |
+| 插件测试与覆盖率 | `npm run verify` | 退出 0，测试全部通过且不低于基线 |
 | OpenSpec 严格校验 | `npm run openspec:check` | 退出 0 |
 | 候选组合 | 上文 `--dump-config` | 有 `openspec-flow` 行，无 `skipping profile bundle` |
 | 实际启动 | 重启 profile | stderr 无 `skipping profile bundle` |
@@ -281,7 +280,7 @@ DSH 侧对应的声明文件与符号：
 
 发布：
 
-1. 所有任务完成，严格校验、`npm test`、`npm run coverage:check`、`npm run openspec:check` 通过。
+1. 所有任务完成，严格校验、`npm run verify`、`npm run openspec:check` 通过。
 2. 若发布新插件版本，升 `package.json:3` 并同步五份技能元数据。
 3. 归档 change，单次提交归档、文档与合并后的 specs，推送 `origin/main`。
 4. 在使用处安装目标运行时并重启，完成「实际启动」与冒烟。
@@ -302,7 +301,7 @@ DSH 侧对应的声明文件与符号：
 - [ ] Node 主版本变化时，`coverage.config.json`、覆盖基线、`project-invariants` 与测试入口提示同步。
 - [ ] 隔离 profile 的 `--dump-config` 有插件行且无 `skipping profile bundle`。
 - [ ] 目标运行时实际启动无跳过诊断，工具、技能、策略与管理命令冒烟通过。
-- [ ] 满足新下限的 Node 上 `npm test`、`npm run coverage:check`、`npm run openspec:check` 通过。
+- [ ] 满足新下限的 Node 上 `npm run verify`、`npm run openspec:check` 通过。
 - [ ] `README.md`、本文档与 CLI 指南的基线已更新。
 - [ ] 回滚步骤已演练或有明确记录。
 

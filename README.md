@@ -254,11 +254,12 @@ npm test
 - `COVERAGE=1 npm test`：单次运行并写 `.coverage/plugin.info`；不设置 `COVERAGE` 时不采集。
 - `npm run coverage`：运行一次插件测试并采集覆盖率，写 lcov、`.coverage/report.md`，按 report 模式输出违规。
 - `npm run coverage:check`：同样的单次运行，按 enforce 模式判定；存量覆盖率不足时会失败。
+- `npm run verify`：完成判据使用的单一入口，与 `npm run coverage:check` 同体；一次运行同时给出测试摘要与覆盖率判定，不需要先跑 `npm test`。
 - `npm run coverage:baseline`：单次运行后更新 `coverage.baseline.json`；默认拒绝下调，必要时应显式传 `--allow-lower --reason`。
 
-基线记录具体 Node 版本和 `engines.node` 范围；门禁要求当前与基线都满足主版本 24 且落在范围内，允许 24.x 补丁差异并在报告中提示。当前为 enforce 模式，`npm run coverage:check` 是完成变更的必需检查。
+基线记录具体 Node 版本和 `engines.node` 范围；门禁要求当前与基线都满足主版本 24 且落在范围内，允许 24.x 补丁差异并在报告中提示。当前为 enforce 模式，`npm run verify` 是完成变更的必需检查。
 
-运行 `npm run hooks:install` 会把 `core.hooksPath` 指向 `.githooks`，pre-push 先执行 `npm run openspec:check`，再执行 `npm run coverage:check`。`openspec:check` 用 `--all --strict` 检查活动 change 与主 specs，用 `--archived --strict` 检查归档 change 的任务完成状态；任一警告都会阻止推送。归档 change 的 delta 正文不在 CLI 的严格校验范围内。钩子不调用 fnm；Node 24 未激活时覆盖率步骤会直接报预检错误。`COVERAGE_SKIP=1` 只跳过覆盖率，整体跳过使用 `git push --no-verify`。
+运行 `npm run hooks:install` 会把 `core.hooksPath` 指向 `.githooks`，pre-push 先执行 `npm run openspec:check`，再执行 `npm run verify`。`openspec:check` 用 `--all --strict` 检查活动 change 与主 specs，用 `--archived --strict` 检查归档 change 的任务完成状态；任一警告都会阻止推送。归档 change 的 delta 正文不在 CLI 的严格校验范围内。钩子不调用 fnm；Node 24 未激活时覆盖率步骤会直接报预检错误。`COVERAGE_SKIP=1` 只跳过覆盖率，整体跳过使用 `git push --no-verify`。
 
 ## 自举开发
 
@@ -267,7 +268,7 @@ npm test
 - OpenSpec 根：`openspec/`；流程技能由插件 provider 提供，仓库不再保存副本；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
 - apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 按批 `openspec_mark_task_done`。
-- 收尾：`openspec_inspect`（`action: "validate"`）传 `strict: true`，并跑 `npm test` 与 `npm run openspec:check`。
+- 收尾：`openspec_inspect`（`action: "validate"`）传 `strict: true`，并跑 `npm run verify` 与 `npm run openspec:check`。
 - 归档：`openspec_archive`，只在用户明确要求时。
 
 `openspec/` 与 `.dsh/` 是项目文件，不在本包 `files` 列表中，不会进入打包产物；`.dsh/skills/` 已移除，本仓库不再保存技能副本。
@@ -278,7 +279,7 @@ npm test
 
 发布顺序：
 
-1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm test` 与 `npm run openspec:check` 通过。
+1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm run verify` 与 `npm run openspec:check` 通过。
 2. `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
 3. 提交归档结果、文档更新与合并后的 specs。
 4. 推送到 `origin/main`。

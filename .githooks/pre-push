@@ -1,5 +1,5 @@
 #!/bin/sh
-# Local gates: strict OpenSpec validation, then the coverage gate.
+# Local gates: strict OpenSpec validation, then the verification entrypoint.
 # Requires node on PATH; no version manager is invoked. The coverage step
 # needs Node 24, validation does not.
 if [ "${COVERAGE_SKIP:-}" = "1" ]; then
@@ -7,4 +7,4 @@ if [ "${COVERAGE_SKIP:-}" = "1" ]; then
   exec npm run openspec:check
 fi
 npm run openspec:check || exit $?
-exec npm run coverage:check
+exec npm run verify
