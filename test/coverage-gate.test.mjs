@@ -338,7 +338,7 @@ function makePassingGateRepo() {
   mkdirSync(join(root, 'test'), { recursive: true })
   writeFileSync(join(root, 'test', 'fixture.test.mjs'), "import test from 'node:test'\n")
   mkdirSync(join(root, 'scripts'), { recursive: true })
-  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'node-version.mjs']) {
+  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'test-env.mjs', 'node-version.mjs']) {
     writeFileSync(join(root, 'scripts', name), '// fixture\n')
   }
   writeJson(join(root, 'package.json'), { engines: { node: '>=24.9.0' } })

@@ -64,11 +64,15 @@ The apply flow commits every round, so a clean working tree is a normal state, a
 
 ### Keep the entrypoint testable without a failing test file
 
-The CLI exposes `export async function main(argv, { version, spawn } = {})`. Tests inject a rejected `version` to assert the preflight stops before any test, and an injected `spawn` that returns a non-zero status to assert the exit status is forwarded. Neither check has to create a deliberately failing `*.test.mjs`, which would otherwise be enumerated by the next full run and break the gate.
+The CLI exposes `export async function main(argv, { version, spawn, gitStatus } = {})`. Tests inject a rejected `version` to assert the preflight stops before any test, an injected `spawn` that records its arguments and returns a non-zero status, and an injected `gitStatus` provider so the working-tree read is hermetic. Neither check has to create a deliberately failing `*.test.mjs`, which would otherwise be enumerated by the next full run and break the gate.
 
 ### Option precedence
 
-`--all` wins over everything and ignores the working tree. Otherwise `--list` prints the selection and starts nothing, and `--run` executes it; when both appear, `--list` wins so a listing is never a hidden test run.
+`--all` wins over everything and ignores the working tree. Otherwise `--list` prints the selection and starts nothing, and `--run` executes it; when both appear, `--list` wins so a listing is never a hidden test run. A call with none of the three prints the selection and never runs, so the bare documented form is safe to inspect.
+
+### Record the new stamp input
+
+`scripts/test-env.mjs` holds the coverage-run environment decision, so it can move a coverage verdict. The stamp input list in `scripts/coverage-stamp.mjs` and the `coverage-gate` requirement that fixes that list both gain the module, its two fixture builders get it too, and the new requirement scenario says a change to it invalidates the stamp. Without this the pre-push hook could reuse a verdict across a change to the measurement environment.
 
 ## Risks / Trade-offs
 

@@ -26,11 +26,12 @@ None.
 ### Modified Capabilities
 
 - `development-workflow`: adds the rule that apply verifies a touched module with the tests importing it and falls back to the full suite, and adds the rule that the scoped entrypoint reuses the compile cache and the runtime preflight.
+- `coverage-gate`: the coverage stamp's input list gains `scripts/test-env.mjs`, because the coverage-run environment decision moves there and can change a verdict.
 
 ## Impact
 
 - New files: `scripts/affected-tests.mjs`, `scripts/test-env.mjs`, `test/affected-tests.test.mjs`.
-- Modified: `package.json` (one script entry), `scripts/run-tests.mjs` (use the shared test environment module, no behavior change), `AGENTS.md` (apply step 4 and the verification sentence), `README.md` (the self-hosted development section), and `openspec/specs/development-workflow/spec.md` through the delta spec.
+- Modified: `package.json` (one script entry), `scripts/run-tests.mjs` (use the shared test environment module, no behavior change), `scripts/coverage-stamp.mjs` (the stamp input list gains the new module), `test/coverage-stamp.test.mjs`, `test/coverage-gate.test.mjs` (fixture and list assertions), `AGENTS.md` (apply step 4 and the verification sentence), `README.md` (the self-hosted development section), and the `development-workflow` and `coverage-gate` specs through their delta specs.
 - Not modified: `skills/**`. The shipped apply skill stays project-agnostic; only repository docs name `npm run test:affected`.
 - No `lib/` runtime code changes. `scripts/` and `test/` are outside the coverage include list (`lib/**`, `index.js`), so the recorded coverage percentages do not move.
 - Paragraph overlap with the in-flight changes: `merge-verification-entry` rewrote the verification command to `npm run verify` and `reuse-coverage-stamp-on-push` edits the hook paragraph. This change adopts `npm run verify` as the gate and adds the batch-verification sentence in a different part of the apply step; whoever lands second reconciles the shared `AGENTS.md` and `README.md` wording.

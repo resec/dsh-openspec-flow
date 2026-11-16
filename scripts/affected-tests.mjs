@@ -145,12 +145,14 @@ export function selectAffectedTests({ root = ROOT, paths = [], all = false } = {
     const path = normalize(raw)
     if (path === '') continue
     if (ENTRY_MODULES.has(path)) return tests
-    if (path.startsWith('test/') && path.endsWith('.test.mjs')) {
+    const absolute = join(root, path)
+    const exists = existsSync(absolute)
+    if (exists && statSync(absolute).isDirectory()) return tests
+    if (exists && path.startsWith('test/') && path.endsWith('.test.mjs')) {
       selected.add(path)
       continue
     }
-    const absolute = join(root, path)
-    if (!existsSync(absolute) || statSync(absolute).isDirectory()) return tests
+    if (!exists) return tests
     const hits = tests.filter((test) => closureOf(root, test).has(path))
     if (hits.length === 0) return tests
     for (const hit of hits) selected.add(hit)

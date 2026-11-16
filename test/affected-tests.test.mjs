@@ -78,8 +78,26 @@ test('--all ignores the working tree and returns the full suite', async () => {
 })
 
 test('an empty change set is an error, not a silent full run', async () => {
-  assert.throws(() => selectAffectedTests({ paths: [] }), SelectorError)
-  await assert.rejects(main(['--list'], { gitStatus: () => '' }), SelectorError)
+  let direct
+  try {
+    selectAffectedTests({ paths: [] })
+  } catch (error) {
+    direct = error
+  }
+  assert.ok(direct instanceof SelectorError)
+  assert.equal(direct.exitCode, 2)
+  assert.match(direct.message, /no changed path found/)
+  await assert.rejects(main(['--list'], { gitStatus: () => '' }), (error) => {
+    assert.ok(error instanceof SelectorError)
+    assert.equal(error.exitCode, 2)
+    assert.match(error.message, /no changed path found/)
+    return true
+  })
+})
+
+test('a deleted test file falls back to the full suite', () => {
+  const all = selectAffectedTests({ all: true })
+  assert.deepEqual(selectAffectedTests({ paths: ['test/removed.test.mjs'] }), all)
 })
 
 test('a rename entry uses its destination path', async () => {
@@ -98,7 +116,7 @@ test('the two entrypoints share one compile-cache path and the coverage branch d
 test('a rejected runtime stops before any test starts', async () => {
   let spawned = false
   await assert.rejects(
-    main(['--list', 'lib/review/brief.js'], {
+    main(['--run', 'test/review-unit.test.mjs'], {
       version: 'v22.0.0',
       spawn: () => {
         spawned = true
@@ -110,11 +128,19 @@ test('a rejected runtime stops before any test starts', async () => {
   assert.equal(spawned, false)
 })
 
-test('a failing selected test surfaces its status', async () => {
+test('the scoped run forwards the shared plain-run environment', async () => {
+  const calls = []
   const code = await main(['--run', 'test/review-unit.test.mjs'], {
-    spawn: () => ({ status: 1 }),
+    spawn: (command, args, options) => {
+      calls.push({ command, args, options })
+      return { status: 1 }
+    },
   })
   assert.equal(code, 1)
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0].args, ['--test', 'test/review-unit.test.mjs'])
+  assert.equal(calls[0].options.cwd, ROOT)
+  assert.equal(calls[0].options.env.NODE_COMPILE_CACHE, COMPILE_CACHE)
 })
 
 test('--list wins over --run and starts no test process', async () => {

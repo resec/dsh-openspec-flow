@@ -38,6 +38,7 @@ export const STAMP_INPUTS = [
   'scripts/coverage-gate.mjs',
   'scripts/coverage-stamp.mjs',
   'scripts/run-tests.mjs',
+  'scripts/test-env.mjs',
   'scripts/node-version.mjs',
 ]
 

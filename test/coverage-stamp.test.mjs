@@ -47,7 +47,7 @@ function makeRepo() {
   writeFileSync(join(root, 'coverage.config.json'), '{"mode":"enforce"}\n')
   writeFileSync(join(root, 'coverage.baseline.json'), '{"version":1}\n')
   mkdirSync(join(root, 'scripts'), { recursive: true })
-  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'node-version.mjs']) {
+  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'test-env.mjs', 'node-version.mjs']) {
     writeFileSync(join(root, 'scripts', name), '// fixture\n')
   }
   git(root, ['add', '-A'])
@@ -90,6 +90,7 @@ test('the input list names every verdict input', () => {
     'scripts/coverage-gate.mjs',
     'scripts/coverage-stamp.mjs',
     'scripts/run-tests.mjs',
+    'scripts/test-env.mjs',
     'scripts/node-version.mjs',
   ])
 })
