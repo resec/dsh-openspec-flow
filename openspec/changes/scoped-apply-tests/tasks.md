@@ -18,5 +18,5 @@
 
 ## 4. Integration verification
 
-- [ ] 4.1 After committing tasks 1.1-3.3, change `lib/review/brief.js` only and run the bare `npm run test:affected` so the working tree drives the selection; verify the selected set is exactly `test/review-unit.test.mjs` and `test/review-reviewer.test.mjs`, the run takes about ten seconds rather than the full-suite wall clock, and its summary matches a direct `node --test test/review-unit.test.mjs test/review-reviewer.test.mjs` on the same two files; restore the file afterwards
-- [ ] 4.2 Run `npm run verify` on Node 24 and verify every test passes and the coverage percentages are unchanged, confirming `scripts/` and `test/` stay outside the coverage include list
+- [x] 4.1 After committing tasks 1.1-3.3, change `lib/review/brief.js` only and run the bare `npm run test:affected` so the working tree drives the selection; verify the selected set is exactly `test/review-unit.test.mjs` and `test/review-reviewer.test.mjs`, the run takes about ten seconds rather than the full-suite wall clock, and its summary matches a direct `node --test test/review-unit.test.mjs test/review-reviewer.test.mjs` on the same two files; restore the file afterwards
+- [x] 4.2 Run `npm run verify` on Node 24 and verify every test passes and the coverage percentages are unchanged, confirming `scripts/` and `test/` stay outside the coverage include list
