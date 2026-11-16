@@ -8,7 +8,7 @@ import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, captureSpawn, gitFixture, passDraft, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, captureSpawn, gitFixture, passDraft, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -108,6 +108,251 @@ test('a later round verifies a fixed blocker and passes apply', async () => {
   })
   assert.equal(verified.ready, true)
   await call(fake, 'openspec_apply_next', { change: CHANGE })
+})
+
+test('a dispositions batch disposes several findings and declares its result', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  const result = await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE,
+    dispositions: [
+      { id: 'R1-01', status: 'fixed', note: 'Added the missing task.' },
+      { id: 'R1-02', status: 'deferred', note: 'Follow up in ISS-42.' },
+    ],
+  })
+  assert.deepEqual(result.dispositions, [
+    { id: 'R1-01', status: 'fixed' },
+    { id: 'R1-02', status: 'deferred' },
+  ])
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-01').status, 'fixed')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'deferred')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-02').note, 'Follow up in ISS-42.')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-01').issue, undefined)
+  const tool = fake.tools.get('openspec_review')
+  assert.equal(tool.output.schema.properties.dispositions.type, 'array')
+  assert.deepEqual(tool.output.schema.properties.dispositions.items.required, ['id', 'status'])
+  for (const key of Object.keys(result)) {
+    assert.ok(
+      Object.hasOwn(tool.output.schema.properties, key),
+      `dispose returned an undeclared key: ${key}`,
+    )
+  }
+})
+
+test('a dispositions batch writes nothing when one entry is invalid', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose',
+      change: CHANGE,
+      dispositions: [
+        { id: 'R1-01', status: 'fixed', note: 'Added the missing task.' },
+        { id: 'R1-02', status: 'deferred' },
+      ],
+    }),
+    /dispositions\[1\] R1-02: deferred needs a note/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-01').status, 'open')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'open')
+})
+
+test('dispositions batch validation names the offending entry', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  const tool = fake.tools.get('openspec_review')
+  assert.equal(tool.parameters.properties.dispositions.items.additionalProperties, false)
+  assert.deepEqual(
+    Object.keys(tool.parameters.properties.dispositions.items.properties).sort(),
+    ['approvedBy', 'id', 'note', 'status', 'waiver'],
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose',
+      change: CHANGE,
+      dispositions: [
+        { id: 'R1-01', status: 'fixed', note: 'first' },
+        { id: 'R1-01', status: 'fixed', note: 'second' },
+      ],
+    }),
+    /appears more than once/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE,
+      dispositions: [{ id: 'R9-01', status: 'fixed', note: 'x' }],
+    }),
+    /dispositions\[0\] finding 'R9-01' is not recorded/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, id: 'R1-01',
+      dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x' }],
+    }),
+    /either id or dispositions/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, note: 'top-level',
+      dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x' }],
+    }),
+    /does not accept top-level status or note/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE,
+      dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x', issue: '#12' }],
+    }),
+    /removed issue field/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x', issue: '#12',
+    }),
+    /issue was removed/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE }),
+    /a finding id is required/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, dispositions: [] }),
+    /non-empty array/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, dispositions: 'x' }),
+    /non-empty array/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, dispositions: [null] }),
+    /is not an object/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose',
+      change: CHANGE,
+      dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x', extra: true }],
+    }),
+    /unknown field 'extra'/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, dispositions: [{ status: 'fixed', note: 'x' }],
+    }),
+    /needs a finding id/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive',
+      change: CHANGE,
+      approvedBy: 'user',
+      waiver: 'The user accepted it.',
+      dispositions: [{ id: 'R1-01', status: 'fixed' }],
+    }),
+    /cannot set status/,
+  )
+})
+
+test('a disposition tolerates a record without a findings array', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  delete record.findings
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x',
+    }),
+    /not recorded/,
+  )
+})
+
+test('a finding waive accepts a batch with shared approval defaults', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  const result = await call(fake, 'openspec_review', {
+    action: 'waive',
+    change: CHANGE,
+    approvedBy: 'user',
+    waiver: 'The user accepted both risks.',
+    dispositions: [{ id: 'R1-01' }, { id: 'R1-02' }],
+  })
+  assert.deepEqual(result.dispositions, [
+    { id: 'R1-01', status: 'waived' },
+    { id: 'R1-02', status: 'waived' },
+  ])
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  const waived = record.findings.find((finding) => finding.id === 'R1-01')
+  assert.equal(waived.waiver, 'The user accepted both risks.')
+  assert.equal(waived.approvedBy, 'user')
+})
+
+test('the single-id disposition still returns its result entry', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  const result = await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the missing task.',
+  })
+  assert.deepEqual(result.dispositions, [{ id: 'R1-01', status: 'fixed' }])
+})
+
+test('a plan-change waiver refuses finding dispositions', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive',
+      change: CHANGE,
+      scope: 'plan-change',
+      approvedBy: 'user',
+      waiver: 'The user accepted the plan change.',
+      files: ['tasks.md'],
+      dispositions: [{ id: 'R1-01' }],
+    }),
+    /does not accept dispositions/,
+  )
 })
 
 test('a user waiver closes a blocker', async () => {

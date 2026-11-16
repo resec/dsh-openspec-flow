@@ -3,7 +3,7 @@ name: openspec-apply-change
 description: Implement tasks from an OpenSpec change with the openspec_* tools. Use when the user wants to start, continue, or finish implementation.
 whenToUse: The user wants to implement, continue, or finish an OpenSpec change in a project that has the dsh-openspec-flow plugin.
 metadata:
-  generatedBy: dsh-openspec-flow@0.4.0
+  generatedBy: dsh-openspec-flow@0.5.0
   upstream: openspec@1.16.1
 ---
 
@@ -37,7 +37,7 @@ Ask before continuing when a task is unclear, the implementation reveals a desig
 ## Seal and plan changes
 
 - In a git project, the first `openspec_apply_next` requires a seal commit: commit the change directory and, when the plugin wrote it, `openspec/.gitignore`. The tool refuses a dirty tree, a commit that changes anything else, or artifacts that changed after the draft review.
-- The draft review can be resumed until apply starts. After apply started, a plan change needs the user's written approval, recorded with `openspec_review` (`action: "waive"`, `scope: "plan-change"`, `files`) before you edit; apply review reviews the changed planning artifacts.
+- The draft review can be resumed until apply starts. After apply started, a plan change needs the user's written approval, recorded with `openspec_review` (`action: "waive"`, `scope: "plan-change"`, `files`; not `dispositions`) before you edit; apply review reviews the changed planning artifacts.
 
 ## Apply review
 
@@ -45,7 +45,7 @@ After the loop reaches `all_done`, and before reporting completion:
 
 1. Commit every changed file for this round. The apply review object is the committed git tree, so an uncommitted working tree is not reviewable.
 2. Call `openspec_review` with `action: "status"`, `review: "apply"` and the change name. When `available` is false, say the project has no git repository and skip the review. When `policy` is true and `enabled` is false, say the review is disabled and skip it. Otherwise call `action: "start"` for the first round and read the returned brief and generated diff; with `policy: false`, the start first locks or migrates the policy. A later round uses `action: "resume"` without an intent. When the start reports that the locked policy disables apply review, say the review is disabled and continue without it.
-3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report. When it uses `reviewers: 1`, call `openspec_review` with `action: "wait"`; when it returns `waiting`, end the turn and continue after the wakeup (the reviewer submit or the wait deadline); do not submit a self-report. Fix every blocker and call `action: "resume"` for another round until the review is ready.
+3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report. When it uses `reviewers: 1`, call `openspec_review` with `action: "wait"`; when it returns `waiting`, end the turn and continue after the wakeup (the reviewer submit or the wait deadline); do not submit a self-report. Fix every blocker and call `action: "resume"` for another round until the review is ready. When findings need a disposition, pass every remaining one in a single `openspec_review` call with `dispositions`; one finding may use the single `id` form.
 
 ## Finish
 

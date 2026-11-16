@@ -251,6 +251,16 @@ test('the review document explains the seal, the freeze and the plan-change waiv
   assert.match(text, /scope control/)
 })
 
+test('the review document explains batch disposition and the removed issue field', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /`dispositions` 数组/)
+  assert.match(text, /只有一条时仍可用单条 `id` 写法/)
+  assert.match(text, /整批先校验后写入，任一条无效时所有 finding 保持不变/)
+  assert.match(text, /`deferred` 必须给 note/)
+  assert.match(text, /旧记录中的 `issue` 字段保留原样但不读取/)
+  assert.match(text, /plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`/)
+})
+
 test('the review document explains the non-polling wait and the wakeup', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /不轮询/)

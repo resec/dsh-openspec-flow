@@ -88,10 +88,14 @@ finding 的处置：
 | 动作 | 要求 | 语义 |
 | --- | --- | --- |
 | `dispose status=fixed` | 需要 note | 已修复，等待后续轮次验证 |
-| `dispose status=deferred` | 需要 note 或 issue | 阻塞项不可 deferred（`critical`/`major` 会被拒绝） |
+| `dispose status=deferred` | 需要 note | 阻塞项不可 deferred（`critical`/`major` 会被拒绝）；后续 issue 编号写进 note |
 | `dispose status=rejected` | 需要带证据的 note | 阻塞项不可 rejected |
 | `waive` | 需要 `approvedBy: "user"` 与 waiver 文本 | 由用户明确豁免，记录在案 |
 | 后续报告 `verified-fixed` | 验证轮次必须晚于首次轮次 | 真正关闭 finding |
+
+`dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispositions` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的顶层 `waiver` 与 `approvedBy` 作为条目默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。
+
+`issue` 参数已移除：`deferred` 必须给 note，旧记录中的 `issue` 字段保留原样但不读取，新处置不再写入。plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`。
 
 就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。
 
@@ -182,9 +186,13 @@ openspec_review { "action": "wait", "change": "add-export-api" }
 #   openspec_reviewer { "action": "read", "target": "brief", "change": "add-export-api", "review": "draft", "slot": 1 }
 #   openspec_reviewer { "action": "submit", "change": "add-export-api", "review": "draft", "slot": 1, "report": { ... } }
 openspec_review { "action": "report", "change": "add-export-api" }
-# 有阻塞 finding 时逐条处置，然后开下一轮：
-openspec_review { "action": "dispose", "change": "add-export-api", "id": "R1-01",
-                  "status": "fixed", "note": "Added the missing scenario." }
+# 有 finding 时一次传入全部处置；只有一条时仍可用单条 id 写法：
+openspec_review { "action": "dispose", "change": "add-export-api",
+                  "dispositions": [
+                    { "id": "R1-01", "status": "fixed", "note": "Added the missing scenario." },
+                    { "id": "R1-02", "status": "deferred", "note": "Follow up in ISS-42." } ] }
+openspec_review { "action": "dispose", "change": "add-export-api", "id": "R1-03",
+                  "status": "fixed", "note": "Named the new requirement." }
 openspec_review { "action": "resume", "change": "add-export-api" }
 # 下一轮报告用 verifications 声明 R1-01 为 verified-fixed，就绪后：
 # draft 就绪后封存（git 项目）：只提交变更目录与 openspec/.gitignore

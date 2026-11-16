@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
-  CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
+  CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -328,6 +328,35 @@ test('apply review supports status, report, extend, dispose and abandon', async 
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
     /abandoned/,
   )
+})
+
+test('an apply review disposes a dispositions batch', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    review: 'apply',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  const result = await call(fake, 'openspec_review', {
+    action: 'dispose',
+    change: CHANGE,
+    review: 'apply',
+    dispositions: [
+      { id: 'R1-01', status: 'fixed', note: 'Added the task.' },
+      { id: 'R1-02', status: 'deferred', note: 'Follow up in ISS-7.' },
+    ],
+  })
+  assert.deepEqual(result.dispositions, [
+    { id: 'R1-01', status: 'fixed' },
+    { id: 'R1-02', status: 'deferred' },
+  ])
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-01').status, 'fixed')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'deferred')
 })
 
 test('archive refuses before an apply review and after dirtying the tree', async () => {

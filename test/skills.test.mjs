@@ -94,6 +94,18 @@ test('the propose skill runs the draft review before presenting', () => {
   assert.match(propose, /Do not present the proposal while a blocker is open/)
 })
 
+test('the propose and apply skills dispose findings in one batch', () => {
+  const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
+  const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
+  for (const [name, text] of [['propose', propose], ['apply', apply]]) {
+    assert.match(text, /`dispositions`/, name)
+    assert.match(text, /single `openspec_review` call/, name)
+    assert.match(text, /single `id` form/, name)
+  }
+  assert.match(apply, /`scope: "plan-change"`/)
+  assert.match(apply, /not `dispositions`/)
+})
+
 test('the apply and archive skills run the apply review', () => {
   const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
   assert.match(apply, /## Apply review/)

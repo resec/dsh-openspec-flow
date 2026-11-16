@@ -88,6 +88,20 @@ export function majorFinding() {
   }
 }
 
+export function minorFinding(extra = {}) {
+  return {
+    id: 'R1-02',
+    severity: 'minor',
+    axis: 'coherence',
+    location: 'design.md',
+    title: 'A minor wording issue',
+    problem: 'A sentence in the design is unclear.',
+    evidence: 'design.md leaves the reader guessing what changed.',
+    suggestion: 'Rewrite the sentence.',
+    ...extra,
+  }
+}
+
 export function gitFixture() {
   const root = fixture()
   const run = (args) => {

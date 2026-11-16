@@ -188,7 +188,8 @@ test('finding dispositions follow the lifecycle', () => {
   assert.equal(blocker.status, 'waived')
 
   const minor = finding({ id: 'R1-02', severity: 'minor' })
-  disposeFinding(minor, { status: 'deferred', issue: '#12' })
+  assert.throws(() => disposeFinding(minor, { status: 'deferred', issue: '#12' }), /needs a note/)
+  disposeFinding(minor, { status: 'deferred', note: 'later' })
   assert.equal(minor.status, 'deferred')
   const fixed = finding({ id: 'R1-03', severity: 'minor' })
   assert.throws(() => disposeFinding(fixed, { status: 'fixed' }), /needs a note/)
@@ -385,6 +386,21 @@ test('readiness reports abandoned, empty and deferred blockers', () => {
     findings: [finding({ status: 'open' })],
   }, 'hash')
   assert.equal(disposable.nextAction, 'openspec_review action=dispose')
+
+  const oldIssue = draftReadiness({
+    state: 'in-review',
+    objectHash: 'hash',
+    rounds: [{ round: 1, verdict: 'pass', report: { path: 'report.json' } }],
+    findings: [finding({
+      id: 'R1-04',
+      severity: 'minor',
+      status: 'verified',
+      verifiedInRound: 2,
+      firstRound: 1,
+      issue: '#12',
+    })],
+  }, 'hash')
+  assert.equal(oldIssue.ready, true)
 })
 
 test('store helpers read files, detect git and write JSON', () => {
@@ -505,7 +521,7 @@ test('report text and entry counts are unbounded and deferred dispositions cover
     /non-empty/,
   )
   const minor = finding({ id: 'R1-02', severity: 'minor' })
-  assert.throws(() => disposeFinding(minor, { status: 'deferred' }), /needs a note or an issue/)
+  assert.throws(() => disposeFinding(minor, { status: 'deferred' }), /needs a note/)
 })
 
 test('recordFinding leaves optional blocking fields null for a minor finding', () => {
