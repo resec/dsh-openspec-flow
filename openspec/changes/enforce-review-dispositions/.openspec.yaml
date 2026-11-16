@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-16
+goal: Review rounds cannot advance with undisposed findings, and a reviewer can
+  read the recorded finding state without bypassing the tool.
