@@ -25,7 +25,7 @@
 
 ## 5. Integration verification
 
-- [ ] 5.1 Commit the implementation, run `npm run verify` on Node 24, and verify it passes and writes a stamp that `node scripts/coverage-stamp.mjs check` accepts immediately afterwards
+- [x] 5.1 Commit the implementation, run `npm run verify` on Node 24, and verify it passes and writes a stamp that `node scripts/coverage-stamp.mjs check` accepts immediately afterwards
 - [ ] 5.2 Commit an `openspec/`-only change on top of that commit and run the check; verify it still accepts the stamp, then commit a `lib/` change and verify the refusal comes from the fingerprint comparison, not the dirty-tree guard
 
 ## Workflow follow-up
