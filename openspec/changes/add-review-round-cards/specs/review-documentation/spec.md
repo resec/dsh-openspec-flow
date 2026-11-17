@@ -67,3 +67,13 @@ The document SHALL state that the plugin instructs the model, through the shippe
 - **WHEN** a reader reaches the model behavior section
 - **THEN** it states the short-note rule
 - **AND** it states that the reviewer brief forbids a summary
+
+### Requirement: The document states the verification boundary
+
+The document SHALL state that installed-package behavior and the Web GUI card are verified only in a self-provided, isolated, clean DSH, never the development host profile, configuration or sessions, and that the isolated-DSH install probe and the GUI card inspection are the user's self-verification boundaries rather than agent tasks.
+
+#### Scenario: A reader checks verification
+
+- **WHEN** a reader reaches the verification boundary
+- **THEN** it states that the development host is not used
+- **AND** it names the isolated-DSH probe and the GUI card inspection as the user's self-verification

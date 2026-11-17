@@ -69,11 +69,11 @@ The plugin instructs the model through the propose/apply skills, the reviewer br
 
 ### Single-instance probe
 
-The repository test proves the writer contract against the fake Host (record committed, projection readable, the tool result carries no payload) and builds a second copy of the session package in a fixture to prove that the mismatch is detected. The real gate is `scripts/probe-session.mjs`, run after the tarball is installed into a profile: it imports `@deepseek-ai/dsh-session` from the plugin's installed path and from the Host's path, compares them, creates a Session through the Host copy, writes a probe record through the plugin copy, and asserts the record is absent from the model-visible transcript. A probe failure stops the release; at runtime a failed card write is logged and does not roll back a stored report or a disposal, so a card failure cannot corrupt review state.
+The repository test proves the writer contract against the fake Host (record committed, projection readable, the tool result carries no payload) and builds a second copy of the session package in a fixture to prove that the mismatch is detected. The real gate is `scripts/probe-session.mjs`, run only after the tarball is installed into an isolated, self-provided clean DSH (never the development host profile): it imports `@deepseek-ai/dsh-session` from the plugin's installed path and from the Host's path, compares them, creates a Session through the Host copy, writes a probe record through the plugin copy, and asserts the record is absent from the model-visible transcript. A probe failure stops the release; at runtime a failed card write is logged and does not roll back a stored report or a disposal, so a card failure cannot corrupt review state.
 
 ## Risks / Trade-offs
 
-- **Module duplication breaks private-field access** → exact version pin, the real-profile probe as a release gate, and an actionable error; if the probe fails, stop this change and open a separate change for a transport fallback rather than shipping a second transport here.
+- **Module duplication breaks private-field access** → exact version pin, the isolated-DSH probe as the release boundary, and an actionable error; if the probe fails, stop this change and open a separate change for a transport fallback rather than shipping a second transport here.
 - **A projection registration failure disables the card or the plugin** → the projection is registered once from the main entry through the optional service inside a try/catch; a failure is logged and the tools still register; a test injects a throwing registrar.
 - **Experimental `appendPluginRecord` changes across DSH releases** → `engines.dsh` pins the runtime; the DSH upgrade guide and the probe must be re-run when upgrading.
 - **Session log growth** → accepted for this change; a future spill/compaction policy can move report bodies out of the event if needed.
@@ -84,11 +84,22 @@ The repository test proves the writer contract against the fake Host (record com
 ## Migration Plan
 
 1. Add the dependency and update the lockfile.
-2. Run the repository writer contract test and the mismatch fixture; then install the tarball into the profile and run `scripts/probe-session.mjs` against the installed plugin and Host paths.
+2. Run the repository writer contract test and the mismatch fixture; then, in an isolated, self-provided clean DSH, install the tarball and run `scripts/probe-session.mjs` against the installed plugin and Host paths.
 3. Remove the round cap from config, policy, records, tools and the page; adjust tests and docs in the same change.
-4. Restart the session and verify a review round produces a card in both the changer and reviewer sessions, including a cardless turn and a refresh.
-5. Save the review settings once to drop a stale `maxRounds` from the profile.
-6. Rollback: reinstall the previous tarball; old records and policies remain readable because the field is ignored, not rewritten.
+4. In that isolated DSH, verify a review round produces a card in both the changer and reviewer sessions, including a cardless turn and a refresh.
+5. In the isolated DSH, save the review settings once to drop a stale `maxRounds` from the profile.
+6. Rollback in the isolated DSH: reinstall the previous tarball; old records and policies remain readable because the field is ignored, not rewritten.
+
+## Verification boundary
+
+The development host profile, configuration and sessions are not used for verification: no host plugin is installed, restarted or mutated during this change. Any DSH behavior check runs in a self-provided, isolated, clean DSH.
+
+Two checks cannot be executed by the agent and are recorded here for the user's self-verification rather than as `tasks.md` steps:
+
+- the isolated-DSH install probe: the plugin and Host resolve one `@deepseek-ai/dsh-session` module, and the probe record stays out of the model-visible transcript;
+- the Web GUI card inspection: collapsed card, expanded report summary and full report, plan-change waiver, two self-review cards, main-session review card, reviewer-session card, cardless turn and refresh recovery.
+
+The push follows this boundary. Until the user confirms it in the isolated DSH, the change stops after archive and commit.
 
 ## Open Questions
 

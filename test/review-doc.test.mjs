@@ -326,3 +326,16 @@ test('the review document explains the cards and the model rule', () => {
   assert.match(text, /不复述 findings/)
   assert.match(text, /reviewer 提交后不写评审总结/)
 })
+
+test('the review document states the host verification boundary', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    '自备的隔离干净 DSH',
+    '不得安装、重启或修改开发宿主',
+    '自验',
+    '不作为代理任务',
+    'probe-session.mjs',
+  ]) {
+    assert.ok(text.includes(phrase), `the document states ${phrase}`)
+  }
+})

@@ -18,12 +18,17 @@ The plugin SHALL depend on exactly `@deepseek-ai/dsh-session` at the version pin
 
 ### Requirement: DSH session single instance
 
-A packaged install SHALL resolve the plugin's `@deepseek-ai/dsh-session` and the Host's to the same module instance. The release SHALL stop when the probe finds different copies. At runtime a failed card write SHALL be logged and SHALL NOT roll back a stored report or a disposal.
+A packaged install SHALL resolve the plugin's `@deepseek-ai/dsh-session` and the Host's to the same module instance. The probe SHALL run only in an isolated, self-provided clean DSH; the development host profile, configuration and sessions SHALL NOT be modified. The release SHALL stop when the probe finds different copies. At runtime a failed card write SHALL be logged and SHALL NOT roll back a stored report or a disposal.
 
 #### Scenario: The copies match
 
-- **WHEN** the plugin and Host resolve the same module path
+- **WHEN** the plugin and Host resolve the same module path in the isolated DSH
 - **THEN** the probe passes
+
+#### Scenario: The development host is untouched
+
+- **WHEN** the probe or the isolated install runs
+- **THEN** no development host profile, configuration or session is modified
 
 #### Scenario: The module copies differ
 
@@ -37,11 +42,11 @@ A packaged install SHALL resolve the plugin's `@deepseek-ai/dsh-session` and the
 
 ### Requirement: The install probe proves the card channel
 
-The probe SHALL import `@deepseek-ai/dsh-session` from the installed plugin path and from the Host path, create a Session through the Host copy, write a probe record through the plugin copy, and assert that the record is absent from the model-visible transcript.
+The probe SHALL run in an isolated, self-provided clean DSH, import `@deepseek-ai/dsh-session` from the installed plugin path and from the Host path, create a Session through the Host copy, write a probe record through the plugin copy, and assert that the record is absent from the model-visible transcript.
 
 #### Scenario: The probe writes through the Host Session
 
-- **WHEN** the probe runs against a real profile
+- **WHEN** the probe runs against the isolated profile
 - **THEN** the Host-created Session receives the probe record
 - **AND** the record is absent from the model-visible transcript
 

@@ -14,7 +14,7 @@ Two related gaps block that: the plugin may not import any `@deepseek-ai/*` pack
 - **Main-session review card**: for an independent reviewer, the changer's `wait` (ready, latest submitted round) writes the review card into the main session and marks it; `report` writes the latest submitted round's card only when the marker is absent. Reviewer `submit` writes the reviewer-session card. A self-review writes its review card on `self-report` and its resolution card on `resume` or the ready disposal.
 - **Model behavior**: the plugin instructs the model through the shipped skills, the reviewer brief and the policy text to write only one short note for information the report cannot express and the user must know, and not to restate findings, evidence, risks, scope or notes. The reviewer brief instructs the reviewer to write no summary after submitting.
 - **Round caps removed**: `reviews.draft.maxRounds` and `reviews.apply.maxRounds` disappear from settings, policy, records and the configuration page; `openspec_review` no longer accepts `maxRounds` on `extend`. `extend` remains for the wait deadline and takes only `minutes`. Legacy records and policies that still carry `maxRounds` keep the field but it is ignored.
-- **BREAKING** (packaging): the plugin declares `@deepseek-ai/dsh-session` at the pinned DSH version and may import it at runtime; the "Node built-ins only" rule in `AGENTS.md` is replaced by "Node built-ins plus the pinned DSH session package". A real-profile install probe verifies module identity and model invisibility.
+- **BREAKING** (packaging): the plugin declares `@deepseek-ai/dsh-session` at the pinned DSH version and may import it at runtime; the "Node built-ins only" rule in `AGENTS.md` is replaced by "Node built-ins plus the pinned DSH session package". An isolated, self-provided DSH install probe verifies module identity and model invisibility; the development host is never used.
 - **BREAKING** (configuration): `maxRounds` is no longer a review setting. A settings file that still carries it loads with the field ignored, and the next save drops it.
 - Update `docs/review.md`, `README.md`, `docs/upgrading-dsh-runtime.md`, `docs/installing-bundles.md`, the packaged skills, the policy text, the record layout and the documentation tests.
 
@@ -33,9 +33,13 @@ Two related gaps block that: the plugin may not import any `@deepseek-ai/*` pack
 - `skill-adaptation`: propose and apply skills state the card reporting rule; the reviewer brief tells the reviewer not to write a summary.
 - `project-invariants`: add the pinned DSH session dependency and the install-time single-instance requirement.
 
+## Verification boundary
+
+The development host profile, configuration and sessions SHALL NOT be modified for verification. The agent verifies the package through repository tests and, when available, a self-provided isolated clean DSH. Two checks are the user's self-verification boundaries and are not `tasks.md` steps: the isolated-DSH install probe (one `dsh-session` module for plugin and Host, probe record absent from the model-visible transcript) and the Web GUI card inspection (collapsed, expanded full report, waiver, two self-review cards, main-session card, reviewer-session card, cardless turn, refresh). The push follows a confirmed boundary.
+
 ## Impact
 
-- **Dependencies**: `package.json` gains `@deepseek-ai/dsh-session` at `0.2.2-rc.2`; `package-lock.json` updates; bundle install must resolve it and the real-profile probe must pass.
+- **Dependencies**: `package.json` gains `@deepseek-ai/dsh-session` at `0.2.2-rc.2`; `package-lock.json` updates; bundle install must resolve it; the isolated-DSH probe is the release boundary.
 - **Package version**: `package.json` moves to `0.8.0`; `package-lock.json` is regenerated so its root version follows; `docs/upgrading-openspec-cli.md` records the new plugin baseline; every packaged skill's `metadata.generatedBy` follows, and the tarball path and bundle metadata use the new version.
 - **Host code**: `index.js` registers the card projection through the optional `sessionProjections` service, wrapped so a failed registration only logs; `reviewer.js` stays unchanged on the inject list; new `lib/review/cards.js` and `lib/review/card-projection.js`; `lib/tools/review.js` writes cards at `self-report`, `wait`, `report`, `resume`, `dispose` and `waive`; `reviewer-tool.js` writes on `submit`.
 - **Round caps**: `lib/review/config.js`, `policy.js`, `settings.js`, `lib/tools/review.js`, `client.js`, `locale/*.json`.

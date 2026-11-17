@@ -130,7 +130,7 @@ finding 的处置：
 
 模型规则：每轮只写一句报告不能表达且用户需要知道的内容（取舍、授权、等待状态、下一步等）；不复述 findings、证据、风险、scope 或处置 note。reviewer 提交后不写评审总结，brief 已写明。卡片记录不进入模型可见面。
 
-依赖：插件在 `package.json` 声明 `@deepseek-ai/dsh-session`（精确 `engines.dsh`）。安装后运行 `scripts/probe-session.mjs` 验证插件与 Host 使用同一模块实例，并确认卡片事件不进入模型可见记录；探针失败时停止发布。
+依赖：插件在 `package.json` 声明 `@deepseek-ai/dsh-session`（精确 `engines.dsh`）。验证只在自备的隔离干净 DSH 中进行；不得安装、重启或修改开发宿主的 profile、配置与会话。隔离 DSH 中的安装探针 `scripts/probe-session.mjs` 用于确认插件与 Host 使用同一模块实例、卡片事件不进入模型可见记录；Web GUI 中的折叠、展开、完整报告与 waiver 也留作用户在隔离 DSH 自验，不作为代理任务。探针失败时停止发布。
 
 ## 记录布局
 
