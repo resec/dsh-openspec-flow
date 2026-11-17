@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatDoctor, runDoctor } from '../scripts/lab/core/doctor.mjs'
+import { checkCjkFont, formatDoctor, runDoctor } from '../scripts/lab/core/doctor.mjs'
 
 function ok(name) {
   return { name, status: 'ok', detail: 'fixture' }
@@ -47,6 +47,28 @@ test('a missing browser binary names the install command', () => {
   })
   assert.equal(result.ok, false)
   assert.match(result.checks[2].detail, /PLAYWRIGHT_BROWSERS_PATH/)
+})
+
+test('a missing fc-list returns a correction-oriented failure', () => {
+  const check = checkCjkFont({ PATH: '/definitely/missing' }, 'linux')
+  assert.equal(check.status, 'fail')
+  assert.match(check.detail, /FONTCONFIG_FILE|CJK font/)
+})
+
+test('the doctor checks the browser path the run will use', () => {
+  let seen
+  const result = runDoctor({
+    version: '0.0.0-test',
+    browsersPath: '/opt/playwright',
+    deps: deps({
+      browser: (path) => {
+        seen = path
+        return { ...ok('browser-binary'), detail: '/opt/playwright/chrome' }
+      },
+    }),
+  })
+  assert.equal(seen, '/opt/playwright')
+  assert.equal(result.ok, true)
 })
 
 test('an unsupported runtime fails before any DSH check', () => {

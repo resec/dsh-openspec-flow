@@ -102,9 +102,14 @@ export function checkBrowser(browsersPath, platform = process.platform) {
  */
 export function checkBrowserLibraries(executable, platform = process.platform) {
   if (platform !== 'linux') return { name: 'browser-libraries', status: 'info', detail: `skipped on ${platform}` }
-  const result = run('ldd', [executable], { timeoutMs: 30_000 })
-  if (result.error || result.status !== 0) {
-    return { name: 'browser-libraries', status: 'fail', detail: `ldd failed: ${(result.stderr || result.error?.message || '').slice(0, 500)}` }
+  let result
+  try {
+    result = run('ldd', [executable], { timeoutMs: 30_000 })
+  } catch (error) {
+    return { name: 'browser-libraries', status: 'fail', detail: `ldd is unavailable: ${error instanceof Error ? error.message : String(error)}; install the browser dependencies` }
+  }
+  if (result.status !== 0) {
+    return { name: 'browser-libraries', status: 'fail', detail: `ldd failed: ${(result.stderr || '').slice(0, 500)}` }
   }
   const missing = result.stdout.split('\n').filter((line) => line.includes('not found')).map((line) => line.trim())
   if (missing.length > 0) {
@@ -125,8 +130,13 @@ export function checkBrowserLibraries(executable, platform = process.platform) {
  */
 export function checkCjkFont(env = process.env, platform = process.platform) {
   if (platform !== 'linux') return { name: 'cjk-font', status: 'info', detail: `skipped on ${platform}` }
-  const result = run('fc-list', [':lang=zh'], { timeoutMs: 30_000, env })
-  if (result.error || result.status !== 0) {
+  let result
+  try {
+    result = run('fc-list', [':lang=zh'], { timeoutMs: 30_000, env })
+  } catch (error) {
+    return { name: 'cjk-font', status: 'fail', detail: `fc-list is unavailable (${error instanceof Error ? error.message : String(error)}); install fontconfig and a CJK font or set FONTCONFIG_FILE` }
+  }
+  if (result.status !== 0) {
     return { name: 'cjk-font', status: 'fail', detail: `fc-list :lang=zh failed; install a CJK font or set FONTCONFIG_FILE` }
   }
   if (result.stdout.trim() === '') {
@@ -175,16 +185,17 @@ function freeBytes(path) {
 export function runDoctor({
   root = ROOT,
   version = dshVersion(readPackage()),
-  browsersPath = BROWSERS_PATH,
+  browsersPath,
   cacheBase,
   platform = process.platform,
   env = process.env,
   deps = {},
 } = {}) {
   void root
+  const resolvedBrowsers = browsersPath ?? env.PLAYWRIGHT_BROWSERS_PATH ?? BROWSERS_PATH
   const cache = deps.cache ?? ((v) => checkCache(v, cacheBase))
   const browser = deps.browser ?? ((p) => checkBrowser(p, platform))
-  const browserCheck = browser(browsersPath)
+  const browserCheck = browser(resolvedBrowsers)
   const libraries = browserCheck.status === 'ok'
     ? (deps.libraries ?? ((executable) => checkBrowserLibraries(executable, platform)))(browserCheck.detail)
     : { name: 'browser-libraries', status: 'info', detail: 'skipped: browser binary missing' }

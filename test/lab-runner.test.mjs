@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROOT } from '../scripts/lab/core/paths.mjs'
-import { runScenarios } from '../scripts/lab/index.mjs'
+import { createLab, runScenarios } from '../scripts/lab/index.mjs'
 
 const fakePlugin = {
   tarball: join(ROOT, 'missing.tgz'),
@@ -26,6 +26,24 @@ test('mock-only mode skips real-model scenarios before creating a sandbox', asyn
     assert.match(result.results[0].reason, /mock-only/)
     const report = JSON.parse(readFileSync(result.reportPath, 'utf8'))
     assert.equal(report.results[0].status, 'skipped')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a provisioning failure leaves a failed run report', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lab-runner-'))
+  try {
+    await assert.rejects(
+      createLab({ pluginTarball: fakePlugin, offline: true, fresh: true, root, env: { ...process.env } }),
+      /cannot be combined/,
+    )
+    const runs = join(root, '.cache', 'lab', 'runs')
+    const entries = existsSync(runs) ? readdirSync(runs) : []
+    assert.equal(entries.length, 1)
+    const report = join(runs, entries[0], 'artifacts', 'report.json')
+    assert.ok(existsSync(report))
+    assert.equal(JSON.parse(readFileSync(report, 'utf8')).ok, false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -99,7 +99,7 @@ Each run writes under `.cache/lab/runs/<id>/artifacts/`:
 
 - `report.json` — versions, cache source, plugin sha512 and dirty paths, checks, verdict and evidence paths
 - `manifest.json` — DSH and run metadata
-- `dump-config-headless.json` and `dump-config-web.json`, `headless.ndjson`, `headless.stderr.log`, `web.log`, `mock.log`
+- one `dump-config-<mode>.yml` per composed profile, `headless.ndjson`, `headless.stderr.log`, `web.log`, `mock.log`
 - copied session logs, card files and screenshots
 
 The invocation's scenario summary, including skipped real-model scenarios, is written to `.cache/lab/reports/<id>.json`.

@@ -105,8 +105,24 @@ export async function createLab({
   const version = dshVersion(pkg)
   const run = createRun({ name: 'scenario', base: join(root, '.cache', 'lab', 'runs') })
   const before = hostFingerprint()
-  const dsh = await ensureDsh({ version, offline, fresh, runDirectory: run.home, env })
-  const mock = model === 'mock' ? await startMockProvider({ log: join(run.artifacts, 'mock.log') }) : undefined
+  let dsh
+  let mock
+  try {
+    dsh = await ensureDsh({ version, offline, fresh, runDirectory: run.home, env })
+    mock = model === 'mock' ? await startMockProvider({ log: join(run.artifacts, 'mock.log') }) : undefined
+  } catch (error) {
+    writeJson(join(run.artifacts, 'report.json'), {
+      schemaVersion: 1,
+      ok: false,
+      model,
+      version,
+      error: String(error?.stack ?? error),
+      runDir: run.dir,
+      artifacts: run.artifacts,
+      checks: [{ name: 'provisioning', status: 'fail', detail: String(error?.message ?? error) }],
+    })
+    throw error
+  }
   const labEnv = {
     ...env,
     DSH_HOME: run.home,
@@ -145,7 +161,7 @@ export async function createLab({
     })
     if (model === 'mock') writeMockPatch(installed.profileDirectory, mock.url)
     const composed = dumpConfig({ dshBin: dsh.bin, profile, env: labEnv })
-    const dumpPath = join(run.artifacts, `dump-config-${mode}.json`)
+    const dumpPath = join(run.artifacts, `dump-config-${mode}.yml`)
     writeFileSync(dumpPath, composed)
     state.profiles[profile] = installed
     state.dumps[profile] = composed
@@ -398,7 +414,14 @@ export async function runScenarios({
       results.push({ name: scenario.name, file, status: 'skipped', reason: 'real model requires --include-real-model' })
       continue
     }
-    const lab = await createLab({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
+    let lab
+    try {
+      lab = await createLab({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
+    } catch (error) {
+      results.push({ name: scenario.name, file, status: 'failed', error: String(error), reason: 'provisioning failed' })
+      log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
+      continue
+    }
     try {
       await scenario.run(lab)
       const closed = await lab.close({ passed: true })
