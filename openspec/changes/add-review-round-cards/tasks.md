@@ -45,12 +45,12 @@
 - [x] 6.1 Update `skills/openspec-propose/SKILL.md` and `skills/openspec-apply-change/SKILL.md`: cards carry the report, one short note only for report-external information, no restatement, no round-cap language; extend `test/skills.test.mjs` so a skill mentioning a round cap or `maxRounds` fails; verify with `node --test test/skills.test.mjs`.
 - [x] 6.2 Update `lib/review/brief.js` so the reviewer is instructed to write no summary after submitting, and update `lib/policy.js` with the short-note rule; verify with the policy and draft tests.
 - [x] 6.3 Update `docs/review.md`, `README.md`, `docs/upgrading-dsh-runtime.md` and `docs/installing-bundles.md`: the card files and layout, `reviewCards/get`, turn binding and refresh, turnTail, collapse, fixed Chinese labels, full report, waiver, write points, model rule, removed round cap, record `cards` marker, no-truncation, no session event, no DSH dependency and the verification boundary. Remove the old event/projection/probe/dependency assertions from `test/review-doc.test.mjs` and add the new card-file, endpoint, record-layout and boundary assertions; verify with the doc test.
-- [ ] 6.4 Bump `package.json` to `0.9.0`, regenerate `package-lock.json` so its root version follows, update the plugin version in `docs/upgrading-openspec-cli.md`, update every packaged skill's `metadata.generatedBy`, and update the change README; verify with the skill tests and `npm run bundle:pack`'s version path.
+- [x] 6.4 Bump `package.json` to `0.9.0`, regenerate `package-lock.json` so its root version follows, update the plugin version in `docs/upgrading-openspec-cli.md`, update every packaged skill's `metadata.generatedBy`, and update the change README; verify with the skill tests and `npm run bundle:pack`'s version path.
 
 ## 7. Verification and release
 
-- [ ] 7.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change; verify zero warnings.
-- [ ] 7.2 Run `npm run verify` on Node 24; verify the coverage gate passes.
-- [ ] 7.3 Run `npm run openspec:check`; verify every active change and main spec passes.
+- [x] 7.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change; verify zero warnings.
+- [x] 7.2 Run `npm run verify` on Node 24; verify the coverage gate passes.
+- [x] 7.3 Run `npm run openspec:check`; verify every active change and main spec passes.
 - [ ] 7.4 Start the apply review, fix every blocker, archive the change, and commit the archive. Do not push.
 - [ ] 7.5 Build the release tarball from the final reviewed commit with `npm run bundle:pack -- --force` and verify its metadata names 0.9.0. Do not install it into the development host profile. In the isolated, self-contained DSH, run the automated card-file, endpoint, turn-binding and render-data checks; do not push.
