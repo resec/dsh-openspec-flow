@@ -143,3 +143,52 @@ test('the apply and archive skills run the apply review', () => {
   assert.match(archive, /policy/)
   assert.match(archive, /enabled/)
 })
+
+/**
+ * Extract one review section from a packaged skill.
+ * @param text - skill text.
+ * @param heading - exact section heading.
+ * @returns the section body without the heading and the next heading.
+ */
+function reviewSection(text, heading) {
+  const lines = text.split('\n')
+  const start = lines.findIndex((line) => line.trim() === heading)
+  assert.ok(start >= 0, `missing ${heading}`)
+  const end = lines.findIndex((line, index) => index > start && /^## /.test(line))
+  return lines.slice(start + 1, end === -1 ? undefined : end).join('\n')
+}
+
+/**
+ * Report the action clauses that do not carry the expected review kind.
+ *
+ * A clause runs from one `action: "..."` occurrence to the next, so a clause
+ * cannot borrow the kind that belongs to the clause after it.
+ * @param section - review section body.
+ * @param kind - expected review kind.
+ * @returns the action names whose clause omits the kind.
+ */
+function unqualifiedActions(section, kind) {
+  const occurrences = [...section.matchAll(/`action: "([a-z-]+)"`/g)]
+  const missing = []
+  for (const [index, match] of occurrences.entries()) {
+    const next = occurrences[index + 1]
+    const clause = section.slice(match.index, next === undefined ? undefined : next.index)
+    if (!clause.includes(`review: "${kind}"`)) missing.push(match[1])
+  }
+  return missing
+}
+
+test('the shipped skills name the review kind at every review action', () => {
+  const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
+  const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
+  assert.deepEqual(unqualifiedActions(reviewSection(propose, '## Draft review'), 'draft'), [])
+  assert.deepEqual(unqualifiedActions(reviewSection(apply, '## Apply review'), 'apply'), [])
+
+  const needle = '`action: "dispose"` and `review: "draft"`'
+  assert.ok(propose.includes(needle), 'the propose skill keeps the dispose clause')
+  const broken = propose.replace(needle, '`action: "dispose"`')
+  assert.deepEqual(
+    unqualifiedActions(reviewSection(broken, '## Draft review'), 'draft'),
+    ['dispose'],
+  )
+})

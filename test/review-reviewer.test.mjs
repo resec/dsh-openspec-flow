@@ -214,7 +214,7 @@ test('the reviewer reads an earlier round and the finding state', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
   await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 2 })
 
@@ -257,10 +257,10 @@ test('the findings read returns verification rounds and last verification', asyn
     report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
   })
   await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
   await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-02', status: 'fixed', note: 'Fixed.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-02', status: 'fixed', note: 'Fixed.',
   })
   await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 2 })
   await execute({
@@ -895,4 +895,29 @@ test('the reviewer preset tool names match the declaration', () => {
   const plugins = reviewerPresetDeclaration()
   assert.deepEqual(plugins.map((plugin) => plugin.id), ['persona', 'tool-fs', 'tool-fs-search', 'tool-web', 'reviewer'])
   assert.deepEqual([...reviewerPresetToolNames(plugins)].sort(), [...PRESET_TOOL_NAMES].sort())
+})
+
+test('a passing apply submit wakes the changer toward archive', async () => {
+  const { root, run } = gitFixture()
+  const { fake, messages, subagents } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const waited = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(waited.waitState, 'waiting')
+
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'apply', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+
+  const last = messages.at(-1)
+  assert.ok(last, 'the submit wakes the recorded changer session')
+  const text = last.content.map((part) => part.text ?? '').join('')
+  assert.match(text, /next: openspec_archive/)
 })

@@ -358,3 +358,20 @@ test('the review document states the host verification boundary', () => {
   }
   assert.doesNotMatch(text, /probe-session\.mjs|@deepseek-ai\/dsh-session|sessionProjections/)
 })
+
+test('the review document qualifies every dispose example and next action', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  const lines = text.split('\n').filter((line) => line.includes('"action": "dispose"'))
+  assert.ok(lines.length >= 2, 'the document keeps both dispose examples')
+  for (const line of lines) {
+    assert.match(line, /"review": "(draft|apply)"/, line)
+  }
+  assert.match(text, /openspec_review action=dispose review=<kind>/)
+})
+
+test('the README states the review kind and the draft freeze', () => {
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  assert.match(readme, /`dispose` 与 finding 的 `waive` 必须显式传 `review`/)
+  assert.match(readme, /apply 启动后 draft 记录冻结/)
+  assert.match(readme, /openspec_review action=dispose review=<kind>/)
+})

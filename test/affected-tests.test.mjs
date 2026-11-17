@@ -26,7 +26,7 @@ async function capture(fn) {
 
 test('a directly imported module selects only the test files importing it', () => {
   const files = selectAffectedTests({ paths: ['lib/review/brief.js'] })
-  assert.deepEqual(files, ['test/review-reviewer.test.mjs', 'test/review-unit.test.mjs'])
+  assert.deepEqual(files, ['test/review-reviewer.test.mjs', 'test/review-seal.test.mjs', 'test/review-unit.test.mjs'])
 })
 
 test('a module reached through a test helper selects every test using the helper', () => {
@@ -65,7 +65,7 @@ test('the selection is sorted and free of duplicates', () => {
   const files = selectAffectedTests({
     paths: ['test/review-unit.test.mjs', 'lib/review/brief.js', 'lib/review/brief.js'],
   })
-  assert.deepEqual(files, ['test/review-reviewer.test.mjs', 'test/review-unit.test.mjs'])
+  assert.deepEqual(files, ['test/review-reviewer.test.mjs', 'test/review-seal.test.mjs', 'test/review-unit.test.mjs'])
 })
 
 test('--all ignores the working tree and returns the full suite', async () => {
@@ -104,7 +104,7 @@ test('a rename entry uses its destination path', async () => {
   const { lines } = await capture(() =>
     main(['--list'], { gitStatus: () => 'R  old-name.js -> lib/review/brief.js\n' }),
   )
-  assert.deepEqual(lines, ['test/review-reviewer.test.mjs', 'test/review-unit.test.mjs'])
+  assert.deepEqual(lines, ['test/review-reviewer.test.mjs', 'test/review-seal.test.mjs', 'test/review-unit.test.mjs'])
 })
 
 test('the two entrypoints share one compile-cache path and the coverage branch drops it', () => {
@@ -155,5 +155,5 @@ test('--list wins over --run and starts no test process', async () => {
   )
   assert.equal(value, 0)
   assert.equal(spawned, false)
-  assert.deepEqual(lines, ['test/review-reviewer.test.mjs', 'test/review-unit.test.mjs'])
+  assert.deepEqual(lines, ['test/review-reviewer.test.mjs', 'test/review-seal.test.mjs', 'test/review-unit.test.mjs'])
 })

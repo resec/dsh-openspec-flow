@@ -938,3 +938,55 @@ test('a store-backed change skips the seal and keeps the warning', async () => {
     rmSync(external, { recursive: true, force: true })
   }
 })
+
+test('a started apply freezes draft dispositions and not apply ones', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const draftFile = join(reviewDir(root), 'review.json')
+  const draft = JSON.parse(readFileSync(draftFile, 'utf8'))
+  draft.findings = [{
+    id: 'R1-01',
+    severity: 'major',
+    axis: 'coherence',
+    location: 'proposal.md',
+    title: 'Draft finding',
+    problem: 'The proposal and tasks disagree.',
+    evidence: 'proposal.md adds a capability tasks.md does not implement.',
+    impact: 'The implementation would miss the capability.',
+    rule: 'proposal Capabilities and tasks coverage',
+    failure: 'An agent follows tasks.md and skips the capability.',
+    suggestion: 'Add the task.',
+    status: 'open',
+    firstRound: 1,
+  }]
+  writeFileSync(draftFile, `${JSON.stringify(draft, null, 2)}\n`)
+
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    }),
+    /frozen once apply started/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive', review: 'draft', change: CHANGE, id: 'R1-01', approvedBy: 'user', waiver: 'Accepted.',
+    }),
+    /frozen once apply started/,
+  )
+  const untouched = JSON.parse(readFileSync(draftFile, 'utf8'))
+  assert.equal(untouched.findings[0].status, 'open')
+  assert.equal(untouched.findings[0].disposedAt, undefined)
+
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', review: 'apply', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  const disposed = await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'apply', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed the task.',
+  })
+  assert.deepEqual(disposed.dispositions, [{ id: 'R1-01', status: 'fixed' }])
+  const draftAfter = JSON.parse(readFileSync(draftFile, 'utf8'))
+  assert.equal(draftAfter.findings[0].status, 'open')
+})

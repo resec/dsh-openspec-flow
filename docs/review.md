@@ -108,9 +108,11 @@ finding 的处置：
 
 `dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispose` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的条目只需 `id`，`status` 固定为 `waived`，`waiver` 与 `approvedBy` 可由顶层提供默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。`dispositions` 只属于 `action: "dispose"` 与 finding 的 `waive`；`start` 与 `resume` 不接受它，传入即拒绝并指向 `action: "dispose"`。
 
+`dispose` 与 finding 的 `waive` 必须显式给出 `review`（`"draft"` 或 `"apply"`），缺省不再回落到 draft：调用在读取任何记录之前就拒绝，错误同时列出两个取值。apply 启动后 draft 记录冻结，对它的 `dispose` 与 finding `waive` 一律拒绝，错误指向 `openspec_review action=status review=apply`；apply 记录的处置与 plan-change 的 `waive` 不受影响。
+
 `issue` 参数已移除：`deferred` 必须给 note，旧记录中的 `issue` 字段保留原样但不读取，新处置不再写入。plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`。
 
-就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose`，即使对象已变化或有 finding 已是 `fixed`。
+就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。
 
 ## 轮次汇报与信息卡
 
@@ -158,8 +160,8 @@ finding 的处置：
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
 - **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。
-- **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"`；先处置再 `resume`。
-- **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`。
+- **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"` 与该 review 的 `review`；先处置再 `resume`。
+- **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`，两者缺少 `review` 同样拒绝。
 - **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。
 - **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；用 `resume` 开新一轮，或修正提交。
 - **意图文件缺失或被改动**：`resume` 拒绝并提示移除评审记录；`start` 不会为已有记录重写 `intent.md`。
@@ -224,11 +226,11 @@ openspec_review { "action": "wait", "change": "add-export-api" }
 #   openspec_reviewer { "action": "submit", "change": "add-export-api", "review": "draft", "slot": 1, "report": { ... } }
 openspec_review { "action": "report", "change": "add-export-api" }
 # 有 finding 时一次传入全部处置；只有一条时仍可用单条 id 写法：
-openspec_review { "action": "dispose", "change": "add-export-api",
+openspec_review { "action": "dispose", "review": "draft", "change": "add-export-api",
                   "dispositions": [
                     { "id": "R1-01", "status": "fixed", "note": "Added the missing scenario." },
                     { "id": "R1-02", "status": "deferred", "note": "Follow up in ISS-42." } ] }
-openspec_review { "action": "dispose", "change": "add-export-api", "id": "R1-03",
+openspec_review { "action": "dispose", "review": "draft", "change": "add-export-api", "id": "R1-03",
                   "status": "fixed", "note": "Named the new requirement." }
 openspec_review { "action": "resume", "change": "add-export-api" }
 # 下一轮报告用 verifications 声明 R1-01 为 verified-fixed，就绪后：

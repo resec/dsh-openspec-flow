@@ -142,7 +142,7 @@ test('resume refuses a new round while a finding is open', async () => {
   assert.equal(status.findings.open, 1)
   assert.equal(existsSync(join(reviewDir(root), 'round-2')), false)
   await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
   const next = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   assert.equal(next.round, 2)
@@ -162,7 +162,7 @@ test('a later round verifies a fixed blocker and passes apply', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   await call(fake, 'openspec_review', {
-    action: 'dispose',
+    action: 'dispose', review: 'draft',
     change: CHANGE,
     id: 'R1-01',
     status: 'fixed',
@@ -197,7 +197,7 @@ test('a dispositions batch disposes several findings and declares its result', a
     report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
   })
   const result = await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE,
+    action: 'dispose', review: 'draft', change: CHANGE,
     dispositions: [
       { id: 'R1-01', status: 'fixed', note: 'Added the missing task.' },
       { id: 'R1-02', status: 'deferred', note: 'Follow up in ISS-42.' },
@@ -235,7 +235,7 @@ test('a dispositions batch writes nothing when one entry is invalid', async () =
   })
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose',
+      action: 'dispose', review: 'draft',
       change: CHANGE,
       dispositions: [
         { id: 'R1-01', status: 'fixed', note: 'Added the missing task.' },
@@ -270,7 +270,7 @@ test('dispositions batch validation names the offending entry', async () => {
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose',
+      action: 'dispose', review: 'draft',
       change: CHANGE,
       dispositions: [
         { id: 'R1-01', status: 'fixed', note: 'first' },
@@ -281,57 +281,57 @@ test('dispositions batch validation names the offending entry', async () => {
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE,
+      action: 'dispose', review: 'draft', change: CHANGE,
       dispositions: [{ id: 'R9-01', status: 'fixed', note: 'x' }],
     }),
     /dispositions\[0\] finding 'R9-01' is not recorded/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE, id: 'R1-01',
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01',
       dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x' }],
     }),
     /either id or dispositions/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE, note: 'top-level',
+      action: 'dispose', review: 'draft', change: CHANGE, note: 'top-level',
       dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x' }],
     }),
     /does not accept top-level status or note/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE,
+      action: 'dispose', review: 'draft', change: CHANGE,
       dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x', issue: '#12' }],
     }),
     /removed issue field/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x', issue: '#12',
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x', issue: '#12',
     }),
     /issue was removed/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE }),
     /a finding id is required/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, dispositions: [] }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, dispositions: [] }),
     /non-empty array/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, dispositions: 'x' }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, dispositions: 'x' }),
     /non-empty array/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, dispositions: [null] }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, dispositions: [null] }),
     /is not an object/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose',
+      action: 'dispose', review: 'draft',
       change: CHANGE,
       dispositions: [{ id: 'R1-01', status: 'fixed', note: 'x', extra: true }],
     }),
@@ -339,13 +339,14 @@ test('dispositions batch validation names the offending entry', async () => {
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE, dispositions: [{ status: 'fixed', note: 'x' }],
+      action: 'dispose', review: 'draft', change: CHANGE, dispositions: [{ status: 'fixed', note: 'x' }],
     }),
     /needs a finding id/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
       action: 'waive',
+      review: 'draft',
       change: CHANGE,
       approvedBy: 'user',
       waiver: 'The user accepted it.',
@@ -367,7 +368,7 @@ test('a disposition tolerates a record without a findings array', async () => {
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
   await assert.rejects(
     call(fake, 'openspec_review', {
-      action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x',
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x',
     }),
     /not recorded/,
   )
@@ -385,6 +386,7 @@ test('a finding waive accepts a batch with shared approval defaults', async () =
   })
   const result = await call(fake, 'openspec_review', {
     action: 'waive',
+    review: 'draft',
     change: CHANGE,
     approvedBy: 'user',
     waiver: 'The user accepted both risks.',
@@ -411,7 +413,7 @@ test('the single-id disposition still returns its result entry', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   const result = await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the missing task.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the missing task.',
   })
   assert.deepEqual(result.dispositions, [{ id: 'R1-01', status: 'fixed' }])
 })
@@ -449,6 +451,7 @@ test('a user waiver closes a blocker', async () => {
   })
   const waived = await call(fake, 'openspec_review', {
     action: 'waive',
+    review: 'draft',
     change: CHANGE,
     id: 'R1-01',
     waiver: 'Ship without the task; accepted by the user.',
@@ -656,11 +659,11 @@ test('dispose refuses an unknown finding and a deferred blocker', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, id: 'R9-01', status: 'fixed', note: 'no' }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, id: 'R9-01', status: 'fixed', note: 'no' }),
     /not recorded/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, id: 'R1-01', status: 'deferred', note: 'later' }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'deferred', note: 'later' }),
     /cannot be deferred/,
   )
 })
@@ -748,7 +751,7 @@ test('a passed review is idempotent and a legacy round cap does not block a new 
     /still open: R1-01/,
   )
   await call(capped, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
   const next = await call(capped, 'openspec_review', { action: 'resume', change: CHANGE })
   assert.equal(next.round, 2)
@@ -786,7 +789,7 @@ test('report and dispose refuse a review that never started', async () => {
     /no draft review is recorded/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x' }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'x' }),
     /no draft review is recorded/,
   )
   await assert.rejects(
@@ -810,7 +813,7 @@ test('dispose and extend validate their inputs', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'dispose', change: CHANGE, id: 'R1-01' }),
+    call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01' }),
     /status must be/,
   )
   await assert.rejects(
@@ -901,4 +904,28 @@ test('the draft review cannot resume once apply started', async () => {
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
     /cannot be resumed once apply started/,
   )
+})
+
+test('a disposition without a review kind is refused', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  for (const args of [
+    { action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.' },
+    { action: 'waive', change: CHANGE, id: 'R1-01', approvedBy: 'user', waiver: 'Accepted.' },
+  ]) {
+    await assert.rejects(
+      call(fake, 'openspec_review', args),
+      /needs review: "draft" or review: "apply"/,
+    )
+  }
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.findings[0].status, 'open')
+  assert.equal(record.findings[0].waiver, undefined)
 })

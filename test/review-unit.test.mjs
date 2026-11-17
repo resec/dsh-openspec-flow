@@ -342,8 +342,8 @@ test('report validation covers unknown ids, duplicates and verdict conflicts', (
   )
   for (const status of ['open', 'deferred', 'rejected']) {
     assert.throws(
-      () => assertReport({ verdict: 'changes-requested', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })] }),
-      new RegExp(`${status}.*action=dispose.*status=fixed`),
+      () => assertReport({ verdict: 'changes-requested', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })], kind: 'draft' }),
+      new RegExp(`${status}.*action=dispose review=draft.*status=fixed`),
     )
   }
   for (const status of ['verified', 'waived']) {
@@ -410,7 +410,7 @@ test('readiness reports abandoned, empty and deferred blockers', () => {
     rounds: [{ round: 1, verdict: 'changes-requested', report: { path: 'report.json' } }],
     findings: [finding({ status: 'open' })],
   }, 'hash')
-  assert.equal(disposable.nextAction, 'openspec_review action=dispose')
+  assert.equal(disposable.nextAction, 'openspec_review action=dispose review=draft')
 
   const oldIssue = draftReadiness({
     state: 'in-review',

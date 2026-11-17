@@ -153,7 +153,7 @@ test('a new draft round wakes the same reviewer and resumes do not', async () =>
   })
   assert.equal(submitted.round, 1)
   await call(fake, 'openspec_review', {
-    action: 'dispose',
+    action: 'dispose', review: 'draft',
     change: CHANGE,
     review: 'draft',
     id: 'R1-01',
@@ -206,7 +206,7 @@ test('a new-round wake fails closed without the reviewer service or the changer 
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
   await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
 
   const noService = createFakeContext({ cwd: root, subagents: {} })
@@ -309,7 +309,7 @@ test('a new apply round wakes the same reviewer and resumes do not', async () =>
   })
   assert.equal(submitted.round, 1)
   await call(fake, 'openspec_review', {
-    action: 'dispose',
+    action: 'dispose', review: 'draft',
     change: CHANGE,
     review: 'apply',
     id: 'R1-01',
@@ -435,7 +435,7 @@ test('status names resume with the review kind after a fixed finding', async () 
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   })
   await call(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
   })
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
   assert.equal(status.nextAction, 'openspec_review action=resume review=draft')
@@ -1073,5 +1073,5 @@ test('a not-ready draft wait points at dispose', async () => {
   })
   assert.equal(waited.waitState, 'ready')
   assert.equal(waited.ready, false)
-  assert.equal(waited.nextAction, 'openspec_review action=dispose')
+  assert.equal(waited.nextAction, 'openspec_review action=dispose review=draft')
 })

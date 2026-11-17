@@ -57,7 +57,7 @@ test('a self-review round writes a review card and a resolution card', async () 
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   }, agent)
   await callWith(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
   }, agent)
   await callWith(fake, 'openspec_review', { action: 'resume', change: CHANGE }, agent)
 
@@ -157,7 +157,7 @@ test('a passing round with a disposed minor finding writes the resolution card',
     report: report({ verdict: 'pass', findings: [minor] }),
   }, agent)
   const disposed = await callWith(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'deferred', note: 'Follow up in ISS-9.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'deferred', note: 'Follow up in ISS-9.',
   }, agent)
   assert.equal(disposed.ready, true)
   const cards = cardsIn(root, 'changer')
@@ -199,7 +199,7 @@ test('report for an older round writes no new card', async () => {
     report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
   }, agent)
   await callWith(fake, 'openspec_review', {
-    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
   }, agent)
   await callWith(fake, 'openspec_review', { action: 'resume', change: CHANGE }, agent)
   const before = cardsIn(root, 'changer').length
