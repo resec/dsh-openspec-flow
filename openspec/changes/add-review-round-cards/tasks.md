@@ -52,5 +52,5 @@
 - [x] 7.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change; verify zero warnings.
 - [x] 7.2 Run `npm run verify` on Node 24; verify the coverage gate passes.
 - [x] 7.3 Run `npm run openspec:check`; verify every active change and main spec passes.
-- [ ] 7.4 Start the apply review, fix every blocker, archive the change, and commit the archive. Do not push.
+- [x] 7.4 Start the apply review, fix every blocker, archive the change, and commit the archive. Do not push.
 - [x] 7.5 Build the release tarball from the final reviewed commit with `npm run bundle:pack -- --force` and verify its metadata names 0.9.0. Do not install it into the development host profile. In the isolated, self-contained DSH, run the automated card-file, endpoint, turn-binding and render-data checks; do not push.
