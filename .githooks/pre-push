@@ -1,13 +1,15 @@
 #!/bin/sh
-# Local gates: strict OpenSpec validation, then the verification entrypoint.
-# The coverage stamp may skip a repeat of the verification entrypoint when the
-# same committed inputs already passed it; COVERAGE_SKIP=1 skips coverage
-# regardless. Requires node on PATH; no version manager is invoked.
+# Local gates: strict OpenSpec validation, then the reusable DSH lab scenarios,
+# then the verification entrypoint. The coverage stamp may skip a repeat of the
+# verification entrypoint when the same committed inputs already passed it;
+# COVERAGE_SKIP=1 skips only coverage and never the lab gate. Requires node on
+# PATH; no version manager is invoked.
+npm run openspec:check || exit $?
+npm run test:lab -- --mock-only || exit $?
 if [ "${COVERAGE_SKIP:-}" = "1" ]; then
   echo "coverage gate: skipped because COVERAGE_SKIP=1" >&2
-  exec npm run openspec:check
+  exit 0
 fi
-npm run openspec:check || exit $?
 if node scripts/coverage-stamp.mjs check; then
   exit 0
 fi

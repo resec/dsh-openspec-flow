@@ -33,4 +33,4 @@ const result = spawnSync('git', ['config', 'core.hooksPath', '.githooks'], {
 if (result.error) throw result.error
 if (result.status !== 0) process.exit(result.status ?? 1)
 console.log('pre-push gate: core.hooksPath=.githooks installed')
-console.log('pre-push runs npm run openspec:check, then node scripts/coverage-stamp.mjs check on .cache/coverage-stamp.json; a verified stamp skips npm run verify; it is invalidated by a missing or corrupt stamp, a dirty tree, a fingerprint mismatch, a moved merge base or a different Node version; COVERAGE_SKIP=1 skips coverage.')
+console.log('pre-push runs npm run openspec:check, then npm run test:lab -- --mock-only, then node scripts/coverage-stamp.mjs check on .cache/coverage-stamp.json; a verified stamp skips npm run verify; it is invalidated by a missing or corrupt stamp, a dirty tree, a fingerprint mismatch, a moved merge base or a different Node version; COVERAGE_SKIP=1 skips only coverage and never the lab gate.')

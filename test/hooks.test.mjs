@@ -14,7 +14,7 @@ const HOOK = join(ROOT, '.githooks', 'pre-push')
  * @param options - `failValidation` exits nonzero for the validation step.
  * @returns the fake bin directory and the call log path.
  */
-function fakeNpm({ failValidation = false } = {}) {
+function fakeNpm({ failValidation = false, failLab = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'openspec-hook-'))
   const bin = join(dir, 'npm')
   const body = [
@@ -22,6 +22,9 @@ function fakeNpm({ failValidation = false } = {}) {
     'printf "%s\\n" "$*" >> "$HOOK_LOG"',
     failValidation
       ? 'case "$*" in *openspec:check*) exit 1 ;; esac'
+      : '',
+    failLab
+      ? 'case "$*" in *test:lab*) exit 1 ;; esac'
       : '',
     'exit 0',
     '',
@@ -55,8 +58,8 @@ function fakeNode({ stampExit = 1 } = {}) {
  * @param options - fake behavior and extra hook environment.
  * @returns the spawn result, the recorded npm calls and the recorded node calls.
  */
-function runHook({ failValidation = false, stampExit = 1, env = {} } = {}) {
-  const fake = fakeNpm({ failValidation })
+function runHook({ failValidation = false, failLab = false, stampExit = 1, env = {} } = {}) {
+  const fake = fakeNpm({ failValidation, failLab })
   const fakeBin = fakeNode({ stampExit })
   const result = spawnSync('sh', [HOOK], {
     cwd: ROOT,
@@ -77,22 +80,35 @@ function runHook({ failValidation = false, stampExit = 1, env = {} } = {}) {
 test('a failing stamp check runs strict validation and then verification', () => {
   const { result, calls, nodeCalls } = runHook()
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
   assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
 test('a matching stamp skips verification after validation', () => {
   const { result, calls, nodeCalls } = runHook({ stampExit: 0 })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check'])
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
   assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('COVERAGE_SKIP still runs strict validation without checking the stamp', () => {
+test('COVERAGE_SKIP still runs validation and the lab gate without checking the stamp', () => {
   const { result, calls, nodeCalls } = runHook({ env: { COVERAGE_SKIP: '1' } })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check'])
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
   assert.deepEqual(nodeCalls, [])
+})
+
+test('a failed lab gate blocks the push before the stamp check', () => {
+  const { result, calls, nodeCalls } = runHook({ failLab: true, stampExit: 0 })
+  assert.equal(result.status, 1)
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
+  assert.deepEqual(nodeCalls, [])
+})
+
+test('COVERAGE_SKIP does not hide a failed lab gate', () => {
+  const { result, calls } = runHook({ failLab: true, env: { COVERAGE_SKIP: '1' } })
+  assert.equal(result.status, 1)
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
 })
 
 test('a failed validation blocks the push before the stamp check and coverage', () => {

@@ -156,6 +156,10 @@ npm run bundle:pack
 
 命令只检查当前 `PATH` 上的 `node`，不会调用 fnm、nvm、volta，也不读取 `.nvmrc`。如果当前 `node` 不是 24，或具体版本低于 `>=24.9.0`，命令会在测试启动前报错退出。本机默认 `node` 可能是 26，运行前需手动激活 Node 24。
 
+### DSH 场景测试
+
+可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。pre-push 在覆盖率检查前运行 mock 场景。完整用法见 [docs/lab.md](docs/lab.md)。
+
 ## 不变量
 
 跨 capability 的取值只在 `project-invariants` capability 中声明一次：Node 主版本与 `engines.node` 下界、OpenSpec CLI 精确版本与 schema 信封版本、覆盖率下限。归档后该 capability 位于 `openspec/specs/project-invariants/spec.md`。
@@ -332,6 +336,9 @@ lib/hash.js              SHA-1 指纹
 lib/bundle.js            打包产物、元数据、tarball 内容校验与发布恢复
 lib/pack.js              打包编排：脏树、npm pack、发布、退出码（入口脚本调用）
 scripts/bundle-pack.mjs  薄入口：解析参数并打印 lib/pack.js 的结果
+scripts/lab/             隔离 DSH 实验工具：doctor、缓存、sandbox、headless/web 驱动、mock、场景运行器
+test/lab/                可复用 DSH 场景（不进入 npm test）
+docs/lab.md              lab 的使用、缓存、场景与 pre-push 说明
 skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
