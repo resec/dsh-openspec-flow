@@ -48,8 +48,8 @@
 
 ## 7. Verification and release
 
-- [ ] 7.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change; verify zero warnings.
-- [ ] 7.2 Run `npm run test:affected -- <changed paths>` during implementation and `npm run verify` on Node 24 at the end; verify the coverage gate passes.
-- [ ] 7.3 Run `npm run openspec:check`; verify every active change and main spec passes.
+- [x] 7.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change; verify zero warnings.
+- [x] 7.2 Run `npm run test:affected -- <changed paths>` during implementation and `npm run verify` on Node 24 at the end; verify the coverage gate passes.
+- [x] 7.3 Run `npm run openspec:check`; verify every active change and main spec passes.
 - [ ] 7.4 Pack the bundle, install the tarball, restart the session, run `scripts/probe-session.mjs` against the installed plugin and Host, and verify in the Web GUI: collapsed card, expanded report summary and full report, waiver section, two self-review cards, main-session review card, reviewer-session card, cardless turn, refresh recovery.
 - [ ] 7.5 Start the apply review, fix every blocker, archive the change, commit the archive and push to `origin/main`; verify the push succeeds.
