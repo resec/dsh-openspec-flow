@@ -4,17 +4,17 @@
 
 ### Requirement: Review skills dispose before resuming
 
-The shipped propose and apply skills SHALL tell the agent to fix findings, dispose every finding in one `openspec_review` call with `action: "dispose"` or a finding `action: "waive"` (a `dispositions` batch or a single `id`), and only then call `action: "resume"`. They SHALL state that `start` and `resume` reject `dispositions`. Each skill SHALL name its review kind — `review: "draft"` in the propose skill and `review: "apply"` in the apply skill — at every action it names in its review section (`status`, `start`, `self-report`, `wait`, `resume`, `dispose` and a finding `waive`), placed between that action and the next action clause, whether or not the clause repeats `openspec_review`.
+The shipped propose and apply skills SHALL tell the agent to fix findings, dispose every finding in one `openspec_review` call with `action: "dispose"` or a finding `action: "waive"` (a `dispositions` batch or a single `id`), and only then call `action: "resume"`. They SHALL state that `start` and `resume` reject `dispositions`.
 
 #### Scenario: Propose skill orders the calls
 
 - **WHEN** the propose skill reaches a round that is not ready
-- **THEN** it fixes the findings, disposes them with `action: "dispose"` or a finding `action: "waive"` and `review: "draft"`, and only then calls `action: "resume"`
+- **THEN** it fixes the findings, disposes them with `action: "dispose"` or a finding `action: "waive"`, and only then calls `action: "resume"`
 
 #### Scenario: Apply skill orders the calls
 
 - **WHEN** the apply skill reaches a round that is not ready
-- **THEN** it fixes the findings, disposes them with `action: "dispose"` or a finding `action: "waive"` and `review: "apply"`, and only then calls `action: "resume"`
+- **THEN** it fixes the findings, disposes them with `action: "dispose"` or a finding `action: "waive"`, and only then calls `action: "resume"`
 
 #### Scenario: The skills keep the batch form
 
@@ -27,13 +27,17 @@ The shipped propose and apply skills SHALL tell the agent to fix findings, dispo
 - **WHEN** a finding needs the user's waiver instead of a fix
 - **THEN** the skills name the finding `action: "waive"` with the approved waiver text
 
+## ADDED Requirements
+
+### Requirement: Review skills name the review kind at every action
+
+Each shipped skill SHALL name its review kind — `review: "draft"` in the propose skill and `review: "apply"` in the apply skill — at every action it names in its review section (`status`, `start`, `self-report`, `wait`, `resume`, `dispose` and a finding `waive`), placed between that action and the next action clause, whether or not the clause repeats `openspec_review`.
+
 #### Scenario: Both review sections name their kind
 
 - **WHEN** either skill describes a review action in its review section
 - **THEN** the propose skill passes `review: "draft"` and the apply skill passes `review: "apply"`
 - **AND** neither leaves the kind to a default
-
-## ADDED Requirements
 
 ### Requirement: The skill test rejects an unqualified review call
 

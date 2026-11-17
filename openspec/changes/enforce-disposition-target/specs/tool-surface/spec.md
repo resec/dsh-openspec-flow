@@ -4,7 +4,7 @@
 
 ### Requirement: Review disposition accepts a batch
 
-`openspec_review` SHALL expose a `dispositions` parameter for `action: "dispose"` and for `action: "waive"` without `scope: "plan-change"`: an array of objects that each name an `id` and that finding's disposition fields, with no other property. It SHALL keep the single `id` form and SHALL reject a call that supplies both. Both actions SHALL require the `review` parameter and SHALL reject a call that omits it, naming `draft` and `apply`. The result SHALL carry `dispositions`, one entry per disposed finding with its id and status.
+`openspec_review` SHALL expose a `dispositions` parameter for `action: "dispose"` and for `action: "waive"` without `scope: "plan-change"`: an array of objects that each name an `id` and that finding's disposition fields, with no other property. It SHALL keep the single `id` form and SHALL reject a call that supplies both. The result SHALL carry `dispositions`, one entry per disposed finding with its id and status.
 
 #### Scenario: Batch parameter is exposed
 
@@ -35,12 +35,6 @@
 
 - **WHEN** a call disposes two findings
 - **THEN** the result names both ids and their final statuses
-
-#### Scenario: Missing review kind is refused
-
-- **WHEN** a caller supplies `dispositions` for `dispose` without `review`
-- **THEN** the call fails before any write
-- **AND** the error names `draft` and `apply`
 
 ### Requirement: Review next actions name the round entry
 
@@ -78,3 +72,15 @@ A next action that names `openspec_review` with `start`, `resume`, `dispose` or 
 - **WHEN** `status` for a draft review runs after apply started and the artifacts changed
 - **THEN** the next action names the apply review
 - **AND** it does not name a draft resume
+
+## ADDED Requirements
+
+### Requirement: Disposition actions name the review kind
+
+`openspec_review` with `action: "dispose"` or a finding `action: "waive"` SHALL require the `review` parameter and SHALL reject a call that omits it before any write, naming `draft` and `apply`.
+
+#### Scenario: Missing review kind is refused
+
+- **WHEN** a caller supplies `dispositions` for `dispose` without `review`
+- **THEN** the call fails before any write
+- **AND** the error names `draft` and `apply`

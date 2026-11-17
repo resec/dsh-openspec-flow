@@ -4,7 +4,7 @@
 
 ### Requirement: The document describes batch disposition
 
-`docs/review.md` SHALL state that finding `dispose` and `waive` accept `dispositions` for several findings in one call, that the batch is atomic, that the single `id` form remains, that a plan-change `waive` takes `files` and not `dispositions`, and that `deferred` needs a note because the old `issue` field is no longer accepted and old records keep it. It SHALL state that `dispose` and a finding `waive` name their review kind explicitly, that a draft record refuses both once apply started, and that every dispose example and every stated dispose next action carries the kind.
+`docs/review.md` SHALL state that finding `dispose` and `waive` accept `dispositions` for several findings in one call, that the batch is atomic, that the single `id` form remains, that a plan-change `waive` takes `files` and not `dispositions`, and that `deferred` needs a note because the old `issue` field is no longer accepted and old records keep it.
 
 #### Scenario: Document names the batch parameter
 
@@ -28,6 +28,12 @@
 - **WHEN** the review document describes `waive`
 - **THEN** it states that a plan-change waiver takes `files` and not `dispositions`
 
+## ADDED Requirements
+
+### Requirement: The document qualifies dispositions with the review kind
+
+`docs/review.md` SHALL state that `dispose` and a finding `waive` name their review kind explicitly, that a draft record refuses both once apply started, and that every dispose example and every stated dispose next action carries the kind.
+
 #### Scenario: Document states the review kind
 
 - **WHEN** the review document describes `dispose` and a finding `waive`
@@ -43,8 +49,6 @@
 
 - **WHEN** the review document shows a dispose example or names a dispose next action
 - **THEN** the example passes `review` and the stated next action carries `review=<kind>`
-
-## ADDED Requirements
 
 ### Requirement: The README states the disposition kind and the freeze
 
