@@ -33,6 +33,7 @@ window.__ModuleLoader__.load({
       settings: 'reviewSettings/get',
       update: 'reviewSettings/update',
       policies: 'reviewPolicies/list',
+      cards: 'reviewCards/get',
     }
     /** Locale namespace of this page. */
     const NS = 'openspecReview'
@@ -617,12 +618,10 @@ window.__ModuleLoader__.load({
       return String(value)
     }
 
-    /** Select the current turn's cards from the projection view. */
-    function selectCards(view, turn) {
-      const byTurn = view !== null && typeof view === 'object' ? view.byTurn : undefined
-      if (byTurn === null || typeof byTurn !== 'object') return []
-      const cards = byTurn[String(turn)]
-      return Array.isArray(cards) ? cards : []
+    /** Select the cards returned by the review endpoint. */
+    function selectCards(value) {
+      const cards = value !== null && typeof value === 'object' ? value.cards : undefined
+      return Array.isArray(cards) ? cards.filter((card) => card !== null && typeof card === 'object') : []
     }
 
     /** One-line collapsed summary for one card. */
@@ -784,11 +783,9 @@ window.__ModuleLoader__.load({
         open ? h('div', { style: cardBodyStyle }, renderCardSections(card)) : null)
     }
 
-    /** Turn-tail entry: one card per record written in the current turn. */
-    function ReviewCardTail({ turn, useProjection }) {
-      const view = typeof useProjection === 'function' ? useProjection('openspecReviewCards') : undefined
-      const cards = selectCards(view, turn?.turn)
-      if (cards.length === 0) return null
+    /** Render the returned cards, or nothing for an empty turn. */
+    function cardTailElement(cards) {
+      if (!Array.isArray(cards) || cards.length === 0) return null
       return h('div', { style: cardTailStyle },
         cards.map((card, index) => h(ReviewCard, { key: `${cardValue(card.phase)}-${String(index)}`, card })))
     }
@@ -799,6 +796,27 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'openspec-flow: review config dictionary')
         const t = ctx.locale.bind(NS)
         const call = (endpoint, payload) => ctx.connection.rpc.call(CHANNEL, endpoint, payload)
+
+        /** Turn-tail entry: query the review channel for the current turn's cards. */
+        function ReviewCardTail({ turn, sessionId }) {
+          const [cards, setCards] = React.useState([])
+          const turnNumber = turn?.turn
+          React.useEffect(() => {
+            let alive = true
+            if (typeof sessionId !== 'string' || sessionId === '') return undefined
+            if (!Number.isInteger(turnNumber)) return undefined
+            const payload = { sessionId, turn: turnNumber }
+            if (typeof turn?.start === 'string') payload.from = turn.start
+            Promise.resolve(call(ENDPOINTS.cards, payload)).then((result) => {
+              if (!alive) return
+              setCards(result?.ok === true ? selectCards(result.value) : [])
+            }).catch(() => {
+              if (alive) setCards([])
+            })
+            return () => { alive = false }
+          }, [sessionId, turnNumber])
+          return cardTailElement(cards)
+        }
         ctx.effect(() => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
           name: 'plugins.row.config',
           key: 'dsh-openspec-flow#openspec-flow',
@@ -810,6 +828,7 @@ window.__ModuleLoader__.load({
           name: 'conversation.chat.turnTail',
           id: 'dsh-openspec-flow/review-cards',
           locale: NS,
+          inject: (sessionId) => ({ sessionId }),
         }, ReviewCardTail)), 'openspec-flow: review round cards')
       },
       // Test seam: the page's controller and pure transitions, reachable without React.
@@ -826,6 +845,7 @@ window.__ModuleLoader__.load({
         lockLine,
         createController,
         selectCards,
+        cardTailElement,
         cardSummary,
         cardSections,
       },

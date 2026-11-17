@@ -301,8 +301,9 @@ test('a missing lock layout is reported by name', () => {
 test('the review document explains the cards and the model rule', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [
-    'plugin:openspec-flow/review-card',
-    'openspecReviewCards',
+    'cards/<sessionKey>-<phase>-<round>.json',
+    'reviewCards/get',
+    'card-delivery.json',
     'conversation.chat.turnTail',
     '默认折叠',
     '点击展开',
@@ -318,13 +319,13 @@ test('the review document explains the cards and the model rule', () => {
     'dispose',
     'cards',
     '不进入模型可见面',
-    'scripts/probe-session.mjs',
-    '@deepseek-ai/dsh-session',
+    '不依赖 `@deepseek-ai/*`',
   ]) {
     assert.ok(text.includes(phrase), `the document names ${phrase}`)
   }
   assert.match(text, /不复述 findings/)
   assert.match(text, /reviewer 提交后不写评审总结/)
+  assert.doesNotMatch(text, /plugin:openspec-flow\/review-card|openspecReviewCards|sessionProjections|probe-session\.mjs|@deepseek-ai\/dsh-session/)
 })
 
 test('the review document states the host verification boundary', () => {
@@ -332,10 +333,12 @@ test('the review document states the host verification boundary', () => {
   for (const phrase of [
     '自备的隔离干净 DSH',
     '不得安装、重启或修改开发宿主',
+    '代理负责准备并运行',
     '自验',
     '不作为代理任务',
-    'probe-session.mjs',
+    'reviewCards/get',
   ]) {
     assert.ok(text.includes(phrase), `the document states ${phrase}`)
   }
+  assert.doesNotMatch(text, /probe-session\.mjs|@deepseek-ai\/dsh-session|sessionProjections/)
 })

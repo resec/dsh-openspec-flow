@@ -38,7 +38,7 @@ async function loadBundle() {
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
-    useEffect: () => {},
+    useEffect: (fn) => { const cleanup = fn(); if (typeof cleanup === 'function') cleanup() },
     useCallback: (fn) => fn,
     useMemo: (fn) => fn(),
   }
@@ -122,6 +122,27 @@ test('the bundle registers one row configuration page', async () => {
   const page = registrations[0].component({ view: 'page' })
   assert.equal(typeof page, 'object')
   assert.equal(page.type.name, 'Page')
+})
+
+test('the card tail requests the current turn and hides on failure', async () => {
+  const { plugin } = await loadBundle()
+  const built = clientContext()
+  const calls = []
+  built.ctx.connection.rpc.call = async (channel, endpoint, payload) => {
+    calls.push({ channel, endpoint, payload })
+    return { ok: false, error: { code: 'reviewCards/failed', message: 'no cards' } }
+  }
+  plugin.apply(built.ctx)
+  const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
+  assert.equal(turnTail.component({ turn: { turn: 7, start: '2026-01-01T00:00:00.000Z' }, sessionId: 'session-7' }), null)
+  await Promise.resolve()
+  assert.deepEqual(calls[0], {
+    channel: '/openspec-review',
+    endpoint: 'reviewCards/get',
+    payload: { sessionId: 'session-7', turn: 7, from: '2026-01-01T00:00:00.000Z' },
+  })
+  assert.equal(turnTail.component({ turn: { turn: 8 }, sessionId: '' }), null)
+  assert.equal(calls.length, 1)
 })
 
 test('the bundle repeats the channel and endpoint literals exactly', () => {
@@ -412,7 +433,7 @@ test('the package exports the client half and packs it', () => {
 
 test('cards select by turn, collapse and expose the full report', async () => {
   const { plugin } = await loadBundle()
-  const { selectCards, cardSummary, cardSections } = plugin.__test
+  const { selectCards, cardTailElement, cardSummary, cardSections } = plugin.__test
   const reviewCard = {
     phase: 'review',
     review: 'draft',
@@ -441,11 +462,11 @@ test('cards select by turn, collapse and expose the full report', async () => {
     readinessReasons: ['the review is not ready'],
   }
   const resolutionCard = { ...reviewCard, phase: 'resolution', verdict: 'pass' }
-  const view = { byTurn: { 2: [reviewCard, resolutionCard] } }
+  const view = { cards: [reviewCard, resolutionCard] }
 
-  assert.deepEqual(selectCards(view, 2).map((card) => card.phase), ['review', 'resolution'])
-  assert.deepEqual(selectCards(view, 3), [])
-  assert.deepEqual(selectCards(undefined, 2), [])
+  assert.deepEqual(selectCards(view).map((card) => card.phase), ['review', 'resolution'])
+  assert.deepEqual(selectCards({ cards: [] }), [])
+  assert.deepEqual(selectCards(undefined), [])
   assert.match(cardSummary(reviewCard), /评审汇报 · draft · 第 2 轮 · changes-requested · findings 1（阻塞 1）/)
 
   const sections = cardSections(reviewCard)
@@ -462,9 +483,10 @@ test('cards select by turn, collapse and expose the full report', async () => {
   const built = clientContext()
   plugin.apply(built.ctx)
   const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
-  assert.equal(turnTail.component({ turn: { turn: 2 }, useProjection: () => view }).type, 'div')
-  assert.equal(turnTail.component({ turn: { turn: 3 }, useProjection: () => view }), null)
-  const element = turnTail.component({ turn: { turn: 2 }, useProjection: () => view })
+  assert.deepEqual(turnTail.options.inject('session-2'), { sessionId: 'session-2' })
+  const element = cardTailElement([reviewCard, resolutionCard])
+  assert.equal(element.type, 'div')
+  assert.equal(cardTailElement([]), null)
   const list = element.props.children[0]
   const first = Array.isArray(list) ? list[0] : list
   const rendered = first.type(first.props)

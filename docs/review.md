@@ -114,7 +114,7 @@ finding 的处置：
 
 ## 轮次汇报与信息卡
 
-每轮结束由插件写一张信息卡，模型不再复述报告。卡片事件为 `plugin:openspec-flow/review-card`，记录在会话日志中并标记 `ignorable: true`，不进入模型可见面；`openspecReviewCards` 投影按 turn 折叠，客户端通过 `conversation.chat.turnTail` 在回合末尾显示。工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
+每轮结束由插件写一张信息卡文件，模型不再复述报告。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询；Host 返回已绑定到该 turn 的卡片，并把本轮写入、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
 
 写入点：
 
@@ -128,9 +128,9 @@ finding 的处置：
 - 展开显示完整内容：报告的 verdict 与 summary、每条 finding 的 problem/evidence/impact/rule/failure/suggestion、verification evidence、处置 note 与 waiver、批准者与验证轮次、residualRisks、outOfScope、plan-change waiver（批准者、时间、文本、文件、draft/current hash）以及未就绪原因。
 - 不设截断、不分页；展开区可滚动。标签固定中文，报告原文保留。
 
-模型规则：每轮只写一句报告不能表达且用户需要知道的内容（取舍、授权、等待状态、下一步等）；不复述 findings、证据、风险、scope 或处置 note。reviewer 提交后不写评审总结，brief 已写明。卡片记录不进入模型可见面。
+模型规则：每轮只写一句报告不能表达且用户需要知道的内容（取舍、授权、等待状态、下一步等）；不复述 findings、证据、风险、scope 或处置 note。reviewer 提交后不写评审总结，brief 已写明。卡片文件不进入模型可见面。
 
-依赖：插件在 `package.json` 声明 `@deepseek-ai/dsh-session`（精确 `engines.dsh`）。验证只在自备的隔离干净 DSH 中进行；不得安装、重启或修改开发宿主的 profile、配置与会话。隔离 DSH 中的安装探针 `scripts/probe-session.mjs` 用于确认插件与 Host 使用同一模块实例、卡片事件不进入模型可见记录；Web GUI 中的折叠、展开、完整报告与 waiver 也留作用户在隔离 DSH 自验，不作为代理任务。探针失败时停止发布。
+验证边界：验证只在自备的隔离干净 DSH 中进行；代理负责准备并运行卡片文件、端点、turn 绑定与渲染数据的自动化检查；不得安装、重启或修改开发宿主的 profile、配置与会话。无法在隔离 DSH 自动化的目视 GUI 检查才留作用户自验，不作为代理任务。插件不依赖 `@deepseek-ai/*` 包。
 
 ## 记录布局
 
@@ -146,9 +146,11 @@ finding 的处置：
 | `openspec/.review/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
 | `openspec/.review/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
 | `openspec/.review/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
+| `openspec/.review/<store>#<change>/cards/<sessionKey>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
+| `openspec/.review/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
-`<store>#` 在无 store 时为 `local#`。评审根通过 `openspec/.gitignore` 的 `.review/` 行忽略；有 git 的项目在写记录前用 `git check-ignore` 校验，无法忽略时拒绝写入。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡。
+`<store>#` 在无 store 时为 `local#`。评审根通过 `openspec/.gitignore` 的 `.review/` 行忽略；有 git 的项目在写记录前用 `git check-ignore` 校验，无法忽略时拒绝写入。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
 
 ## 失败处理
 

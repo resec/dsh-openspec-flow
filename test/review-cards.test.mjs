@@ -1,20 +1,17 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
-  SESSION_FORMAT_VERSION,
-  Session,
-} from '@deepseek-ai/dsh-session'
-import {
-  CARD_EVENT,
   buildCard,
+  cardFilePath,
   hasCardMarker,
   normalizeJson,
   readRoundReport,
+  sessionKeyOf,
   writeCard,
-  writeCardRecord,
+  writeCardFile,
 } from '../lib/review/cards.js'
 
 /** Build one record for a card test. */
@@ -51,16 +48,6 @@ function record(overrides = {}) {
 /** Build one readiness object. */
 function readiness() {
   return { ready: false, nextAction: 'openspec_review action=dispose', reasons: ['R1-01 is open'] }
-}
-
-/** Build a detached Session. */
-function session(id = 'card-session') {
-  return Session.create(id, [], {
-    version: SESSION_FORMAT_VERSION,
-    id,
-    createdAt: Date.now(),
-    isSeeded: false,
-  })
 }
 
 /** Create a review directory holding one report. */
@@ -186,14 +173,15 @@ test('a missing report leaves the recorded fields intact', () => {
 
 test('undefined values normalize to null and stay JSON safe', () => {
   assert.deepEqual(normalizeJson({ a: undefined, b: [undefined, 1] }), { a: null, b: [null, 1] })
+  assert.equal(normalizeJson(Number.NaN), null)
+  assert.equal(normalizeJson(Symbol('x')), null)
 })
 
-test('a card is written once and stays out of the model surface', () => {
+test('a card file is written once under a hashed session key', () => {
   const root = directory()
   const warnings = []
   try {
     const stored = record()
-    const target = session()
     const options = {
       directory: root,
       kind: 'draft',
@@ -204,13 +192,19 @@ test('a card is written once and stays out of the model surface', () => {
       waiver: null,
       readiness: readiness(),
       currentHash: 'hash-a',
-      session: target,
+      session: { id: 'card-session' },
       logger: { warn: (message) => warnings.push(message) },
     }
     assert.equal(writeCard(options), true)
     assert.equal(stored.cards.length, 1)
-    assert.equal(target.log.at(-1).type, CARD_EVENT)
-    assert.equal(target.surface.nodes.length, 0)
+    const path = cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 })
+    const file = JSON.parse(readFileSync(path, 'utf8'))
+    assert.equal(file.schemaVersion, 1)
+    assert.equal(file.sessionId, 'card-session')
+    assert.equal(file.sessionKey, sessionKeyOf('card-session'))
+    assert.equal(file.turn, null)
+    assert.equal(file.payload.phase, 'review')
+    assert.equal(file.payload.report.summary, 'One blocker.')
     assert.equal(hasCardMarker(stored, { sessionId: 'card-session', phase: 'review', round: 1 }), true)
 
     assert.equal(writeCard(options), false, 'a second write for the same session, phase and round is skipped')
@@ -221,7 +215,34 @@ test('a card is written once and stays out of the model surface', () => {
   }
 })
 
-test('a failed write keeps the marker off and logs', () => {
+test('a failing directory logs and keeps the marker off', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-card-fail-'))
+  const warnings = []
+  try {
+    writeFileSync(join(root, 'cards'), 'not a directory')
+    const stored = record()
+    assert.equal(writeCard({
+      directory: root,
+      kind: 'draft',
+      phase: 'review',
+      record: stored,
+      round: 1,
+      report: null,
+      waiver: null,
+      readiness: readiness(),
+      currentHash: 'hash-a',
+      session: { id: 'broken' },
+      logger: { warn: (message) => warnings.push(message) },
+    }), false)
+    assert.equal(stored.cards, undefined)
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /could not be written/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a missing session id logs and writes nothing', () => {
   const root = directory()
   const warnings = []
   try {
@@ -240,15 +261,23 @@ test('a failed write keeps the marker off and logs', () => {
       logger: { warn: (message) => warnings.push(message) },
     }), false)
     assert.equal(stored.cards, undefined)
-    assert.equal(warnings.length, 1)
     assert.match(warnings[0], /no Session/)
+
+    assert.equal(writeCardFile({
+      directory: root,
+      phase: 'review',
+      round: 1,
+      payload: {},
+      session: {},
+      logger: { warn: (message) => warnings.push(message) },
+    }), false)
+    assert.match(warnings[1], /no Session/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('normalization drops non-JSON values and apply objects name the commit', () => {
-  assert.equal(normalizeJson(Symbol('x')), null)
+test('apply objects name the commit', () => {
   const root = directory()
   try {
     const applied = record({
@@ -277,18 +306,7 @@ test('normalization drops non-JSON values and apply objects name the commit', ()
   }
 })
 
-test('writeCardRecord logs a missing or mismatched session', () => {
-  const warnings = []
-  const logger = { warn: (message) => warnings.push(message) }
-  assert.equal(writeCardRecord({ session: undefined, payload: {}, logger }), false)
-  assert.equal(writeCardRecord({ session: {}, payload: {}, logger }), false)
-  assert.equal(warnings.length, 2)
-  assert.match(warnings[0], /no Session/)
-  assert.match(warnings[1], /could not be written/)
-})
-
 test('a minimal record and missing report path keep null defaults', () => {
-  assert.equal(normalizeJson(Number.NaN), null)
   const root = mkdtempSync(join(tmpdir(), 'dsh-card-minimal-'))
   try {
     const stored = {
@@ -338,32 +356,6 @@ test('a report-level verdict supplies a missing round verdict', () => {
       currentHash: 'hash-a',
     })
     assert.equal(card.verdict, 'pass')
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('a failed commit keeps the write result false', () => {
-  const root = directory()
-  const warnings = []
-  try {
-    const stored = record()
-    const written = writeCard({
-      directory: root,
-      kind: 'draft',
-      phase: 'review',
-      record: stored,
-      round: 1,
-      report: null,
-      waiver: null,
-      readiness: readiness(),
-      currentHash: 'hash-a',
-      session: { id: 'broken' },
-      logger: { warn: (message) => warnings.push(message) },
-    })
-    assert.equal(written, false)
-    assert.equal(stored.cards, undefined)
-    assert.match(warnings[0], /could not be written/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

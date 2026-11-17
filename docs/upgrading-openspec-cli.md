@@ -7,7 +7,7 @@
 - CLI：`@fission-ai/openspec` 2.0.0（`package.json:56`）
 - Node：`>=24.9.0`（`package.json` 的 `engines.node`）
 - DSH：`=0.2.2-rc.2`（`package.json` 的 `engines.dsh`）
-- 插件版本：0.8.0（`package.json:3`）
+- 插件版本：0.9.0（`package.json:3`）
 
 插件只运行自己安装树内的 CLI（`lib/openspec.js:106`），首次调用校验精确版本与 `schemaVersion: 1`（`lib/openspec.js:143`）。因此升级必须同时移动依赖、版本断言与文档，不能只改 `package.json`。
 

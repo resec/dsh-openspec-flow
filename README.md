@@ -17,7 +17,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 
-评审轮次由插件信息卡汇报：`self-report`、reviewer `submit`、`wait`、`report`、`resume` 与处置完成时写入 `plugin:openspec-flow/review-card` 事件；卡片在回合末尾显示，默认折叠，展开包含完整报告正文与 plan-change waiver。卡片事件不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件依赖 `@deepseek-ai/dsh-session`（精确 DSH 版本），安装后运行 `scripts/probe-session.mjs` 确认单实例。
+评审轮次由插件信息卡汇报：`self-report`、reviewer `submit`、`wait`、`report`、`resume` 与处置完成时写入 `cards/<sessionKey>-<phase>-<round>.json`；客户端通过 `reviewCards/get` 按 turn 查询，卡片在回合末尾显示，默认折叠，展开包含完整报告正文与 plan-change waiver。卡片不写入会话日志、不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件不依赖 `@deepseek-ai/*` 包。
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝，在另一 change 持有 apply 锁时拒绝，并在 git 项目首次调用时要求封存 commit（干净树、只含变更目录与 `openspec/.gitignore` 或其他 `openspec/changes/` 路径、工件哈希未变）；`openspec_archive` 在另一 change 持有 apply 锁时拒绝，在 apply review 启用且项目有 git、但评审未就绪时拒绝，成功后释放本 change 的锁；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
