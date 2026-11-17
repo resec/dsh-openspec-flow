@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-17
+goal: Make the apply review brief state three exact base sources (seal commit,
+  explicit base, merge base), that the diff starts at the base tree and is not
+  the review scope, and that an empty diff does not mean the change needs no
+  implementation; sync docs and specs.
