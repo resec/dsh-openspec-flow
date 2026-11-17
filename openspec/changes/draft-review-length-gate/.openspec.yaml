@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-17
+goal: Catch overlong ADDED requirements and MODIFIED requirement growth before
+  apply, without compressing existing text; draft review remains startable, and
+  apply is refused until the growth is resolved per the official split/ADDED
+  guidance.
