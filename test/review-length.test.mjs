@@ -114,6 +114,84 @@ test('the brief section carries the measurements and official handling', () => {
   assert.equal(renderRequirementLengthSection({ limit: 500, blocking: false, issues: [], legacy: [] }), '')
 })
 
+test('malformed projections are ignored without throwing', () => {
+  assert.deepEqual(classifyRequirementLength(undefined, undefined), {
+    limit: 500,
+    blocking: false,
+    issues: [],
+    legacy: [],
+  })
+  const result = classifyRequirementLength([
+    { spec: 'notes', operation: 'RENAMED', rename: undefined },
+    { spec: 'notes', operation: 'RENAMED', rename: { from: 1, to: 2 } },
+    { spec: 'notes', operation: 'RENAMED', rename: { from: '', to: '' } },
+    { operation: 'ADDED', requirements: [{ name: 'No spec', text: 'x'.repeat(501) }] },
+    { spec: 'notes', operation: 'UNKNOWN', requirements: [] },
+    { spec: 'notes', operation: 'ADDED', requirements: undefined },
+    {
+      spec: 'notes',
+      operation: 'ADDED',
+      requirements: [undefined, { name: '', text: 'x' }, { name: 'No text' }, { name: 'Long', text: 'x'.repeat(501) }],
+    },
+  ], new Map([['notes', undefined]]))
+  assert.equal(result.blocking, true)
+  assert.deepEqual(result.issues.map((issue) => issue.requirement), ['Long'])
+})
+
+test('a rename chain and a rename cycle resolve without looping', () => {
+  const chain = classifyRequirementLength(
+    [
+      delta('notes', 'RENAMED', [], { rename: { from: 'A', to: 'B' } }),
+      delta('notes', 'RENAMED', [], { rename: { from: 'B', to: 'C' } }),
+      delta('notes', 'MODIFIED', [requirement('C', 501)]),
+    ],
+    main('A', 500),
+  )
+  assert.equal(chain.blocking, true)
+  assert.equal(chain.issues[0].baseline, 500)
+
+  const cycle = classifyRequirementLength(
+    [
+      delta('notes', 'RENAMED', [], { rename: { from: 'A', to: 'B' } }),
+      delta('notes', 'RENAMED', [], { rename: { from: 'B', to: 'A' } }),
+      delta('notes', 'MODIFIED', [requirement('X', 600)]),
+    ],
+    new Map(),
+  )
+  assert.equal(cycle.blocking, false)
+})
+
+test('legacy-only and ADDED-only reports render their branches', () => {
+  const legacyReport = classifyRequirementLength(
+    [delta('notes', 'MODIFIED', [requirement('Stored notes', 650)])],
+    main('Stored notes', 650),
+  )
+  const legacySection = renderRequirementLengthSection(legacyReport)
+  assert.match(legacySection, /\| legacy \|/)
+  assert.doesNotMatch(legacySection, /Official handling/)
+
+  const addedReport = classifyRequirementLength(
+    [delta('notes', 'ADDED', [requirement('New requirement', 501)])],
+    new Map(),
+  )
+  const addedSection = renderRequirementLengthSection(addedReport)
+  assert.match(addedSection, /\| blocking \|/)
+  assert.match(addedSection, /n\/a/)
+
+  assert.equal(renderRequirementLengthSection(undefined), '')
+  assert.equal(renderRequirementLengthSection({ limit: 500, issues: undefined, legacy: undefined }), '')
+})
+
+test('the gate message handles an ADDED finding and an empty issue list', () => {
+  assert.equal(lengthGateMessage(undefined, 'clean'), undefined)
+  const added = classifyRequirementLength(
+    [delta('notes', 'ADDED', [requirement('New requirement', 501)])],
+    new Map(),
+  )
+  assert.match(lengthGateMessage(added, 'grow-note'), /baseline n\/a/)
+  assert.match(lengthGateMessage({ blocking: true, issues: undefined, legacy: [] }, 'grow-note'), /refuses change/)
+})
+
 test('the gate message names the growth and the official handling', () => {
   const report = classifyRequirementLength(
     [delta('notes', 'MODIFIED', [requirement('Stored notes', 656)])],
