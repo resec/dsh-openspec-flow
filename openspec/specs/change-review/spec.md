@@ -7,7 +7,7 @@ Defines the change-scoped review record and the draft review that runs before ap
 
 ### Requirement: Review policy is locked when a change is created
 
-The plugin SHALL resolve and write the review policy before `openspec_new_change` creates a change. The policy SHALL carry the draft review switch, reviewer count, round cap and wait cap. A settings change made after the policy is written SHALL NOT alter that change's review behavior. A failed policy write SHALL leave no change directory.
+The plugin SHALL resolve and write the review policy before `openspec_new_change` creates a change. The policy SHALL carry the draft review switch, reviewer count and wait cap. A settings change made after the policy is written SHALL NOT alter that change's review behavior. A failed policy write SHALL leave no change directory.
 
 #### Scenario: A new change locks its policy
 
@@ -185,20 +185,6 @@ When `openspec_apply_next` proceeds in a git repository, the plugin SHALL record
 - **WHEN** `HEAD` changes the change directory and also files under another `openspec/changes/**` path
 - **THEN** the seal check proceeds and records the base
 
-### Requirement: Extend changes limits with user approval
-
-`openspec_review` with `action: "extend"` SHALL accept a positive minute extension or a round cap of a positive integer or `unlimited`. It SHALL require `approvedBy: "user"` and a reason, record the extension, and never change the locked policy.
-
-#### Scenario: Wait is extended
-
-- **WHEN** the user approves a 15 minute extension
-- **THEN** the current round's deadline moves and the extension is recorded
-
-#### Scenario: Round cap becomes unlimited
-
-- **WHEN** the user approves `maxRounds: "unlimited"`
-- **THEN** the review accepts further rounds and the policy file is unchanged
-
 ### Requirement: Review state writes are serialized and atomic
 
 Every review mutation SHALL hold a review-directory lock and write records through a temporary file followed by a rename. A failed write SHALL leave the previous bytes intact.
@@ -280,7 +266,7 @@ The apply review SHALL reuse the draft review report, finding, severity and read
 
 ### Requirement: Apply review is gated by its own policy
 
-The apply review SHALL be enabled by the change policy and SHALL use its own round and wait limits. It SHALL be unavailable when the policy disables it or when the project has no git. When the project has no git repository, policy creation SHALL lock the apply review disabled even when the settings enable it.
+The apply review SHALL be enabled by the change policy and SHALL use its own wait limit. It SHALL be unavailable when the policy disables it or when the project has no git. When the project has no git repository, policy creation SHALL lock the apply review disabled even when the settings enable it.
 
 #### Scenario: Policy disables apply review
 
@@ -617,7 +603,7 @@ An apply review start or resume SHALL refuse a changed artifact outside the reco
 
 ### Requirement: The changer checks the reviewer report without polling
 
-`openspec_review` with `action: "wait"` SHALL NOT poll. It SHALL return `ready` when the latest round has a report or the reviewer is waived, `overdue` at the deadline, and `waiting` otherwise; `waiting` SHALL set `waitState: "waiting"` and tell the changer to end its turn. The result SHALL come from a read after the best-effort session write, which SHALL re-read inside the lock and change only `changerSessionId`. The deadline SHALL remain `waitMinutes`.
+`openspec_review` with `action: "wait"` SHALL NOT poll. It SHALL return `ready` when the latest round has a report or the reviewer is waived, `overdue` at the deadline, and `waiting` otherwise; `waiting` SHALL set `waitState: "waiting"` and tell the changer to end its turn. The result SHALL come from a read after the best-effort session write, which SHALL re-read inside the lock and change only `changerSessionId`. After the result read, the plugin SHALL attempt a second lock acquisition to mark the review-point card of the latest submitted round for the calling session; a failed or contended marker write SHALL be logged and SHALL NOT change the wait result. The deadline SHALL remain `waitMinutes`.
 
 #### Scenario: Reviewer already submitted
 
@@ -638,6 +624,11 @@ An apply review start or resume SHALL refuse a changed artifact outside the reco
 
 - **WHEN** `wait` is called for a pending reviewer
 - **THEN** it returns from the post-write read without a poll loop
+
+#### Scenario: A contended card write keeps the wait result
+
+- **WHEN** the card marker write cannot acquire the review lock
+- **THEN** the failure is logged and `wait` returns the same `ready` result
 
 ### Requirement: A reviewer submit wakes the changer
 
@@ -816,33 +807,6 @@ A `deferred` disposition SHALL require a non-empty `note`; a follow-up issue ref
 
 - **WHEN** `action: "dispose"` is called with a valid `dispositions` array
 - **THEN** every named finding is disposed as before
-
-### Requirement: Resume refuses a new round while a finding is open
-
-`openspec_review` with `action: "resume"` SHALL NOT open a new round while any recorded finding is still `open`. The refusal SHALL name every open finding id and the `action=dispose` step, and SHALL NOT record a round, change the object hash or wake a reviewer. The gate SHALL apply to draft and apply reviews and to both reviewer modes, and its refusal SHALL win over the round cap.
-
-#### Scenario: An undisposed draft finding blocks the next round
-
-- **WHEN** the latest draft round has a report and a recorded finding is still `open`
-- **THEN** the call fails and names every open finding id
-- **AND** it names `openspec_review` with `action: "dispose"`
-- **AND** no new round is recorded and no reviewer is woken
-
-#### Scenario: An undisposed apply finding blocks the next round
-
-- **WHEN** the latest apply round has a report and a recorded finding is still `open`
-- **THEN** the call fails and names every open finding id
-- **AND** no new round is recorded
-
-#### Scenario: The open-finding refusal wins over the round cap
-
-- **WHEN** the review is at its round cap and a recorded finding is still `open`
-- **THEN** the call fails with the open-finding error, not the cap error
-
-#### Scenario: Disposal clears the gate
-
-- **WHEN** every recorded finding has been disposed after the latest report
-- **THEN** `resume` opens the next round
 
 ### Requirement: A refused verification reports the finding's current state
 
@@ -1070,3 +1034,58 @@ A lock SHALL be stale when its recorded change root no longer exists, or when it
 - **WHEN** the user removes every lock file named in the refusal for a paused change
 - **THEN** the next apply entry acquires fresh locks
 - **AND** the lock refusal tells the agent to ask the user instead of removing the files
+
+### Requirement: Reviews have no round cap
+
+Draft and apply reviews SHALL accept every round for as long as a report and its dispositions are complete. A review SHALL NOT refuse `resume` because a configured round cap was reached. The plugin SHALL NOT store a round cap in the policy, in a record's limits, or in the tool arguments. A legacy policy or record that still carries `maxRounds` SHALL keep the field and SHALL ignore it.
+
+#### Scenario: A fourth round resumes
+
+- **WHEN** a review has already recorded three reports and every finding is disposed
+- **THEN** `resume` opens the next round
+
+#### Scenario: A legacy round cap is ignored
+
+- **WHEN** an existing record carries `limits.maxRounds` below the current round count
+- **THEN** `resume` opens the next round and the field is not re-read
+
+#### Scenario: No round cap is recorded
+
+- **WHEN** a new review starts
+- **THEN** its recorded limits carry the wait limit and no round cap
+
+### Requirement: Extend changes the wait limit
+
+`openspec_review` with `action: "extend"` SHALL accept only a positive minute extension. It SHALL require `approvedBy: "user"` and a reason, record the extension, and never change the locked policy. A `maxRounds` argument SHALL be refused by the tool's parameter schema.
+
+#### Scenario: Wait is extended
+
+- **WHEN** the user approves a 15 minute extension
+- **THEN** the current round's deadline moves and the extension is recorded
+
+#### Scenario: A round cap is refused
+
+- **WHEN** a caller passes `maxRounds` to `extend`
+- **THEN** the parameter schema rejects the call before execution
+
+### Requirement: Resume requires every finding disposed
+
+`openspec_review` with `action: "resume"` SHALL NOT open a new round while any recorded finding is still `open`. The refusal SHALL name every open finding id and the `action=dispose` step, and SHALL NOT record a round, change the object hash or wake a reviewer. The gate SHALL apply to draft and apply reviews and to both reviewer modes.
+
+#### Scenario: An undisposed draft finding blocks the next round
+
+- **WHEN** the latest draft round has a report and a recorded finding is still `open`
+- **THEN** the call fails and names every open finding id
+- **AND** it names `openspec_review` with `action: "dispose"`
+- **AND** no new round is recorded and no reviewer is woken
+
+#### Scenario: An undisposed apply finding blocks the next round
+
+- **WHEN** the latest apply round has a report and a recorded finding is still `open`
+- **THEN** the call fails and names every open finding id
+- **AND** no new round is recorded
+
+#### Scenario: Disposal clears the gate
+
+- **WHEN** every recorded finding has been disposed after the latest report
+- **THEN** `resume` opens the next round
