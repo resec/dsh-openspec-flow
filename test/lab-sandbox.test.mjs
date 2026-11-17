@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ROOT } from '../scripts/lab/core/paths.mjs'
 import { diffFingerprints, hostFingerprint } from '../scripts/lab/core/host-guard.mjs'
 
 test('the host fingerprint covers profile configuration but not generated or session files', () => {
-  const home = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-home-'))
+  const home = mkdtempSync(join(tmpdir(), 'dsh-lab-home-'))
   try {
     const profile = join(home, 'profiles', 'web')
     mkdirSync(profile, { recursive: true })

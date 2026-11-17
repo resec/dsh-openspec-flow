@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ROOT } from '../scripts/lab/core/paths.mjs'
 import { createRun, finalizeRun } from '../scripts/lab/core/run-dir.mjs'
 
 function fixture() {
-  const base = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-cleanup-'))
+  const base = mkdtempSync(join(tmpdir(), 'dsh-lab-cleanup-'))
   const run = createRun({ base })
   return { base, run }
 }

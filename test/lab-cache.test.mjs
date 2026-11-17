@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ROOT } from '../scripts/lab/core/paths.mjs'
 import { cacheKey, verifyInstall } from '../scripts/lab/core/cache.mjs'
 
 function fixture(version = '9.9.9') {
-  const dir = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-cache-'))
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-lab-cache-'))
   const packageDir = join(dir, 'node_modules', '@deepseek-ai', 'dsh')
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
   writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version }))

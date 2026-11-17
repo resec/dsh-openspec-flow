@@ -33,7 +33,7 @@ npm run lab -- cache rm <version>/<shape>
 
 npm run lab -- up --name poc --mode web [--keep] [--fresh-dsh] [--offline]
 npm run lab -- run [--plugin <tarball>] -- "task"
-npm run lab -- exec --name poc -- dsh --profile verify-web --dump-config
+npm run lab -- exec --name poc -- --profile verify-web --dump-config
 npm run lab -- inspect --name poc --all
 npm run lab -- down --name poc
 
@@ -99,8 +99,10 @@ Each run writes under `.cache/lab/runs/<id>/artifacts/`:
 
 - `report.json` — versions, cache source, plugin sha512 and dirty paths, checks, verdict and evidence paths
 - `manifest.json` — DSH and run metadata
-- `dump-config.json`, `headless.ndjson`, `web.log`, `mock.log`
+- `dump-config-headless.json` and `dump-config-web.json`, `headless.ndjson`, `headless.stderr.log`, `web.log`, `mock.log`
 - copied session logs, card files and screenshots
+
+The invocation's scenario summary, including skipped real-model scenarios, is written to `.cache/lab/reports/<id>.json`.
 
 Reports never contain tokens, cookies or API keys. Before the default post-pass cleanup removes the isolated home, sessions and cards are copied into `artifacts/`, so every evidence path survives.
 

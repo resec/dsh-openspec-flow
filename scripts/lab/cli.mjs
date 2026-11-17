@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -19,7 +20,7 @@ import { INSTANCES, LAB_ROOT, ROOT } from './core/paths.mjs'
 import { listCache, pruneCache, removeCache } from './core/cache.mjs'
 import { formatDoctor, runDoctor } from './core/doctor.mjs'
 import { packPlugin } from './core/install.mjs'
-import { createLab, discoverScenarios, runScenarios } from './index.mjs'
+import { createLab, discoverScenarios, runScenarios, selectScenarioFiles } from './index.mjs'
 import { run as execute } from './core/process.mjs'
 
 const COMMANDS = ['doctor', 'cache', 'up', 'run', 'exec', 'inspect', 'down', 'test']
@@ -190,7 +191,7 @@ async function runCommand(flags, positional) {
   const task = positional.join(' ').trim()
   if (task === '') throw new Error('lab run needs a task after --')
   const tarball = await packOrUse(flags)
-  const keep = flags.keep === true || mode === 'headless'
+  const keep = flags.keep === true
   const lab = await createLab({
     pluginTarball: tarball,
     model: 'mock',
@@ -226,7 +227,20 @@ function inspectCommand(flags) {
   const report = join(state.runDir, 'artifacts', 'report.json')
   if (existsSync(report)) console.log(readFileSync(report, 'utf8'))
   else console.log(JSON.stringify(state, null, 2))
+  if (flags.all === true) {
+    for (const file of filesUnder(state.runDir)) console.log(file)
+  }
   return 0
+}
+
+function filesUnder(directory) {
+  const out = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) out.push(...filesUnder(path))
+    else out.push(path)
+  }
+  return out.sort()
 }
 
 function downCommand(flags) {
@@ -245,7 +259,13 @@ function downCommand(flags) {
 }
 
 async function testCommand(flags, positional) {
-  const files = positional.length > 0 ? positional.map((file) => resolve(file)) : discoverScenarios()
+  const doctor = runDoctor()
+  if (!doctor.ok) {
+    console.error(formatDoctor(doctor).join('\n'))
+    return 1
+  }
+  const discovered = discoverScenarios()
+  const files = selectScenarioFiles({ positional, discovered })
   if (files.length === 0) throw new Error('no lab scenarios under test/lab')
   const mockOnly = flags['include-real-model'] !== true
   const plugin = flags.plugin === undefined ? undefined : pluginMeta(flags.plugin)
@@ -259,7 +279,7 @@ async function testCommand(flags, positional) {
     offline: flags.offline === true,
     fresh: flags['fresh-dsh'] === true,
   })
-  console.log(JSON.stringify(summary.results, null, 2))
+  console.log(JSON.stringify({ report: summary.reportPath, results: summary.results }, null, 2))
   return summary.passed ? 0 : 1
 }
 

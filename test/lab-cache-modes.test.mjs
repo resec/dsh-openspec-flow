@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ROOT } from '../scripts/lab/core/paths.mjs'
-import { ensureDsh } from '../scripts/lab/core/cache.mjs'
+import { ensureDsh, withLock } from '../scripts/lab/core/cache.mjs'
 
 test('fresh and offline cannot be combined', async () => {
-  const run = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-mode-'))
+  const run = mkdtempSync(join(tmpdir(), 'dsh-lab-mode-'))
   try {
     await assert.rejects(
       ensureDsh({ version: '0.0.0-missing', fresh: true, offline: true, runDirectory: run }),
@@ -17,8 +17,22 @@ test('fresh and offline cannot be combined', async () => {
   }
 })
 
+test('a stale lock left by a dead process is reclaimed', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lab-lock-'))
+  const lock = join(root, 'lock')
+  mkdirSync(lock)
+  writeFileSync(join(lock, 'pid'), '999999\n')
+  try {
+    const value = await withLock(lock, async () => 'ok', 2_000)
+    assert.equal(value, 'ok')
+    assert.equal(existsSync(lock), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('offline without a cache entry fails without installing', async () => {
-  const run = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-mode-'))
+  const run = mkdtempSync(join(tmpdir(), 'dsh-lab-mode-'))
   try {
     await assert.rejects(
       ensureDsh({ version: '0.0.0-missing', offline: true, runDirectory: run }),

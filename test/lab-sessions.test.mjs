@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zstdCompressSync } from 'node:zlib'
-import { ROOT } from '../scripts/lab/core/paths.mjs'
 import { countEvents, eventsOfType, findSessionLog, readSessionEvents } from '../scripts/lab/inspect/sessions.mjs'
 
 test('a session log is found and decompressed', () => {
-  const home = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-session-'))
+  const home = mkdtempSync(join(tmpdir(), 'dsh-lab-session-'))
   try {
     const directory = join(home, 'sessions', '--project--', 'session-lab')
     mkdirSync(directory, { recursive: true })

@@ -153,6 +153,8 @@ export function installDsh({ version, directory, offline = false, env = process.
   writeFileSync(join(directory, '.complete'), `${version}\n`)
   const final = verifyInstall(directory, version)
   if (!final.ok) throw new Error(`the written DSH install did not verify: ${final.reason}`)
+  const actual = installedVersion(directory)
+  if (actual !== version) throw new Error(`the written DSH install reports ${actual}, expected ${version}`)
   return directory
 }
 
@@ -195,6 +197,14 @@ export async function ensureDsh({ version, offline = false, fresh = false, runDi
   const directory = cacheDirectory(key)
   let state = verifyInstall(directory, version)
   if (state.ok) {
+    try {
+      const actual = installedVersion(directory)
+      if (actual !== version) state = { ok: false, reason: `installed CLI reports ${actual}` }
+    } catch (error) {
+      state = { ok: false, reason: `installed CLI cannot start: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  if (state.ok) {
     return { directory, bin: binPath(directory), version, source: 'cache', cacheKey: key, cacheHit: true }
   }
   if (offline) {
@@ -217,6 +227,8 @@ export async function ensureDsh({ version, offline = false, fresh = false, runDi
   })
   const final = verifyInstall(directory, version)
   if (!final.ok) throw new Error(`the DSH cache entry did not verify: ${final.reason}`)
+  const actual = installedVersion(directory)
+  if (actual !== version) throw new Error(`the DSH cache entry reports ${actual}, expected ${version}`)
   return { directory, bin: binPath(directory), version, source: 'cache', cacheKey: key, cacheHit: false }
 }
 
@@ -267,6 +279,11 @@ export async function withLock(lockPath, work, timeoutMs = 15 * 60_000) {
       break
     } catch (error) {
       if (error.code !== 'EEXIST') throw error
+      const stale = isStaleLock(lockPath)
+      if (stale) {
+        rmSync(lockPath, { recursive: true, force: true })
+        continue
+      }
       if (Date.now() > deadline) throw new Error(`timed out waiting for ${lockPath}`)
       await sleep(50)
     }
@@ -276,6 +293,23 @@ export async function withLock(lockPath, work, timeoutMs = 15 * 60_000) {
     return await work()
   } finally {
     rmSync(lockPath, { recursive: true, force: true })
+  }
+}
+
+function isStaleLock(lockPath) {
+  try {
+    const pid = Number(readFileSync(join(lockPath, 'pid'), 'utf8').trim())
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0)
+        return false
+      } catch (error) {
+        if (error.code === 'ESRCH') return true
+      }
+    }
+    return Date.now() - statSync(lockPath).mtimeMs > 30 * 60_000
+  } catch {
+    return false
   }
 }
 

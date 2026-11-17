@@ -3,13 +3,13 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ROOT } from './core/paths.mjs'
 import { readPackage } from './core/paths.mjs'
-import { createRun, finalizeRun } from './core/run-dir.mjs'
+import { createRun, finalizeRun, writeJson } from './core/run-dir.mjs'
 import { dshVersion, ensureDsh } from './core/cache.mjs'
-import { installPlugin, packPlugin, writeMockPatch } from './core/install.mjs'
+import { dumpConfig, installPlugin, packPlugin, writeMockPatch } from './core/install.mjs'
 import { assertHostUnchanged, hostFingerprint } from './core/host-guard.mjs'
 import { startLogged } from './core/process.mjs'
 import { startMockProvider } from './mock/provider.mjs'
@@ -65,6 +65,26 @@ export function discoverScenarios({ root = ROOT, directory = 'test/lab' } = {}) 
 }
 
 /**
+ * Select scenario files, rejecting positional paths outside `test/lab`.
+ * @param options - positionals, discovered files and the allowed base.
+ * @returns selected absolute files.
+ */
+export function selectScenarioFiles({ positional = [], discovered = discoverScenarios(), base = join(ROOT, 'test/lab') } = {}) {
+  if (positional.length === 0) return discovered
+  const allowed = new Map(discovered.map((file) => [resolve(file), resolve(file)]))
+  const basePath = resolve(base)
+  return positional.map((file) => {
+    const target = resolve(file)
+    if (!target.startsWith(`${basePath}${sep}`)) {
+      throw new Error(`scenario ${file} is outside test/lab; reusable scenarios must live there`)
+    }
+    const selected = allowed.get(target)
+    if (selected === undefined) throw new Error(`scenario ${file} was not discovered under test/lab`)
+    return selected
+  })
+}
+
+/**
  * Create one isolated lab.
  * @param options - plugin tarball, model, run flags and environment.
  * @returns the lab context.
@@ -95,8 +115,16 @@ export async function createLab({
     PLAYWRIGHT_BROWSERS_PATH: env.PLAYWRIGHT_BROWSERS_PATH ?? join(root, '.cache', 'lab', 'pw-browsers'),
     ...(existsSync(join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf')) ? { FONTCONFIG_FILE: join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf') } : {}),
   }
-  const state = { web: undefined, profiles: {}, dumps: {}, closed: false }
+  const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false }
   const output = { run, dsh, mock, env: labEnv, version, plugin: pluginTarball, results: [] }
+  writeJson(join(run.artifacts, 'manifest.json'), {
+    schemaVersion: 1,
+    run: { id: run.id, dir: run.dir },
+    model,
+    dsh: { version: dsh.version, source: dsh.source, cacheKey: dsh.cacheKey, cacheHit: dsh.cacheHit },
+    plugin: { name: pluginTarball.name, version: pluginTarball.version, sha512: pluginTarball.sha512, dirty: pluginTarball.dirty, head: pluginTarball.head },
+    node: process.versions.node,
+  })
 
   async function ensureProfile(mode) {
     const profile = `verify-${mode}`
@@ -116,8 +144,13 @@ export async function createLab({
       home: run.home,
     })
     if (model === 'mock') writeMockPatch(installed.profileDirectory, mock.url)
+    const composed = dumpConfig({ dshBin: dsh.bin, profile, env: labEnv })
+    const dumpPath = join(run.artifacts, `dump-config-${mode}.json`)
+    writeFileSync(dumpPath, composed)
     state.profiles[profile] = installed
-    state.dumps[profile] = installed.dump
+    state.dumps[profile] = composed
+    state.store = installed.store ?? state.store
+    state.checks.push({ name: `install/${mode}`, status: 'ok', evidence: dumpPath })
     return installed
   }
 
@@ -125,16 +158,25 @@ export async function createLab({
     if (state.web !== undefined) return state.web
     await ensureProfile('web')
     const logPath = join(run.artifacts, 'web.log')
-    const processHandle = startLogged(
-      process.execPath,
-      [dsh.bin, '--profile', 'verify-web', '--port', '0', '--no-open'],
-      { cwd: run.project, env: labEnv, logPath },
-    )
-    const line = await processHandle.waitFor(/dsh web:/, 90_000)
-    const url = parseStartupUrl(line)
-    if (url === undefined) throw new Error('the web startup line carried no URL')
-    const opened = await openPage({ url, headless, browsersPath: labEnv.PLAYWRIGHT_BROWSERS_PATH, fontConfig: labEnv.FONTCONFIG_FILE })
-    await waitForShell(opened.page)
+    let processHandle
+    let opened
+    let url
+    try {
+      processHandle = startLogged(
+        process.execPath,
+        [dsh.bin, '--profile', 'verify-web', '--port', '0', '--no-open'],
+        { cwd: run.project, env: labEnv, logPath },
+      )
+      const line = await processHandle.waitFor(/dsh web:/, 90_000)
+      url = parseStartupUrl(line)
+      if (url === undefined) throw new Error('the web startup line carried no URL')
+      opened = await openPage({ url, headless, browsersPath: labEnv.PLAYWRIGHT_BROWSERS_PATH, fontConfig: labEnv.FONTCONFIG_FILE })
+      await waitForShell(opened.page)
+    } catch (error) {
+      await opened?.browser?.close().catch(() => {})
+      await processHandle?.stop().catch(() => {})
+      throw error
+    }
     const cookies = await opened.page.context().cookies()
     const cookie = cookies.map((entry) => `${entry.name}=${entry.value}`).join('; ')
     const base = new URL(url).origin
@@ -158,6 +200,7 @@ export async function createLab({
       },
     }
     state.web = web
+    state.checks.push({ name: 'web', status: 'ok', evidence: logPath })
     return web
   }
 
@@ -169,7 +212,7 @@ export async function createLab({
      */
     async run(options) {
       await ensureProfile('headless')
-      return runHeadless({
+      const result = await runHeadless({
         node: process.execPath,
         dshBin: dsh.bin,
         profile: 'verify-headless',
@@ -181,6 +224,11 @@ export async function createLab({
         permissionMode: options.permissionMode,
         approvalPolicy: options.approvalPolicy,
       })
+      const eventsPath = join(run.artifacts, 'headless.ndjson')
+      writeFileSync(eventsPath, result.stdout)
+      writeFileSync(join(run.artifacts, 'headless.stderr.log'), result.stderr)
+      state.checks.push({ name: 'headless', status: result.completed ? 'ok' : 'fail', evidence: eventsPath })
+      return result
     },
   }
 
@@ -267,10 +315,19 @@ export async function createLab({
       state.closed = true
       if (state.web !== undefined) await state.web.close().catch(() => {})
       if (mock !== undefined) await mock.close().catch(() => {})
-      assertHostUnchanged(before, hostFingerprint())
+      let verdict = passed
+      let failure = error
+      let hostOk = true
+      try {
+        assertHostUnchanged(before, hostFingerprint())
+      } catch (hostError) {
+        hostOk = false
+        verdict = false
+        failure = hostError
+      }
       const report = {
         schemaVersion: 1,
-        ok: passed,
+        ok: verdict,
         model,
         dsh: { version: dsh.version, source: dsh.source, cacheKey: dsh.cacheKey, cacheHit: dsh.cacheHit },
         node: process.versions.node,
@@ -281,10 +338,15 @@ export async function createLab({
           dirty: pluginTarball.dirty,
           head: pluginTarball.head,
         },
-        error: error === undefined ? undefined : String(error?.stack ?? error),
-        checks: [{ name: 'scenario', status: passed ? 'ok' : 'fail', detail: passed ? 'scenario completed' : String(error?.message ?? error) }],
+        error: failure === undefined ? undefined : String(failure?.stack ?? failure),
+        packageStore: state.store,
+        checks: [
+          ...state.checks,
+          { name: 'host-guard', status: hostOk ? 'ok' : 'fail', detail: hostOk ? 'host unchanged' : String(failure?.message ?? failure) },
+          { name: 'scenario', status: verdict ? 'ok' : 'fail', detail: verdict ? 'scenario completed' : String(failure?.message ?? failure) },
+        ],
       }
-      return finalizeRun(run, { passed, report, keep, cleanup })
+      return finalizeRun(run, { passed: verdict, report, keep, cleanup })
     },
   }
   return api
@@ -348,7 +410,18 @@ export async function runScenarios({
       log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  return { passed: results.every((result) => result.status !== 'failed'), results, tarball }
+  const passed = results.every((result) => result.status !== 'failed')
+  const reportPath = join(root, '.cache', 'lab', 'reports', `${Date.now()}.json`)
+  mkdirSync(join(root, '.cache', 'lab', 'reports'), { recursive: true })
+  writeJson(reportPath, {
+    schemaVersion: 1,
+    ok: passed,
+    mockOnly,
+    includeReal,
+    results,
+    tarball: { name: tarball.name, version: tarball.version, sha512: tarball.sha512, dirty: tarball.dirty, head: tarball.head },
+  })
+  return { passed, results, tarball, reportPath }
 }
 
 /**

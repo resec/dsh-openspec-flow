@@ -80,6 +80,7 @@ export function installPlugin({ dshBin, profile, tarball, offline = false, env =
   if (installed.status !== 0) {
     throw new Error(`dsh plugin add failed: ${(installed.stderr || installed.stdout).slice(-2_000)}`)
   }
+  const storeMatch = /Content-addressable store is at:\s*(\S+)/.exec(`${installed.stdout}\n${installed.stderr}`)
   const profileDirectory = join(home, 'profiles', profile)
   const manifest = readProfile(profileDirectory)
   const bundles = Array.isArray(manifest.dsh?.profile?.bundles) ? manifest.dsh.profile.bundles : []
@@ -88,7 +89,7 @@ export function installPlugin({ dshBin, profile, tarball, offline = false, env =
   if (dependency === undefined) throw new Error('the installed profile does not declare a bundle dependency')
   if (!bundles.includes(dependency.name)) throw new Error(`the installed tarball did not add bundle ${dependency.name}`)
   if (!dump.includes(dependency.name)) throw new Error(`the composed configuration does not contain ${dependency.name}`)
-  return { profileDirectory, bundles, dump, name: dependency.name, version: dependency.version }
+  return { profileDirectory, bundles, dump, name: dependency.name, version: dependency.version, store: storeMatch?.[1] }
 }
 
 /**

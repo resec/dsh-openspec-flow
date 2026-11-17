@@ -1,12 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROOT } from '../scripts/lab/core/paths.mjs'
 import { gitDirty, gitHead, packPlugin } from '../scripts/lab/core/install.mjs'
 
 test('the working tree can be packed without writing dist', () => {
-  const out = mkdtempSync(join(ROOT, '.cache', 'lab', 'test-pack-'))
+  const out = mkdtempSync(join(tmpdir(), 'dsh-lab-pack-'))
   try {
     const packed = packPlugin({ root: ROOT, outDir: out })
     assert.equal(packed.name, 'dsh-openspec-flow')
