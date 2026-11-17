@@ -54,6 +54,16 @@ test('every packaged skill is valid and stamps the plugin version', () => {
       /`openspec (list|show|validate|instructions|status|archive|new|init|update|store|context|schemas)\b/,
       `${name} must not name a CLI command`,
     )
+    assert.doesNotMatch(raw, /maxRounds|round cap/i, `${name} must not mention a round cap`)
+  }
+})
+
+test('review skills report through the plugin card without restating the report', () => {
+  for (const name of ['openspec-propose', 'openspec-apply-change']) {
+    const raw = readFileSync(packagedSkillPath(name), 'utf8')
+    assert.match(raw, /reported by the plugin card/, name)
+    assert.match(raw, /Do not restate findings/, name)
+    assert.match(raw, /one short note only for information the report cannot express/, name)
   }
 })
 

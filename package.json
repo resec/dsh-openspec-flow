@@ -1,6 +1,6 @@
 {
   "name": "dsh-openspec-flow",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Token-efficient OpenSpec workflow tools, reviews, and a review settings page for DeepSeek Harness",
   "license": "MIT",
@@ -54,6 +54,7 @@
     "bundle:pack": "node scripts/bundle-pack.mjs"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-session": "0.2.2-rc.2",
     "@fission-ai/openspec": "2.0.0"
   }
 }

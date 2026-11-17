@@ -30,6 +30,7 @@ export function createFakeContext({
   modelSelection = { provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
   catalog = undefined,
   globalTools = [],
+  sessionProjections = undefined,
 } = {}) {
   const tools = new Map()
   const toolOptions = new Map()
@@ -54,6 +55,13 @@ export function createFakeContext({
       : undefined
   const stats = { spawns: 0 }
   const listeners = new Map()
+  const projectionRegistrations = []
+  const projectionService = sessionProjections ?? {
+    register(definition) {
+      projectionRegistrations.push(definition)
+      return Promise.resolve({})
+    },
+  }
   const liveAgents = [...seedAgents]
   const sessionDirectories = new Map()
 
@@ -228,6 +236,7 @@ export function createFakeContext({
       if (name === 'agentDefaultModel') return agentDefaultModel
       if (name === 'llm') return llm
       if (name === 'subagents') return subagents
+      if (name === 'sessionProjections') return projectionService
       if (name === 'commands') return commandRegistry
       return undefined
     },
@@ -343,5 +352,6 @@ export function createFakeContext({
     emit,
     liveAgents,
     globalSections: globalSystemPrompt.sections,
+    projectionRegistrations,
   }
 }

@@ -22,7 +22,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 ## Plugin constraints
 
-- Plain ESM JavaScript with Node built-ins only. Runtime imports of `@deepseek-ai/*` break a packaged install, because the package declares no such dependency.
+- Plain ESM JavaScript with Node built-ins plus the pinned `@deepseek-ai/dsh-session` package. The package is a declared dependency at the exact `engines.dsh` version because the review-card writer commits plugin records through the Host Session; any other `@deepseek-ai/*` runtime import is forbidden. A packaged install must resolve the plugin and Host copies to one module instance, and the install probe enforces it.
 - `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor; the floor is stated once in the `project-invariants` capability (`Runtime baseline`). When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
 - Tests and coverage run only on the primary Node major 24 and require a concrete version satisfying `engines.node`. Entrypoints check the `node` on PATH; they never call fnm, nvm, volta, or read `.nvmrc`. If the runtime does not qualify, they fail before starting tests.
 - The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 2.0.0, stated by the `project-invariants` `OpenSpec CLI pin` requirement). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.

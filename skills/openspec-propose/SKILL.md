@@ -3,7 +3,7 @@ name: openspec-propose
 description: Propose a new OpenSpec change with the openspec_* tools, creating the change, reading each artifact instruction, writing proposal, specs, design and tasks, then validating. Use when the user wants to plan a change.
 whenToUse: The user wants a new OpenSpec change created end to end and the planning artifacts ready for review.
 metadata:
-  generatedBy: dsh-openspec-flow@0.7.0
+  generatedBy: dsh-openspec-flow@0.8.0
   upstream: openspec@2.0.0
 ---
 
@@ -42,6 +42,10 @@ Run the draft review before presenting the proposal. The draft object is the cha
 3. When the change uses `reviewers: 0`, call `openspec_review` with `action: "self-report"` and one report: `verdict`, `summary`, `findings`, `verifications`, `outOfScope` and `residualRisks`. Use the report format in the brief. When it uses `reviewers: 1`, call `action: "wait"`; when it returns `waiting`, end the turn and continue after the wakeup (the reviewer submit or the wait deadline); do not submit a self-report.
 4. If the result is not ready, fix the findings, then dispose them in a single `openspec_review` call with `action: "dispose"` or a finding `action: "waive"` and `dispositions` (each entry carries its `id`, `status` and fields); one finding may use the single `id` form. Only then call `openspec_review` with `action: "resume"` to open the next round; do not pass an `intent` and do not call `start` again. `start` and `resume` reject `dispositions`. Do not present the proposal while a blocker is open.
 5. If a finding is fixed, verify it in a later round; if it is waived, record the user's approval and the waiver text.
+
+## Review report
+
+Each round is reported by the plugin card: in the reviewer session for an independent review, and in the main session when the changer reads the report with `wait` or `report`. Do not restate findings, evidence, risks, scope or disposition notes. Write one short note only for information the report cannot express and the user must know, such as a trade-off, an authorization need or the next step. Do not count rounds; continue until the review is ready.
 
 ## Then stop
 

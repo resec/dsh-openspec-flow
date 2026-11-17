@@ -326,9 +326,9 @@ test('settings reads return both sections and whether they are writable', async 
     const channel = createReviewChannel({ ctx, settings })
     const read = await channel.dispatch(REVIEW_ENDPOINTS.settings, {})
     assert.equal(read.value.reviews.draft.enabled, false)
-    assert.equal(read.value.reviews.draft.maxRounds, 4)
+    assert.equal(read.value.reviews.draft.maxRounds, undefined)
     assert.deepEqual(read.value.reviews.draft.reviewerModel, { source: 'inherit' })
-    assert.deepEqual(read.value.bounds.maxRounds, { min: 1, max: 50 })
+    assert.equal(read.value.bounds.maxRounds, undefined)
     assert.equal(read.value.canSave, true)
     assert.equal(read.value.saveReason, undefined)
 
@@ -380,7 +380,9 @@ test('a settings save validates the candidate and writes the complete config', a
     const saved = await channel.dispatch(REVIEW_ENDPOINTS.update, { reviews: candidate })
     assert.equal(saved.ok, true)
     assert.equal(saved.value.reviews.draft.reviewers, 1)
+    assert.equal(saved.value.reviews.draft.maxRounds, undefined)
     assert.equal(edits.length, 1)
+    assert.equal(edits[0].next.reviews.draft.maxRounds, undefined)
     assert.equal(edits[0].entry.id, 'openspec-flow')
     // The editor receives the complete config: the untouched timeout survives.
     assert.equal(edits[0].next.timeoutMs, 30_000)

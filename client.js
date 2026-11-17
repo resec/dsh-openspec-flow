@@ -45,7 +45,6 @@ window.__ModuleLoader__.load({
       apply: '应用评审',
       enabled: '启用',
       reviewers: '评审人数',
-      maxRounds: '最大轮次',
       waitMinutes: '等待分钟',
       model: '评审模型',
       inherit: '跟随执行变更的模型',
@@ -85,7 +84,6 @@ window.__ModuleLoader__.load({
       apply: 'Apply review',
       enabled: 'Enabled',
       reviewers: 'Reviewers',
-      maxRounds: 'Max rounds',
       waitMinutes: 'Wait minutes',
       model: 'Reviewer model',
       inherit: 'Follow the changing model',
@@ -121,12 +119,8 @@ window.__ModuleLoader__.load({
     /** Bounds the Host reports, with a standalone fallback. */
     const DEFAULT_BOUNDS = {
       reviewers: { min: 0, max: 1 },
-      maxRounds: { min: 1, max: 50 },
       waitMinutes: { min: 1, max: 120 },
     }
-
-    /** Default round limits per review kind, matching the Host defaults. */
-    const DEFAULT_ROUNDS = { draft: 3, apply: 5 }
 
     /**
      * Copy one review section into the form's shape.
@@ -153,7 +147,6 @@ window.__ModuleLoader__.load({
       return {
         enabled: present ? section.enabled === true : true,
         reviewers: section.reviewers === 1 ? 1 : 0,
-        maxRounds: Number.isInteger(section.maxRounds) ? section.maxRounds : DEFAULT_ROUNDS[kind],
         waitMinutes: Number.isInteger(section.waitMinutes) ? section.waitMinutes : 15,
         reviewerModel,
       }
@@ -250,7 +243,7 @@ window.__ModuleLoader__.load({
       const label = kind === 'draft' ? t('lockDraft') : t('lockApply')
       const state = section.enabled ? t('enabledOn') : t('enabledOff')
       const reviewers = t('reviewersText', { n: section.reviewers })
-      return `${label}: ${state} · ${reviewers} · ${String(section.maxRounds)}×${String(section.waitMinutes)}m`
+      return `${label}: ${state} · ${reviewers} · ${String(section.waitMinutes)}m`
     }
 
     /**
@@ -481,18 +474,6 @@ window.__ModuleLoader__.load({
             onChange: (event) => { controller.onChange(kind, { reviewers: Number(event.target.value) }) },
           }, h('option', { value: '0' }, '0'), h('option', { value: '1' }, '1'))),
         h(Row, {
-          label: t('maxRounds'),
-          note: `${String(state.bounds.maxRounds.min)}–${String(state.bounds.maxRounds.max)}`,
-        },
-        h('input', {
-          type: 'number',
-          min: state.bounds.maxRounds.min,
-          max: state.bounds.maxRounds.max,
-          value: String(section.maxRounds),
-          'data-openspec-field': `${kind}.maxRounds`,
-          onChange: (event) => { controller.onChange(kind, { maxRounds: Number(event.target.value) }) },
-        })),
-        h(Row, {
           label: t('waitMinutes'),
           note: `${String(state.bounds.waitMinutes.min)}–${String(state.bounds.waitMinutes.max)}`,
         },
@@ -630,6 +611,188 @@ window.__ModuleLoader__.load({
       color: git ? 'var(--dsw-alias-label-success)' : 'var(--dsw-alias-label-warning)',
     })
 
+    /** Read one card field as display text. */
+    function cardValue(value) {
+      if (value === undefined || value === null || value === '') return '未记录'
+      return String(value)
+    }
+
+    /** Select the current turn's cards from the projection view. */
+    function selectCards(view, turn) {
+      const byTurn = view !== null && typeof view === 'object' ? view.byTurn : undefined
+      if (byTurn === null || typeof byTurn !== 'object') return []
+      const cards = byTurn[String(turn)]
+      return Array.isArray(cards) ? cards : []
+    }
+
+    /** One-line collapsed summary for one card. */
+    function cardSummary(card) {
+      const phase = card.phase === 'resolution' ? '处理汇报' : '评审汇报'
+      const review = card.review === 'apply' ? 'apply' : 'draft'
+      const counts = card.counts ?? {}
+      return `${phase} · ${review} · 第 ${cardValue(card.round)} 轮 · ${cardValue(card.verdict)} · findings ${cardValue(counts.total)}（阻塞 ${cardValue(counts.blocking)}） · 下一步 ${cardValue(card.nextAction)}`
+    }
+
+    /** One finding's full report fields. */
+    function findingRows(finding) {
+      return [
+        ['问题', finding.problem],
+        ['证据', finding.evidence],
+        ['影响', finding.impact],
+        ['规则', finding.rule],
+        ['失败路径', finding.failure],
+        ['建议', finding.suggestion],
+      ]
+    }
+
+    /** All sections of the expanded card, without truncation. */
+    function cardSections(card) {
+      const sections = []
+      const object = card.object ?? {}
+      const objectText = object.kind === 'commit'
+        ? `${cardValue(object.commit)}（tree ${cardValue(object.tree)}，base ${cardValue(object.baseTree)}）`
+        : cardValue(object.hash)
+      sections.push({
+        title: '轮次信息',
+        rows: [
+          ['变更', card.change],
+          ['评审', card.review],
+          ['轮次', card.round],
+          ['结论', card.verdict],
+          ['状态', card.state],
+          ['就绪', card.ready ? '是' : '否'],
+          ['模式', card.independent ? '独立 reviewer' : '自评审'],
+          ['对象', objectText],
+          ['对象已变', object.changed ? '是' : '否'],
+          ['下一步', card.nextAction],
+        ],
+      })
+      const report = card.report
+      if (report !== null && typeof report === 'object') {
+        sections.push({ title: '报告结论', rows: [['结论', report.summary]] })
+        sections.push({
+          title: 'Findings',
+          items: (Array.isArray(report.findings) ? report.findings : []).map((finding) => ({
+            title: `${cardValue(finding.id)} [${cardValue(finding.severity)}/${cardValue(finding.status)}] ${cardValue(finding.location)} ${cardValue(finding.title)}`,
+            rows: findingRows(finding),
+          })),
+        })
+        sections.push({
+          title: '本轮验证',
+          items: (Array.isArray(report.verifications) ? report.verifications : []).map((verification) => ({
+            title: `${cardValue(verification.id)} ${cardValue(verification.status)}`,
+            rows: [['证据', verification.evidence]],
+          })),
+        })
+        sections.push({
+          title: '残余风险',
+          rows: (Array.isArray(report.residualRisks) ? report.residualRisks : []).map((entry, index) => [`风险 ${String(index + 1)}`, entry]),
+        })
+        sections.push({
+          title: 'Out of scope',
+          rows: (Array.isArray(report.outOfScope) ? report.outOfScope : []).map((entry, index) => [`范围 ${String(index + 1)}`, entry]),
+        })
+      }
+      const findings = Array.isArray(card.findings) ? card.findings : []
+      const disposed = findings.filter((finding) => finding.status !== 'open')
+      if (disposed.length > 0) {
+        sections.push({
+          title: '处理情况',
+          items: disposed.map((finding) => ({
+            title: `${cardValue(finding.id)} ${cardValue(finding.status)}`,
+            rows: [
+              ['说明', finding.note],
+              ['豁免', finding.waiver],
+              ['批准者', finding.approvedBy],
+              ['验证轮次', finding.verifiedInRound],
+            ],
+          })),
+        })
+      }
+      if (card.planChangeWaiver !== null && typeof card.planChangeWaiver === 'object') {
+        const waiver = card.planChangeWaiver
+        sections.push({
+          title: '规划变更豁免',
+          rows: [
+            ['批准者', waiver.approvedBy],
+            ['记录时间', waiver.recordedAt],
+            ['文本', waiver.text],
+            ['文件', Array.isArray(waiver.files) ? waiver.files.join(', ') : waiver.files],
+            ['draft hash', waiver.draftObjectHash],
+            ['current hash', waiver.currentObjectHash],
+          ],
+        })
+      }
+      if (Array.isArray(card.readinessReasons) && card.readinessReasons.length > 0) {
+        sections.push({
+          title: '未就绪原因',
+          rows: card.readinessReasons.map((entry, index) => [`原因 ${String(index + 1)}`, entry]),
+        })
+      }
+      return sections
+    }
+
+    const cardFrameStyle = {
+      border: '1px solid var(--dsw-alias-separator-secondary)', borderRadius: '8px', marginTop: '8px',
+      background: 'var(--dsw-alias-bg-secondary, transparent)', overflow: 'hidden',
+    }
+    const cardHeaderStyle = {
+      display: 'flex', width: '100%', justifyContent: 'space-between', gap: '8px', alignItems: 'center',
+      padding: '8px 10px', border: 'none', background: 'transparent', cursor: 'pointer',
+      color: 'var(--dsw-alias-label-primary)', font: 'var(--dsw-font-xs-13)', textAlign: 'left',
+    }
+    const cardTitleStyle = { flex: '1 1 auto', minWidth: 0 }
+    const cardToggleStyle = { flex: '0 0 auto', color: 'var(--dsw-alias-label-secondary)' }
+    const cardBodyStyle = {
+      padding: '0 10px 10px', maxHeight: '60vh', overflow: 'auto',
+      color: 'var(--dsw-alias-label-primary)', font: 'var(--dsw-font-xs-13)',
+    }
+    const cardSectionStyle = { marginTop: '8px', borderTop: '1px solid var(--dsw-alias-separator-secondary)', paddingTop: '8px' }
+    const cardSectionTitleStyle = { margin: '0 0 4px', font: 'var(--dsw-font-sm-14)' }
+    const cardRowStyle = { display: 'grid', gridTemplateColumns: '96px 1fr', gap: '8px', padding: '2px 0' }
+    const cardLabelStyle = { color: 'var(--dsw-alias-label-secondary)' }
+    const cardItemStyle = { padding: '4px 0', borderTop: '1px dashed var(--dsw-alias-separator-secondary)' }
+    const cardItemTitleStyle = { fontWeight: 600, paddingBottom: '2px' }
+    const cardTailStyle = { display: 'flex', flexDirection: 'column' }
+
+    /** Render one expanded card's sections. */
+    function renderCardSections(card) {
+      return cardSections(card).map((section, index) => h('section', { key: `s${String(index)}`, style: cardSectionStyle },
+        h('h4', { style: cardSectionTitleStyle }, section.title),
+        ...(section.rows ?? []).map((row, rowIndex) => h('div', { key: `r${String(rowIndex)}`, style: cardRowStyle },
+          h('span', { style: cardLabelStyle }, row[0]),
+          h('span', {}, cardValue(row[1])))),
+        ...(section.items ?? []).map((item, itemIndex) => h('div', { key: `i${String(itemIndex)}`, style: cardItemStyle },
+          h('div', { style: cardItemTitleStyle }, item.title),
+          ...item.rows.map((row, rowIndex) => h('div', { key: `j${String(rowIndex)}`, style: cardRowStyle },
+            h('span', { style: cardLabelStyle }, row[0]),
+            h('span', {}, cardValue(row[1]))))))))
+    }
+
+    /** One review round card, collapsed until the reader expands it. */
+    function ReviewCard({ card }) {
+      const [open, setOpen] = React.useState(false)
+      return h('section', { style: cardFrameStyle, 'data-openspec-card': card.phase },
+        h('button', {
+          type: 'button',
+          style: cardHeaderStyle,
+          'aria-expanded': open,
+          onClick: () => setOpen((value) => !value),
+        },
+        h('span', { style: cardTitleStyle }, cardSummary(card)),
+        h('span', { style: cardToggleStyle }, open ? '收起' : '展开')),
+        open ? h('div', { style: cardBodyStyle }, renderCardSections(card)) : null)
+    }
+
+    /** Turn-tail entry: one card per record written in the current turn. */
+    function ReviewCardTail({ turn, useProjection }) {
+      const view = typeof useProjection === 'function' ? useProjection('openspecReviewCards') : undefined
+      const cards = selectCards(view, turn?.turn)
+      if (cards.length === 0) return null
+      return h('div', { style: cardTailStyle },
+        cards.map((card, index) => h(ReviewCard, { key: `${cardValue(card.phase)}-${String(index)}`, card })))
+    }
+
     return {
       inject: ['slots', 'locale', 'connection'],
       apply(ctx) {
@@ -643,6 +806,11 @@ window.__ModuleLoader__.load({
         }, (props) => (props?.view === 'summary'
           ? t('summary')
           : h(Page, { t, call })))), 'openspec-flow: review config page')
+        ctx.effect(() => ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+          name: 'conversation.chat.turnTail',
+          id: 'dsh-openspec-flow/review-cards',
+          locale: NS,
+        }, ReviewCardTail)), 'openspec-flow: review round cards')
       },
       // Test seam: the page's controller and pure transitions, reachable without React.
       __test: {
@@ -657,6 +825,9 @@ window.__ModuleLoader__.load({
         savePayload,
         lockLine,
         createController,
+        selectCards,
+        cardSummary,
+        cardSections,
       },
     }
   },

@@ -12,10 +12,10 @@ test('defaults timeoutMs and accepts an explicit value', () => {
       timeoutMs: 30_000,
       reviews: {
         draft: {
-          enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+          enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
         apply: {
-          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+          enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
     },
@@ -25,10 +25,10 @@ test('defaults timeoutMs and accepts an explicit value', () => {
       timeoutMs: 5_000,
       reviews: {
         draft: {
-          enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+          enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
         apply: {
-          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+          enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
     },
@@ -39,10 +39,10 @@ test('accepts a disabled draft review and bounded limits', () => {
   const result = validate({
     reviews: {
         draft: {
-          enabled: false, reviewers: 0, maxRounds: 4, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+          enabled: false, reviewers: 0, waitMinutes: 20, reviewerModel: { source: 'inherit' },
         },
         apply: {
-          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+          enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
   })
@@ -51,10 +51,10 @@ test('accepts a disabled draft review and bounded limits', () => {
       timeoutMs: 30_000,
       reviews: {
         draft: {
-          enabled: false, reviewers: 0, maxRounds: 4, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+          enabled: false, reviewers: 0, waitMinutes: 20, reviewerModel: { source: 'inherit' },
         },
         apply: {
-          enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+          enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
     },

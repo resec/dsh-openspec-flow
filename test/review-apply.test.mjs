@@ -314,7 +314,7 @@ test('the apply gate points an abandoned review at a new change', async () => {
   )
 })
 
-test('apply review is idempotent after pass and refuses a capped round', async () => {
+test('apply review is idempotent after pass and a legacy round cap does not block a new round', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
@@ -345,10 +345,8 @@ test('apply review is idempotent after pass and refuses a capped round', async (
   await call(capped, 'openspec_review', {
     action: 'dispose', change: CHANGE, review: 'apply', id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
-  await assert.rejects(
-    call(capped, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
-    /1-round cap/,
-  )
+  const next = await call(capped, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(next.round, 2)
 })
 
 test('apply review supports status, report, extend, dispose and abandon', async () => {

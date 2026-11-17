@@ -12,16 +12,19 @@
  * without re-running the CLI, which removes the apply loop's repeated
  * O(N²) query.
  *
- * This module imports nothing from `@deepseek-ai/*` at runtime: a locally
- * linked bundle must not depend on bare-specifier resolution inside the
- * profile. Tools are plain `ToolDefinition` objects and the skill is a plain
- * `SkillRegistration`.
+ * This module imports `@deepseek-ai/dsh-session` at runtime from the pinned
+ * DSH version, because the review-card writer must commit plugin records
+ * through the Host Session. Every other runtime import is a Node built-in or a
+ * relative module; a locally linked bundle resolves the DSH package through
+ * its declared dependency. Tools are plain `ToolDefinition` objects and the
+ * skill is a plain `SkillRegistration`.
  *
  * @module dsh-openspec-flow
  */
 
 import { registerAdminGate } from './lib/admin.js'
 import { Config } from './lib/config.js'
+import { registerCardProjection } from './lib/review/card-projection.js'
 import { registerPolicy } from './lib/policy.js'
 import { registerReviewChannel } from './lib/review/settings.js'
 import { registerSkillProvider } from './lib/skill.js'
@@ -53,6 +56,7 @@ export function apply(ctx, config) {
   registerTools(ctx, settings)
   registerSkillProvider(ctx)
   registerPolicy(ctx)
+  registerCardProjection(ctx)
   registerReviewChannel(ctx, settings)
   ctx.effect(() => () => clearReviewDeadlines())
 }

@@ -607,16 +607,18 @@ test('extend updates limits and refuses missing approval', async () => {
   )
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'extend', change: CHANGE, approvedBy: 'user', reason: 'more time' }),
-    /needs minutes or maxRounds/,
+    /needs minutes/,
   )
   const extended = await call(fake, 'openspec_review', {
-    action: 'extend', change: CHANGE, approvedBy: 'user', reason: 'more time', minutes: 15, maxRounds: 'unlimited',
+    action: 'extend', change: CHANGE, approvedBy: 'user', reason: 'more time', minutes: 15,
   })
   assert.equal(extended.state, 'in-review')
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
-  assert.equal(record.limits.maxRounds, null)
+  assert.equal(record.limits.maxRounds, undefined)
   assert.equal(record.limits.waitMinutes, 30)
   assert.equal(record.extensions.length, 1)
+  const tool = fake.tools.get('openspec_review')
+  assert.equal(tool.parameters.properties.maxRounds, undefined)
 })
 
 test('abandon closes the review', async () => {
@@ -714,7 +716,7 @@ test('start refuses an invalid change', async () => {
   )
 })
 
-test('a passed review is idempotent and a capped review refuses another round', async () => {
+test('a passed review is idempotent and a legacy round cap does not block a new round', async () => {
   const root = fixture()
   const fake = setup(root)
   await call(fake, 'openspec_review', {
@@ -748,12 +750,8 @@ test('a passed review is idempotent and a capped review refuses another round', 
   await call(capped, 'openspec_review', {
     action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
   })
-  await assert.rejects(
-    call(capped, 'openspec_review', {
-      action: 'resume', change: CHANGE,
-    }),
-    /1-round cap/,
-  )
+  const next = await call(capped, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(next.round, 2)
 })
 
 test('start refuses a round that is not next', async () => {
@@ -816,8 +814,8 @@ test('dispose and extend validate their inputs', async () => {
     /status must be/,
   )
   await assert.rejects(
-    call(fake, 'openspec_review', { action: 'extend', change: CHANGE, approvedBy: 'user', reason: 'x', maxRounds: 0 }),
-    /positive integer or unlimited/,
+    call(fake, 'openspec_review', { action: 'extend', change: CHANGE, approvedBy: 'user', reason: 'x' }),
+    /needs minutes/,
   )
 })
 

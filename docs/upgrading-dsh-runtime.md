@@ -107,11 +107,13 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
 | `package.json:8-10` | `engines.node` 与精确的 `engines.dsh` | 目标下限与精确版本 |
+| `package.json` 的 `dependencies` | `@fission-ai/openspec` 2.0.0 与 `@deepseek-ai/dsh-session`（精确版本等于 `engines.dsh`） | 两个版本；`appendPluginRecord` 与 `Session.#appendRecord` 的私有字段约定 |
 | `package.json:18-21` | `dsh.bundle.patch` 指向 `cordis.patch.yml` | 目标 loader 仍接受该声明 |
 | `cordis.patch.yml:6-9` | 一行 `insert`，`id: openspec-flow`，`name: dsh-openspec-flow` | `--dump-config` 中仍有该行 |
 | `index.js:29` | Cordis 插件名 `openspec-flow` | 与 profile 行、日志前缀一致 |
-| `index.js:32` | `inject` 的五个服务：`tools`、`subprocess`、`workingDirectory`、`systemPrompt`、`agents` | 五个服务名仍存在；缺一个时插件不会挂载 |
+| `index.js:32` | `inject` 的五个服务：`tools`、`subprocess`、`workingDirectory`、`systemPrompt`、`agents` | 五个服务名仍存在；缺一个时插件不会挂载。卡片投影通过可选 `ctx.get('sessionProjections')` 注册，不进入 inject |
 | `index.js:45-84` | Standard Schema 形式的 `Config` | loader 仍按 Standard Schema 校验 |
+| `scripts/probe-session.mjs` | 插件与 Host 的 `@deepseek-ai/dsh-session` 模块路径、`appendPluginRecord` 与模型不可见事件 | 升级后运行探针；副本不同或写入失败时停止发布 |
 | `index.js:86` | `apply(ctx, config)` | Cordis 插件入口约定 |
 | `lib/tools/apply.js:35,117`、`lib/tools/query.js:630,694,913`、`lib/tools/write.js:27,125`、`lib/init.js:26` | `ctx.effect` 包裹的 `ctx.tools.register` | `ToolDefinition` 的 `name`、`description`、`parameters`、`output.schema`、`output.render`、`execute` 字段 |
 | `reviewer.js` | `ctx.tools.definitions()` 的全局视图、`ctx.tools.restrict({ deny })`、`tools/change` 事件 | `ToolRestriction` 的 deny 语义、scope 父链、禁用名集合；reviewer 目录是 preset 的七个工具，`read_image` 只在 Host 提供 `attachments` 时注册 |

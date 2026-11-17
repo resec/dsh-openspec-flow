@@ -128,6 +128,7 @@ export function checkDocument(text, spec) {
       }
     }
   }
+  if (text.includes('maxRounds')) problems.push('names the removed round cap maxRounds')
   if (!text.includes(spec.record.root)) problems.push(`missing record root ${spec.record.root}`)
   if (!text.includes('<store>#<change>')) problems.push('missing record key <store>#<change>')
   for (const name of [spec.record.draftFile, spec.record.applyFile, spec.record.waiverFile]) {
@@ -207,13 +208,10 @@ test('a stale tool, default or record path is reported by name', () => {
   assert.ok(toolProblems.includes('missing tool openspec_apply_next'))
   assert.ok(toolProblems.includes('unknown tool openspec_apply_old'))
 
-  const staleDefault = text.replace(
-    '| `reviews.draft.maxRounds` | `3` |',
-    '| `reviews.draft.maxRounds` | `9` |',
-  )
+  const staleDefault = `${text}\n| \`reviews.draft.maxRounds\` | \`3\` |\n`
   const defaultProblems = checkDocument(staleDefault, spec)
   assert.ok(
-    defaultProblems.includes('stale default for reviews.draft.maxRounds: 9, expected 3'),
+    defaultProblems.includes('names the removed round cap maxRounds'),
     defaultProblems.join('; '),
   )
 
@@ -298,4 +296,33 @@ test('a missing lock layout is reported by name', () => {
     problems.some((problem) => problem.startsWith('missing lock file')),
     problems.join('; '),
   )
+})
+
+test('the review document explains the cards and the model rule', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    'plugin:openspec-flow/review-card',
+    'openspecReviewCards',
+    'conversation.chat.turnTail',
+    '默认折叠',
+    '点击展开',
+    '不设截断',
+    '不分页',
+    '固定中文',
+    'plan-change waiver',
+    'self-report',
+    'submit',
+    'wait',
+    'report',
+    'resume',
+    'dispose',
+    'cards',
+    '不进入模型可见面',
+    'scripts/probe-session.mjs',
+    '@deepseek-ai/dsh-session',
+  ]) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  assert.match(text, /不复述 findings/)
+  assert.match(text, /reviewer 提交后不写评审总结/)
 })

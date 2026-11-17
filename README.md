@@ -17,6 +17,8 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply` |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 
+评审轮次由插件信息卡汇报：`self-report`、reviewer `submit`、`wait`、`report`、`resume` 与处置完成时写入 `plugin:openspec-flow/review-card` 事件；卡片在回合末尾显示，默认折叠，展开包含完整报告正文与 plan-change waiver。卡片事件不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件依赖 `@deepseek-ai/dsh-session`（精确 DSH 版本），安装后运行 `scripts/probe-session.mjs` 确认单实例。
+
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝，在另一 change 持有 apply 锁时拒绝，并在 git 项目首次调用时要求封存 commit（干净树、只含变更目录与 `openspec/.gitignore` 或其他 `openspec/changes/` 路径、工件哈希未变）；`openspec_archive` 在另一 change 持有 apply 锁时拒绝，在 apply review 启用且项目有 git、但评审未就绪时拒绝，成功后释放本 change 的锁；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 
 `openspec/config.yaml` 的 `context`、`rules` 与 `operations.apply|archive.guidance` 由对应工具结果返回；未配置时省略。`openspec_inspect` 的 `action: "instructions"` 配合 `artifact: "archive"` 返回归档 `context`/`guidance`，不是空的产物字段。
@@ -169,12 +171,10 @@ npm run bundle:pack
 | `timeoutMs` | `30000` | 单次 CLI 调用的墙钟上限，1000–300000。 |
 | `reviews.draft.enabled` | `true` | 新 change 是否锁定 draft review。 |
 | `reviews.draft.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
-| `reviews.draft.maxRounds` | `3` | draft review 的默认轮次上限，1–50。 |
 | `reviews.draft.waitMinutes` | `15` | draft review 的默认等待上限，1–120。 |
 | `reviews.draft.reviewerModel` | `{ source: "inherit" }` | reviewer 模型：`inherit` 在锁定 policy 时解析为执行变更的模型；`explicit` 需 `provider` 与 `model`，模型有可选努力时还需 `reasoningEffort`。 |
 | `reviews.apply.enabled` | `true` | 新 change 是否锁定 apply review；非 git 项目忽略该值并锁定关闭，旧策略可能仍记录启用但 status 报告不可用。 |
 | `reviews.apply.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
-| `reviews.apply.maxRounds` | `5` | apply review 的默认轮次上限，1–50。 |
 | `reviews.apply.waitMinutes` | `15` | apply review 的默认等待上限，1–120。 |
 | `reviews.apply.reviewerModel` | `{ source: "inherit" }` | 同 `reviews.draft.reviewerModel`，锁定到 apply review 的 policy。 |
 
@@ -188,7 +188,7 @@ CLI 来源固定：
 
 profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需要改 `cordis.patch.yml`：Plugins → `dsh-openspec-flow` 行 → Configure，打开 `dsh-openspec-flow#openspec-flow` 这一页。
 
-页面分 draft 与 apply 两段，字段为 enabled、reviewers（0/1）、maxRounds、waitMinutes 与 reviewer 模型。模型有两种来源：
+页面分 draft 与 apply 两段，字段为 enabled、reviewers（0/1）、waitMinutes 与 reviewer 模型；draft 与 apply review 不设轮次上限。模型有两种来源：
 
 - `inherit`：新 change 锁定 policy 时解析执行变更的模型（先 `agentDefaultModel`，再当前 agent 的模型），把 provider、model 与 effort 写进 `openspec/.review/<store>#<change>/policy.json`；解析不到时拒绝创建 change。
 - `explicit`：provider 与 model 必填；模型暴露可选努力时 effort 必填，否则省略并按适配器默认。

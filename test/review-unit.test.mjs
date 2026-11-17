@@ -118,18 +118,17 @@ test('the lock is exclusive and released', () => {
 test('review config normalizes defaults and limits', () => {
   assert.deepEqual(normalizeReviews(undefined).value, {
     draft: {
-      enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
     },
     apply: {
-      enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
     },
   })
   const invalid = normalizeReviews({ draft: { enabled: 'yes', reviewers: 2, maxRounds: 0, waitMinutes: 121 } })
-  assert.equal(invalid.issues.length, 4)
+  assert.equal(invalid.issues.length, 3)
   assert.deepEqual(draftSettings({ reviews: { draft: { enabled: false } } }), {
     enabled: false,
     reviewers: 0,
-    maxRounds: 3,
     waitMinutes: 15,
     reviewerModel: { source: 'inherit' },
   })
@@ -270,13 +269,13 @@ test('policy helpers lock, read and remove one change', () => {
     resolveModel,
   })
   assert.equal(locked.created, true)
-  assert.equal(locked.policy.reviews.draft.maxRounds, 4)
+  assert.equal(locked.policy.reviews.draft.maxRounds, undefined)
   assert.deepEqual(locked.policy.reviews.draft.reviewerModel, {
     source: 'inherit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
   })
   assert.equal(draftEnabled(locked.policy), true)
   assert.deepEqual(policyDraft({}), {
-    enabled: false, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
   })
   const again = ensurePolicy({
     projectRoot: root,
@@ -582,10 +581,10 @@ test('apply policy helpers migrate and default', () => {
   const migrated = ensureApplyPolicy(directory, policy, {
     reviews: { apply: { enabled: true, reviewers: 0, maxRounds: 6, waitMinutes: 20 } },
   })
-  assert.equal(migrated.reviews.apply.maxRounds, 6)
-  assert.equal(readPolicy(directory).reviews.apply.maxRounds, 6)
+  assert.equal(migrated.reviews.apply.maxRounds, undefined)
+  assert.equal(readPolicy(directory).reviews.apply.maxRounds, undefined)
   assert.deepEqual(policyApply({}), {
-    enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
   })
 })
 

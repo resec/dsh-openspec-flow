@@ -108,11 +108,14 @@ test('the bundle registers one row configuration page', async () => {
   assert.equal(typeof dictionaries[0].dicts.en.title, 'string')
   assert.deepEqual(Object.keys(dictionaries[0].dicts.zh).sort(), Object.keys(dictionaries[0].dicts.en).sort())
 
-  assert.deepEqual(injections, ['plugins.row.config'])
-  assert.equal(registrations.length, 1)
+  assert.deepEqual(injections, ['plugins.row.config', 'conversation.chat.turnTail'])
+  assert.equal(registrations.length, 2)
   assert.equal(registrations[0].options.name, 'plugins.row.config')
   assert.equal(registrations[0].options.key, 'dsh-openspec-flow#openspec-flow')
   assert.equal(registrations[0].options.locale, 'openspecReview')
+  assert.equal(registrations[1].options.name, 'conversation.chat.turnTail')
+  assert.equal(registrations[1].options.id, 'dsh-openspec-flow/review-cards')
+  assert.equal(registrations[1].options.locale, 'openspecReview')
 
   // The owner asks for a one-line summary and for the page itself.
   assert.equal(registrations[0].component({ view: 'summary' }), 'openspecReview:summary')
@@ -134,19 +137,18 @@ test('the form sections default and copy independently', async () => {
   const { initialForm } = plugin.__test
   const form = initialForm(undefined)
   assert.deepEqual(form, {
-    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
   })
 
   const copied = initialForm({
     draft: {
       enabled: false,
       reviewers: 1,
-      maxRounds: 4,
       waitMinutes: 20,
       reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
     },
-    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'explicit', provider: 'p', model: '' } },
+    apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'explicit', provider: 'p', model: '' } },
   })
   assert.equal(copied.draft.enabled, false)
   assert.equal(copied.draft.reviewers, 1)
@@ -161,7 +163,7 @@ test('the cascade clears the fields a choice no longer names', async () => {
   const { initialForm, chooseProvider, chooseModel, chooseEffort, patchSection, setModel } = plugin.__test
   let form = initialForm(undefined)
 
-  form = patchSection(form, 'draft', { enabled: false, maxRounds: 4 })
+  form = patchSection(form, 'draft', { enabled: false, waitMinutes: 20 })
   assert.equal(form.draft.enabled, false)
   assert.equal(form.apply.enabled, true)
 
@@ -196,9 +198,9 @@ test('a locked section is described in one line', async () => {
   const { plugin } = await loadBundle()
   const { lockLine } = plugin.__test
   const t = (key, params) => (params?.n === undefined ? key : `${key}:${String(params.n)}`)
-  const line = lockLine(t, { enabled: true, reviewers: 1, maxRounds: 3, waitMinutes: 15 }, 'draft')
-  assert.equal(line, 'lockDraft: enabledOn · reviewersText:1 · 3×15m')
-  assert.match(lockLine(t, { enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15 }, 'apply'), /lockApply: enabledOff/)
+  const line = lockLine(t, { enabled: true, reviewers: 1, waitMinutes: 15 }, 'draft')
+  assert.equal(line, 'lockDraft: enabledOn · reviewersText:1 · 15m')
+  assert.match(lockLine(t, { enabled: false, reviewers: 0, waitMinutes: 15 }, 'apply'), /lockApply: enabledOff/)
 })
 
 /**
@@ -224,10 +226,10 @@ async function controllerWith(answers) {
 test('the controller loads settings, providers and project facts', async () => {
   const settings = {
     reviews: {
-      draft: { enabled: true, reviewers: 1, maxRounds: 4, waitMinutes: 20, reviewerModel: { source: 'inherit' } },
-      apply: { enabled: false, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      draft: { enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' } },
+      apply: { enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
     },
-    bounds: { reviewers: { min: 0, max: 1 }, maxRounds: { min: 1, max: 50 }, waitMinutes: { min: 1, max: 120 } },
+    bounds: { reviewers: { min: 0, max: 1 }, waitMinutes: { min: 1, max: 120 } },
     canSave: true,
   }
   const { controller, calls } = await controllerWith({
@@ -248,7 +250,7 @@ test('the controller loads settings, providers and project facts', async () => {
   assert.equal(state.status, 'ready')
   assert.equal(state.form.draft.reviewers, 1)
   assert.equal(state.form.apply.enabled, false)
-  assert.equal(state.form.apply.maxRounds, 5)
+  assert.equal(state.form.apply.waitMinutes, 15)
   assert.equal(state.canSave, true)
   assert.deepEqual(state.providers, [{ id: 'deepseek', name: 'DeepSeek' }])
   assert.deepEqual(state.projects, [{ path: '/p', git: false, changes: [] }])
@@ -271,8 +273,8 @@ test('a save reports acceptance and the Host rejection verbatim', async () => {
       ok: true,
       value: {
         reviews: {
-          draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-          apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+          draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+          apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
         },
         bounds: undefined,
         canSave: true,
@@ -406,4 +408,66 @@ test('the package exports the client half and packs it', () => {
   assert.ok(path.includes('index.js'))
   assert.ok(path.some((name) => name.startsWith('lib/review/settings.js')))
   assert.ok(path.some((name) => name.startsWith('lib/client/channel.js')))
+})
+
+test('cards select by turn, collapse and expose the full report', async () => {
+  const { plugin } = await loadBundle()
+  const { selectCards, cardSummary, cardSections } = plugin.__test
+  const reviewCard = {
+    phase: 'review',
+    review: 'draft',
+    change: 'demo',
+    round: 2,
+    verdict: 'changes-requested',
+    counts: { total: 1, blocking: 1 },
+    nextAction: 'openspec_review action=dispose',
+    object: { kind: 'change', hash: 'abc', changed: true },
+    report: {
+      summary: 'One blocker.',
+      findings: [{
+        id: 'R2-01', severity: 'major', status: 'open', location: 'proposal.md:3', title: 'Missing goal',
+        problem: 'The goal is missing.', evidence: 'proposal.md', impact: 'Intent cannot be checked.',
+        rule: 'Intent fit', failure: 'Apply starts without a goal.', suggestion: 'Add the goal.',
+      }],
+      verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'Checked tasks.md.' }],
+      residualRisks: ['The goal may stay vague.'],
+      outOfScope: ['Not this change.'],
+    },
+    findings: [{ id: 'R2-01', status: 'fixed', note: 'Added the goal.', waiver: null, approvedBy: null, verifiedInRound: null }],
+    planChangeWaiver: {
+      approvedBy: 'user', recordedAt: '2026-01-01T00:00:00.000Z', text: 'Approved.',
+      files: ['proposal.md'], draftObjectHash: 'd1', currentObjectHash: 'd2',
+    },
+    readinessReasons: ['the review is not ready'],
+  }
+  const resolutionCard = { ...reviewCard, phase: 'resolution', verdict: 'pass' }
+  const view = { byTurn: { 2: [reviewCard, resolutionCard] } }
+
+  assert.deepEqual(selectCards(view, 2).map((card) => card.phase), ['review', 'resolution'])
+  assert.deepEqual(selectCards(view, 3), [])
+  assert.deepEqual(selectCards(undefined, 2), [])
+  assert.match(cardSummary(reviewCard), /评审汇报 · draft · 第 2 轮 · changes-requested · findings 1（阻塞 1）/)
+
+  const sections = cardSections(reviewCard)
+  const text = JSON.stringify(sections)
+  for (const phrase of [
+    '报告结论', 'One blocker.', '问题', 'The goal is missing.', '证据', 'proposal.md',
+    '影响', '规则', '失败路径', '建议', '本轮验证', 'Checked tasks.md.',
+    '残余风险', 'The goal may stay vague.', 'Out of scope', 'Not this change.',
+    '处理情况', 'Added the goal.', '规划变更豁免', 'Approved.', '未就绪原因',
+  ]) {
+    assert.ok(text.includes(phrase), `the expanded card shows ${phrase}`)
+  }
+
+  const built = clientContext()
+  plugin.apply(built.ctx)
+  const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
+  assert.equal(turnTail.component({ turn: { turn: 2 }, useProjection: () => view }).type, 'div')
+  assert.equal(turnTail.component({ turn: { turn: 3 }, useProjection: () => view }), null)
+  const element = turnTail.component({ turn: { turn: 2 }, useProjection: () => view })
+  const list = element.props.children[0]
+  const first = Array.isArray(list) ? list[0] : list
+  const rendered = first.type(first.props)
+  assert.ok(JSON.stringify(rendered).includes('展开'))
+  assert.ok(JSON.stringify(rendered).includes('评审汇报'))
 })

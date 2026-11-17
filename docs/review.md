@@ -78,11 +78,11 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 `openspec_new_change` 与首次评审都会写 `policy.json`，之后不再随配置改动。锁定内容：
 
-- `reviews.draft`、`reviews.apply`：`enabled`、`reviewers`、`maxRounds`、`waitMinutes`、`reviewerModel`。
+- `reviews.draft`、`reviews.apply`：`enabled`、`reviewers`、`waitMinutes`、`reviewerModel`。
 - `git.enabled`：创建时该目录是否有 git 仓库。
 - `change`、`store`、`lockedAt`、`lockedBy`、`configHash`。
 
-更早的 policy 没有 `reviewerModel` 时，下一次 `start` 或 `resume` 会解析一次并补写字段；已有模型的策略不会被重写，所以事后修改配置页只影响新变更。改动默认值不会移动已锁定评审的模型或轮次上限。
+更早的 policy 没有 `reviewerModel` 时，下一次 `start` 或 `resume` 会解析一次并补写字段；已有模型的策略不会被重写，所以事后修改配置页只影响新变更。改动默认值不会移动已锁定评审的模型或等待上限。
 
 ## 报告与 finding
 
@@ -112,6 +112,26 @@ finding 的处置：
 
 就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose`，即使对象已变化或有 finding 已是 `fixed`。
 
+## 轮次汇报与信息卡
+
+每轮结束由插件写一张信息卡，模型不再复述报告。卡片事件为 `plugin:openspec-flow/review-card`，记录在会话日志中并标记 `ignorable: true`，不进入模型可见面；`openspecReviewCards` 投影按 turn 折叠，客户端通过 `conversation.chat.turnTail` 在回合末尾显示。工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
+
+写入点：
+
+- 评审汇报：`self-report`（自评审）、reviewer `submit`（reviewer 会话）、changer `wait`（主会话）；`report` 作为补写，已写过时不重复。
+- 处理汇报：`resume` 新开一轮且关闭轮已有报告与处置时；或处置后已就绪、下一步为 apply/archive 时最后一次 `dispose`/`waive`。
+- 同一会话、同一轮、同一 phase 只写一次，由 review 记录的 `cards` 标记去重。
+
+卡片形态：
+
+- 默认折叠，摘要显示标题、轮次、结论、findings 计数与下一步；点击展开。
+- 展开显示完整内容：报告的 verdict 与 summary、每条 finding 的 problem/evidence/impact/rule/failure/suggestion、verification evidence、处置 note 与 waiver、批准者与验证轮次、residualRisks、outOfScope、plan-change waiver（批准者、时间、文本、文件、draft/current hash）以及未就绪原因。
+- 不设截断、不分页；展开区可滚动。标签固定中文，报告原文保留。
+
+模型规则：每轮只写一句报告不能表达且用户需要知道的内容（取舍、授权、等待状态、下一步等）；不复述 findings、证据、风险、scope 或处置 note。reviewer 提交后不写评审总结，brief 已写明。卡片记录不进入模型可见面。
+
+依赖：插件在 `package.json` 声明 `@deepseek-ai/dsh-session`（精确 `engines.dsh`）。安装后运行 `scripts/probe-session.mjs` 验证插件与 Host 使用同一模块实例，并确认卡片事件不进入模型可见记录；探针失败时停止发布。
+
 ## 记录布局
 
 评审记录放在变更目录之外，归档后仍保留：
@@ -128,14 +148,14 @@ finding 的处置：
 | `openspec/.review/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
-`<store>#` 在无 store 时为 `local#`。评审根通过 `openspec/.gitignore` 的 `.review/` 行忽略；有 git 的项目在写记录前用 `git check-ignore` 校验，无法忽略时拒绝写入。
+`<store>#` 在无 store 时为 `local#`。评审根通过 `openspec/.gitignore` 的 `.review/` 行忽略；有 git 的项目在写记录前用 `git check-ignore` 校验，无法忽略时拒绝写入。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡。
 
 ## 失败处理
 
-- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15 或 `maxRounds`）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
+- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
-- **轮次上限**：达到 `maxRounds` 后 `resume` 拒绝新轮次，需要 `extend maxRounds`（`unlimited` 表示不限）。
+- **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。
 - **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"`；先处置再 `resume`。
 - **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`。
 - **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。
@@ -153,12 +173,10 @@ finding 的处置：
 | --- | --- | --- |
 | `reviews.draft.enabled` | `true` | 新变更是否锁定 draft review |
 | `reviews.draft.reviewers` | `0` | 0 自评审，1 独立 reviewer |
-| `reviews.draft.maxRounds` | `3` | draft 轮次上限，1–50 |
 | `reviews.draft.waitMinutes` | `15` | draft 等待上限，1–120 |
 | `reviews.draft.reviewerModel` | `{ source: "inherit" }` | reviewer 模型来源 |
 | `reviews.apply.enabled` | `true` | 新变更是否锁定 apply review |
 | `reviews.apply.reviewers` | `0` | 0 自评审，1 独立 reviewer |
-| `reviews.apply.maxRounds` | `5` | apply 轮次上限，1–50 |
 | `reviews.apply.waitMinutes` | `15` | apply 等待上限，1–120 |
 | `reviews.apply.reviewerModel` | `{ source: "inherit" }` | reviewer 模型来源 |
 

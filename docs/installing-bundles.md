@@ -38,7 +38,7 @@ npm run bundle:pack
 2. 安装 `dist/<name>-<version>/` 中刚生成的 tarball。
 3. 重启会话，让新安装的 Host 代码生效。
 
-安装后插件行 id 为 `openspec-flow`，依赖 `@fission-ai/openspec` 由 profile 的包管理器一并安装。
+安装后插件行 id 为 `openspec-flow`，依赖 `@fission-ai/openspec` 与 `@deepseek-ai/dsh-session` 由 profile 的包管理器一并安装；后者版本必须与运行中的 DSH 一致。安装完成后运行 `scripts/probe-session.mjs`，确认插件与 Host 解析到同一模块实例，并验证卡片事件不进入模型可见记录。
 
 ## 重装与冻结
 
@@ -59,5 +59,5 @@ npm run bundle:pack -- --force
 ## 限制
 
 - `git clean -xfd` 会删除 `dist/` 与 `.cache/`。两者都可由提交重新生成。
-- 安装需要访问 registry 获取 `@fission-ai/openspec`；离线或被镜像阻塞时安装失败，插件在装回上一版本前不可用。
+- 安装需要访问 registry 获取 `@fission-ai/openspec` 与 `@deepseek-ai/dsh-session`；离线或被镜像阻塞时安装失败，插件在装回上一版本前不可用。两个包版本固定，`dsh-session` 必须与运行中的 DSH 精确一致。
 - 包形态不随工作区改动重载；这一冻结是有意行为，不是故障。
