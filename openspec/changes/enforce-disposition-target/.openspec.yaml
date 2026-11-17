@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-17
+goal: Make finding dispositions name their review record explicitly and refuse a
+  disposal that targets the frozen draft record after apply started, so a
+  missing parameter cannot rewrite another review's verified findings.
