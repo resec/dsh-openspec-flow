@@ -235,6 +235,82 @@ test('readiness accounts for verdict, blockers and stale hashes', () => {
   assert.equal(waived.ready, true)
 })
 
+test('a blocking length result gates readiness and names resume', () => {
+  const length = {
+    limit: 500,
+    blocking: true,
+    issues: [{
+      kind: 'modified-growth',
+      spec: 'notes',
+      path: 'specs/notes/spec.md',
+      requirement: 'Stored notes',
+      operation: 'MODIFIED',
+      length: 656,
+      baseline: 455,
+    }],
+    legacy: [],
+  }
+  const reported = {
+    review: 'draft',
+    state: 'in-review',
+    objectHash: 'hash',
+    mode: 'reviewer',
+    rounds: [{ round: 1, verdict: 'pass', report: { path: 'report.json' } }],
+    findings: [],
+    length,
+  }
+  const blocked = draftReadiness(reported, 'hash', 'draft')
+  assert.equal(blocked.ready, false)
+  assert.match(blocked.reasons.join(' '), /requirement description gate/)
+  assert.equal(blocked.nextAction, 'openspec_review action=resume review=draft')
+
+  const unreported = draftReadiness({ ...reported, rounds: [] }, 'hash', 'draft')
+  assert.equal(unreported.nextAction, 'openspec_review action=wait')
+  const self = draftReadiness({ ...reported, rounds: [], mode: 'self' }, 'hash', 'draft')
+  assert.equal(self.nextAction, 'openspec_review action=self-report')
+
+  const open = draftReadiness({
+    ...reported,
+    findings: [finding({ status: 'open' })],
+  }, 'hash', 'draft')
+  assert.equal(open.nextAction, 'openspec_review action=dispose review=draft')
+
+  const started = draftReadiness(reported, 'hash', 'draft', { applyStarted: true })
+  assert.equal(started.ready, true)
+  assert.doesNotMatch(started.reasons.join(' '), /requirement description gate/)
+})
+
+test('the draft brief renders the requirement length section', () => {
+  const { root, changeRoot } = changeFixture()
+  const object = draftObject(changeRoot, 'goal')
+  const brief = buildDraftBrief({
+    change: 'demo',
+    objectHash: object.objectHash,
+    intentHash: object.intentHash,
+    files: object.files,
+    projectRoot: root,
+    requirementLength: {
+      limit: 500,
+      blocking: true,
+      issues: [{
+        kind: 'modified-growth',
+        spec: 'notes',
+        path: 'specs/notes/spec.md',
+        requirement: 'Stored notes',
+        operation: 'MODIFIED',
+        length: 656,
+        baseline: 455,
+      }],
+      legacy: [],
+    },
+  })
+  assert.match(brief, /## Requirement length/)
+  assert.match(brief, /Stored notes/)
+  assert.match(brief, /656/)
+  assert.match(brief, /455/)
+  assert.match(brief, /Do not compress/)
+})
+
 test('finding summaries count statuses and blockers', () => {
   const summary = summarizeFindings([
     finding({ status: 'open' }),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {
-  existsSync, readFileSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -48,6 +48,73 @@ test('self review passes the apply gate', async () => {
   assert.equal(record.independent, false)
   assert.equal(record.state, 'passed')
   assert.ok(record.applyBaseCommit === undefined || typeof record.applyBaseCommit === 'string')
+})
+
+test('a MODIFIED growth blocks draft readiness and carries the official handling', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const mainDir = join(root, 'openspec', 'specs', 'theme')
+  mkdirSync(mainDir, { recursive: true })
+  const baseline = 'The app SHALL let users switch between light and dark themes, defaulting to the system preference.'
+  const grown = `${baseline} It SHALL also preserve the selected theme across restarts and explain the choice in the settings panel.${' detail'.repeat(90)}`
+  writeFileSync(join(mainDir, 'spec.md'), `# Theme Specification
+
+## Purpose
+
+Lets users choose a visual theme and keeps that choice across sessions.
+
+## Requirements
+
+### Requirement: Theme selection
+
+${baseline}
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme', 'spec.md'), `## MODIFIED Requirements
+
+### Requirement: Theme selection
+
+${grown}
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  const started = await call(fake, 'openspec_review', {
+    action: 'start',
+    change: CHANGE,
+    intent: 'Add a theme selector and persist it.',
+  })
+  assert.match(started.brief, /## Requirement length/)
+  assert.match(started.brief, /Do not compress/)
+  assert.match(started.brief, /Report a blocking length finding/)
+
+  const beforeReport = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(beforeReport.nextAction, 'openspec_review action=self-report')
+
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.length.blocking, true)
+  assert.equal(record.length.issues[0].kind, 'modified-growth')
+  assert.ok(record.length.issues[0].length > record.length.issues[0].baseline)
+
+  const submitted = await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    report: report(),
+  })
+  assert.equal(submitted.ready, false)
+  assert.match(submitted.reasons.join(' '), /requirement description gate/)
+  assert.equal(submitted.nextAction, 'openspec_review action=resume review=draft')
+
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /requirement description limit/,
+  )
 })
 
 test('an open blocker refuses apply', async () => {

@@ -178,6 +178,27 @@ test('the review document and README state the apply brief base scope', () => {
   assert.match(readme, /可选 `base`/)
 })
 
+test('the review document and README state the requirement length gate', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    '500 字符上限',
+    'ADDED',
+    'MODIFIED',
+    '历史既有超长',
+    '不要为了通过长度限制而压缩',
+    '专门 change',
+    '保留 header 和全部 scenario',
+    'openspec_review action=resume review=draft',
+  ]) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  assert.doesNotMatch(text, /建议压缩文本|应该压缩文本/)
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  for (const phrase of ['500 字符上限', 'ADDED', 'MODIFIED', '历史超长', 'resume review=draft', '不要为了过闸门压缩文本']) {
+    assert.ok(readme.includes(phrase), `the README names ${phrase}`)
+  }
+})
+
 test('the README carries no round-cap policy wording', () => {
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
   assert.doesNotMatch(readme, /与轮次、等待上限|轮次上限.*策略|maxRounds/)

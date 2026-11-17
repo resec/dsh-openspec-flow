@@ -167,6 +167,59 @@ test('apply review refuses a dirty tree', async () => {
   )
 })
 
+test('apply review refuses a plan change that grows a MODIFIED requirement', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+
+  const mainDir = join(root, 'openspec', 'specs', 'theme')
+  mkdirSync(mainDir, { recursive: true })
+  const baseline = 'The app SHALL let users switch between light and dark themes, defaulting to the system preference.'
+  const grown = `${baseline} It SHALL also preserve the selected theme across restarts.${' detail'.repeat(90)}`
+  writeFileSync(join(mainDir, 'spec.md'), `# Theme Specification
+
+## Purpose
+
+Lets users choose a visual theme and keeps that choice across sessions.
+
+## Requirements
+
+### Requirement: Theme selection
+
+${baseline}
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme', 'spec.md'), `## MODIFIED Requirements
+
+### Requirement: Theme selection
+
+${grown}
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  run(['add', '-A'])
+  run(['commit', '-m', 'change plan'])
+  await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'The user approved the longer requirement.', files: ['specs/theme/spec.md'],
+  })
+
+  const resync = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  assert.equal(resync.state, 'all_done')
+
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /apply review refuses change 'add-dark-mode'.*requirement description limit/s,
+  )
+})
+
 test('apply review accepts a plan change and records the drift', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
