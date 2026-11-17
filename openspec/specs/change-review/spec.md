@@ -207,7 +207,7 @@ The apply review SHALL bind the git tree of the current `HEAD` commit. It SHALL 
 
 - **WHEN** a change has a clean working tree and a commit
 - **THEN** the apply review records the commit and tree hashes
-- **AND** the base is the draft review's base commit or `git merge-base HEAD origin/main`
+- **AND** the base is the draft review's base commit, an explicit `base` passed to the round, or `git merge-base HEAD origin/main`
 
 #### Scenario: Working tree is dirty
 
@@ -260,7 +260,7 @@ The apply review SHALL reuse the draft review report, finding, severity and read
 
 #### Scenario: Apply review starts from the seal commit
 
-- **WHEN** the first apply round opens after a git seal
+- **WHEN** the first apply round opens after a git seal and no explicit base is passed
 - **THEN** its base is the draft record's apply base commit
 - **AND** the diff covers the implementation and any plan change after the seal
 
@@ -1089,3 +1089,39 @@ Draft and apply reviews SHALL accept every round for as long as a report and its
 
 - **WHEN** every recorded finding has been disposed after the latest report
 - **THEN** `resume` opens the next round
+
+### Requirement: Apply review brief names the base reference and its source
+
+The apply review brief SHALL name the base reference and identify its source as the seal commit recorded by the first `openspec_apply_next`, an explicit base passed to the round, or `git merge-base HEAD origin/main`.
+
+#### Scenario: The base is the seal commit
+
+- **WHEN** the apply review starts after a git seal
+- **THEN** the brief names the seal commit as the base reference
+- **AND** the brief identifies the source as the seal commit
+
+#### Scenario: The base is explicit
+
+- **WHEN** the apply review uses an explicit base
+- **THEN** the brief names the explicit base as the base reference and identifies the source as explicit, not a seal commit
+
+#### Scenario: The base is the merge base
+
+- **WHEN** the apply review falls back to `git merge-base HEAD origin/main`
+- **THEN** the brief names the merge base as the base reference and identifies the source as merge-base, not a seal commit
+
+### Requirement: Apply review brief states the diff scope and empty-diff meaning
+
+The apply review brief SHALL state that the diff starts at the base tree and covers only what differs between the base tree and the committed current tree, that the whole committed tree is the review object and the diff is not the review scope, and that an empty diff means the committed tree equals the base tree, not that the change needs no implementation. It SHALL ask the reviewer to check every task and delta requirement against the tree.
+
+#### Scenario: The diff is described as a view, not the scope
+
+- **WHEN** the reviewer reads the apply review brief
+- **THEN** the brief states that the diff starts at the base tree and covers only what differs between the base tree and the committed current tree
+- **AND** the brief states that the whole committed tree is the review object and the diff is not the review scope
+
+#### Scenario: The diff is empty
+
+- **WHEN** the apply brief is generated for a committed current tree equal to the base tree
+- **THEN** the brief states that the empty diff does not mean the change needs no implementation
+- **AND** the brief asks the reviewer to check every task and delta requirement against the tree
