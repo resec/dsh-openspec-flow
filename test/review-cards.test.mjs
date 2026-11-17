@@ -340,6 +340,28 @@ test('a minimal record and missing report path keep null defaults', () => {
   }
 })
 
+test('a record without findings builds empty counts and a card list', () => {
+  const root = directory()
+  try {
+    const stored = record()
+    delete stored.findings
+    const card = buildCard({
+      phase: 'review',
+      kind: 'draft',
+      record: stored,
+      round: 1,
+      report: null,
+      waiver: null,
+      readiness: readiness(),
+      currentHash: 'hash-a',
+    })
+    assert.equal(card.counts.total, 0)
+    assert.deepEqual(card.findings, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('a report-level verdict supplies a missing round verdict', () => {
   const root = directory()
   try {

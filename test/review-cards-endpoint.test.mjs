@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -11,16 +11,17 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-cards-endpoint-'))
   const directory = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(directory, 'cards'), { recursive: true })
+  const warnings = []
   const ctx = {
     get(name) {
       if (name === 'agents') return { list: () => [{ session: { id: 'changer' } }] }
       if (name === 'workingDirectory') return { get: () => root }
       return undefined
     },
-    logger: { warn: () => {} },
+    logger: { warn: (message) => warnings.push(message) },
   }
   const settings = { timeoutMs: 1000, reviews: { draft: {}, apply: {} } }
-  return { root, directory, channel: createReviewChannel({ ctx, settings }) }
+  return { root, directory, warnings, channel: createReviewChannel({ ctx, settings }) }
 }
 
 /** Write one card file. */
@@ -119,6 +120,96 @@ test('a corrupt card is skipped and the valid one is returned', async () => {
       sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
     })
     assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('multiple cards sort review before resolution and by round', async () => {
+  const { directory, channel } = fixture()
+  try {
+    cardFile(directory, { phase: 'resolution', round: 1, writtenAt: '2026-01-01T00:01:00.000Z' })
+    cardFile(directory, { phase: 'review', round: 2, writtenAt: '2026-01-01T00:02:00.000Z' })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.deepEqual(result.value.cards.map((card) => card.phase), ['review', 'resolution'])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('invalid card shapes are skipped', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const invalid = [
+      { schemaVersion: 2 },
+      { schemaVersion: 1, sessionId: '', phase: 'review', round: 1, payload: {} },
+      { schemaVersion: 1, sessionId: 'changer', phase: 'bad', round: 1, payload: {} },
+      { schemaVersion: 1, sessionId: 'changer', phase: 'review', round: 0, payload: {} },
+      { schemaVersion: 1, sessionId: 'changer', phase: 'review', round: 1, payload: [] },
+      null,
+    ]
+    invalid.forEach((value, index) => {
+      writeFileSync(join(directory, 'cards', `invalid-${String(index)}.json`), JSON.stringify(value))
+    })
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a project without a review root returns no cards', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-empty-'))
+  try {
+    mkdirSync(join(root, 'openspec'), { recursive: true })
+    const ctx = {
+      get(name) {
+        if (name === 'agents') return { list: () => [{ session: { id: 'changer' } }] }
+        if (name === 'workingDirectory') return { get: () => root }
+        return undefined
+      },
+      logger: { warn: () => {} },
+    }
+    const channel = createReviewChannel({ ctx, settings: { timeoutMs: 1000, reviews: {} } })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.deepEqual(result.value.cards, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a broken review entry, a cardless change and a non-JSON file are skipped', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const base = join(directory, '..')
+    symlinkSync(join(base, 'missing-target'), join(base, 'broken-link'))
+    mkdirSync(join(base, 'empty-change'), { recursive: true })
+    writeFileSync(join(directory, 'cards', 'notes.txt'), 'not a card')
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a delivery write failure is logged and keeps the endpoint answer', async () => {
+  const { directory, channel, warnings } = fixture()
+  try {
+    mkdirSync(join(directory, 'card-delivery.json'))
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.ok, true)
+    assert.ok(warnings.some((message) => message.includes('could not be delivered')))
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
