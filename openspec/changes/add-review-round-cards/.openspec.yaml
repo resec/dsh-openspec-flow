@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-17
+goal: Review rounds report through plugin-generated cards instead of model
+  prose, round caps are removed, and the runtime may depend on the pinned
+  @deepseek-ai/dsh-session package.
