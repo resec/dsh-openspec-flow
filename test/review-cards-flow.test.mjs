@@ -133,3 +133,37 @@ test('an independent review writes the reviewer card and the main-session card o
   assert.deepEqual(fold(reviewerSession)['1'].map((card) => card.phase), ['review'])
   assert.deepEqual(fold(changerSession)['1'].map((card) => card.phase), ['review'])
 })
+
+test('a passing round with a disposed minor finding writes the resolution card', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const target = session('changer')
+  const agent = { id: 'review-test', session: target }
+  target.append('turn/start', { turn: 1 })
+  await callWith(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  }, agent)
+  const minor = {
+    id: 'R1-01',
+    severity: 'minor',
+    axis: 'coherence',
+    location: 'design.md',
+    title: 'Minor wording',
+    problem: 'A sentence is unclear.',
+    evidence: 'design.md',
+    suggestion: 'Rewrite it.',
+  }
+  await callWith(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'pass', findings: [minor] }),
+  }, agent)
+  const disposed = await callWith(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'deferred', note: 'Follow up in ISS-9.',
+  }, agent)
+  assert.equal(disposed.ready, true)
+  target.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  const cards = cardsIn(target)
+  assert.deepEqual(cards.map((event) => event.data.phase), ['review', 'resolution'])
+  assert.equal(cards[1].data.findings[0].status, 'deferred')
+  assert.equal(cards[1].data.findings[0].note, 'Follow up in ISS-9.')
+})

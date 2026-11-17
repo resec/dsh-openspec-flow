@@ -14,6 +14,7 @@ import {
   normalizeJson,
   readRoundReport,
   writeCard,
+  writeCardRecord,
 } from '../lib/review/cards.js'
 
 /** Build one record for a card test. */
@@ -241,6 +242,128 @@ test('a failed write keeps the marker off and logs', () => {
     assert.equal(stored.cards, undefined)
     assert.equal(warnings.length, 1)
     assert.match(warnings[0], /no Session/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('normalization drops non-JSON values and apply objects name the commit', () => {
+  assert.equal(normalizeJson(Symbol('x')), null)
+  const root = directory()
+  try {
+    const applied = record({
+      review: 'apply',
+      commitSha: 'c1',
+      treeSha: 't1',
+      baseTreeSha: 'b1',
+      findings: [],
+    })
+    const card = buildCard({
+      phase: 'review',
+      kind: 'apply',
+      record: applied,
+      round: 1,
+      report: null,
+      waiver: null,
+      readiness: { ready: true, nextAction: 'openspec_archive', reasons: [] },
+      currentHash: 't1',
+    })
+    assert.deepEqual(card.object.kind, 'commit')
+    assert.equal(card.object.commit, 'c1')
+    assert.equal(card.object.tree, 't1')
+    assert.equal(card.object.baseTree, 'b1')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('writeCardRecord logs a missing or mismatched session', () => {
+  const warnings = []
+  const logger = { warn: (message) => warnings.push(message) }
+  assert.equal(writeCardRecord({ session: undefined, payload: {}, logger }), false)
+  assert.equal(writeCardRecord({ session: {}, payload: {}, logger }), false)
+  assert.equal(warnings.length, 2)
+  assert.match(warnings[0], /no Session/)
+  assert.match(warnings[1], /could not be written/)
+})
+
+test('a minimal record and missing report path keep null defaults', () => {
+  assert.equal(normalizeJson(Number.NaN), null)
+  const root = mkdtempSync(join(tmpdir(), 'dsh-card-minimal-'))
+  try {
+    const stored = {
+      change: 'demo',
+      review: 'draft',
+      findings: [{ id: 'R1-01', severity: 'minor', location: 'a:1', title: 't', status: 'open' }],
+    }
+    const card = buildCard({
+      phase: 'review',
+      kind: 'draft',
+      record: stored,
+      round: 1,
+      report: null,
+      waiver: undefined,
+      readiness: undefined,
+      currentHash: undefined,
+    })
+    assert.equal(card.verdict, null)
+    assert.equal(card.state, null)
+    assert.equal(card.mode, null)
+    assert.equal(card.startedAt, null)
+    assert.equal(card.recordedAt, null)
+    assert.equal(card.planChangeWaiver, null)
+    assert.equal(card.nextAction, null)
+    assert.deepEqual(card.readinessReasons, [])
+    assert.equal(card.findings[0].axis, null)
+    assert.equal(card.findings[0].firstRound, null)
+    assert.deepEqual(readRoundReport(root, {}), null)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a report-level verdict supplies a missing round verdict', () => {
+  const root = directory()
+  try {
+    const stored = record()
+    stored.rounds[0].verdict = undefined
+    const card = buildCard({
+      phase: 'review',
+      kind: 'draft',
+      record: stored,
+      round: 1,
+      report: { verdict: 'pass', summary: 'ok', findings: [] },
+      waiver: null,
+      readiness: readiness(),
+      currentHash: 'hash-a',
+    })
+    assert.equal(card.verdict, 'pass')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a failed commit keeps the write result false', () => {
+  const root = directory()
+  const warnings = []
+  try {
+    const stored = record()
+    const written = writeCard({
+      directory: root,
+      kind: 'draft',
+      phase: 'review',
+      record: stored,
+      round: 1,
+      report: null,
+      waiver: null,
+      readiness: readiness(),
+      currentHash: 'hash-a',
+      session: { id: 'broken' },
+      logger: { warn: (message) => warnings.push(message) },
+    })
+    assert.equal(written, false)
+    assert.equal(stored.cards, undefined)
+    assert.match(warnings[0], /could not be written/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

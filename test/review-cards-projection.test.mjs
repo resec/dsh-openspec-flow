@@ -106,3 +106,71 @@ test('the main entry registers the projection and survives a failing registrar',
   assert.ok(throwing.tools.has('openspec_review'))
   assert.ok(throwing.warnings.some((message) => message.includes('boom')))
 })
+
+test('the projection schemas clean persisted state and the wire view', () => {
+  const projection = createCardProjection()
+  const state = projection.stateSchema.parse({
+    currentTurn: 2,
+    byTurn: { 2: [card()], 3: [{ bad: true }], 4: 'nope' },
+    ignored: true,
+  })
+  assert.equal(state.currentTurn, 2)
+  assert.equal(state.byTurn['2'].length, 1)
+  assert.equal(state.byTurn['3'], undefined)
+  assert.deepEqual(projection.stateSchema.parse('bad'), { currentTurn: null, byTurn: {} })
+  assert.equal(projection.wire.viewSchema.parse({ byTurn: { 2: [card()] } }).byTurn['2'].length, 1)
+})
+
+test('a rejected registration promise only logs', async () => {
+  const warnings = []
+  const ctx = {
+    get: () => ({ register: () => Promise.reject(new Error('late boom')) }),
+    logger: { warn: (message) => warnings.push(message) },
+  }
+  registerCardProjection(ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.ok(warnings.some((message) => message.includes('late boom')))
+})
+
+test('malformed payloads and repeated turn events are tolerated', () => {
+  const projection = createCardProjection()
+  let state = projection.init()
+  state = projection.apply(state, { type: 'turn/start', seq: 1, data: { turn: 2 } })
+  assert.equal(projection.apply(state, { type: 'turn/start', seq: 2, data: { turn: 2 } }), state)
+  assert.equal(projection.apply(state, { type: 'turn/start', seq: 2, data: {} }), state)
+  assert.equal(
+    projection.apply(state, { type: 'turn/end', seq: 3, data: { turn: 9, reason: { kind: 'completed' } } }),
+    state,
+  )
+  for (const bad of [
+    null,
+    [],
+    { phase: 'review' },
+    { phase: 'review', change: '', review: 'draft', round: 1, findings: [] },
+    { phase: 'review', change: 'c', review: '', round: 1, findings: [] },
+    { phase: 'review', change: 'c', review: 'draft', round: -1, findings: [] },
+    { phase: 'review', change: 'c', review: 'draft', round: 1.5, findings: [] },
+    { phase: 'review', change: 'c', review: 'draft', round: 1, findings: [], object: 'x' },
+    { phase: 'review', change: 'c', review: 'draft', round: 1, findings: 'x' },
+  ]) {
+    assert.equal(asCard(bad), null)
+  }
+})
+
+test('a non-function registrar and a non-Error rejection only log', async () => {
+  const warnings = []
+  const ctx = {
+    get: () => ({ register: 42 }),
+    logger: { warn: (message) => warnings.push(message) },
+  }
+  registerCardProjection(ctx)
+  assert.match(warnings[0], /unavailable/)
+
+  const rejected = {
+    get: () => ({ register: () => Promise.reject('late boom') }),
+    logger: { warn: (message) => warnings.push(message) },
+  }
+  registerCardProjection(rejected)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.ok(warnings.some((message) => message.includes('late boom')))
+})
