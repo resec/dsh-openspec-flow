@@ -24,9 +24,9 @@
 
 ## 4. Integration checks
 
-- [ ] 4.1 Run `npm run test:affected -- lib/tools/review.js lib/review/readiness.js lib/review/reviewer-tool.js lib/review/report.js lib/review/submit.js skills test/skills.test.mjs test/review-doc.test.mjs` and verify the selected files pass.
-- [ ] 4.2 Run `npm run verify` on Node 24 and verify the test summary and coverage verdict both pass.
-- [ ] 4.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and verify there is no finding.
+- [x] 4.1 Run `npm run test:affected -- lib/tools/review.js lib/review/readiness.js lib/review/reviewer-tool.js lib/review/report.js lib/review/submit.js skills test/skills.test.mjs test/review-doc.test.mjs` and verify the selected files pass.
+- [x] 4.2 Run `npm run verify` on Node 24 and verify the test summary and coverage verdict both pass.
+- [x] 4.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and verify there is no finding.
 
 ## Workflow follow-up
 
