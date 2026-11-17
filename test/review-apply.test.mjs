@@ -961,6 +961,7 @@ test('a started apply freezes draft dispositions and not apply ones', async () =
     firstRound: 1,
   }]
   writeFileSync(draftFile, `${JSON.stringify(draft, null, 2)}\n`)
+  const applyFile = join(reviewDir(root), 'apply-review.json')
 
   await assert.rejects(
     call(fake, 'openspec_review', {
@@ -977,6 +978,7 @@ test('a started apply freezes draft dispositions and not apply ones', async () =
   const untouched = JSON.parse(readFileSync(draftFile, 'utf8'))
   assert.equal(untouched.findings[0].status, 'open')
   assert.equal(untouched.findings[0].disposedAt, undefined)
+  assert.equal(existsSync(applyFile), false)
 
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
   await call(fake, 'openspec_review', {

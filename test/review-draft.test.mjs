@@ -918,6 +918,7 @@ test('a disposition without a review kind is refused', async () => {
   })
   for (const args of [
     { action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.' },
+    { action: 'dispose', change: CHANGE, dispositions: [{ id: 'R1-01', status: 'fixed', note: 'Fixed.' }] },
     { action: 'waive', change: CHANGE, id: 'R1-01', approvedBy: 'user', waiver: 'Accepted.' },
   ]) {
     await assert.rejects(

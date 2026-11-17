@@ -346,6 +346,9 @@ test('report validation covers unknown ids, duplicates and verdict conflicts', (
       new RegExp(`${status}.*action=dispose review=draft.*status=fixed`),
     )
   }
+  assert.doesNotThrow(
+    () => assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [] }, { round: 1, findings: [], kind: 'draft' }),
+  )
   for (const status of ['verified', 'waived']) {
     try {
       assertReport({ verdict: 'pass', summary: 'ok', findings: [], verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'x' }] }, { round: 2, findings: [finding({ status })] })

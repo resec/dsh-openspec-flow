@@ -153,7 +153,7 @@ test('a new draft round wakes the same reviewer and resumes do not', async () =>
   })
   assert.equal(submitted.round, 1)
   await call(fake, 'openspec_review', {
-    action: 'dispose', review: 'draft',
+    action: 'dispose',
     change: CHANGE,
     review: 'draft',
     id: 'R1-01',
@@ -309,7 +309,7 @@ test('a new apply round wakes the same reviewer and resumes do not', async () =>
   })
   assert.equal(submitted.round, 1)
   await call(fake, 'openspec_review', {
-    action: 'dispose', review: 'draft',
+    action: 'dispose',
     change: CHANGE,
     review: 'apply',
     id: 'R1-01',
