@@ -896,7 +896,7 @@ The `openspec-reviewer` preset SHALL mount the web tool plugin without mounting 
 
 ### Requirement: Review next actions name the round entry
 
-A next action that names `openspec_review` with `start` or `resume` SHALL carry the review kind. It SHALL name `start` when the review has no record; `resume` when a record exists, no finding is open, and either the object differs or a finding is fixed; and `dispose` while any finding is open. Once apply started, a draft next action SHALL name the apply review status, not `resume review=draft`.
+A next action that names `openspec_review` with `start`, `resume`, `dispose` or a finding `waive` SHALL carry the review kind. It SHALL name `start` when the review has no record; `resume` when a record exists, no finding is open, and either the object differs or a finding is fixed; and `dispose` with the review kind while any finding is open. Once apply started, a draft next action SHALL name the apply review status, not `resume review=draft`.
 
 #### Scenario: A not-started draft review names start
 
@@ -915,8 +915,14 @@ A next action that names `openspec_review` with `start` or `resume` SHALL carry 
 
 #### Scenario: An open finding names dispose
 
-- **WHEN** a record exists, the object changed and a finding is still open
-- **THEN** `nextAction` is `openspec_review action=dispose`
+- **WHEN** a draft record exists, the object changed and a finding is still open
+- **THEN** `nextAction` is `openspec_review action=dispose review=draft`
+- **AND** it does not name `resume`
+
+#### Scenario: An open apply finding names dispose
+
+- **WHEN** an apply record exists, the tree changed and a finding is still open
+- **THEN** `nextAction` is `openspec_review action=dispose review=apply`
 - **AND** it does not name `resume`
 
 #### Scenario: Draft status after apply started names the apply review
@@ -1089,3 +1095,13 @@ The reviewer's `read_image` SHALL be available only when the Host provides the `
 
 - **WHEN** a caller passes `base` to an action other than apply start or resume
 - **THEN** the action behaves as if `base` were absent
+
+### Requirement: Disposition actions name the review kind
+
+`openspec_review` with `action: "dispose"` or a finding `action: "waive"` SHALL require the `review` parameter and SHALL reject a call that omits it before any write, naming `draft` and `apply`.
+
+#### Scenario: Missing review kind is refused
+
+- **WHEN** a caller supplies `dispositions` for `dispose` without `review`
+- **THEN** the call fails before any write
+- **AND** the error names `draft` and `apply`

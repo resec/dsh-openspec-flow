@@ -253,3 +253,43 @@ The README `openspec_review` row SHALL name the optional `base` parameter for ap
 
 - **WHEN** a reader reads the `openspec_review` row in `README.md`
 - **THEN** the row names the optional `base` for apply review
+
+### Requirement: The document qualifies dispositions with the review kind
+
+`docs/review.md` SHALL state that `dispose` and a finding `waive` name their review kind explicitly, that a draft record refuses both once apply started, and that every dispose example and every stated dispose next action carries the kind.
+
+#### Scenario: Document states the review kind
+
+- **WHEN** the review document describes `dispose` and a finding `waive`
+- **THEN** it states that `review` is required
+- **AND** it names `draft` and `apply`
+
+#### Scenario: Document states the draft freeze
+
+- **WHEN** the review document describes a draft disposition after apply started
+- **THEN** it states that the draft record refuses `dispose` and a finding `waive`
+
+#### Scenario: Examples and next actions carry the kind
+
+- **WHEN** the review document shows a dispose example or names a dispose next action
+- **THEN** the example passes `review` and the stated next action carries `review=<kind>`
+
+### Requirement: The README states the disposition kind and the freeze
+
+The README review section SHALL state that `dispose` and a finding `waive` require the review kind, that a draft record refuses both once apply started, and SHALL name the kind-qualified dispose next action instead of the unqualified one. The documentation test SHALL assert both sentences and the qualified next action in the README.
+
+#### Scenario: README states both rules
+
+- **WHEN** the README review section is read
+- **THEN** it states that the review kind is required for a disposition
+- **AND** it states that a draft record refuses a disposition once apply started
+
+#### Scenario: README names the qualified next action
+
+- **WHEN** the README states the next action after an open finding
+- **THEN** the action carries `review=<kind>`
+
+#### Scenario: The test fails on a missing README sentence
+
+- **WHEN** the README drops either sentence or the qualified next action
+- **THEN** the documentation test fails and names the README

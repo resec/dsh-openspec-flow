@@ -301,3 +301,28 @@ The shipped propose and apply skills SHALL state that every review round is repo
 
 - **WHEN** a shipped skill requires a round count or a `maxRounds`
 - **THEN** the skill test fails
+
+### Requirement: Review skills name the review kind at every action
+
+Each shipped skill SHALL name its review kind — `review: "draft"` in the propose skill and `review: "apply"` in the apply skill — at every action it names in its review section (`status`, `start`, `self-report`, `wait`, `resume`, `dispose` and a finding `waive`), placed between that action and the next action clause, whether or not the clause repeats `openspec_review`.
+
+#### Scenario: Both review sections name their kind
+
+- **WHEN** either skill describes a review action in its review section
+- **THEN** the propose skill passes `review: "draft"` and the apply skill passes `review: "apply"`
+- **AND** neither leaves the kind to a default
+
+### Requirement: The skill test rejects an unqualified review call
+
+The packaged-skill test SHALL read the propose skill's draft review section and the apply skill's apply review section. In either section it SHALL scan every `action: "<action>"` occurrence, and for each occurrence it SHALL require that section's review kind between that occurrence and the next `action:` occurrence or the end of the section, so a clause cannot borrow the next clause's kind. It SHALL keep the existing shipped-skill assertions.
+
+#### Scenario: An action clause without the kind fails the test
+
+- **WHEN** an action occurrence reaches the next action occurrence, or the section end, without that section's review kind
+- **THEN** the packaged-skill test fails and names the skill
+
+#### Scenario: The shipped skills keep their kinds
+
+- **WHEN** the packaged-skill test runs on the shipped skills
+- **THEN** every action occurrence in the propose draft section carries `review: "draft"` before the next action
+- **AND** every action occurrence in the apply section carries `review: "apply"` before the next action
