@@ -35,7 +35,7 @@ Two related gaps block that: the plugin may not import any `@deepseek-ai/*` pack
 
 ## Verification boundary
 
-The development host profile, configuration and sessions SHALL NOT be modified for verification. The agent verifies the package through repository tests and, when available, a self-provided isolated clean DSH. Two checks are the user's self-verification boundaries and are not `tasks.md` steps: the isolated-DSH install probe (one `dsh-session` module for plugin and Host, probe record absent from the model-visible transcript) and the Web GUI card inspection (collapsed, expanded full report, waiver, two self-review cards, main-session card, reviewer-session card, cardless turn, refresh). The push follows a confirmed boundary.
+The development host profile, configuration and sessions SHALL NOT be modified for verification. The agent verifies only the repository tests. Two checks are the user's self-verification boundaries, run in a self-provided, isolated, clean DSH, and are not `tasks.md` steps: the isolated-DSH install probe (one `dsh-session` module for plugin and Host, probe record absent from the model-visible transcript) and the Web GUI card inspection (collapsed, expanded full report, waiver, two self-review cards, main-session card, reviewer-session card, cardless turn, refresh). The push follows a confirmed boundary.
 
 ## Impact
 
@@ -45,5 +45,5 @@ The development host profile, configuration and sessions SHALL NOT be modified f
 - **Round caps**: `lib/review/config.js`, `policy.js`, `settings.js`, `lib/tools/review.js`, `client.js`, `locale/*.json`.
 - **Client**: `client.js` gains the `turnTail` card, collapse state, full-report rendering and fixed Chinese labels; the configuration page loses the `maxRounds` field.
 - **Records**: review records gain a `cards` marker and drop `limits.maxRounds`; old records stay readable.
-- **Probe**: `scripts/probe-session.mjs` imports the installed plugin's and the Host's `@deepseek-ai/dsh-session`, compares module paths, writes a probe record through a Host-created Session, and asserts the record is absent from the model-visible transcript. It runs after a real profile install; the repository test covers the same contract against the fake Host.
+- **Probe**: `scripts/probe-session.mjs` imports the installed plugin's and the Host's `@deepseek-ai/dsh-session`, compares module paths, writes a probe record through a Host-created Session, and asserts the record is absent from the model-visible transcript. The live run against a Host-created Session is the user's isolated-DSH boundary; the repository test covers the contract against the fake Host.
 - **Docs and tests**: `docs/review.md`, `README.md`, `docs/upgrading-dsh-runtime.md`, `docs/installing-bundles.md`, `docs/upgrading-openspec-cli.md`, `AGENTS.md`, `index.js` comments, packaged skills, `lib/policy.js`, `lib/review/brief.js`, and the affected tests (`config`, `settings`, `client`, `draft`, `apply`, `wait`, `serial`, `unit`, `doc`, `integration`, `cards`, `cards-projection`, `cards-probe`).

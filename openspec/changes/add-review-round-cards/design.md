@@ -84,11 +84,11 @@ The repository test proves the writer contract against the fake Host (record com
 ## Migration Plan
 
 1. Add the dependency and update the lockfile.
-2. Run the repository writer contract test and the mismatch fixture; then, in an isolated, self-provided clean DSH, install the tarball and run `scripts/probe-session.mjs` against the installed plugin and Host paths.
+2. Run the repository writer contract test and the mismatch fixture.
 3. Remove the round cap from config, policy, records, tools and the page; adjust tests and docs in the same change.
-4. In that isolated DSH, verify a review round produces a card in both the changer and reviewer sessions, including a cardless turn and a refresh.
-5. In the isolated DSH, save the review settings once to drop a stale `maxRounds` from the profile.
-6. Rollback in the isolated DSH: reinstall the previous tarball; old records and policies remain readable because the field is ignored, not rewritten.
+4. Commit the implementation, run the apply review, fix every blocker, archive the change and commit the archive.
+5. Build the release tarball from that final reviewed commit, then let the user install and inspect it in an isolated clean DSH: the install probe (one module, record absent from the model-visible transcript) and the Web GUI card inspection. The development host is not used.
+6. Rollback in the isolated DSH: reinstall the previous tarball; old records and policies remain readable because the field is ignored, not rewritten. A stale `maxRounds` in any existing profile drops on that profile's next settings save; it is not part of the isolated verification.
 
 ## Verification boundary
 
