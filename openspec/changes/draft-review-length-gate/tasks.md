@@ -21,7 +21,7 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Run `npm run verify` on Node 24 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass and the report names the new coverage.
+- [x] 4.1 Run `npm run verify` on Node 24 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass and the report names the new coverage.
 
 ## Workflow follow-up
 
