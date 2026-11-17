@@ -203,7 +203,9 @@ test('report for an older round writes no new card', async () => {
   }, agent)
   await callWith(fake, 'openspec_review', { action: 'resume', change: CHANGE }, agent)
   const before = cardsIn(root, 'changer').length
-  await callWith(fake, 'openspec_review', { action: 'report', change: CHANGE, round: 1 }, agent)
+  const other = { id: 'review-test', session: { id: 'changer-2' } }
+  await callWith(fake, 'openspec_review', { action: 'report', change: CHANGE, round: 1 }, other)
+  assert.equal(cardsIn(root, 'changer-2').length, 0)
   assert.equal(cardsIn(root, 'changer').length, before)
 })
 
