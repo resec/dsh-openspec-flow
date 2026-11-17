@@ -65,6 +65,9 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /openspec-sync-specs/)
   assert.match(POLICY_TEXT, /end the turn when it returns `waiting`/)
   assert.match(POLICY_TEXT, /deadline wakeup resumes you/)
+  assert.match(POLICY_TEXT, /reported by the plugin card/)
+  assert.match(POLICY_TEXT, /do not restate findings, evidence, impact, rules, failure paths, suggestions, residual risks, scope or notes/)
+  assert.match(POLICY_TEXT, /one short note only for information the report cannot express/)
 })
 
 test('the policy text names no CLI', () => {

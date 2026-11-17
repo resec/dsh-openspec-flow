@@ -143,6 +143,10 @@ test('the card tail requests the current turn and hides on failure', async () =>
   })
   assert.equal(turnTail.component({ turn: { turn: 8 }, sessionId: '' }), null)
   assert.equal(calls.length, 1)
+  assert.equal(turnTail.component({ turn: { turn: 9, sessionId: 'turn-session' } }), null)
+  await Promise.resolve()
+  assert.equal(calls[1].payload.sessionId, 'turn-session')
+  assert.equal(calls[1].payload.turn, 9)
 })
 
 test('the bundle repeats the channel and endpoint literals exactly', () => {

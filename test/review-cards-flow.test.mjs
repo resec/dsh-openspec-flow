@@ -165,3 +165,58 @@ test('a passing round with a disposed minor finding writes the resolution card',
   assert.equal(cards[1].findings[0].status, 'deferred')
   assert.equal(cards[1].findings[0].note, 'Follow up in ISS-9.')
 })
+
+test('report writes the main card when wait did not', async () => {
+  const { apply: reviewerApply } = await import('../reviewer.js')
+  const { createFakeContext } = await import('./fake-context.mjs')
+  const { externalSetup } = await import('./review-fixtures.mjs')
+  const root = fixture()
+  const { fake, subagents } = externalSetup(root)
+  const changer = { id: 'review-test', session: { id: 'changer' } }
+  await callWith(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  }, changer)
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', report: report(),
+  }, { agent: { id: 'reviewer-1', session: { id: 'reviewer-1' } }, signal: new AbortController().signal })
+  await callWith(fake, 'openspec_review', { action: 'report', change: CHANGE }, changer)
+  const mainCards = cardsIn(root, 'changer')
+  assert.equal(mainCards.length, 1)
+  assert.equal(mainCards[0].phase, 'review')
+})
+
+test('report for an older round writes no new card', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const agent = { id: 'review-test', session: { id: 'changer' } }
+  await callWith(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  }, agent)
+  await callWith(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  }, agent)
+  await callWith(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+  }, agent)
+  await callWith(fake, 'openspec_review', { action: 'resume', change: CHANGE }, agent)
+  const before = cardsIn(root, 'changer').length
+  await callWith(fake, 'openspec_review', { action: 'report', change: CHANGE, round: 1 }, agent)
+  assert.equal(cardsIn(root, 'changer').length, before)
+})
+
+test('a passing round without findings writes only the review card', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const agent = { id: 'review-test', session: { id: 'changer' } }
+  await callWith(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  }, agent)
+  await callWith(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report({ verdict: 'pass', findings: [] }),
+  }, agent)
+  const cards = cardsIn(root, 'changer')
+  assert.deepEqual(cards.map((card) => card.phase), ['review'])
+})

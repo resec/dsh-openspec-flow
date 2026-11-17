@@ -799,23 +799,29 @@ window.__ModuleLoader__.load({
 
         /** Turn-tail entry: query the review channel for the current turn's cards. */
         function ReviewCardTail({ turn, sessionId }) {
-          const [cards, setCards] = React.useState([])
+          const [loaded, setLoaded] = React.useState({ key: '', cards: [] })
           const turnNumber = turn?.turn
+          const effectiveSessionId = typeof sessionId === 'string' && sessionId !== ''
+            ? sessionId
+            : (typeof turn?.sessionId === 'string' && turn.sessionId !== ''
+              ? turn.sessionId
+              : (typeof turn?.session?.id === 'string' ? turn.session.id : ''))
+          const key = `${effectiveSessionId}:${String(turnNumber)}`
           React.useEffect(() => {
             let alive = true
-            if (typeof sessionId !== 'string' || sessionId === '') return undefined
+            if (effectiveSessionId === '') return undefined
             if (!Number.isInteger(turnNumber)) return undefined
-            const payload = { sessionId, turn: turnNumber }
+            const payload = { sessionId: effectiveSessionId, turn: turnNumber }
             if (typeof turn?.start === 'string') payload.from = turn.start
             Promise.resolve(call(ENDPOINTS.cards, payload)).then((result) => {
               if (!alive) return
-              setCards(result?.ok === true ? selectCards(result.value) : [])
+              setLoaded({ key, cards: result?.ok === true ? selectCards(result.value) : [] })
             }).catch(() => {
-              if (alive) setCards([])
+              if (alive) setLoaded({ key, cards: [] })
             })
             return () => { alive = false }
-          }, [sessionId, turnNumber])
-          return cardTailElement(cards)
+          }, [effectiveSessionId, turnNumber])
+          return cardTailElement(loaded.key === key ? loaded.cards : [])
         }
         ctx.effect(() => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
           name: 'plugins.row.config',
