@@ -79,7 +79,7 @@ The plugin SHALL expose Host methods for providers, models, reasoning efforts, c
 
 ### Requirement: Saving validates the complete config
 
-`reviewSettings.update` SHALL validate the complete candidate with the plugin Config schema, then verify an explicit reviewer model's provider, model and reasoning effort against the model catalog, before calling the configuration editor. It SHALL reject an unknown field, an invalid reviewer count, an invalid wait limit, or a provider, model or effort the catalog does not offer. It SHALL accept a legacy review section that still carries `maxRounds`, ignore the field, and persist the section without it. A rejected save SHALL leave the existing config unchanged.
+`reviewSettings.update` SHALL validate the complete candidate with the plugin Config schema, then verify an explicit reviewer model against the catalog, before calling the configuration editor. It SHALL reject an unknown field, an invalid reviewer count, an invalid wait limit, or an unavailable provider, model or effort. A legacy `maxRounds` is accepted, ignored and saved without it. A rejected save SHALL leave the existing config unchanged.
 
 #### Scenario: Valid settings are saved
 

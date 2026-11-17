@@ -603,7 +603,7 @@ An apply review start or resume SHALL refuse a changed artifact outside the reco
 
 ### Requirement: The changer checks the reviewer report without polling
 
-`openspec_review` with `action: "wait"` SHALL NOT poll. It SHALL return `ready` when the latest round has a report or the reviewer is waived, `overdue` at the deadline, and `waiting` otherwise; `waiting` SHALL set `waitState: "waiting"` and tell the changer to end its turn. The result SHALL come from a read after the best-effort session write, which SHALL re-read inside the lock and change only `changerSessionId`. After the result read, the plugin SHALL attempt a second lock acquisition to mark the review-point card of the latest submitted round for the calling session; a failed or contended marker write SHALL be logged and SHALL NOT change the wait result. The deadline SHALL remain `waitMinutes`.
+`wait` SHALL NOT poll. It SHALL return `ready` when the latest round has a report or the reviewer is waived, `overdue` at the deadline, and `waiting` otherwise; `waiting` sets `waitState: "waiting"` and ends the turn. The result SHALL come from a post-write read that re-reads inside the lock and changes only `changerSessionId`. A best-effort card-marker write after the result SHALL be logged on failure and SHALL NOT change it. The deadline remains `waitMinutes`.
 
 #### Scenario: Reviewer already submitted
 

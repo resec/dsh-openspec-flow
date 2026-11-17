@@ -104,7 +104,7 @@ The document SHALL list the review config keys and their defaults: draft enabled
 
 ### Requirement: The document matches the record layout
 
-The document SHALL state the review root `openspec/.review/<store>#<change>/`, the draft and apply record files, the review-card file layout `cards/<sessionKey>-<phase>-<round>.json` with a short SHA-256 session key, the per-session delivery watermark at `<reviewDir>/card-delivery.json`, the `cards` marker those records carry, the apply lock locations (the implementation domain's worktree git directory or `openspec/.review/`, plus a store change's store domain) with their `schemaVersion`, `change`, `store`, `changeRoot`, `implementationRoot` and `startedAt` fields, and the `openspec/.gitignore` entry.
+The document SHALL state the review root `openspec/.review/<store>#<change>/`, the draft/apply record files, the `cards/<sessionKey>-<phase>-<round>.json` layout with a short SHA-256 key, the `<reviewDir>/card-delivery.json` watermark, the `cards` marker, the apply lock locations and fields (`schemaVersion`, `change`, `store`, `changeRoot`, `implementationRoot`, `startedAt`), and the `openspec/.gitignore` entry.
 
 #### Scenario: The record path changes
 
