@@ -148,7 +148,7 @@ The repository SHALL provide a development-only contract check that compares the
 
 ### Requirement: Strict artifact validation gate
 
-The pre-push hook SHALL validate every active change and main spec with warnings treated as failures, and SHALL check archived changes for completed tasks, before the reusable lab scenarios run. It SHALL then run `npm run test:lab -- --mock-only` before `npm run verify`; a lab failure SHALL block the push and SHALL NOT be skipped by `COVERAGE_SKIP=1`. A failure in either validation step or the lab gate SHALL block the push. After validation and the lab gate, the hook SHALL skip only the `npm run verify` rerun when the coverage stamp verifies as `coverage-gate` defines it; apart from `COVERAGE_SKIP=1`, any other stamp outcome SHALL run verification.
+The pre-push hook SHALL validate every active change and main spec with warnings treated as failures, and SHALL check archived changes for completed tasks, before the lab gate. It SHALL then run `npm run test:lab -- --mock-only` before the coverage step. A validation or lab failure SHALL block the push, and `COVERAGE_SKIP=1` SHALL NOT skip the lab gate. Only a verifying coverage stamp MAY skip the `npm run verify` rerun.
 
 #### Scenario: Artifacts pass strict validation
 
