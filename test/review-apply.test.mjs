@@ -83,12 +83,20 @@ test('apply review starts on the committed tree and records its base', async () 
   assert.match(started.brief, /host validated the committed change with strict validation/)
   assert.match(started.brief, /do not run validation yourself/)
   assert.doesNotMatch(started.brief, /strict validation passes/)
+  assert.match(started.brief, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
+  assert.match(started.brief, /The diff starts at the base tree/)
+  assert.match(started.brief, /whole committed tree/)
+  assert.match(started.brief, /An empty diff means/)
+  assert.match(started.brief, /see `## Base and diff` for the scope/)
+  assert.match(started.brief, /Review any plan change in the diff on the plan axes/)
+  assert.equal(readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8'), '')
   const validation = argv.find((args) => args.includes('validate'))
   assert.ok(validation, 'the apply start validates the change')
   assert.ok(validation.includes('--strict'), 'the apply start validates strictly')
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.objectKind, 'tree')
   assert.equal(record.baseTreeSha, run(['rev-parse', `${record.baseCommit}^{tree}`]))
+  assert.ok(started.brief.includes(`- base: ${record.baseCommit}`))
 })
 
 test('apply review refuses a strict-only warning before it records a round', async () => {
@@ -263,8 +271,44 @@ test('apply review can run with draft review disabled and an explicit base', asy
     action: 'start', change: CHANGE, review: 'apply', base,
   })
   assert.equal(started.review, 'apply')
+  assert.match(started.brief, /The base is the explicit base passed to this round\./)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.baseCommit, base)
+})
+
+test('apply review names the merge base when no seal is recorded', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'seal the draft'])
+  const seal = run(['rev-parse', 'HEAD'])
+  run(['branch', 'origin/main', seal])
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply',
+  })
+  assert.match(started.brief, /The base is `git merge-base HEAD origin\/main`; no seal commit was recorded for this change\./)
+})
+
+test('apply review ignores a blank base and keeps the seal source', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', base: '   ',
+  })
+  assert.match(started.brief, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
+})
+
+test('openspec_review declares the optional apply base and ignores it outside apply', async () => {
+  const { root } = gitFixture()
+  const fake = setup(root)
+  const schema = fake.tools.get('openspec_review').parameters
+  assert.equal(schema.properties.base.type, 'string')
+  assert.ok(schema.properties.base.description.includes('Apply review base'))
+  assert.equal(schema.required.includes('base'), false)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, base: 'ignored' })
+  assert.equal(status.review, 'draft')
+  assert.equal(status.state, 'not-started')
 })
 
 test('apply start and resume reject dispositions and gate open findings', async () => {

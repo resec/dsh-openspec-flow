@@ -167,6 +167,15 @@ test('the README links the review document', () => {
   assert.deepEqual(checkReadme(readFileSync(join(ROOT, 'README.md'), 'utf8')), [])
 })
 
+test('the review document and README state the apply brief base scope', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /base tree/)
+  assert.match(text, /空 diff/)
+  assert.match(text, /可选 `base`/)
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  assert.match(readme, /可选 `base`/)
+})
+
 test('the README carries no round-cap policy wording', () => {
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
   assert.doesNotMatch(readme, /与轮次、等待上限|轮次上限.*策略|maxRounds/)

@@ -854,6 +854,8 @@ test('buildApplyBrief records the host validation and handles its absent branch'
     change: CHANGE,
     commitSha: 'a'.repeat(40),
     treeSha: 'b'.repeat(40),
+    baseCommit: 'd'.repeat(40),
+    baseSource: 'seal',
     baseTreeSha: 'c'.repeat(40),
     diffPath: 'apply-round-1/diff.patch',
     changedPaths: [],
@@ -872,6 +874,21 @@ test('buildApplyBrief records the host validation and handles its absent branch'
     /- validation: host strict pass \(0 issues\)/,
   )
   assert.match(buildApplyBrief({ ...base, validation: { strict: true, issues: [] } }), /- \(none\)/)
+  const seal = buildApplyBrief({ ...base, validation: { strict: true, issues: [] } })
+  assert.match(seal, /^- base: d{40}$/m)
+  assert.match(seal, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
+  assert.match(seal, /The diff starts at the base tree/)
+  assert.match(seal, /whole committed tree/)
+  assert.match(seal, /An empty diff means/)
+  assert.match(seal, /Check every task and delta requirement/)
+  assert.match(seal, /see `## Base and diff` for the scope/)
+  assert.match(seal, /Review any plan change in the diff on the plan axes/)
+  const explicit = buildApplyBrief({ ...base, baseSource: 'explicit', validation: { strict: true, issues: [] } })
+  assert.match(explicit, /The base is the explicit base passed to this round\./)
+  assert.doesNotMatch(explicit, /seal commit recorded/)
+  const merge = buildApplyBrief({ ...base, baseSource: 'merge-base', validation: { strict: true, issues: [] } })
+  assert.match(merge, /git merge-base HEAD origin\/main/)
+  assert.match(merge, /no seal commit was recorded/)
 })
 
 test('the reviewer preset tool names match the declaration', () => {
