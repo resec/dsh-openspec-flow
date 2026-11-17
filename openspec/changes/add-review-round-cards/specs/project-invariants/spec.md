@@ -2,55 +2,21 @@
 
 ## ADDED Requirements
 
-### Requirement: DSH session dependency pin
+### Requirement: Runtime imports stay built-in
 
-The plugin SHALL depend on exactly `@deepseek-ai/dsh-session` at the version pinned by `engines.dsh`, and SHALL import only that package plus Node built-ins at runtime.
+The plugin SHALL import only Node built-ins and relative modules at runtime, and SHALL NOT declare an `@deepseek-ai/*` runtime dependency. The review card SHALL be stored as a file under the change's review directory; it SHALL NOT be appended as a Session event.
 
-#### Scenario: The versions differ
+#### Scenario: A DSH import appears
 
-- **WHEN** the plugin's declared DSH session version differs from `engines.dsh`
-- **THEN** the package check fails before the plugin loads
-
-#### Scenario: A runtime import is outside the allowlist
-
-- **WHEN** plugin source imports a DSH package other than `@deepseek-ai/dsh-session`
+- **WHEN** plugin source imports an `@deepseek-ai/*` package
 - **THEN** the import check fails
 
-### Requirement: DSH session single instance
+#### Scenario: The manifest declares a DSH dependency
 
-A packaged install SHALL resolve the plugin's `@deepseek-ai/dsh-session` and the Host's to the same module instance. The probe SHALL run only in an isolated, self-provided clean DSH; the development host profile, configuration and sessions SHALL NOT be modified. The release SHALL stop when the probe finds different copies. At runtime a failed card write SHALL be logged and SHALL NOT roll back a stored report or a disposal.
+- **WHEN** `package.json` declares an `@deepseek-ai/*` runtime dependency
+- **THEN** the package check fails
 
-#### Scenario: The copies match
+#### Scenario: The card data is a file
 
-- **WHEN** the plugin and Host resolve the same module path in the isolated DSH
-- **THEN** the probe passes
-
-#### Scenario: The development host is untouched
-
-- **WHEN** the probe or the isolated install runs
-- **THEN** no development host profile, configuration or session is modified
-
-#### Scenario: The module copies differ
-
-- **WHEN** the plugin and Host resolve different instances
-- **THEN** the install probe fails with an actionable error
-
-#### Scenario: A card write fails at runtime
-
-- **WHEN** writing a card record throws after a report was stored
-- **THEN** the failure is logged and the stored report and review state are unchanged
-
-### Requirement: The install probe proves the card channel
-
-The probe SHALL run in an isolated, self-provided clean DSH, import `@deepseek-ai/dsh-session` from the installed plugin path and from the Host path, create a Session through the Host copy, write a probe record through the plugin copy, and assert that the record is absent from the model-visible transcript.
-
-#### Scenario: The probe writes through the Host Session
-
-- **WHEN** the probe runs against the isolated profile
-- **THEN** the Host-created Session receives the probe record
-- **AND** the record is absent from the model-visible transcript
-
-#### Scenario: The probe cannot write
-
-- **WHEN** the probe write throws
-- **THEN** the probe fails with an actionable error and the release stops
+- **WHEN** a card is written
+- **THEN** it lands under the review directory and no Session event is appended

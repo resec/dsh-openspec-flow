@@ -23,7 +23,7 @@ The document SHALL list the review config keys and their defaults: draft enabled
 
 ### Requirement: The document matches the record layout
 
-The document SHALL state the review root `openspec/.review/<store>#<change>/`, the draft and apply record files, the review-card marker those records carry, the apply lock locations (the implementation domain's worktree git directory or `openspec/.review/`, plus a store change's store domain) with their `schemaVersion`, `change`, `store`, `changeRoot`, `implementationRoot` and `startedAt` fields, and the `openspec/.gitignore` entry.
+The document SHALL state the review root `openspec/.review/<store>#<change>/`, the draft and apply record files, the review-card file layout `cards/<sessionKey>-<phase>-<round>.json` with a short SHA-256 session key, the per-session delivery watermark at `<reviewDir>/card-delivery.json`, the `cards` marker those records carry, the apply lock locations (the implementation domain's worktree git directory or `openspec/.review/`, plus a store change's store domain) with their `schemaVersion`, `change`, `store`, `changeRoot`, `implementationRoot` and `startedAt` fields, and the `openspec/.gitignore` entry.
 
 #### Scenario: The record path changes
 
@@ -35,23 +35,24 @@ The document SHALL state the review root `openspec/.review/<store>#<change>/`, t
 - **WHEN** the documentation test reads `docs/review.md`
 - **THEN** it finds the apply lock path and every field name the lock module exports
 
-#### Scenario: The card marker is documented
+#### Scenario: The card layout is documented
 
-- **WHEN** a review record gains or loses its card marker field
-- **THEN** the documentation test fails until `docs/review.md` describes the field
+- **WHEN** the card file directory or name pattern changes
+- **THEN** the documentation test fails until `docs/review.md` describes the new layout
 
 ## ADDED Requirements
 
 ### Requirement: The document explains the card surface
 
-The document SHALL explain the `plugin:openspec-flow/review-card` record, the `openspecReviewCards` projection, the `conversation.chat.turnTail` rendering, the collapsed summary, the fixed Chinese labels, the complete expanded report, the plan-change waiver section, the write points, the no-truncation rule and the fact that the record is not model-visible.
+The document SHALL explain the card files and the `<reviewDir>/card-delivery.json` watermark, the `reviewCards/get` endpoint and turn binding, the `conversation.chat.turnTail` query and rendering, the collapsed and expanded card, the complete expanded report, the plan-change waiver section, the no-truncation and no-pagination rule, the fixed Chinese labels, the write points and the fact that no card data enters the session log or the model-visible surface.
 
 #### Scenario: A reader opens the review document
 
 - **WHEN** a reader reaches the review-card section
-- **THEN** it names the record, the projection and the turn-tail rendering
+- **THEN** it names the card files, the endpoint and the turn-tail rendering
 - **AND** it states that the expanded card contains the full report body and the plan-change waiver
-- **AND** it states that the record is not model-visible
+- **AND** it states that the expanded card does not truncate or paginate
+- **AND** it states that no card data enters the session log or the model-visible surface
 
 #### Scenario: A write point changes
 
@@ -70,10 +71,11 @@ The document SHALL state that the plugin instructs the model, through the shippe
 
 ### Requirement: The document states the verification boundary
 
-The document SHALL state that installed-package behavior and the Web GUI card are verified only in a self-provided, isolated, clean DSH, never the development host profile, configuration or sessions, and that the isolated-DSH install probe and the GUI card inspection are the user's self-verification boundaries rather than agent tasks.
+The document SHALL state that DSH verification runs in a self-provided, isolated, clean DSH prepared by the agent, never the development host profile, configuration or sessions. The agent SHALL run the card-file, endpoint and rendering checks that can be automated there; only a check that cannot be automated in that DSH, such as a visual Web GUI review, may remain the user's self-verification boundary.
 
 #### Scenario: A reader checks verification
 
 - **WHEN** a reader reaches the verification boundary
 - **THEN** it states that the development host is not used
-- **AND** it names the isolated-DSH probe and the GUI card inspection as the user's self-verification
+- **AND** it states that the agent prepares and runs the isolated-DSH checks
+- **AND** it names any visual GUI check that remains the user's self-verification

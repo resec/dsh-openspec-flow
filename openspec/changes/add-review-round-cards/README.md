@@ -1,3 +1,3 @@
 # add-review-round-cards
 
-Add plugin-generated review round cards rendered in the Web GUI turnTail, remove the draft/apply round cap, and allow the DSH session dependency needed to write card events.
+Add file-backed review round cards served through the review channel and rendered in the Web GUI turnTail, remove the draft/apply round cap, and keep the plugin free of DSH runtime dependencies.

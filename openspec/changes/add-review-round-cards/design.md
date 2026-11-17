@@ -2,105 +2,126 @@
 
 ## Context
 
-See `proposal.md` for the motivation. The current implementation reports a round through model prose: `projectReview` returns finding counts, reasons and the next action; `readReport` returns the complete report JSON; the reviewer's `submit` returns only status fields; and the wakeup text is one sentence. The plugin already stores every fact the card needs in the review record and the round `report.json`.
+See `proposal.md` for the motivation. Two earlier designs failed. A formal plugin record needs `@deepseek-ai/dsh-session`, and an isolated-DSH tarball install gives the plugin and the Host separate copies; the profile copy cannot resolve its own dependencies. A public `session.append` custom event needs no package, but the pinned DSH persistence read path refuses an unknown event without `ignorable: true`, so a card event could make the whole session unreadable after restart. The final design stores cards as files under the review root and serves them through the existing review channel.
 
-Two constraints shape the design. First, the review record, report files and the review lock live under `openspec/.review/<store>#<change>/`; writes are serialized by `withReviewLock`. Second, the installed plugin runs from a tarball whose `package.json` currently declares only the OpenSpec CLI, so it cannot import a DSH package without declaring it.
-
-See `specs/review-cards/spec.md`, `specs/change-review/spec.md`, `specs/tool-surface/spec.md`, `specs/review-configuration/spec.md`, `specs/review-documentation/spec.md`, `specs/skill-adaptation/spec.md` and `specs/project-invariants/spec.md` for the behavior contracts.
+The review record, report files and the review lock already live under `openspec/.review/<store>#<change>/`; writes there are serialized by `withReviewLock`. The review channel already serves the plugin's `/openspec-review` endpoint through `ctx.connection.rpc.call`.
 
 ## Goals / Non-Goals
 
 **Goals**
 
-- One plugin-generated record per round phase, invisible to the model, grouped by turn and rendered as a collapsed card in the turn tail.
+- One card file per round phase, rendered in the turn tail without writing anything into the session log or the model context.
 - Full report body, recorded disposition state and plan-change waiver in the expanded card, without truncation or pagination.
 - Main-session review card for independent reviews, reviewer-session card on submit, and a self-review round that disposes findings writes a review card plus a resolution card.
 - No draft/apply round cap anywhere: settings, policy, records, tool arguments or `extend`.
-- A declared, pinned DSH session dependency with an install-time single-instance probe.
+- No new runtime dependency and no Session event.
 
 **Non-Goals**
 
-- No change to the report schema, verdict rules, severity, readiness or disposition protocol.
 - No card pagination, filtering, search or actions; the card is read-only information.
-- No Remote-query fallback in this change. If the probe fails, the change stops rather than shipping a second transport.
-- No migration of historical reports into card records; old sessions simply show no card.
+- No card history browser: only the card bound to the current turn is shown.
+- No compaction or cleanup policy for old card files in this change; they are small and live in the ignored review root.
+- No migration of historical reports into card files; old sessions simply show no card.
 
 ## Decisions
 
-### Plugin record, not a tool result
+### File-backed cards, not Session events
 
-The card is written with `appendPluginRecord(session, 'plugin:openspec-flow/review-card', payload)`. The resulting event is `ignorable`, outside `SessionEventMap`, and never enters the model-visible surface. This is the only channel that satisfies both "no model tokens" and "persists with the session log". Alternative: add a `summary` field to the tool result. It is simple but puts the data in the model context, which the user rejected. Alternative: read card data from a Host channel at render time. It avoids the dependency but cannot associate a card with a turn reliably and complicates history/refresh; it remains the documented fallback.
+A card is a JSON file under `cards/` in the change's review directory. It never becomes a Session event, so the session log stays byte-identical and cannot be made unreadable after a restart. The plugin imports no `@deepseek-ai/*` package, so a tarball install has no module-copy problem and no Host module sharing.
 
-**Consequence:** the plugin now declares `@deepseek-ai/dsh-session` at the pinned version and the "Node built-ins only" rule in `AGENTS.md` becomes "Node built-ins plus the pinned DSH session package". The `appendPluginRecord` API is experimental; the exact-version pin and the probe are the guards.
+**Alternatives rejected:** (a) `appendPluginRecord` needs a DSH package and failed the isolated install; (b) an ordinary `session.append` event has no `ignorable` marker and the pinned persistence reader refuses it; (c) a tool-result `summary` puts the data in the model context.
 
-### The payload carries the complete report
+### Card file layout and write points
 
-The payload includes the whole `report.json` object, the recorded findings with their disposition fields, the plan-change waiver, object binding, counts, next action and readiness reasons. The client renders it directly; no follow-up Host read is needed. A round adds roughly the size of its report to the session log (5–20 KB in current samples). This is accepted: the report file already exists, and the card must render without a live Host read, including after reopen.
+Each card file is `cards/<sessionKey>-<phase>-<round>.json`, where `sessionKey` is a short SHA-256 of the session id, so a session id cannot escape the directory. The file contains:
 
-**Alternative rejected:** store only the report path and fetch through the existing review channel when the card expands. It saves log bytes but makes rendering dependent on a live Host and on path access, and it complicates the reviewer-session card.
+```json
+{
+  "schemaVersion": 1,
+  "sessionId": "...",
+  "sessionKey": "...",
+  "change": "...",
+  "review": "draft",
+  "phase": "review | resolution",
+  "round": 2,
+  "turn": null,
+  "writtenAt": "2026-...",
+  "payload": { "...": "complete card payload" }
+}
+```
 
-### Write points and deduplication
-
-Cards are written inside the existing review lock:
+Writes are atomic (`writeJsonAtomic`) and happen inside the existing review lock at the same points as before:
 
 - `self-report` writes the review card for the changer session.
 - reviewer `submit` writes the review card for the reviewer session.
-- changer `wait` returning `ready` writes the main-session review card of the latest submitted round; changer `report` writes that card only when the requested round is the latest submitted round and the record lacks the marker for this session, phase and round.
-- `resume` writes the resolution card only when it opens a new round and the round being closed had a report and disposed findings.
+- changer `wait` returning `ready` writes the main-session review card of the latest submitted round; changer `report` writes it only when the requested round is the latest submitted round and the marker is absent.
+- `resume` writes the resolution card only when it opens a new round and the closed round had a report and disposed findings.
 - a final `dispose`/`waive` writes the resolution card when the next action is apply or archive.
 
-The review record gains `cards: [{ sessionId, phase, round, at }]`. Each writer checks the marker inside the lock, so a repeated `wait`/`report` cannot append twice. The reviewer writes only to its own Session; the main-session card is not written from the reviewer tool because the reviewer does not own the changer Session handle. The `wait` marker write is a second lock acquisition after the result read; a failed or contended write is logged and does not change the `wait` result.
+The review record keeps `cards: [{ sessionId, phase, round, at }]` for deduplication. A failed file write is logged and does not roll back a stored report or a disposal.
 
-### Projection grouped by turn
+### Endpoint and turn binding
 
-A unit keyed `openspecReviewCards` folds `turn/start` into `currentTurn` and appends each review-card record to `byTurn[currentTurn]`. The wire view is `{ byTurn }` only. The state and view use a small `{ parse(value) }` shape check instead of zod; a malformed record is skipped. The projection is registered once by the main plugin entry through the optional `ctx.get('sessionProjections')` service, inside a try/catch that logs and continues when the service is absent or registration throws; `reviewer.js` does not add the service to its inject list, so a projection problem cannot prevent the reviewer tool from registering. The registry is global per Host process: one registration folds every Session, including reviewer Sessions, so the reviewer's turn tail reads the same key.
+The review channel gains `reviewCards/get` with `{ sessionId, turn, from? }`.
+
+- The Host resolves the session's project from the live agents/working directory, scans that project's `openspec/.review/*/cards/*.json`, and selects the files whose payload session matches.
+- Cards already bound to `turn` are returned again, so a refresh recovers them.
+- Unclaimed cards (`turn: null`) written at or after `from` (the current turn's start time) are bound to `turn` by updating the file atomically; they are returned in the same response.
+- A per-session delivery watermark at `<reviewDir>/card-delivery.json` (last returned write time) prevents a card from being bound to a later turn when the client did not ask during its own turn. When `from` is unavailable the watermark is the fallback.
+- A malformed or unreadable card file is skipped; an endpoint failure yields an empty result and does not affect review state.
+- The endpoint never mutates review records, reports or the session log.
+
+The client sends the turn number and the turn start time from the turn-tail slot. It renders only the returned cards, so a card bound to another turn is never reused.
 
 ### Client card
 
-A `conversation.chat.turnTail` entry reads `useProjection('openspecReviewCards')` and renders `byTurn[turn.turn]`, where `turn.turn` is the current turn number supplied by the slot. It never infers the current turn from the projection's keys. Each card holds its own `useState` collapse flag; it uses only React from the page module table, no primitives or CSS module. The expanded body renders the report verdict and summary, every report field, verification evidence, disposition note, risk, out-of-scope entry and the waiver, in a scroll container. Card labels are fixed Chinese string constants, independent of the page locale; the configuration page keeps its bilingual dictionaries.
+`conversation.chat.turnTail` is registered through `ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({ ..., inject: (sessionId) => ({ sessionId }) }, ...))`, the same inject-callback shape the installed `dsh-client-ui-action-cards` turn-tail entry uses. If the installed client-slots contract does not pass a session id to `inject`, the component falls back to the `turn` payload's session id; if neither exists, the client stops and the design goes back to the user for a spec change instead of guessing. On mount the component calls `reviewCards/get` with `{ sessionId, turn: turn.turn, from: turn.start }`, stores the returned cards in local state, and renders them. While loading or on failure it renders nothing. Each card holds its own `useState` collapse flag and renders the collapsed summary; expanding shows the report verdict and summary, every report field, verification evidence, disposition notes, risks, scope and the waiver in a scroll container. Labels are fixed Chinese strings, independent of the page locale. No projection is registered for cards.
+
+### Payload
+
+The payload includes the whole `report.json` object, the recorded findings with their disposition fields, the plan-change waiver, object binding, counts, next action and readiness reasons. The client renders it directly. A round adds its report body to one card file (5–20 KB in current samples); the file lives in the ignored review root.
 
 ### Model behavior
 
-The plugin instructs the model through the propose/apply skills, the reviewer brief and the policy section: write at most one short note for information the report cannot express (a trade-off, an authorization need, a wait timeout, a self-review limitation or the next step), and do not restate findings, evidence, risks, scope or notes. The reviewer brief tells the reviewer to write no summary after submitting. The requirement is stated on the plugin and its texts, because reply text cannot be enforced by a tool; the tool-result test asserts that no card payload and no card-specific field enters a result, while the existing `report` and `own-report` results keep returning the stored report.
+The plugin instructs the model through the propose/apply skills, the reviewer brief and the policy section: write at most one short note for information the report cannot express (a trade-off, an authorization need, a wait timeout, a self-review limitation or the next step), and do not restate findings, evidence, risks, scope or notes. The reviewer brief tells the reviewer to write no summary after submitting. The tool-result test asserts that no card payload and no card-specific field enters a result, while the existing `report` and `own-report` results keep returning the stored report.
 
 ### Remove the round cap
 
 `maxRounds` is removed from `DEFAULT_DRAFT_REVIEW`, `DEFAULT_APPLY_REVIEW`, the section normalization, the settings bounds, the policy builder and readers, the review record limits, the `extend` implementation and the tool parameter schema. A legacy settings section that still carries `maxRounds` is accepted and dropped on the next save; a legacy policy or record keeps the field but it is never read. `extend` keeps only `minutes`.
 
-### Single-instance probe
+### Remove the event/projection implementation
 
-The repository test proves the writer contract against the fake Host (record committed, projection readable, the tool result carries no payload) and builds a second copy of the session package in a fixture to prove that the mismatch is detected. The real gate is `scripts/probe-session.mjs`, run only after the tarball is installed into an isolated, self-provided clean DSH (never the development host profile): it imports `@deepseek-ai/dsh-session` from the plugin's installed path and from the Host's path, compares them, creates a Session through the Host copy, writes a probe record through the plugin copy, and asserts the record is absent from the model-visible transcript. A probe failure stops the release; at runtime a failed card write is logged and does not roll back a stored report or a disposal, so a card failure cannot corrupt review state.
+The earlier attempt's Session-event writer, `card-projection.js`, the optional `sessionProjections` registration and their tests are removed rather than adapted. The review record `cards` marker remains for write deduplication.
 
 ## Risks / Trade-offs
 
-- **Module duplication breaks private-field access** → exact version pin, the isolated-DSH probe as the release boundary, and an actionable error; if the probe fails, stop this change and open a separate change for a transport fallback rather than shipping a second transport here.
-- **A projection registration failure disables the card or the plugin** → the projection is registered once from the main entry through the optional service inside a try/catch; a failure is logged and the tools still register; a test injects a throwing registrar.
-- **Experimental `appendPluginRecord` changes across DSH releases** → `engines.dsh` pins the runtime; the DSH upgrade guide and the probe must be re-run when upgrading.
-- **Session log growth** → accepted for this change; a future spill/compaction policy can move report bodies out of the event if needed.
-- **Card invisible when a turn has no answer** → the model keeps a short note, so the turn ends with an answer; the real GUI check covers a turn without prose.
-- **Manual client bundle has no build step** → the card is plain `React.createElement` with inline styles; the client test covers registration, turn selection and the cardless case; the real GUI check covers rendering.
+- **Turn misbinding** → the client sends the turn start time; a per-session watermark backs up the case where the client never queried during the card's turn; a card bound to another turn is never reused. A missed binding loses the card, not review state.
+- **Card files accumulate** → accepted; they are small files under the ignored review root, and a cleanup policy can come later.
+- **Endpoint failure or corruption** → the client renders nothing and review tools keep working; a malformed file is skipped.
+- **Refresh depends on the Host** → a refresh re-queries the endpoint and returns bound cards; a deleted card file loses only the card.
+- **No projection** → the client makes one endpoint call per turn tail; an idle turn returns no cards and updates the watermark.
+- **Manual client bundle has no build step** → plain `React.createElement` with inline styles; client tests cover registration, request/selection and the cardless case; an isolated GUI check covers rendering when a browser is available.
 - **Legacy `maxRounds` in profile/config** → accepted and ignored, dropped on the next save; review records and policies keep the field untouched.
+- **Version collision** → the unreleased 0.8.0 artifact already exists under `dist/`; this change moves to `0.9.0` so the new tarball and skills are distinguishable.
 
 ## Migration Plan
 
-1. Add the dependency and update the lockfile.
-2. Run the repository writer contract test and the mismatch fixture.
-3. Remove the round cap from config, policy, records, tools and the page; adjust tests and docs in the same change.
-4. Commit the implementation, run the apply review, fix every blocker, archive the change and commit the archive.
-5. Build the release tarball from that final reviewed commit, then let the user install and inspect it in an isolated clean DSH: the install probe (one module, record absent from the model-visible transcript) and the Web GUI card inspection. The development host is not used.
-6. Rollback in the isolated DSH: reinstall the previous tarball; old records and policies remain readable because the field is ignored, not rewritten. A stale `maxRounds` in any existing profile drops on that profile's next settings save; it is not part of the isolated verification.
+1. Remove the `@deepseek-ai/dsh-session` dependency and its lockfile entry, the probe script/test, the Session-event card writer, the card projection and the projection registration; restore the built-ins-only rule in `AGENTS.md`; add atomic card-file writes under `cards/` and the watermark at `<reviewDir>/card-delivery.json`.
+2. Add the `reviewCards/get` endpoint with turn binding and the delivery watermark; test it with temporary review directories and a fake channel context.
+3. Add the client `turnTail` query/render path and the fixed Chinese labels; test request construction, selection and the cardless case.
+4. Remove the round cap from config, policy, records, tools and the page; adjust tests and docs in the same change.
+5. Bump `package.json` to `0.9.0`, regenerate the lockfile, update `docs/upgrading-openspec-cli.md` and every skill's `metadata.generatedBy`.
+6. Commit the implementation, run the apply review, fix every blocker, archive the change and commit the archive.
+7. Build the release tarball from the final reviewed commit. The agent installs it in a self-contained isolated DSH under a temporary home and runs the card-file, endpoint, turn-binding and render-data checks that can be automated; the host is never used.
+8. Attempt the visual Web GUI check in that isolated DSH when a browser is available; if it cannot be automated, it is the user's self-verification boundary, not a task.
+9. Rollback in the isolated DSH: reinstall the previous tarball; old records and policies remain readable because `maxRounds` is ignored, not rewritten.
 
 ## Verification boundary
 
-The development host profile, configuration and sessions are not used for verification: no host plugin is installed, restarted or mutated during this change. Any DSH behavior check runs in a self-provided, isolated, clean DSH.
+The development host profile, configuration and sessions are not used for verification: no host plugin is installed, restarted or mutated during this change. The agent prepares a self-contained, isolated, clean DSH under a temporary home and runs the card-file, endpoint, turn-binding and render-data checks there. A visual Web GUI review that cannot be automated in that DSH is the only check left to the user, and it is not written as a `tasks.md` step.
 
-Two checks cannot be executed by the agent and are recorded here for the user's self-verification rather than as `tasks.md` steps:
-
-- the isolated-DSH install probe: the plugin and Host resolve one `@deepseek-ai/dsh-session` module, and the probe record stays out of the model-visible transcript;
-- the Web GUI card inspection: collapsed card, expanded report summary and full report, plan-change waiver, two self-review cards, main-session review card, reviewer-session card, cardless turn and refresh recovery.
-
-The push follows this boundary. Until the user confirms it in the isolated DSH, the change stops after archive and commit.
+The push follows this boundary.
 
 ## Open Questions
 
-None. The user confirmed the card content, collapse behavior, language, write points, dependency removal and round-cap removal.
+None. The user confirmed the card content, collapse behavior, language, write points, the file/remote delivery and the round-cap removal.

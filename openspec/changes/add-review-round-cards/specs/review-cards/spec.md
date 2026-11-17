@@ -6,29 +6,30 @@ Lets the plugin report every review round through a self-contained card in the c
 
 ## ADDED Requirements
 
-### Requirement: A review round writes one card record
+### Requirement: A review round writes one card file
 
-A review round SHALL write one `plugin:openspec-flow/review-card` record when its report is submitted, and one when its findings are disposed and the review resumes or becomes ready for apply or archive. The record SHALL NOT appear on the model-visible surface.
+At the review and resolution points the Host SHALL write one card JSON file at `cards/<sessionKey>-<phase>-<round>.json`, where `sessionKey` is a short SHA-256 of the session id. The plugin SHALL NOT append a Session event and SHALL NOT import an `@deepseek-ai/*` package for the card.
 
-#### Scenario: Review point writes a card
+#### Scenario: Review point writes a card file
 
 - **WHEN** a report is submitted for a review round
-- **THEN** one record with `phase: "review"` is appended to the submitting Session
-- **AND** the record is not visible to the model
+- **THEN** one card file with `phase: "review"` is written for the submitting session
+- **AND** the file carries the session, phase, round, write time and complete payload
+- **AND** the session log receives no card event
 
-#### Scenario: Resolution point writes a card
+#### Scenario: Resolution point writes a card file
 
 - **WHEN** every finding has been disposed and `resume` opens a new round, or disposal (including a waived finding) leaves the next step as apply or archive
-- **THEN** one record with `phase: "resolution"` is appended to the changer Session
+- **THEN** one card file with `phase: "resolution"` is written for the changer session
 
 #### Scenario: A round without findings skips the resolution card
 
 - **WHEN** a report passes with no findings and the review is ready
-- **THEN** only the review-point card is written
+- **THEN** only the review card file is written
 
 ### Requirement: The card payload carries the round facts
 
-The record SHALL carry the phase, change, review kind, round, verdict, state, readiness, mode, object binding, timestamps, finding counts, the complete report object, the recorded findings, the plan-change waiver, the next action and the readiness reasons. Every value SHALL be lossless JSON; a missing report SHALL leave the report body absent.
+The file payload SHALL carry the phase, change, review kind, round, verdict, state, readiness, mode, object binding, timestamps, finding counts, the complete report object, the recorded findings, the plan-change waiver, the next action and the readiness reasons. Every value SHALL be lossless JSON; a missing report SHALL leave the report body absent.
 
 #### Scenario: The payload carries the complete report
 
@@ -42,63 +43,73 @@ The record SHALL carry the phase, change, review kind, round, verdict, state, re
 
 ### Requirement: The main session receives the independent review card
 
-For an independent review the changer's `wait` SHALL write the latest submitted round's review card into the changer Session when it returns `ready`; `report` SHALL write it only when the requested round is the latest submitted round and the card marker is absent. The record SHALL mark the card by session, phase and round. The reviewer's `submit` SHALL write the card into the reviewer Session only.
+For an independent review the changer's `wait` SHALL write the latest submitted round's review card file for the changer session when it returns `ready`; `report` SHALL write it only when the requested round is the latest submitted round and the card marker is absent. The record SHALL mark the card by session, phase and round. The reviewer's `submit` SHALL write the card file for the reviewer session only.
 
 #### Scenario: Wait writes the main-session card
 
 - **WHEN** a changer calls `wait` and the reviewer already submitted
-- **THEN** the main Session receives one review-point card
+- **THEN** the main session gets one review card file
 - **AND** the review record marks the card as written
 
 #### Scenario: Report does not duplicate the card
 
 - **WHEN** a changer calls `report` after `wait` already wrote the card
-- **THEN** no second card is appended
+- **THEN** no second card file is written
 - **AND** the report is still returned
 
 #### Scenario: Report writes the card when wait did not
 
 - **WHEN** a changer calls `report` for a submitted round whose card was never written
-- **THEN** the main Session receives one review-point card
+- **THEN** the main session gets one review card file
 
-### Requirement: Card records fold by turn
+### Requirement: The client queries cards for the current turn
 
-The Host SHALL register a session projection keyed `openspecReviewCards` that folds each record into the turn in which it was written. The projection SHALL expose the cards grouped by turn number and no other Session state. A record with a malformed payload SHALL be skipped without failing the fold or later reads.
+The Client SHALL render, in a `conversation.chat.turnTail` entry, the cards returned by `reviewCards/get` for the current session and turn number. A turn without cards SHALL render nothing, and a card bound to another turn SHALL NOT be reused.
 
-#### Scenario: A card is grouped under its turn
+#### Scenario: A card appears after its turn
 
-- **WHEN** a record is committed during turn 4
-- **THEN** the projection view places it under turn 4
+- **WHEN** a turn ends after a card file was written for the session
+- **THEN** the turn tail queries `reviewCards/get` and shows that card
 
-#### Scenario: Two cards share a turn
+#### Scenario: A refresh keeps the card
 
-- **WHEN** a self-review writes a review card and a resolution card in the same turn
-- **THEN** the projection lists both under that turn in write order
-
-#### Scenario: A malformed card is skipped
-
-- **WHEN** a record carries a payload that fails the shape check
-- **THEN** the projection skips it and keeps the other cards
-
-### Requirement: The client renders a collapsed card
-
-The Client SHALL render, in a `conversation.chat.turnTail` entry, the cards from `byTurn[turn]` where `turn` is the current turn number supplied by the slot. It SHALL select by that number and SHALL NOT infer a turn from the projection. Each card SHALL be collapsed by default and SHALL show the title, round, verdict, finding counts and next action. Card labels SHALL be fixed Chinese strings independent of the page locale. A turn without cards SHALL render nothing.
-
-#### Scenario: A collapsed card appears
-
-- **WHEN** a turn ends with one review-card record
-- **THEN** the turn tail shows a collapsed card with the summary fields
-- **AND** the labels are the fixed Chinese strings
+- **WHEN** the page is refreshed after a turn with a card
+- **THEN** the same turn tail query returns the bound card again
 
 #### Scenario: No card is rendered without data
 
-- **WHEN** a turn has no review-card record
+- **WHEN** the turn has no card file
 - **THEN** the turn tail renders nothing
+- **AND** an older turn's card is not reused
 
-#### Scenario: An older card is not reused
+#### Scenario: The endpoint fails
 
-- **WHEN** the current turn has no record and an older turn has one
-- **THEN** the turn tail renders nothing
+- **WHEN** `reviewCards/get` fails
+- **THEN** the turn tail renders nothing and the review flow is unaffected
+
+### Requirement: The Host binds cards to the turn
+
+The Host SHALL return cards already bound to the requested turn, bind unclaimed cards written within that turn to it, and persist the binding for a refresh. It SHALL use the turn start time when provided and otherwise the per-session delivery watermark at `<reviewDir>/card-delivery.json`, outside `cards/`.
+
+#### Scenario: Unclaimed cards are bound
+
+- **WHEN** the endpoint receives a turn with one unclaimed card written within it
+- **THEN** it binds the card to that turn, persists the binding and returns the card
+
+#### Scenario: The watermark is the fallback
+
+- **WHEN** the slot provides no turn start time
+- **THEN** the Host uses the per-session delivery watermark to decide which unclaimed cards belong to the turn
+
+### Requirement: The client renders a collapsed card
+
+Each card SHALL be collapsed by default and SHALL show the title, round, verdict, finding counts and next action. Card labels SHALL be fixed Chinese strings independent of the page locale. Selecting a card SHALL expand it.
+
+#### Scenario: A collapsed card appears
+
+- **WHEN** the turn tail receives one card
+- **THEN** it shows a collapsed card with the summary fields
+- **AND** the labels are the fixed Chinese strings
 
 ### Requirement: An expanded card shows the complete report
 
@@ -133,16 +144,16 @@ The plugin SHALL NOT put the card payload into any tool result and SHALL NOT add
 - **THEN** no result carries the card payload or a card-specific field
 - **AND** the `report` and `own-report` results still return the stored report
 
-### Requirement: Card records degrade safely
+### Requirement: Card files degrade safely
 
-A Session without records SHALL render no cards and keep every existing review behavior. A failed projection registration SHALL be logged and SHALL NOT fail the review tools. A record written before this capability SHALL remain readable and a missing card marker SHALL be treated as empty.
+A missing or corrupt card file SHALL render no card and SHALL NOT affect the review record, the report or the conversation log. A failed card write SHALL be logged and SHALL NOT roll back a stored report or a disposal.
 
-#### Scenario: An old session has no cards
+#### Scenario: A card file is corrupt
 
-- **WHEN** a Session predates the review-card record
-- **THEN** no card is shown and the review tools behave as before
+- **WHEN** the endpoint reads a card file that is not valid JSON
+- **THEN** it skips that file and returns the other cards
 
-#### Scenario: Projection registration fails
+#### Scenario: The card write fails
 
-- **WHEN** the projection cannot register
-- **THEN** the failure is logged and the review tools still work
+- **WHEN** the card file cannot be written after a report was stored
+- **THEN** the failure is logged and the review state is unchanged
