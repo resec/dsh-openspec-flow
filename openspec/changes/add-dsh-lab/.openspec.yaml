@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-17
+goal: Provide a Node-only lab framework that runs the packaged plugin in an
+  isolated DSH, drives headless and web surfaces, mocks the model, and gates
+  reusable scenarios in pre-push.
