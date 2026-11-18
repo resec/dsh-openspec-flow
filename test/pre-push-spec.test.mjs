@@ -1,28 +1,20 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
 const CHANGE_DIR = 'openspec/changes/draft-review-length-gate'
 const ACTIVE = join(CHANGE_DIR, 'specs', 'development-workflow', 'spec.md')
 const MAIN = join('openspec', 'specs', 'development-workflow', 'spec.md')
-const ARCHIVE = join('openspec', 'changes', 'archive')
 
 /**
- * Read the split requirement from the active delta, the archived delta or the
- * main spec, whichever is authoritative at this checkout.
+ * Read the split requirement from the active delta before archive and from
+ * the main spec after archive. There is no archived-delta fallback: a total
+ * loss in the main spec must fail this test.
  * @returns Markdown text.
  */
 function splitSpec() {
-  if (existsSync(ACTIVE)) return readFileSync(ACTIVE, 'utf8')
-  const main = readFileSync(MAIN, 'utf8')
-  if (main.includes('### Requirement: Coverage stamp verification')) return main
-  const archived = readdirSync(ARCHIVE)
-    .filter((name) => name.endsWith('-draft-review-length-gate'))
-    .sort()
-    .at(-1)
-  assert.ok(archived, 'the active or archived development-workflow delta exists')
-  return readFileSync(join(ARCHIVE, archived, 'specs', 'development-workflow', 'spec.md'), 'utf8')
+  return readFileSync(existsSync(ACTIVE) ? ACTIVE : MAIN, 'utf8')
 }
 
 test('the pre-push requirement split keeps the restored obligations', () => {
