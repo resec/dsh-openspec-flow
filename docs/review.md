@@ -135,8 +135,8 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 
 卡片形态：
 
-- 默认折叠，摘要显示标题、轮次、结论、findings 计数与下一步；点击展开。
-- 展开显示完整内容：报告的 verdict 与 summary、每条 finding 的 problem/evidence/impact/rule/failure/suggestion、verification evidence、处置 note 与 waiver、批准者与验证轮次、residualRisks、outOfScope、plan-change waiver（批准者、时间、文本、文件、draft/current hash）以及未就绪原因。
+- 默认折叠，摘要显示标题、轮次、结论与 `critical`、`major`、`minor`、`nit` 四档 findings 计数；计数覆盖全部已记录 finding，摘要不显示下一步；点击展开。
+- 展开显示完整内容：报告的 verdict 与 summary、每条 finding 的 problem/evidence/impact/rule/failure/suggestion（`规则`、`失败路径` 未记录时不显示）、verification evidence、处置 note 与验证轮次（`豁免`、`批准者` 未记录时不显示）、residualRisks、outOfScope、plan-change waiver（批准者、时间、文本、文件、draft/current hash）以及未就绪原因。同一种状态的 finding 就绪原因合并为一行，blocking 组保留 `blocking` 前缀；不匹配该形式的原因逐条原样显示。
 - 不设截断、不分页；展开区可滚动。标签固定中文，报告原文保留。
 
 模型规则：每轮只写一句报告不能表达且用户需要知道的内容（取舍、授权、等待状态、下一步等）；不复述 findings、证据、风险、scope 或处置 note。reviewer 提交后不写评审总结；skills、reviewer brief 与 policy 文本均已写明。卡片文件不进入模型可见面。

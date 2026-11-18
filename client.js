@@ -633,18 +633,72 @@ window.__ModuleLoader__.load({
       return String(value)
     }
 
+    /** Whether one optional value is recorded. */
+    function recorded(value) {
+      return value !== undefined && value !== null && value !== ''
+    }
+
+    /** One label/value row, or null when the value is not recorded. */
+    function recordedRow(label, value) {
+      return recorded(value) ? [label, value] : null
+    }
+
     /** Select the cards returned by the review endpoint. */
     function selectCards(value) {
       const cards = value !== null && typeof value === 'object' ? value.cards : undefined
       return Array.isArray(cards) ? cards.filter((card) => card !== null && typeof card === 'object') : []
     }
 
+    /** Finding severities, in report order. */
+    const SEVERITIES = ['critical', 'major', 'minor', 'nit']
+
+    /** Per-severity counts over every recorded finding of one card. */
+    function severityCounts(card) {
+      const counts = Object.fromEntries(SEVERITIES.map((severity) => [severity, 0]))
+      for (const finding of Array.isArray(card.findings) ? card.findings : []) {
+        if (finding !== null && typeof finding === 'object' && SEVERITIES.includes(finding.severity)) {
+          counts[finding.severity] += 1
+        }
+      }
+      return counts
+    }
+
+    /** Readiness reasons with same-kind finding reasons merged. */
+    function readinessLines(reasons) {
+      const entries = []
+      const groups = new Map()
+      for (const reason of reasons) {
+        const match = /^(blocking )?finding (\S+) is (.+)$/u.exec(reason)
+        if (match === null) {
+          entries.push({ kind: 'text', text: reason })
+          continue
+        }
+        const key = `${match[1] ?? ''}${match[3]}`
+        const group = groups.get(key)
+        if (group === undefined) {
+          const created = { kind: 'group', blocking: match[1] !== undefined, tail: match[3], ids: [match[2]] }
+          groups.set(key, created)
+          entries.push(created)
+        } else {
+          group.ids.push(match[2])
+        }
+      }
+      return entries.map((entry) => {
+        if (entry.kind === 'text') return entry.text
+        const ids = entry.ids.join(', ')
+        const prefix = entry.blocking ? 'blocking ' : ''
+        if (entry.ids.length === 1) return `${prefix}finding ${ids} is ${entry.tail}`
+        return `${prefix}findings ${ids} are ${entry.tail}`
+      })
+    }
+
     /** One-line collapsed summary for one card. */
     function cardSummary(card) {
       const phase = card.phase === 'resolution' ? '处理汇报' : '评审汇报'
       const review = card.review === 'apply' ? 'apply' : 'draft'
-      const counts = card.counts ?? {}
-      return `${phase} · ${review} · 第 ${cardValue(card.round)} 轮 · ${cardValue(card.verdict)} · findings ${cardValue(counts.total)}（阻塞 ${cardValue(counts.blocking)}） · 下一步 ${cardValue(card.nextAction)}`
+      const counts = severityCounts(card)
+      const severities = SEVERITIES.map((severity) => `${severity} ${String(counts[severity])}`).join(' · ')
+      return `${phase} · ${review} · 第 ${cardValue(card.round)} 轮 · ${cardValue(card.verdict)} · ${severities}`
     }
 
     /** One finding's full report fields. */
@@ -653,10 +707,10 @@ window.__ModuleLoader__.load({
         ['问题', finding.problem],
         ['证据', finding.evidence],
         ['影响', finding.impact],
-        ['规则', finding.rule],
-        ['失败路径', finding.failure],
+        recordedRow('规则', finding.rule),
+        recordedRow('失败路径', finding.failure),
         ['建议', finding.suggestion],
-      ]
+      ].filter((row) => row !== null)
     }
 
     /** All sections of the expanded card, without truncation. */
@@ -716,10 +770,10 @@ window.__ModuleLoader__.load({
             title: `${cardValue(finding.id)} ${cardValue(finding.status)}`,
             rows: [
               ['说明', finding.note],
-              ['豁免', finding.waiver],
-              ['批准者', finding.approvedBy],
+              recordedRow('豁免', finding.waiver),
+              recordedRow('批准者', finding.approvedBy),
               ['验证轮次', finding.verifiedInRound],
-            ],
+            ].filter((row) => row !== null),
           })),
         })
       }
@@ -738,9 +792,10 @@ window.__ModuleLoader__.load({
         })
       }
       if (Array.isArray(card.readinessReasons) && card.readinessReasons.length > 0) {
+        const lines = readinessLines(card.readinessReasons)
         sections.push({
           title: '未就绪原因',
-          rows: card.readinessReasons.map((entry, index) => [`原因 ${String(index + 1)}`, entry]),
+          rows: lines.map((entry, index) => [`原因 ${String(index + 1)}`, entry]),
         })
       }
       return sections

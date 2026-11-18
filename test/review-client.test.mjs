@@ -506,7 +506,7 @@ test('cards select by turn, collapse and expose the full report', async () => {
       residualRisks: ['The goal may stay vague.'],
       outOfScope: ['Not this change.'],
     },
-    findings: [{ id: 'R2-01', status: 'fixed', note: 'Added the goal.', waiver: null, approvedBy: null, verifiedInRound: null }],
+    findings: [{ id: 'R2-01', severity: 'major', status: 'fixed', note: 'Added the goal.', waiver: null, approvedBy: null, verifiedInRound: null }],
     planChangeWaiver: {
       approvedBy: 'user', recordedAt: '2026-01-01T00:00:00.000Z', text: 'Approved.',
       files: ['proposal.md'], draftObjectHash: 'd1', currentObjectHash: 'd2',
@@ -519,9 +519,14 @@ test('cards select by turn, collapse and expose the full report', async () => {
   assert.deepEqual(selectCards(view).map((card) => card.phase), ['review', 'resolution'])
   assert.deepEqual(selectCards({ cards: [] }), [])
   assert.deepEqual(selectCards(undefined), [])
-  assert.match(cardSummary(reviewCard), /评审汇报 · draft · 第 2 轮 · changes-requested · findings 1（阻塞 1）/)
+  assert.equal(cardSummary(reviewCard), '评审汇报 · draft · 第 2 轮 · changes-requested · critical 0 · major 1 · minor 0 · nit 0')
+  assert.ok(!cardSummary(reviewCard).includes('下一步'))
 
   const sections = cardSections(reviewCard)
+  const roundSection = sections.find((section) => section.title === '轮次信息')
+  assert.deepEqual(roundSection.rows.find((row) => row[0] === '下一步'), ['下一步', 'openspec_review action=dispose'])
+  const disposedSection = sections.find((section) => section.title === '处理情况')
+  assert.deepEqual(disposedSection.items[0].rows.map((row) => row[0]), ['说明', '验证轮次'])
   const text = JSON.stringify(sections)
   for (const phrase of [
     '报告结论', 'One blocker.', '问题', 'The goal is missing.', '证据', 'proposal.md',
@@ -544,4 +549,120 @@ test('cards select by turn, collapse and expose the full report', async () => {
   const rendered = first.type(first.props)
   assert.ok(JSON.stringify(rendered).includes('展开'))
   assert.ok(JSON.stringify(rendered).includes('评审汇报'))
+})
+
+test('the collapsed summary counts every recorded finding by severity', async () => {
+  const { plugin } = await loadBundle()
+  const { cardSummary } = plugin.__test
+  const base = {
+    phase: 'review',
+    review: 'draft',
+    round: 4,
+    verdict: 'pass',
+    nextAction: 'openspec_apply_next',
+    findings: [
+      { id: 'R1-01', severity: 'critical', status: 'fixed' },
+      { id: 'R1-02', severity: 'major', status: 'open' },
+      { id: 'R2-01', severity: 'minor', status: 'verified' },
+      { id: 'R2-02', severity: 'minor', status: 'waived' },
+      { id: 'R3-01', severity: 'nit', status: 'open' },
+      { id: 'R3-02', severity: 'unknown', status: 'open' },
+    ],
+  }
+  assert.equal(cardSummary(base), '评审汇报 · draft · 第 4 轮 · pass · critical 1 · major 1 · minor 2 · nit 1')
+  assert.equal(cardSummary({ ...base, findings: undefined }), '评审汇报 · draft · 第 4 轮 · pass · critical 0 · major 0 · minor 0 · nit 0')
+  assert.match(cardSummary({ ...base, phase: 'resolution' }), /^处理汇报/)
+})
+
+test('the expanded card keeps recorded optional finding and disposition rows', async () => {
+  const { plugin } = await loadBundle()
+  const { cardSections } = plugin.__test
+  const card = {
+    phase: 'review',
+    review: 'draft',
+    round: 2,
+    verdict: 'pass',
+    findings: [{
+      id: 'R2-01', severity: 'major', status: 'fixed', note: 'Added the goal.',
+      waiver: 'Approved by user.', approvedBy: 'user', verifiedInRound: 3,
+    }],
+    report: {
+      summary: 'One blocker.',
+      findings: [{
+        id: 'R2-01', severity: 'major', status: 'open', location: 'proposal.md:3', title: 'Missing goal',
+        problem: 'The goal is missing.', evidence: 'proposal.md', impact: 'Intent cannot be checked.',
+        rule: 'Intent fit', failure: 'Apply starts without a goal.', suggestion: 'Add the goal.',
+      }],
+      verifications: [],
+      residualRisks: [],
+      outOfScope: [],
+    },
+  }
+  const sections = cardSections(card)
+  const finding = sections.find((section) => section.title === 'Findings').items[0]
+  assert.deepEqual(finding.rows.map((row) => row[0]), ['问题', '证据', '影响', '规则', '失败路径', '建议'])
+  const disposed = sections.find((section) => section.title === '处理情况').items[0]
+  assert.deepEqual(disposed.rows.map((row) => row[0]), ['说明', '豁免', '批准者', '验证轮次'])
+})
+
+test('the expanded card omits unrecorded optional finding and disposition rows', async () => {
+  const { plugin } = await loadBundle()
+  const { cardSections } = plugin.__test
+  const card = {
+    phase: 'review',
+    review: 'draft',
+    round: 2,
+    verdict: 'pass',
+    findings: [{
+      id: 'R2-01', severity: 'nit', status: 'rejected', note: 'Not a defect.',
+      waiver: null, approvedBy: null, verifiedInRound: null,
+    }],
+    report: {
+      summary: 'One nit.',
+      findings: [{
+        id: 'R2-01', severity: 'nit', status: 'open', location: 'a.md:1', title: 'Nit',
+        problem: 'P', evidence: 'E', suggestion: 'S',
+      }],
+      verifications: [],
+      residualRisks: [],
+      outOfScope: [],
+    },
+  }
+  const sections = cardSections(card)
+  const finding = sections.find((section) => section.title === 'Findings').items[0]
+  assert.deepEqual(finding.rows.map((row) => row[0]), ['问题', '证据', '影响', '建议'])
+  const disposed = sections.find((section) => section.title === '处理情况').items[0]
+  assert.deepEqual(disposed.rows.map((row) => row[0]), ['说明', '验证轮次'])
+})
+
+test('the expanded card merges same-kind readiness reasons', async () => {
+  const { plugin } = await loadBundle()
+  const { cardSections } = plugin.__test
+  const card = {
+    phase: 'review',
+    review: 'draft',
+    round: 3,
+    verdict: 'changes-requested',
+    findings: [],
+    readinessReasons: [
+      'the latest report verdict is changes-requested',
+      'finding R3-01 is open',
+      'finding R3-03 is open',
+      'finding R3-02 is open',
+      'blocking finding R2-01 is deferred',
+      'blocking finding R2-02 is deferred',
+      'finding R2-03 is deferred',
+      'the change artifacts changed since the review started',
+      'finding R1-01 is fixed but not verified in a later round',
+    ],
+  }
+  const section = cardSections(card).find((entry) => entry.title === '未就绪原因')
+  assert.deepEqual(section.rows, [
+    ['原因 1', 'the latest report verdict is changes-requested'],
+    ['原因 2', 'findings R3-01, R3-03, R3-02 are open'],
+    ['原因 3', 'blocking findings R2-01, R2-02 are deferred'],
+    ['原因 4', 'finding R2-03 is deferred'],
+    ['原因 5', 'the change artifacts changed since the review started'],
+    ['原因 6', 'finding R1-01 is fixed but not verified in a later round'],
+  ])
 })
