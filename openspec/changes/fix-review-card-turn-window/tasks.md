@@ -24,5 +24,5 @@
 ## 5. Integration
 
 - [x] 5.1 Run `npm run test:affected -- client.js lib/review/settings.js test/review-cards-endpoint.test.mjs test/review-client.test.mjs` and confirm it passes.
-- [ ] 5.2 Run `npm run verify` on Node 24 and confirm the test summary and coverage verdict pass.
-- [ ] 5.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and confirm no findings remain.
+- [x] 5.2 Run `npm run verify` on Node 24 and confirm the test summary and coverage verdict pass.
+- [x] 5.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and confirm no findings remain.
