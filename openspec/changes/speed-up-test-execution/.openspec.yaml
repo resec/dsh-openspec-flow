@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-18
+goal: Reduce the full suite from ~108 s to 25 s or less and verify from ~148 s
+  to 40 s or less on the primary Node 24 runtime, without weakening the
+  real-spawn contract coverage.
