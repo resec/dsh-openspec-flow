@@ -206,9 +206,11 @@ test('the README carries no round-cap policy wording', () => {
 
 test('the review document explains the apply status states', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
-  for (const phrase of ['`policy`', '`enabled`', '`available`', 'draft-only']) {
+  for (const phrase of ['`policy`', '`enabled`', '`available`', '`mode`', '`independent`', 'draft-only']) {
     assert.ok(text.includes(phrase), `the document names ${phrase}`)
   }
+  assert.match(text, /评审未开始时按锁定策略该段的 `reviewers` 推导/)
+  assert.match(text, /已有评审记录时用记录中的值/)
   assert.match(text, /没有 git 的项目只能用 draft review/)
   assert.match(text, /旧的策略文件可能仍记录/)
   assert.match(text, /无策略或只有 draft 段/)

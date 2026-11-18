@@ -32,13 +32,15 @@ git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须�
 4. 实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录，`files` 以 change 目录为基准（也接受项目相对与绝对路径，示例 `files: ["proposal.md","tasks.md"]`，逃逸 change 目录或指向其他 change 的路径会被拒绝）；apply review 拒绝豁免清单之外的变更文件。apply brief 对规划变更按三条轴评审：plan coherence（变更后的 artifacts 彼此一致）、intent fit（仍满足用户目标与验收条件）、scope control（没有为迁就实现而弱化或移除需求）。
 5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。
 
-任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
+任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；两种 status 都返回 `mode` 与 `independent`，apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
 
 ### apply status 字段
 
 - `policy`：策略是否存在 apply 段；只有 draft 段的旧策略为 false。
 - `enabled`：apply 段是否启用；`policy` 为 false 时为 false。
 - `available`：项目是否有 git；为 false 时优先于无策略。
+- `mode`：评审未开始时按锁定策略该段的 `reviewers` 推导：`1` 为 `reviewer`，`0` 为 `self`；评审段禁用或项目不可用（无 git）时为 `self`；已有评审记录时用记录中的值。draft 与 apply status 都返回该字段。
+- `independent`：与 `mode` 对应，`reviewer` 为 true，其余为 false。
 
 不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或 draft-only 指向 `openspec_review` 的 `start`。
 
