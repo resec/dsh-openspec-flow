@@ -10,7 +10,8 @@
  * The path stays absolute: a relative value would resolve inside fixtures.
  */
 
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
@@ -43,6 +44,27 @@ export function coverageTestEnv(env = process.env) {
 }
 
 /**
+ * Resolve the temporary directory a child test process should inherit.
+ *
+ * The fixture root and the path a child process reports for the same directory
+ * must be byte-equal. On macOS the default `/var/folders/...` is a symlink to
+ * `/private/var/...`, and `getcwd` in the child resolves it, so the literal
+ * value would not compare equal. A value that cannot be resolved is kept as
+ * inherited rather than failing the run.
+ *
+ * @param env - base environment, defaulting to the current process.
+ * @returns the canonical temporary directory.
+ */
+function canonicalTempDir(env = process.env) {
+  const value = env.TMPDIR ?? tmpdir()
+  try {
+    return realpathSync.native(value)
+  } catch {
+    return value
+  }
+}
+
+/**
  * Pick the environment for a run.
  *
  * @param coverage - whether the run collects coverage.
@@ -50,5 +72,6 @@ export function coverageTestEnv(env = process.env) {
  * @returns the environment for the child process.
  */
 export function testEnvFor(coverage, env = process.env) {
-  return coverage ? coverageTestEnv(env) : plainTestEnv(env)
+  const child = coverage ? coverageTestEnv(env) : plainTestEnv(env)
+  return { ...child, TMPDIR: canonicalTempDir(env) }
 }

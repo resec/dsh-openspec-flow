@@ -21,9 +21,12 @@ Options:
   --print-asset          Print the Node tarball name for this platform and exit.
   --print-candidate-paths Print the global Node roots this script inspects.
   --node-mirror URL      Node distribution mirror (default https://nodejs.org/dist).
-  --full                 After the tests, run npm run verify and the lab.
+  --full                 Run verification and the lab instead of the plain test suite.
   --skip-test            Skip npm test.
+  --skip-install         Reuse node_modules instead of running npm ci.
   --skip-playwright      Skip the Playwright browser installation.
+  --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
+  --reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
   --force                Continue past the free-disk threshold.
   --registry URL         npm registry for npm ci and npx.
 

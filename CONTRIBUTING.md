@@ -29,10 +29,10 @@ From the repository root:
 The script:
 
 1. Uses a qualifying Node 24 from `PATH` or a common global install location, or downloads the version recorded in `coverage.baseline.json` into `.cache/toolchain/` and verifies its checksum.
-2. Runs `npm ci` and installs the Git hooks.
-3. Installs Playwright Chromium under `.cache/lab/pw-browsers`.
+2. Runs `npm ci` unless `--skip-install` reuses `node_modules`, and installs the Git hooks.
+3. Installs Playwright Chromium under `.cache/lab/pw-browsers` unless it is already present or skipped.
 4. Runs `npm run lab -- doctor`.
-5. Runs `npm test`.
+5. Runs the plain test suite in default mode.
 
 Use the full gate when your change touches behavior covered by the lab:
 
@@ -40,7 +40,7 @@ Use the full gate when your change touches behavior covered by the lab:
 ./scripts/bootstrap.sh --full
 ```
 
-Full mode adds `npm run verify` and `npm run test:lab -- --mock-only` after the doctor passes.
+Full mode runs `npm run verify` and `npm run test:lab -- --mock-only` instead of step 5: the instrumented verification runs the same tests, so the plain suite is not repeated.
 
 If bootstrap downloaded a clone-local Node, put it first on `PATH` in the current shell:
 
@@ -65,15 +65,20 @@ On Linux, the lab doctor also requires a CJK font. If the doctor reports one mis
 ### Bootstrap options
 
 ```text
---full              Also run verification and the reusable lab scenarios.
---skip-test         Skip npm test.
---skip-playwright   Skip the Chromium installation.
---force             Continue past the 3 GiB free-disk threshold.
---node-mirror URL   Use a Node distribution mirror.
---registry URL      Use an npm registry.
+--full                 Run verification and the reusable lab scenarios instead of the plain suite.
+--skip-test            Skip the plain test suite.
+--skip-install         Reuse node_modules instead of running npm ci.
+--skip-playwright      Skip the Chromium installation.
+--playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
+--reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
+--force                Continue past the 3 GiB free-disk threshold.
+--node-mirror URL      Use a Node distribution mirror.
+--registry URL         Use an npm registry.
 ```
 
 Run `./scripts/bootstrap.sh --help` for the full list.
+
+On macOS the default temporary directory is a symlink; the test entrypoints canonicalize `TMPDIR` for the child test process, so no host workaround is needed. When the Chromium download is slow or blocked, pass `--playwright-host` or set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror. An interrupted install can leave a `__dirlock` under `.cache/lab/pw-browsers`; `--reset-browsers` removes that clone-local directory before installing again. After a failed later step, rerun with `--skip-install`; `--full` does not repeat the plain suite. The lab caches the pinned DSH under `.cache/lab/dsh`; `npm run lab -- cache prune` reclaims entries older than 30 days.
 
 ## Change-first workflow
 
@@ -114,7 +119,7 @@ npm test
 npm run openspec:check
 ```
 
-Run `npm run verify` before opening the pull request when your change can affect coverage. Run the lab when your change touches the plugin surface, the Web GUI, the review channel, installation or anything the lab scenario exercises:
+Run `npm run verify` before opening the pull request; `npm run coverage -- --report-only` prints the same verdict without enforcing. Run the lab when your change touches the plugin surface, the Web GUI, the review channel, installation or anything the lab scenario exercises:
 
 ```sh
 npm run lab -- doctor
@@ -122,6 +127,19 @@ npm run test:lab -- --mock-only
 ```
 
 The pull request template asks for the exact commands, their pass or fail result, the coverage summary when relevant, and the commit SHA. A claim that tests pass without the command and its result is not reviewable.
+
+### Coverage gate
+
+`npm run verify` is the completion command. It runs the suite once with coverage and enforces:
+
+| Scope | Line | Branch | Function |
+| --- | --- | --- | --- |
+| Absolute floor | 90% | 85% | 95% |
+| New-code | 95% | 90% | 100% |
+
+No scope or metric may drop more than 1.00 percentage point below `coverage.baseline.json`. New code means the lines added or modified since `git merge-base origin/main HEAD`.
+
+`npm run coverage -- --report-only` prints the same verdict without failing the run, which makes it the faster pre-check; `npm run verify` is still required before opening the pull request.
 
 ## Node and runtime rules
 

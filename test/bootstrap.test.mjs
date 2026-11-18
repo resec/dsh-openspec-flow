@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +16,14 @@ import {
   selectNodeCandidate,
   shasumsUrl,
 } from '../scripts/bootstrap-lib.mjs'
+import {
+  completionHint,
+  dependenciesError,
+  parseBootstrapArgs,
+  playwrightEnv,
+  resetBrowsers,
+  resolvePlan,
+} from '../scripts/bootstrap.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BASELINE = JSON.parse(readFileSync(join(ROOT, 'coverage.baseline.json'), 'utf8')).node.version.replace(/^v/, '')
@@ -150,4 +159,97 @@ test('the shell forwards options after the separator', () => {
   })
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Usage: scripts\/bootstrap\.sh/)
+})
+
+test('parses the re-run and download options', () => {
+  const options = parseBootstrapArgs([
+    '--skip-install',
+    '--playwright-host',
+    'https://mirror.example',
+    '--reset-browsers',
+  ])
+  assert.equal(options.skipInstall, true)
+  assert.equal(options.playwrightHost, 'https://mirror.example')
+  assert.equal(options.resetBrowsers, true)
+})
+
+test('refuses a download host without a value', () => {
+  assert.throws(() => parseBootstrapArgs(['--playwright-host']), /needs a value/)
+})
+
+test('refuses a browser reset when Playwright is skipped', () => {
+  assert.throws(
+    () => parseBootstrapArgs(['--reset-browsers', '--skip-playwright']),
+    /cannot be combined/,
+  )
+})
+
+test('the default plan installs, runs the plain suite and checks the doctor', () => {
+  const plan = resolvePlan(parseBootstrapArgs([]), { browserPresent: false, dependenciesPresent: true })
+  assert.equal(plan.install, true)
+  assert.equal(plan.chromium, true)
+  assert.equal(plan.doctor, true)
+  assert.equal(plan.plainTest, true)
+  assert.equal(plan.verification, false)
+  assert.equal(plan.lab, false)
+  assert.equal(plan.missingDependencies, false)
+})
+
+test('full mode verifies and runs the lab without a plain suite pass', () => {
+  const plan = resolvePlan(parseBootstrapArgs(['--full']), { browserPresent: true, dependenciesPresent: true })
+  assert.equal(plan.plainTest, false)
+  assert.equal(plan.verification, true)
+  assert.equal(plan.lab, true)
+  assert.equal(plan.chromium, false)
+})
+
+test('--skip-test turns only the plain suite off', () => {
+  const plan = resolvePlan(parseBootstrapArgs(['--skip-test']), { browserPresent: false, dependenciesPresent: true })
+  assert.equal(plan.plainTest, false)
+  assert.equal(plan.verification, false)
+  assert.equal(plan.doctor, true)
+})
+
+test('--skip-playwright keeps Chromium off when no browser exists', () => {
+  const plan = resolvePlan(parseBootstrapArgs(['--skip-playwright']), { browserPresent: false, dependenciesPresent: true })
+  assert.equal(plan.chromium, false)
+})
+
+test('--reset-browsers forces Chromium even with a browser present', () => {
+  const plan = resolvePlan(parseBootstrapArgs(['--reset-browsers']), { browserPresent: true, dependenciesPresent: true })
+  assert.equal(plan.chromium, true)
+})
+
+test('--skip-install reuses dependencies and reports a missing directory', () => {
+  const present = resolvePlan(parseBootstrapArgs(['--skip-install']), { browserPresent: false, dependenciesPresent: true })
+  assert.equal(present.install, false)
+  assert.equal(present.missingDependencies, false)
+  const missing = resolvePlan(parseBootstrapArgs(['--skip-install']), { browserPresent: false, dependenciesPresent: false })
+  assert.equal(missing.install, false)
+  assert.equal(missing.missingDependencies, true)
+})
+
+test('maps the download host to the Playwright environment', () => {
+  assert.deepEqual(playwrightEnv(), {})
+  assert.deepEqual(playwrightEnv('https://mirror.example'), {
+    PLAYWRIGHT_DOWNLOAD_HOST: 'https://mirror.example',
+  })
+})
+
+test('resetBrowsers removes the clone-local browser directory', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'bootstrap-browsers-'))
+  mkdirSync(join(directory, 'chromium'))
+  writeFileSync(join(directory, 'chromium', 'marker'), 'x')
+  resetBrowsers(directory)
+  assert.equal(existsSync(directory), false)
+})
+
+test('names npm ci when dependencies are missing', () => {
+  assert.match(dependenciesError(), /npm ci/)
+})
+
+test('the completion hint names the DSH cache and prune command', () => {
+  const hint = completionHint()
+  assert.match(hint, /\.cache\/lab\/dsh/)
+  assert.match(hint, /npm run lab -- cache prune/)
 })
