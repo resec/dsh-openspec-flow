@@ -375,3 +375,63 @@ test('a card without a write time is skipped when a turn end is given', async ()
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test('a non-string or empty turn end is rejected and binds nothing', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const path = cardFile(directory)
+    for (const value of [1767225600000, '', '   ', null, true, ['2026-01-01']]) {
+      const result = await channel.dispatch('reviewCards/get', {
+        sessionId: 'changer', turn: 1, to: value,
+      })
+      assert.equal(result.ok, false, `to ${JSON.stringify(value)} is rejected`)
+      assert.match(result.error.message, /turn end/)
+    }
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a stored watermark later than the turn end is kept', async () => {
+  const { directory, channel } = fixture()
+  try {
+    writeFileSync(join(directory, 'card-delivery.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: { [sessionKeyOf('changer')]: { lastDeliveredAt: '2026-01-01T00:40:00.000Z' } },
+    }))
+    const path = cardFile(directory, { writtenAt: '2026-01-01T00:20:00.000Z' })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 21, to: '2026-01-01T00:10:00.000Z',
+    })
+    assert.deepEqual(result.value.cards, [])
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
+    const delivery = JSON.parse(readFileSync(join(directory, 'card-delivery.json'), 'utf8'))
+    assert.equal(
+      delivery.sessions[sessionKeyOf('changer')].lastDeliveredAt,
+      '2026-01-01T00:40:00.000Z',
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a request without a turn end resets the watermark to now', async () => {
+  const { directory, channel } = fixture({ now: () => Date.parse('2026-01-01T00:00:00.000Z') })
+  try {
+    cardFile(directory, { writtenAt: '2026-01-01T00:30:00.000Z' })
+    writeFileSync(join(directory, 'card-delivery.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: { [sessionKeyOf('changer')]: { lastDeliveredAt: '2026-01-01T01:00:00.000Z' } },
+    }))
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.ok, true)
+    const delivery = JSON.parse(readFileSync(join(directory, 'card-delivery.json'), 'utf8'))
+    assert.equal(
+      delivery.sessions[sessionKeyOf('changer')].lastDeliveredAt,
+      '2026-01-01T00:00:00.000Z',
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})

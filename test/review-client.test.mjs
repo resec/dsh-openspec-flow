@@ -179,6 +179,24 @@ test('the card tail requests the current turn and hides on failure', async () =>
   assert.equal(calls[3].payload.to, undefined)
 })
 
+test('the card tail omits non-finite times', async () => {
+  const { plugin } = await loadBundle()
+  const built = clientContext()
+  const calls = []
+  built.ctx.connection.rpc.call = async (channel, endpoint, payload) => {
+    calls.push(payload)
+    return { ok: true, value: { cards: [] } }
+  }
+  plugin.apply(built.ctx)
+  const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
+  assert.equal(turnTail.component({
+    turn: { turn: 12, start: { time: Number.NaN }, end: { time: Number.POSITIVE_INFINITY } },
+    sessionId: 'session-nonfinite',
+  }), null)
+  await Promise.resolve()
+  assert.deepEqual(calls[0], { sessionId: 'session-nonfinite', turn: 12 })
+})
+
 test('the bundle repeats the channel and endpoint literals exactly', () => {
   const text = readFileSync(join(ROOT, 'client.js'), 'utf8')
   assert.match(text, new RegExp(`const CHANNEL = '${REVIEW_CHANNEL}'`))
