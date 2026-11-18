@@ -23,8 +23,8 @@
 
 - [x] 4.1 Run `npm test` on the baseline Node 24 and verify the full suite passes.
 - [x] 4.2 Run `npm run openspec:check` and verify every active change, main spec and archived task check passes.
-- [ ] 4.3 Run `npm run verify` and record the line, branch and function percentages plus the new-code result; verify zero violations.
-- [ ] 4.4 Run `git diff --name-only` and `git status --porcelain`; verify only `scripts/test-env.mjs`, `scripts/bootstrap.mjs`, `scripts/bootstrap.sh`, `test/bootstrap.test.mjs`, `test/test-env.test.mjs`, `test/contributor-docs.test.mjs`, `CONTRIBUTING.md`, `AGENTS.md`, `README.md` and this change directory changed, and that `package.json` dependency fields, `coverage.baseline.json`, `dist/` and `openspec/changes/archive/` are untouched.
+- [x] 4.3 Run `npm run verify` and record the line, branch and function percentages plus the new-code result; verify zero violations.
+- [x] 4.4 Run `git diff --name-only` and `git status --porcelain`; verify only `scripts/test-env.mjs`, `scripts/bootstrap.mjs`, `scripts/bootstrap.sh`, `test/bootstrap.test.mjs`, `test/test-env.test.mjs`, `test/contributor-docs.test.mjs`, `CONTRIBUTING.md`, `AGENTS.md`, `README.md` and this change directory changed, and that `package.json` dependency fields, `coverage.baseline.json`, `dist/` and `openspec/changes/archive/` are untouched.
 
 ## Workflow follow-up
 
