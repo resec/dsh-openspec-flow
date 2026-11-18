@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { assertCurrentNode } from './node-version.mjs'
 import { GateError, resolveMode, runGate } from './coverage-gate.mjs'
 import { clearStampOnFailure, writeStamp } from './coverage-stamp.mjs'
+import { DEFAULT_CONCURRENCY } from './run-tests.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -83,7 +84,12 @@ export async function runVerification({ root = ROOT, argv = process.argv.slice(2
   assertCurrentNode({ root, version })
   const mode = resolveMode(root, options.mode)
   rmSync(join(root, '.coverage'), { recursive: true, force: true })
-  const result = spawnSync(process.execPath, [join(root, 'scripts', 'run-tests.mjs'), 'all'], {
+  const result = spawnSync(process.execPath, [
+    join(root, 'scripts', 'run-tests.mjs'),
+    'all',
+    '--',
+    `--test-concurrency=${DEFAULT_CONCURRENCY}`,
+  ], {
     cwd: root,
     stdio: 'inherit',
     env: { ...process.env, COVERAGE: '1' },

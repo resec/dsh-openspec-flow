@@ -19,6 +19,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
 import { testEnvFor } from './test-env.mjs'
+import { DEFAULT_CONCURRENCY } from './run-tests.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -212,7 +213,7 @@ export async function main(argv, { version, spawn, gitStatus } = {}) {
   }
 
   const runner = spawn ?? spawnSync
-  const result = runner(process.execPath, ['--test', ...files], {
+  const result = runner(process.execPath, ['--test', `--test-concurrency=${DEFAULT_CONCURRENCY}`, ...files], {
     cwd: ROOT,
     stdio: 'inherit',
     env: testEnvFor(false),

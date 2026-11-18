@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { main, selectAffectedTests, SelectorError } from '../scripts/affected-tests.mjs'
 import { COMPILE_CACHE, testEnvFor } from '../scripts/test-env.mjs'
+import { DEFAULT_CONCURRENCY } from '../scripts/run-tests.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -138,7 +139,7 @@ test('the scoped run forwards the shared plain-run environment', async () => {
   })
   assert.equal(code, 1)
   assert.equal(calls.length, 1)
-  assert.deepEqual(calls[0].args, ['--test', 'test/review-unit.test.mjs'])
+  assert.deepEqual(calls[0].args, ['--test', `--test-concurrency=${DEFAULT_CONCURRENCY}`, 'test/review-unit.test.mjs'])
   assert.equal(calls[0].options.cwd, ROOT)
   assert.equal(calls[0].options.env.NODE_COMPILE_CACHE, COMPILE_CACHE)
 })

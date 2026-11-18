@@ -14,6 +14,9 @@
  */
 
 import { spawn } from 'node:child_process'
+import { createInprocSpawner } from './inproc-cli.mjs'
+
+const inprocSpawner = createInprocSpawner()
 
 /**
  * Build a fake context and the registries it fills.
@@ -31,6 +34,7 @@ export function createFakeContext({
   catalog = undefined,
   globalTools = [],
   sessionProjections = undefined,
+  spawnMode = 'inproc',
 } = {}) {
   const tools = new Map()
   const toolOptions = new Map()
@@ -53,7 +57,7 @@ export function createFakeContext({
     : typeof withCommands === 'object' && withCommands !== null
       ? withCommands
       : undefined
-  const stats = { spawns: 0 }
+  const stats = { spawns: 0, inprocCalls: 0, childProcesses: 0 }
   const listeners = new Map()
   const projectionRegistrations = []
   const projectionService = sessionProjections ?? {
@@ -135,6 +139,11 @@ export function createFakeContext({
     subprocess: {
       spawn(spec) {
         stats.spawns += 1
+        if (spawnMode === 'inproc') {
+          stats.inprocCalls += 1
+          return inprocSpawner.spawn(spec)
+        }
+        stats.childProcesses += 1
         const child = spawn(spec.argv[0], spec.argv.slice(1), {
           cwd: spec.cwd,
           env: { ...process.env, ...spec.env },

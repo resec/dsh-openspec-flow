@@ -25,7 +25,7 @@ None.
 
 ## Impact
 
-- Tests: new `test/inproc-cli.mjs`, `test/inproc-cli.test.mjs`, `test/spawn-contract.test.mjs`; `test/fake-context.mjs`; review suite setup; `test/inspect.test.mjs` (a CLI-backed non-review suite that inherits the new default); `test/affected-tests.test.mjs` (the selector's exact argv assertion).
+- Tests: new `test/inproc-cli.mjs`, `test/inproc-cli.test.mjs`, `test/spawn-contract.test.mjs`; `test/fake-context.mjs`; review suite setup; `test/inspect.test.mjs` (a CLI-backed non-review suite that inherits the new default); `test/integration.test.mjs` and `test/e2e.test.mjs` (explicit `process` mode); `test/affected-tests.test.mjs` (the selector's exact argv assertion).
 - Entrypoints: `scripts/run-tests.mjs`, `scripts/coverage.mjs`, `scripts/affected-tests.mjs`, plus a unit test for the runner defaults.
 - Documentation: `README.md` test section.
 - No plugin runtime code, tool schemas, dependency versions, coverage baseline or archived specs change. The coverage stamp fingerprint already covers `test/` and `scripts/run-tests.mjs`, the only coverage-run inputs this change edits; `scripts/affected-tests.mjs` is deliberately outside the stamp.

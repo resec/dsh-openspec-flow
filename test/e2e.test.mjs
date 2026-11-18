@@ -79,7 +79,7 @@ function project() {
 
 function setup(root) {
   clearCache()
-  const fake = createFakeContext({ cwd: root })
+  const fake = createFakeContext({ cwd: root, spawnMode: 'process' })
   apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: false } } })
   return fake
 }

@@ -9,13 +9,15 @@
 
 import { mkdirSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { assertCurrentNode } from './node-version.mjs'
 import { testEnvFor } from './test-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const COVERAGE_ENABLED = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
+/** The test-file concurrency a plain run uses when the caller supplies none. */
+export const DEFAULT_CONCURRENCY = 8
 
 const SCOPES = {
   plugin: {
@@ -34,6 +36,38 @@ function listTests(directory) {
 }
 
 /**
+ * Build the `node --test` argv for one scope.
+ *
+ * The default concurrency is added only when the passthrough carries no
+ * `--test-concurrency=` entry, so exactly one flag reaches the runner and a
+ * caller's value wins.
+ * @param options - scope, coverage and the arguments after `--`.
+ * @returns the argv for `node --test`.
+ */
+export function buildTestArgs({ scope = 'plugin', coverage = false, extra = [] } = {}) {
+  const definition = SCOPES[scope]
+  if (definition === undefined) throw new Error(`unknown scope: ${scope}`)
+  const files = listTests(definition.testDir)
+  if (files.length === 0) {
+    throw new Error(`no test files found under ${definition.testDir}`)
+  }
+  const args = ['--test']
+  if (coverage) {
+    args.push('--experimental-test-coverage')
+    for (const pattern of definition.include) args.push(`--test-coverage-include=${pattern}`)
+    for (const pattern of definition.exclude) args.push(`--test-coverage-exclude=${pattern}`)
+    args.push('--test-reporter=spec', '--test-reporter-destination=stdout')
+    args.push('--test-reporter=lcov', `--test-reporter-destination=${definition.lcov}`)
+  }
+  args.push(...extra)
+  if (!extra.some((argument) => argument.startsWith('--test-concurrency='))) {
+    args.push(`--test-concurrency=${DEFAULT_CONCURRENCY}`)
+  }
+  args.push(...files)
+  return args
+}
+
+/**
  * Run one scope.
  *
  * The child environment comes from the shared test-env module, so the plain
@@ -45,21 +79,8 @@ function listTests(directory) {
  * @returns the child exit status.
  */
 function runScope(scope, coverage, extra = []) {
-  const definition = SCOPES[scope]
-  const files = listTests(definition.testDir)
-  if (files.length === 0) {
-    throw new Error(`no test files found under ${definition.testDir}`)
-  }
-  const args = ['--test']
-  if (coverage) {
-    mkdirSync(join(ROOT, '.coverage'), { recursive: true })
-    args.push('--experimental-test-coverage')
-    for (const pattern of definition.include) args.push(`--test-coverage-include=${pattern}`)
-    for (const pattern of definition.exclude) args.push(`--test-coverage-exclude=${pattern}`)
-    args.push('--test-reporter=spec', '--test-reporter-destination=stdout')
-    args.push('--test-reporter=lcov', `--test-reporter-destination=${definition.lcov}`)
-  }
-  args.push(...extra, ...files)
+  if (coverage) mkdirSync(join(ROOT, '.coverage'), { recursive: true })
+  const args = buildTestArgs({ scope, coverage, extra })
   const result = spawnSync(process.execPath, args, {
     cwd: ROOT,
     stdio: 'inherit',
@@ -95,10 +116,12 @@ function main() {
   process.exitCode = failed ? 1 : 0
 }
 
-try {
-  main()
-} catch (error) {
-  console.error(`test entrypoint: ${error.message}`)
-  console.error('Activate a Node 24 runtime that satisfies engines.node and retry; no version manager is invoked automatically.')
-  process.exit(error.exitCode ?? 2)
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  try {
+    main()
+  } catch (error) {
+    console.error(`test entrypoint: ${error.message}`)
+    console.error('Activate a Node 24 runtime that satisfies engines.node and retry; no version manager is invoked automatically.')
+    process.exit(error.exitCode ?? 2)
+  }
 }

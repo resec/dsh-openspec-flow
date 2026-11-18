@@ -61,7 +61,7 @@ function writeTasks(root, content) {
 
 function setup(root) {
   clearCache()
-  const fake = createFakeContext({ cwd: root })
+  const fake = createFakeContext({ cwd: root, spawnMode: 'process' })
   apply(fake.ctx, { timeoutMs: 30_000 })
   return fake
 }
@@ -1080,7 +1080,7 @@ test('initializes an empty project without writing skills', async () => {
 
 test('the management block keeps three tools out of a gated session', () => {
   clearCache()
-  const fake = createFakeContext({ cwd: process.cwd(), commands: true })
+  const fake = createFakeContext({ cwd: process.cwd(), commands: true, spawnMode: 'process' })
   apply(fake.ctx, { timeoutMs: 30_000 })
   const { agent, steered } = fake.createAgent()
   const visible = () => [...fake.tools.keys()].filter((name) => {
