@@ -35,10 +35,15 @@ async function loadBundle() {
   }
   await import(new URL('../client.js', import.meta.url).href)
   const entry = loaded[0]
+  const effectDeps = []
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
-    useEffect: (fn) => { const cleanup = fn(); if (typeof cleanup === 'function') cleanup() },
+    useEffect: (fn, deps) => {
+      effectDeps.push(deps)
+      const cleanup = fn()
+      if (typeof cleanup === 'function') cleanup()
+    },
     useCallback: (fn) => fn,
     useMemo: (fn) => fn(),
   }
@@ -46,7 +51,7 @@ async function loadBundle() {
     assert.equal(name, 'react')
     return react
   })
-  cached = { entry, plugin }
+  cached = { entry, plugin, effectDeps }
   return cached
 }
 
@@ -125,7 +130,7 @@ test('the bundle registers one row configuration page', async () => {
 })
 
 test('the card tail requests the current turn and hides on failure', async () => {
-  const { plugin } = await loadBundle()
+  const { plugin, effectDeps } = await loadBundle()
   const built = clientContext()
   const calls = []
   built.ctx.connection.rpc.call = async (channel, endpoint, payload) => {
@@ -134,19 +139,44 @@ test('the card tail requests the current turn and hides on failure', async () =>
   }
   plugin.apply(built.ctx)
   const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
-  assert.equal(turnTail.component({ turn: { turn: 7, start: '2026-01-01T00:00:00.000Z' }, sessionId: 'session-7' }), null)
+  const start = Date.parse('2026-01-01T00:00:00.000Z')
+  const end = Date.parse('2026-01-01T01:00:00.000Z')
+  assert.equal(turnTail.component({
+    turn: { turn: 7, start: { time: start }, end: { time: end } },
+    sessionId: 'session-7',
+  }), null)
   await Promise.resolve()
   assert.deepEqual(calls[0], {
     channel: '/openspec-review',
     endpoint: 'reviewCards/get',
-    payload: { sessionId: 'session-7', turn: 7, from: '2026-01-01T00:00:00.000Z' },
+    payload: {
+      sessionId: 'session-7',
+      turn: 7,
+      from: '2026-01-01T00:00:00.000Z',
+      to: '2026-01-01T01:00:00.000Z',
+    },
   })
+  assert.deepEqual(effectDeps.at(-1), ['session-7', 7, start, end])
   assert.equal(turnTail.component({ turn: { turn: 8 }, sessionId: '' }), null)
   assert.equal(calls.length, 1)
+  assert.equal(turnTail.component({
+    turn: { turn: 11, start: { time: 1e9 }, end: { time: 1e18 } },
+    sessionId: 'session-odd',
+  }), null)
+  await Promise.resolve()
+  assert.deepEqual(calls[1].payload, { sessionId: 'session-odd', turn: 11 })
+  assert.equal(turnTail.component({
+    turn: { turn: 7, start: { time: start }, end: { time: end + 60_000 } },
+    sessionId: 'session-7',
+  }), null)
+  await Promise.resolve()
+  assert.equal(calls[2].payload.to, '2026-01-01T01:01:00.000Z')
   assert.equal(turnTail.component({ turn: { turn: 9, sessionId: 'turn-session' } }), null)
   await Promise.resolve()
-  assert.equal(calls[1].payload.sessionId, 'turn-session')
-  assert.equal(calls[1].payload.turn, 9)
+  assert.equal(calls[3].payload.sessionId, 'turn-session')
+  assert.equal(calls[3].payload.turn, 9)
+  assert.equal(calls[3].payload.from, undefined)
+  assert.equal(calls[3].payload.to, undefined)
 })
 
 test('the bundle repeats the channel and endpoint literals exactly', () => {

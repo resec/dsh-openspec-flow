@@ -114,6 +114,7 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 | `index.js:32` | `inject` 的五个服务：`tools`、`subprocess`、`workingDirectory`、`systemPrompt`、`agents` | 五个服务名仍存在；缺一个时插件不会挂载 |
 | `index.js:45-84` | Standard Schema 形式的 `Config` | loader 仍按 Standard Schema 校验 |
 | `lib/review/settings.js`、`lib/client/channel.js` | `/openspec-review` 通道与 `reviewCards/get` 端点；卡片文件读取、turn 绑定与投递水位 | 端点名与客户端一致；卡片文件布局 `<sessionKey>-<phase>-<round>.json`；隔离 DSH 自动检查 |
+| `client.js` 的 `ReviewCardTail` | `conversation.chat.turnTail` owner props 的 `turn: TurnLocation`；`TurnLocation.start`/`end` 是 `SessionEvent`，`SessionEvent.time` 为 Unix epoch 毫秒 | 字段名或单位变化时改客户端；`grep -n 'chat.turnTail' docs/upgrading-dsh-runtime.md` |
 | `index.js:86` | `apply(ctx, config)` | Cordis 插件入口约定 |
 | `lib/tools/apply.js:35,117`、`lib/tools/query.js:630,694,913`、`lib/tools/write.js:27,125`、`lib/init.js:26` | `ctx.effect` 包裹的 `ctx.tools.register` | `ToolDefinition` 的 `name`、`description`、`parameters`、`output.schema`、`output.render`、`execute` 字段 |
 | `reviewer.js` | `ctx.tools.definitions()` 的全局视图、`ctx.tools.restrict({ deny })`、`tools/change` 事件 | `ToolRestriction` 的 deny 语义、scope 父链、禁用名集合；reviewer 目录是 preset 的七个工具，`read_image` 只在 Host 提供 `attachments` 时注册 |
@@ -142,6 +143,9 @@ DSH 侧对应的声明文件与符号：
 | `dsh-agent` | `lib/types/index.d.ts` | `list()` |
 | `dsh-skill` | `lib/types/index.d.ts` | `registerProvider`、`SkillProvider` |
 | `dsh-commands` | `lib/types/index.d.ts` | `register`、`CommandDefinition` |
+| `dsh-client-ui-chat` | `src/client/contract/slots.ts` | `conversation.chat.turnTail` 的 `TurnTailOwnerProps`（`turn: TurnLocation`） |
+| `dsh-client-ui-conversation` | `lib/types/client/contract/conversation.d.ts` | `TurnLocation.start`/`end`（`SessionEvent`） |
+| `dsh-session` | `lib/types/types.d.ts` | `SessionEvent.time`（Unix epoch 毫秒） |
 | `cordis-plugin-loader` | Loader YAML 方言 | `cordis.patch.yml` 的 `insert` |
 
 路径相对 DSH 安装根目录下的 `node_modules/@deepseek-ai/<package>/`。

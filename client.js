@@ -38,6 +38,21 @@ window.__ModuleLoader__.load({
     /** Locale namespace of this page. */
     const NS = 'openspecReview'
 
+    /** Epoch-ms bounds a plausible Session event time may fall in. */
+    const MIN_TURN_TIME = Date.UTC(2000, 0, 1)
+    const MAX_TURN_TIME = Date.UTC(2100, 0, 1)
+
+    /**
+     * ISO form of one Session event time.
+     * @param value - candidate epoch milliseconds.
+     * @returns the ISO string, or undefined when missing or implausible.
+     */
+    function turnTimeIso(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+      if (value < MIN_TURN_TIME || value > MAX_TURN_TIME) return undefined
+      return new Date(value).toISOString()
+    }
+
     const zh = {
       summary: '草稿与应用评审的配置',
       title: '评审配置',
@@ -801,6 +816,8 @@ window.__ModuleLoader__.load({
         function ReviewCardTail({ turn, sessionId }) {
           const [loaded, setLoaded] = React.useState({ key: '', cards: [] })
           const turnNumber = turn?.turn
+          const startTime = turn?.start?.time
+          const endTime = turn?.end?.time
           const effectiveSessionId = typeof sessionId === 'string' && sessionId !== ''
             ? sessionId
             : (typeof turn?.sessionId === 'string' && turn.sessionId !== ''
@@ -812,7 +829,10 @@ window.__ModuleLoader__.load({
             if (effectiveSessionId === '') return undefined
             if (!Number.isInteger(turnNumber)) return undefined
             const payload = { sessionId: effectiveSessionId, turn: turnNumber }
-            if (typeof turn?.start === 'string') payload.from = turn.start
+            const from = turnTimeIso(startTime)
+            if (from !== undefined) payload.from = from
+            const to = turnTimeIso(endTime)
+            if (to !== undefined) payload.to = to
             Promise.resolve(call(ENDPOINTS.cards, payload)).then((result) => {
               if (!alive) return
               setLoaded({ key, cards: result?.ok === true ? selectCards(result.value) : [] })
@@ -820,7 +840,7 @@ window.__ModuleLoader__.load({
               if (alive) setLoaded({ key, cards: [] })
             })
             return () => { alive = false }
-          }, [effectiveSessionId, turnNumber])
+          }, [effectiveSessionId, turnNumber, startTime, endTime])
           return cardTailElement(loaded.key === key ? loaded.cards : [])
         }
         ctx.effect(() => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({

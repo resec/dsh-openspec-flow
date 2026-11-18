@@ -125,7 +125,7 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 
 ## 轮次汇报与信息卡
 
-每轮结束由插件写一张信息卡文件，模型不再复述报告。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询；Host 返回已绑定到该 turn 的卡片，并把本轮写入、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
+每轮结束由插件写一张信息卡文件，模型不再复述报告。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
 
 写入点：
 
@@ -158,7 +158,7 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 | `openspec/.review/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
 | `openspec/.review/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
 | `openspec/.review/<store>#<change>/cards/<sessionKey>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
-| `openspec/.review/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn |
+| `openspec/.review/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
 `<store>#` 在无 store 时为 `local#`。评审根通过 `openspec/.gitignore` 的 `.review/` 行忽略；有 git 的项目在写记录前用 `git check-ignore` 校验，无法忽略时拒绝写入。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
