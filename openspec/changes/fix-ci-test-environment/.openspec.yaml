@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-18
+goal: A clean Ubuntu checkout passes npm run verify and the lab job without
+  repository-external fixtures or an unprovisioned pnpm.
