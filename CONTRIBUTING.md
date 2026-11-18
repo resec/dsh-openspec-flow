@@ -15,7 +15,7 @@ Using the plugin locally is allowed and can make the workflow faster. The requir
 - macOS or Linux.
 - Node 24 satisfying `engines.node >=24.9.0`. The bootstrap resolves it; you do not need a version manager.
 - `git`, `curl` and a network connection to the Node distribution and npm registry.
-- `pnpm` 12.6.0 when you run the lab or `--full`; the CI lab job pins the same version.
+- `pnpm` 12.6.0 for every bootstrap run (its doctor step checks it), the lab, `--full` and the pre-push lab gate; see [Lab prerequisites](#lab-prerequisites).
 - About 3 GiB free for Chromium, the pinned DSH and a lab run.
 
 ## Bootstrap
@@ -54,7 +54,7 @@ source scripts/activate.sh
 
 Chromium is installed where the lab looks: `.cache/lab/pw-browsers`. Do not install it into the host's default Playwright cache.
 
-The lab also needs pnpm on `PATH`; DSH forwards plugin installation to it. Install the version pinned by the CI workflow:
+The lab also needs pnpm on `PATH`; DSH forwards plugin installation to it. Bootstrap's doctor step and the pre-push lab gate also require it, so install it before the first bootstrap or push. Install the version pinned by the CI workflow:
 
 ```sh
 npm install --global pnpm@12.6.0

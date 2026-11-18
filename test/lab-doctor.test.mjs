@@ -70,7 +70,7 @@ test('a missing pnpm reports a correction-oriented failure', () => {
   const check = checkPnpm({ PATH: '/definitely/missing' })
   assert.equal(check.status, 'fail')
   assert.match(check.detail, /pnpm/)
-  assert.ok(check.detail.includes(`pnpm@${PNPM_VERSION}`))
+  assert.ok(check.detail.includes(`npm install --global pnpm@${PNPM_VERSION}`))
 })
 
 test('a missing fc-list returns a correction-oriented failure', () => {

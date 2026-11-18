@@ -46,15 +46,23 @@ test('the lab job installs the browser where the doctor looks', () => {
 test('the lab job provisions the pinned pnpm before npm ci', () => {
   const lab = WORKFLOW.slice(WORKFLOW.indexOf('\n  lab:\n'))
   const action = lab.indexOf('pnpm/action-setup@v4')
-  const version = lab.indexOf(`version: ${PNPM_VERSION}`)
+  const workflowPin = /pnpm\/action-setup@v4[\s\S]*?version:\s*(\S+)/.exec(lab)
   const install = lab.indexOf('npm ci')
   assert.ok(action >= 0, 'the lab job does not install pnpm')
-  assert.ok(version > action, `the lab job does not pin pnpm@${PNPM_VERSION}`)
-  assert.ok(install > version, 'the lab job installs pnpm after npm ci')
+  assert.ok(workflowPin, 'the lab job does not pin a pnpm version')
+  assert.ok(install > action, 'the lab job installs pnpm after npm ci')
+  assert.equal(
+    workflowPin[1],
+    PNPM_VERSION,
+    `the workflow pins pnpm ${workflowPin[1]}, expected ${PNPM_VERSION}`,
+  )
 
   const documentation = readFileSync(new URL('../docs/lab.md', import.meta.url), 'utf8')
-  assert.ok(
-    documentation.includes(`pnpm@${PNPM_VERSION}`),
-    `docs/lab.md does not name pnpm@${PNPM_VERSION}`,
+  const documentedPin = /npm install --global pnpm@(\S+)/.exec(documentation)
+  assert.ok(documentedPin, 'docs/lab.md does not carry the pnpm install command')
+  assert.equal(
+    documentedPin[1],
+    PNPM_VERSION,
+    `docs/lab.md pins pnpm ${documentedPin[1]}, expected ${PNPM_VERSION}`,
   )
 })

@@ -288,7 +288,7 @@ function printHelp() {
     'usage: npm run lab -- <command> [options]',
     '',
     'commands:',
-    '  doctor                       check runtime, cache, browser, font, disk',
+    '  doctor                       check runtime, pnpm, cache, browser, font, disk',
     '  cache list|verify|prune|rm   manage cached DSH installs',
     '  up --name <n> --mode web|headless [--keep] [--fresh-dsh] [--offline]',
     '  run -- <task>                one headless task in a fresh lab',

@@ -78,7 +78,7 @@ export function checkPnpm(env = process.env) {
     return {
       name: 'pnpm',
       status: 'fail',
-      detail: `pnpm is unavailable (${error instanceof Error ? error.message : String(error)}); install pnpm@${PNPM_VERSION} and retry`,
+      detail: `pnpm is unavailable (${error instanceof Error ? error.message : String(error)}); run npm install --global pnpm@${PNPM_VERSION} and retry`,
     }
   }
   const version = result.stdout.trim()
@@ -86,14 +86,14 @@ export function checkPnpm(env = process.env) {
     return {
       name: 'pnpm',
       status: 'fail',
-      detail: `pnpm --version exited ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}; install pnpm@${PNPM_VERSION} and retry`,
+      detail: `pnpm --version exited ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}; run npm install --global pnpm@${PNPM_VERSION} and retry`,
     }
   }
   if (version === '') {
     return {
       name: 'pnpm',
       status: 'fail',
-      detail: `pnpm --version printed no version; install pnpm@${PNPM_VERSION} and retry`,
+      detail: `pnpm --version printed no version; run npm install --global pnpm@${PNPM_VERSION} and retry`,
     }
   }
   return { name: 'pnpm', status: 'ok', detail: `pnpm ${version}` }
