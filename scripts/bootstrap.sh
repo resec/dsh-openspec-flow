@@ -120,6 +120,8 @@ for candidate in "$HOME"/.local/share/fnm/node-versions/*/installation/bin/node 
 done
 
 if [ -n "$BEST_PATH" ]; then
+  PATH="$(dirname "$BEST_PATH"):$PATH"
+  export PATH
   # shellcheck disable=SC2086
   exec "$BEST_PATH" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
 fi
@@ -141,6 +143,8 @@ ASSET="node-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
 TARGET="$ROOT/.cache/toolchain/node-v${VERSION}-${PLATFORM}-${ARCH}"
 if [ -x "$TARGET/bin/node" ]; then
   ln -sfn "$TARGET" "$ROOT/.cache/toolchain/node"
+  PATH="$TARGET/bin:$PATH"
+  export PATH
   # shellcheck disable=SC2086
   exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
 fi
@@ -170,5 +174,7 @@ rm -rf "$TARGET"
 tar -xzf "$TARBALL" -C "$ROOT/.cache/toolchain"
 [ -x "$TARGET/bin/node" ] || { echo "bootstrap: extracted Node is missing $TARGET/bin/node" >&2; exit 1; }
 ln -sfn "$TARGET" "$ROOT/.cache/toolchain/node"
+PATH="$TARGET/bin:$PATH"
+export PATH
 # shellcheck disable=SC2086
 exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
