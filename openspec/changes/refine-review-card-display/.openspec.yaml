@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-18
+goal: Make the review card collapsed summary show finding counts per severity
+  instead of a total plus blocking count and omit the next action; hide
+  unrecorded optional rows in the expanded finding and disposition details;
+  merge same-kind readiness reasons into one line.
