@@ -17,6 +17,9 @@ import { assertCurrentNode } from '../../node-version.mjs'
 /** Minimum free space the lab accepts. */
 export const MIN_FREE_BYTES = 1024 * 1024 * 1024
 
+/** The pnpm version the CI lab job installs and the documentation names. */
+export const PNPM_VERSION = '12.6.0'
+
 /**
  * Locate a Playwright Chromium executable under one browser root.
  * @param browsersPath - Playwright browser root.
@@ -60,6 +63,40 @@ export function checkRuntime() {
   } catch (error) {
     return { name: 'runtime', status: 'fail', detail: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/**
+ * Check that pnpm can install plugin dependencies.
+ * @param env - environment used to resolve pnpm.
+ * @returns one check.
+ */
+export function checkPnpm(env = process.env) {
+  let result
+  try {
+    result = run('pnpm', ['--version'], { timeoutMs: 30_000, env })
+  } catch (error) {
+    return {
+      name: 'pnpm',
+      status: 'fail',
+      detail: `pnpm is unavailable (${error instanceof Error ? error.message : String(error)}); install pnpm@${PNPM_VERSION} and retry`,
+    }
+  }
+  const version = result.stdout.trim()
+  if (result.status !== 0) {
+    return {
+      name: 'pnpm',
+      status: 'fail',
+      detail: `pnpm --version exited ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}; install pnpm@${PNPM_VERSION} and retry`,
+    }
+  }
+  if (version === '') {
+    return {
+      name: 'pnpm',
+      status: 'fail',
+      detail: `pnpm --version printed no version; install pnpm@${PNPM_VERSION} and retry`,
+    }
+  }
+  return { name: 'pnpm', status: 'ok', detail: `pnpm ${version}` }
 }
 
 /**
@@ -203,6 +240,7 @@ export function runDoctor({
   const fontEnv = existsSync(fontConfig) ? { ...env, FONTCONFIG_FILE: fontConfig } : env
   const checks = [
     deps.runtime ?? checkRuntime(),
+    deps.pnpm === undefined ? checkPnpm(env) : deps.pnpm(),
     cache(version),
     browserCheck,
     libraries,

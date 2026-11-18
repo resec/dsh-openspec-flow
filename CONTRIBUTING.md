@@ -15,6 +15,7 @@ Using the plugin locally is allowed and can make the workflow faster. The requir
 - macOS or Linux.
 - Node 24 satisfying `engines.node >=24.9.0`. The bootstrap resolves it; you do not need a version manager.
 - `git`, `curl` and a network connection to the Node distribution and npm registry.
+- `pnpm` 12.6.0 when you run the lab or `--full`; the CI lab job pins the same version.
 - About 3 GiB free for Chromium, the pinned DSH and a lab run.
 
 ## Bootstrap
@@ -52,6 +53,12 @@ source scripts/activate.sh
 ### Lab prerequisites
 
 Chromium is installed where the lab looks: `.cache/lab/pw-browsers`. Do not install it into the host's default Playwright cache.
+
+The lab also needs pnpm on `PATH`; DSH forwards plugin installation to it. Install the version pinned by the CI workflow:
+
+```sh
+npm install --global pnpm@12.6.0
+```
 
 On Linux, the lab doctor also requires a CJK font. If the doctor reports one missing, install a distribution CJK font or point `FONTCONFIG_FILE` at a configuration that resolves one, then rerun the doctor. Bootstrap deliberately does not install host packages, edit shell rc files, change global Git configuration or touch DSH profiles.
 
@@ -170,7 +177,7 @@ Keep the reproduction, acceptance commands and evidence in the issue and pull re
 CI runs on Ubuntu for every pull request and on `main`:
 
 - `verify` checks out the full history, installs the Node version from `coverage.baseline.json`, runs `npm ci`, the change and generated-skill checks, `npm run openspec:check` and `npm run verify`.
-- `lab` installs Chromium under `.cache/lab/pw-browsers` with its system dependencies, installs the CJK font, restores the DSH and browser caches, runs `npm run lab -- doctor` and `npm run test:lab -- --mock-only`.
+- `lab` installs pnpm 12.6.0 and Chromium under `.cache/lab/pw-browsers` with its system dependencies, installs the CJK font, restores the DSH and browser caches, runs `npm run lab -- doctor` and `npm run test:lab -- --mock-only`.
 
 A fork pull request may wait for maintainer approval before CI starts. Once it runs, a red check must be fixed in the pull request. Do not weaken a check or add an approval input; the restricted-path check is deliberately absolute.
 

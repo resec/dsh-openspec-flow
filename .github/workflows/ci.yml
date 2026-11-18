@@ -56,6 +56,10 @@ jobs:
         with:
           node-version: ${{ steps.node-pin.outputs.version }}
           cache: npm
+      - name: install pnpm for DSH plugin installs
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
       - run: npm ci
       - name: install CJK font
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk

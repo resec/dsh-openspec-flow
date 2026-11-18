@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { checkCjkFont, formatDoctor, runDoctor } from '../scripts/lab/core/doctor.mjs'
+import { checkCjkFont, checkPnpm, formatDoctor, PNPM_VERSION, runDoctor } from '../scripts/lab/core/doctor.mjs'
 
 function ok(name) {
   return { name, status: 'ok', detail: 'fixture' }
@@ -9,6 +9,7 @@ function ok(name) {
 function deps(overrides = {}) {
   return {
     runtime: ok('runtime'),
+    pnpm: () => ok('pnpm'),
     cache: () => ({ name: 'dsh-cache', status: 'info', detail: 'will install' }),
     browser: () => ({ ...ok('browser-binary'), detail: '/fixture/chrome' }),
     libraries: () => ok('browser-libraries'),
@@ -46,7 +47,30 @@ test('a missing browser binary names the install command', () => {
     }),
   })
   assert.equal(result.ok, false)
-  assert.match(result.checks[2].detail, /PLAYWRIGHT_BROWSERS_PATH/)
+  assert.match(result.checks.find((check) => check.name === 'browser-binary').detail, /PLAYWRIGHT_BROWSERS_PATH/)
+})
+
+test('a missing pnpm fails the doctor with the pinned install command', () => {
+  const result = runDoctor({
+    version: '0.0.0-test',
+    deps: deps({
+      pnpm: () => ({
+        name: 'pnpm',
+        status: 'fail',
+        detail: `install pnpm@${PNPM_VERSION} and retry`,
+      }),
+    }),
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.checks.find((check) => check.name === 'pnpm').status, 'fail')
+  assert.match(formatDoctor(result).join('\n'), /FAIL pnpm/)
+})
+
+test('a missing pnpm reports a correction-oriented failure', () => {
+  const check = checkPnpm({ PATH: '/definitely/missing' })
+  assert.equal(check.status, 'fail')
+  assert.match(check.detail, /pnpm/)
+  assert.ok(check.detail.includes(`pnpm@${PNPM_VERSION}`))
 })
 
 test('a missing fc-list returns a correction-oriented failure', () => {

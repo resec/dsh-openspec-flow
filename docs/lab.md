@@ -12,6 +12,12 @@ The lab runs the packaged plugin in an isolated DSH and verifies behavior that s
 PLAYWRIGHT_BROWSERS_PATH=.cache/lab/pw-browsers npx playwright install chromium
 ```
 
+- `pnpm` on `PATH` at the version pinned by the CI lab job. DSH forwards plugin installation to pnpm:
+
+```sh
+npm install --global pnpm@12.6.0
+```
+
 - A CJK font. The lab uses `.cache/lab/fontconfig/fonts.conf` when it exists and otherwise relies on the host font configuration. Without a CJK font the card labels render as boxes.
 
 Run the preflight first:
@@ -20,7 +26,7 @@ Run the preflight first:
 npm run lab -- doctor
 ```
 
-An absent DSH cache is reported as `will-install`, not as a failure. A missing browser binary, a broken browser library, a missing CJK font, a wrong Node version or insufficient disk fails.
+An absent DSH cache is reported as `will-install`, not as a failure. A missing pnpm, a missing browser binary, a broken browser library, a missing CJK font, a wrong Node version or insufficient disk fails.
 
 ## Commands
 

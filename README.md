@@ -158,7 +158,7 @@ npm run bundle:pack
 
 ### DSH 场景测试
 
-可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。pre-push 在覆盖率检查前运行 mock 场景。完整用法见 [docs/lab.md](docs/lab.md)。
+可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、pnpm、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。pre-push 在覆盖率检查前运行 mock 场景。完整用法见 [docs/lab.md](docs/lab.md)。
 
 ## 不变量
 

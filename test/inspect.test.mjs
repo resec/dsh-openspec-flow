@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
+import { PROBE_ROOT } from './review-fixtures.mjs'
 
 const CHANGE = 'add-dark-mode'
-const PROBE_ROOT = fileURLToPath(new URL('../../.probe/proj/openspec', import.meta.url))
 const CREATED = []
 
 function fixture() {

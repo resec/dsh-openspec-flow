@@ -16,7 +16,7 @@ import { apply } from '../index.js'
 import { clearCache } from '../lib/cache.js'
 import { createFakeContext } from './fake-context.mjs'
 
-export const PROBE_ROOT = fileURLToPath(new URL('../../.probe/proj/openspec', import.meta.url))
+export const PROBE_ROOT = fileURLToPath(new URL('./fixtures/probe/openspec', import.meta.url))
 export const CHANGE = 'add-dark-mode'
 export const DRAFT_OPENING = 'You are reviewing a change before implementation starts. Review this planning material adversarially. Do not assume the proposal is correct. Read the artifacts yourself; the hashes below bind the version you are reviewing.'
 const CREATED = []

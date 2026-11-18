@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply } from '../index.js'
 import { resetAdminState } from '../lib/admin.js'
@@ -11,10 +10,10 @@ import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { clearCliVerification, resolveBundledCli } from '../lib/openspec.js'
 import { parseTaskLines, taskKey } from '../lib/tasks.js'
 import { createFakeContext } from './fake-context.mjs'
+import { PROBE_ROOT } from './review-fixtures.mjs'
 
 const CHANGE = 'add-dark-mode'
 const CHANGE_DIR = 'openspec/changes/add-dark-mode'
-const PROBE_ROOT = fileURLToPath(new URL('../../.probe/proj/openspec', import.meta.url))
 const TOOL_NAMES = [
   'openspec_apply_next',
   'openspec_archive',
