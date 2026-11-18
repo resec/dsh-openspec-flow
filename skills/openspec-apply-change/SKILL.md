@@ -38,7 +38,7 @@ Ask before continuing when a task is unclear, the implementation reveals a desig
 
 - In a git project, the first `openspec_apply_next` requires a seal commit: commit the change directory and, when the plugin wrote it, `openspec/.gitignore`. Other `openspec/changes/` paths may also appear in `HEAD`, but stage only this change directory and the ignore file. The tool refuses a dirty tree (other change directories' uncommitted planning files are ignored), a commit that changes anything else, or artifacts that changed after the draft review.
 - Apply through archive is serial across changes. While another change holds the apply lock, `openspec_apply_next`, apply review `start`/`resume` and `openspec_archive` are refused and name the holder; finish and archive that change first. Draft reviews stay available, and a paused change's lock is removed only by the user, on request.
-- The draft review can be resumed until apply starts. After apply started, a plan change needs the user's written approval, recorded with `openspec_review` (`action: "waive"`, `scope: "plan-change"`, `files`; not `dispositions`) before you edit; apply review reviews the changed planning artifacts.
+- The draft review can be resumed until apply starts. After apply started, a plan change needs the user's written approval, recorded with `openspec_review` (`action: "waive"`, `scope: "plan-change"`, `files`; not `dispositions`) before you edit. `files` are recorded relative to the change directory (for example `["proposal.md","tasks.md"]`); absolute and project-relative forms under the change directory are also accepted. Apply review reviews the changed planning artifacts.
 
 ## Apply review
 
