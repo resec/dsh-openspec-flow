@@ -148,7 +148,7 @@ The repository SHALL provide a development-only contract check that compares the
 
 ### Requirement: Strict artifact validation gate
 
-The pre-push hook SHALL validate every active change and main spec with warnings treated as failures, and SHALL check archived changes for completed tasks, before the lab gate. It SHALL then run `npm run test:lab -- --mock-only` before the coverage step. A validation or lab failure SHALL block the push, and `COVERAGE_SKIP=1` SHALL NOT skip the lab gate. Only a verifying coverage stamp MAY skip the `npm run verify` rerun.
+The pre-push hook SHALL validate every active change and main spec with warnings treated as failures, and SHALL check archived changes for completed tasks, before the reusable lab scenarios run. It SHALL then run `npm run test:lab -- --mock-only` before `npm run verify`; a lab failure SHALL block the push and SHALL NOT be skipped by `COVERAGE_SKIP=1`. A failure in either validation step or the lab gate SHALL block the push.
 
 #### Scenario: Artifacts pass strict validation
 
@@ -383,3 +383,18 @@ The scoped test entrypoint SHALL run the node-version preflight before any test 
 - **WHEN** the selector is given the list option and the run option together
 - **THEN** it prints the selected files
 - **AND** it starts no test process
+
+### Requirement: Coverage stamp verification
+
+After strict validation and the lab gate, the pre-push hook SHALL skip only the `npm run verify` rerun when the coverage stamp verifies as `coverage-gate` defines it. Except for `COVERAGE_SKIP=1`, any other stamp outcome SHALL run verification.
+
+#### Scenario: A verifying stamp skips only the verification rerun
+
+- **WHEN** strict validation and the lab gate pass and the coverage stamp verifies
+- **THEN** the hook skips `npm run verify`
+- **AND** strict validation and the lab gate have already run
+
+#### Scenario: A non-verifying stamp runs verification
+
+- **WHEN** strict validation and the lab gate pass and the coverage stamp does not verify
+- **THEN** the hook runs `npm run verify`
