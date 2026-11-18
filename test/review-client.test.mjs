@@ -613,26 +613,51 @@ test('the expanded card omits unrecorded optional finding and disposition rows',
     review: 'draft',
     round: 2,
     verdict: 'pass',
-    findings: [{
-      id: 'R2-01', severity: 'nit', status: 'rejected', note: 'Not a defect.',
-      waiver: '', approvedBy: '', verifiedInRound: null,
-    }],
+    findings: [
+      {
+        id: 'R2-01', severity: 'nit', status: 'rejected', note: 'Not a defect.',
+        waiver: '', approvedBy: '', verifiedInRound: null,
+      },
+      {
+        id: 'R2-02', severity: 'nit', status: 'rejected', note: 'Also not a defect.',
+        verifiedInRound: null,
+      },
+    ],
     report: {
-      summary: 'One nit.',
-      findings: [{
-        id: 'R2-01', severity: 'nit', status: 'open', location: 'a.md:1', title: 'Nit',
-        problem: 'P', evidence: 'E', rule: '', failure: '', suggestion: 'S',
-      }],
+      summary: 'Two nits.',
+      findings: [
+        {
+          id: 'R2-01', severity: 'nit', status: 'open', location: 'a.md:1', title: 'Nit',
+          problem: 'P', evidence: 'E', rule: null, failure: null, suggestion: 'S',
+        },
+        {
+          id: 'R2-02', severity: 'nit', status: 'open', location: 'a.md:2', title: 'Another nit',
+          problem: 'P2', evidence: 'E2', suggestion: 'S2',
+        },
+        {
+          id: 'R2-03', severity: 'nit', status: 'open', location: 'a.md:3', title: 'Third nit',
+          problem: 'P3', evidence: 'E3', rule: '', failure: '', suggestion: 'S3',
+        },
+      ],
       verifications: [],
       residualRisks: [],
       outOfScope: [],
     },
   }
   const sections = cardSections(card)
-  const finding = sections.find((section) => section.title === 'Findings').items[0]
-  assert.deepEqual(finding.rows.map((row) => row[0]), ['问题', '证据', '影响', '建议'])
-  const disposed = sections.find((section) => section.title === '处理情况').items[0]
-  assert.deepEqual(disposed.rows.map((row) => row[0]), ['说明', '验证轮次'])
+  const findingLabels = sections.find((section) => section.title === 'Findings').items
+    .map((item) => item.rows.map((row) => row[0]))
+  assert.deepEqual(findingLabels, [
+    ['问题', '证据', '影响', '建议'],
+    ['问题', '证据', '影响', '建议'],
+    ['问题', '证据', '影响', '建议'],
+  ])
+  const disposedLabels = sections.find((section) => section.title === '处理情况').items
+    .map((item) => item.rows.map((row) => row[0]))
+  assert.deepEqual(disposedLabels, [
+    ['说明', '验证轮次'],
+    ['说明', '验证轮次'],
+  ])
 })
 
 test('the expanded card merges same-kind readiness reasons', async () => {
@@ -647,22 +672,22 @@ test('the expanded card merges same-kind readiness reasons', async () => {
     readinessReasons: [
       'the latest report verdict is changes-requested',
       'finding R3-01 is open',
+      'finding R1-01 is fixed but not verified in a later round',
       'finding R3-03 is open',
-      'finding R3-02 is open',
       'blocking finding R2-01 is deferred',
+      'finding R3-02 is open',
       'blocking finding R2-02 is deferred',
       'finding R2-03 is deferred',
       'the change artifacts changed since the review started',
-      'finding R1-01 is fixed but not verified in a later round',
     ],
   }
   const section = cardSections(card).find((entry) => entry.title === '未就绪原因')
   assert.deepEqual(section.rows, [
     ['原因 1', 'the latest report verdict is changes-requested'],
     ['原因 2', 'findings R3-01, R3-03, R3-02 are open'],
-    ['原因 3', 'blocking findings R2-01, R2-02 are deferred'],
-    ['原因 4', 'finding R2-03 is deferred'],
-    ['原因 5', 'the change artifacts changed since the review started'],
-    ['原因 6', 'finding R1-01 is fixed but not verified in a later round'],
+    ['原因 3', 'finding R1-01 is fixed but not verified in a later round'],
+    ['原因 4', 'blocking findings R2-01, R2-02 are deferred'],
+    ['原因 5', 'finding R2-03 is deferred'],
+    ['原因 6', 'the change artifacts changed since the review started'],
   ])
 })
