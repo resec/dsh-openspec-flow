@@ -17,6 +17,7 @@ import { findBrowserExecutable } from './lab/core/doctor.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BROWSERS_PATH = join(ROOT, '.cache', 'lab', 'pw-browsers')
+const NPM_CACHE = process.env.npm_config_cache ?? join(ROOT, '.cache', 'npm')
 
 const USAGE = `Usage: scripts/bootstrap.sh [options]
 
@@ -109,7 +110,7 @@ function main() {
     )
   }
 
-  const npmEnv = options.registry === undefined ? {} : { npm_config_registry: options.registry }
+  const npmEnv = { npm_config_cache: NPM_CACHE, ...(options.registry === undefined ? {} : { npm_config_registry: options.registry }) }
   const total = options.full ? 7 : 5
 
   log(1, total, 'installing locked dependencies')
