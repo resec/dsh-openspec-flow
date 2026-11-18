@@ -615,13 +615,13 @@ test('the expanded card omits unrecorded optional finding and disposition rows',
     verdict: 'pass',
     findings: [{
       id: 'R2-01', severity: 'nit', status: 'rejected', note: 'Not a defect.',
-      waiver: null, approvedBy: null, verifiedInRound: null,
+      waiver: '', approvedBy: '', verifiedInRound: null,
     }],
     report: {
       summary: 'One nit.',
       findings: [{
         id: 'R2-01', severity: 'nit', status: 'open', location: 'a.md:1', title: 'Nit',
-        problem: 'P', evidence: 'E', suggestion: 'S',
+        problem: 'P', evidence: 'E', rule: '', failure: '', suggestion: 'S',
       }],
       verifications: [],
       residualRisks: [],

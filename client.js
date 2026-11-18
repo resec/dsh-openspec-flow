@@ -663,7 +663,12 @@ window.__ModuleLoader__.load({
       return counts
     }
 
-    /** Readiness reasons with same-kind finding reasons merged. */
+    /**
+     * Readiness reasons with same-kind finding reasons merged.
+     *
+     * The `finding <id> is <state>` forms mirror the wording owned by
+     * `lib/review/readiness.js`; change both together.
+     */
     function readinessLines(reasons) {
       const entries = []
       const groups = new Map()
