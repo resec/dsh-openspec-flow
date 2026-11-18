@@ -18,6 +18,8 @@ Playwright Chromium binary and run the lab doctor and tests.
 Options:
   --help                 Show this usage and exit.
   --print-node-version   Print the baseline Node version and exit.
+  --print-asset          Print the Node tarball name for this platform and exit.
+  --print-candidate-paths Print the global Node roots this script inspects.
   --node-mirror URL      Node distribution mirror (default https://nodejs.org/dist).
   --full                 After the tests, run npm run verify and the lab.
   --skip-test            Skip npm test.
@@ -34,6 +36,41 @@ baseline_version() {
   sed -n '/"node"[[:space:]]*:/,/}/p' "$ROOT/coverage.baseline.json" \
     | sed -E -n 's/.*"version"[[:space:]]*:[[:space:]]*"v?([0-9][0-9.]*)".*/\1/p' \
     | head -n 1
+}
+
+detect_platform() {
+  case "$(uname -s)" in
+    Darwin) echo darwin ;;
+    Linux) echo linux ;;
+    *) echo "bootstrap: unsupported platform $(uname -s); use macOS or Linux" >&2; return 1 ;;
+  esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    arm64|aarch64) echo arm64 ;;
+    x86_64|amd64) echo x64 ;;
+    *) echo "bootstrap: unsupported architecture $(uname -m)" >&2; return 1 ;;
+  esac
+}
+
+print_asset() {
+  version=$(baseline_version)
+  [ -n "$version" ] || { echo "bootstrap: coverage.baseline.json has no node.version" >&2; exit 1; }
+  platform=$(detect_platform) || exit 1
+  arch=$(detect_arch) || exit 1
+  echo "node-v${version}-${platform}-${arch}.tar.gz"
+}
+
+print_candidate_paths() {
+  printf '%s\n' \
+    "$HOME/.local/share/fnm/node-versions" \
+    "$HOME/.nvm/versions/node" \
+    "$HOME/.volta/tools/image/node" \
+    "$HOME/.asdf/installs/nodejs" \
+    "/opt/homebrew/opt/node@24/bin/node" \
+    "/usr/local/opt/node@24/bin/node" \
+    "/home/linuxbrew/.linuxbrew/opt/node@24/bin/node"
 }
 
 node_version() {
@@ -87,11 +124,30 @@ for arg in "$@"; do
       baseline_version
       exit 0
       ;;
+    --)
+      break
+      ;;
+    --print-asset)
+      print_asset
+      exit 0
+      ;;
+    --print-candidate-paths)
+      print_candidate_paths
+      exit 0
+      ;;
   esac
 done
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --)
+      shift
+      while [ $# -gt 0 ]; do
+        PASSTHROUGH="$PASSTHROUGH $1"
+        shift
+      done
+      break
+      ;;
     --node-mirror)
       [ $# -ge 2 ] || { echo "bootstrap: --node-mirror needs a value" >&2; exit 2; }
       MIRROR=$2
@@ -128,16 +184,8 @@ fi
 
 VERSION=$(baseline_version)
 [ -n "$VERSION" ] || { echo "bootstrap: coverage.baseline.json has no node.version" >&2; exit 1; }
-case "$(uname -s)" in
-  Darwin) PLATFORM=darwin ;;
-  Linux) PLATFORM=linux ;;
-  *) echo "bootstrap: unsupported platform $(uname -s); use macOS or Linux" >&2; exit 1 ;;
-esac
-case "$(uname -m)" in
-  arm64|aarch64) ARCH=arm64 ;;
-  x86_64|amd64) ARCH=x64 ;;
-  *) echo "bootstrap: unsupported architecture $(uname -m)" >&2; exit 1 ;;
-esac
+PLATFORM=$(detect_platform) || exit 1
+ARCH=$(detect_arch) || exit 1
 
 ASSET="node-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
 TARGET="$ROOT/.cache/toolchain/node-v${VERSION}-${PLATFORM}-${ARCH}"

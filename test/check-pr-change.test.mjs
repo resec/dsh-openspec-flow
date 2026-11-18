@@ -28,8 +28,11 @@ test('finds unchecked tasks and ignores checked ones', () => {
     '- [ ] 1.1 Do the first thing',
     '- [x] 1.2 Do the second thing',
     '* [ ] 1.3 Do the third thing',
+    '- [~] 1.4 Defer the fourth thing',
+    '- [-] 1.5 Cancel the fifth thing',
+    '- [] 1.6 Leave the sixth thing empty',
   ].join('\n')
-  assert.deepEqual(uncheckedTasks(markdown).map((task) => task.id), ['1.1', '1.3'])
+  assert.deepEqual(uncheckedTasks(markdown).map((task) => task.id), ['1.1', '1.3', '1.4', '1.5', '1.6'])
   assert.deepEqual(uncheckedTasks('- [X] 1.1 Done'), [])
 })
 

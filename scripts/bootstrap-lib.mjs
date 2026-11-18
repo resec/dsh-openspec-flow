@@ -1,9 +1,10 @@
 /**
- * Pure helpers shared by the shell entrypoint, the Node bootstrap and tests.
+ * Pure helpers for the Node bootstrap and tests.
  *
- * The shell reads the pinned version from coverage.baseline.json; this module
- * parses the same record, names the download asset and selects a host runtime.
- * Nothing here downloads, spawns a process or reads the environment.
+ * The shell mirrors the same baseline, asset and candidate rules; its
+ * --print-asset and --print-candidate-paths modes expose those values so the
+ * suite can compare the shipped shell behaviour with this module. Nothing here
+ * downloads, spawns a process or reads the environment.
  */
 
 import { readFileSync } from 'node:fs'

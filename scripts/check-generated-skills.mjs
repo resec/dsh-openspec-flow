@@ -100,12 +100,15 @@ function git(args) {
   return result.stdout
 }
 
-function parseArguments(argv) {
+export function parseArguments(argv) {
   const options = { base: undefined, workspace: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--workspace') options.workspace = true
-    else if (arg === '--base') options.base = argv[index + 1]
+    else if (arg === '--base') {
+      options.base = argv[index + 1]
+      index += 1
+    }
     else if (arg.startsWith('--base=')) options.base = arg.slice('--base='.length)
     else if (arg === '--help') options.help = true
     else throw new Error(`unknown option: ${arg}`)

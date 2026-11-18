@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const ACTIVE_CHANGE = /^openspec\/changes\/([^/]+)\/(.+)$/
-const UNCHECKED = /^\s*[-*]\s+\[\s\]\s*(.*)$/
+const TASK = /^\s*[-*]\s+\[([^\]]*)\]\s*(.*)$/
 const RESTRICTED_PREFIXES = ['.githooks/', '.github/workflows/', 'dist/', 'openspec/changes/archive/']
 const RESTRICTED_FILES = new Set(['coverage.baseline.json', 'package-lock.json'])
 const DEPENDENCY_KEYS = [
@@ -62,9 +62,10 @@ export function uncheckedTasks(markdown) {
   const tasks = []
   const lines = String(markdown).split('\n')
   for (let index = 0; index < lines.length; index += 1) {
-    const match = UNCHECKED.exec(lines[index])
+    const match = TASK.exec(lines[index])
     if (match === null) continue
-    const text = match[1].trim()
+    if (match[1].trim().toLowerCase() === 'x') continue
+    const text = match[2].trim()
     const id = /^(\S+)/.exec(text)?.[1] ?? `line-${index + 1}`
     tasks.push({ id, text })
   }

@@ -116,3 +116,38 @@ test('prints the baseline version from the shell without a download', () => {
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stdout.trim(), BASELINE)
 })
+
+test('the shell prints the same asset name as bootstrap-lib', () => {
+  const platform = process.platform === 'darwin' ? 'darwin' : 'linux'
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const expected = assetName({ version: BASELINE, platform, arch })
+  const result = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh'), '--print-asset'], {
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), expected)
+})
+
+test('the shell lists the documented candidate roots', (t) => {
+  const home = process.env.HOME
+  if (home === undefined) {
+    t.skip('HOME is unset')
+    return
+  }
+  const roots = globalCandidateRoots({ home, platform: process.platform })
+  const result = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh'), '--print-candidate-paths'], {
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  for (const value of [roots.fnm, roots.nvm, roots.volta, roots.asdf]) {
+    assert.ok(result.stdout.includes(value), value)
+  }
+})
+
+test('the shell forwards options after the separator', () => {
+  const result = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh'), '--', '--help'], {
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Usage: scripts\/bootstrap\.sh/)
+})

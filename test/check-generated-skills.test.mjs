@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
   classifyGeneratedSkill,
   hasGeneratedFrontmatter,
   isGeneratedSkillPath,
+  parseArguments,
 } from '../scripts/check-generated-skills.mjs'
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 const GENERATED = [
   '---',
@@ -64,4 +70,25 @@ test('accepts an ordinary document that mentions a skill name', () => {
     content: 'Run the `openspec-propose` skill.',
   })
   assert.equal(result.generated, false)
+})
+
+test('parses the base and workspace forms', () => {
+  assert.deepEqual(parseArguments(['--base', 'abc']), { base: 'abc', workspace: false })
+  assert.deepEqual(parseArguments(['--base=abc']), { base: 'abc', workspace: false })
+  assert.deepEqual(parseArguments(['--workspace']), { base: undefined, workspace: true })
+  assert.throws(() => parseArguments(['--bogus']), /unknown option/)
+})
+
+test('the CLI accepts a separate base value', (t) => {
+  const result = spawnSync(
+    process.execPath,
+    [join(ROOT, 'scripts', 'check-generated-skills.mjs'), '--base', 'HEAD'],
+    { cwd: ROOT, encoding: 'utf8' },
+  )
+  if (result.error) {
+    t.skip('git is unavailable')
+    return
+  }
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /generated skill check: ok/)
 })
