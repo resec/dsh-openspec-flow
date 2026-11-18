@@ -44,9 +44,9 @@
 - [x] 7.1 Update `AGENTS.md` so the PATH-only runtime rule is scoped to test and coverage entrypoints and names bootstrap as the single read-only exception, then add bootstrap and contribution pointers to `README.md` and `AGENTS.md`; verify both links resolve and no workflow prose is duplicated from `CONTRIBUTING.md`.
 - [x] 7.2 Run `npm test`, `sh -n scripts/bootstrap.sh`, `sh -n scripts/activate.sh`, `git check-ignore -v` for both skill paths, and a Node pin check that compares `./scripts/bootstrap.sh --print-node-version` with `coverage.baseline.json` and compares the workflow's setup-node steps with the same file; verify all pass.
 - [x] 7.3 Run `npm run openspec:check`, `npm run verify` on the baseline Node version, and `npm run test:lab -- --mock-only`; verify all pass and record the coverage percentages.
-- [ ] 7.4 Run `./scripts/bootstrap.sh --full` with a qualifying host Node; verify dependencies, hooks, Chromium, doctor, tests, verification and lab complete, `git status --porcelain` is empty afterwards, shell rc files and global Git configuration match a pre-run snapshot, and neither bootstrap script contains `openspec init` or `openspec update`.
-- [ ] 7.5 Exercise the maintainer handoff on a scratch CLI-created change: create it with the CLI, run `openspec_review start draft`, verify the policy is written and the review accepts, then remove the scratch change and its review record.
-- [ ] 7.6 Exercise the download path with no qualifying host Node and verify the checksum, extraction and activation produce the baseline Node version; record that macOS remains the first external contributor's acceptance run.
+- [x] 7.4 Run `./scripts/bootstrap.sh --full` with a qualifying host Node; verify dependencies, hooks, Chromium, doctor, tests, verification and lab complete, `git status --porcelain` is empty afterwards, shell rc files and global Git configuration match a pre-run snapshot, and neither bootstrap script contains `openspec init` or `openspec update`.
+- [x] 7.5 Exercise the maintainer handoff on a scratch CLI-created change: create it with the CLI, run `openspec_review start draft`, verify the policy is written and the review accepts, then remove the scratch change and its review record.
+- [x] 7.6 Exercise the download path with no qualifying host Node and verify the checksum, extraction and activation produce the baseline Node version; record that macOS remains the first external contributor's acceptance run.
 
 ## Workflow follow-up
 
