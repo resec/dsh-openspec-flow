@@ -19,6 +19,16 @@ import { DEFAULT_CONCURRENCY } from './run-tests.mjs'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /**
+ * Build the argv that starts the test run behind the coverage gate.
+ * @param root - repository root.
+ * @param concurrency - test-file concurrency.
+ * @returns the argv for the run-tests entrypoint.
+ */
+export function buildRunnerArgv(root, concurrency = DEFAULT_CONCURRENCY) {
+  return [join(root, 'scripts', 'run-tests.mjs'), 'all', '--', `--test-concurrency=${concurrency}`]
+}
+
+/**
  * @param argv - command-line arguments.
  * @returns parsed options.
  */
@@ -84,12 +94,7 @@ export async function runVerification({ root = ROOT, argv = process.argv.slice(2
   assertCurrentNode({ root, version })
   const mode = resolveMode(root, options.mode)
   rmSync(join(root, '.coverage'), { recursive: true, force: true })
-  const result = spawnSync(process.execPath, [
-    join(root, 'scripts', 'run-tests.mjs'),
-    'all',
-    '--',
-    `--test-concurrency=${DEFAULT_CONCURRENCY}`,
-  ], {
+  const result = spawnSync(process.execPath, buildRunnerArgv(root), {
     cwd: root,
     stdio: 'inherit',
     env: { ...process.env, COVERAGE: '1' },

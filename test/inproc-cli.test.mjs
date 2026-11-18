@@ -168,3 +168,14 @@ test('the fake context runs CLI calls in-process by default', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('a failing setup rejects the call and keeps the queue alive', async () => {
+  const instance = spawner(() => {
+    console.log('x')
+  })
+  const bad = instance.spawn(spec({ cwd: join(process.cwd(), 'inproc-no-such-directory') }))
+  await assert.rejects(bad.done)
+  const good = instance.spawn(spec())
+  await good.done
+  assert.equal(good.collected.stdout.readFrom(0).text, 'x\n')
+})

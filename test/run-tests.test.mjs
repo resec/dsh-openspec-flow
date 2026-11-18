@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import test from 'node:test'
+import { buildRunnerArgv } from '../scripts/coverage.mjs'
 import { buildTestArgs, DEFAULT_CONCURRENCY } from '../scripts/run-tests.mjs'
 
 test('a plain run carries exactly the default concurrency', () => {
@@ -22,4 +24,15 @@ test('coverage keeps one concurrency flag', () => {
   const args = buildTestArgs({ scope: 'plugin', coverage: true })
   assert.ok(args.includes('--experimental-test-coverage'))
   assert.equal(args.filter((argument) => argument.startsWith('--test-concurrency=')).length, 1)
+})
+
+test('the coverage entrypoint forwards the same concurrency', () => {
+  const root = process.cwd()
+  const args = buildRunnerArgv(root)
+  assert.deepEqual(args, [
+    join(root, 'scripts', 'run-tests.mjs'),
+    'all',
+    '--',
+    `--test-concurrency=${DEFAULT_CONCURRENCY}`,
+  ])
 })

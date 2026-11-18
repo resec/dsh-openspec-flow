@@ -45,6 +45,7 @@ test('a real child process is terminated by an aborted signal', async () => {
   controller.abort()
   const handle = fake.ctx.subprocess.spawn(spawnSpec(root, ['validate', 'no-such-change', '--json'], controller.signal))
   const result = await handle.done
-  assert.ok(result.signal === 'SIGTERM' || result.exitCode !== 0, 'the child did not finish successfully')
+  assert.equal(result.signal, 'SIGTERM')
+  assert.equal(handle.collected.stdout.readFrom(0).text, '')
   assert.ok(fake.stats.childProcesses > 0)
 })

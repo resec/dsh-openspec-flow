@@ -93,40 +93,45 @@ export function createInprocSpawner({
           release()
           return
         }
-        const savedConsole = {}
-        for (const method of CONSOLE_METHODS) savedConsole[method] = console[method]
-        const savedExit = process.exit
-        const savedExitCode = process.exitCode
-        const savedCwd = process.cwd()
-        const savedEnv = new Map()
-        const envKeys = ['CI', 'NO_COLOR', 'FORCE_COLOR', ...Object.keys(spec.env ?? {})]
-        for (const key of envKeys) savedEnv.set(key, process.env[key])
-        const restore = () => {
-          for (const method of CONSOLE_METHODS) console[method] = savedConsole[method]
-          process.exit = savedExit
-          process.exitCode = savedExitCode
-          process.chdir(savedCwd)
-          for (const [key, value] of savedEnv) setEnv(key, value)
-        }
-        const capture = (target) => (...args) => {
-          target(format(...args) + '\n')
-          lastActivity = Date.now()
-        }
-        console.log = capture((value) => { stdout += value })
-        console.error = capture((value) => { stderr += value })
-        console.warn = capture((value) => { stderr += value })
-        console.info = capture((value) => { stdout += value })
-        console.debug = capture((value) => { stderr += value })
-        process.exit = (code) => {
-          explicitExit = Number.isInteger(code) ? code : 0
-          lastActivity = Date.now()
-        }
-        process.chdir(spec.cwd)
-        setEnv('CI', '1')
-        setEnv('NO_COLOR', '1')
-        setEnv('FORCE_COLOR', '0')
-        for (const [key, value] of Object.entries(spec.env ?? {})) setEnv(key, value)
+        let restore
         try {
+          const savedConsole = {}
+          for (const method of CONSOLE_METHODS) savedConsole[method] = console[method]
+          const savedExit = process.exit
+          const savedExitCode = process.exitCode
+          const savedCwd = process.cwd()
+          const savedEnv = new Map()
+          const envKeys = ['CI', 'NO_COLOR', 'FORCE_COLOR', ...Object.keys(spec.env ?? {})]
+          for (const key of envKeys) savedEnv.set(key, process.env[key])
+          restore = () => {
+            for (const method of CONSOLE_METHODS) console[method] = savedConsole[method]
+            process.exit = savedExit
+            process.exitCode = savedExitCode
+            try {
+              process.chdir(savedCwd)
+            } catch {
+              // The original directory is gone; the remaining state still restores.
+            }
+            for (const [key, value] of savedEnv) setEnv(key, value)
+          }
+          const capture = (target) => (...args) => {
+            target(format(...args) + '\n')
+            lastActivity = Date.now()
+          }
+          console.log = capture((value) => { stdout += value })
+          console.error = capture((value) => { stderr += value })
+          console.warn = capture((value) => { stderr += value })
+          console.info = capture((value) => { stdout += value })
+          console.debug = capture((value) => { stderr += value })
+          process.exit = (code) => {
+            explicitExit = Number.isInteger(code) ? code : 0
+            lastActivity = Date.now()
+          }
+          process.chdir(spec.cwd)
+          setEnv('CI', '1')
+          setEnv('NO_COLOR', '1')
+          setEnv('FORCE_COLOR', '0')
+          for (const [key, value] of Object.entries(spec.env ?? {})) setEnv(key, value)
           const module = await loadOnce()
           module.runCli(spec.argv)
           const startedAt = Date.now()
@@ -152,8 +157,11 @@ export function createInprocSpawner({
           rejectDone(error)
         } finally {
           if (spec.signal !== undefined) spec.signal.removeEventListener('abort', onAbort)
-          restore()
-          release()
+          try {
+            if (restore !== undefined) restore()
+          } finally {
+            release()
+          }
         }
       }
       void run()
