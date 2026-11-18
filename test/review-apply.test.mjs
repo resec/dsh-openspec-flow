@@ -216,7 +216,7 @@ ${grown}
 
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
-    /apply review refuses change 'add-dark-mode'.*requirement description limit/s,
+    /apply review refuses change 'add-dark-mode'.*requirement description limit.*openspec_review action=start review=apply/s,
   )
 })
 

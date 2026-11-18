@@ -23,6 +23,11 @@
 
 - [x] 4.1 Run `npm run verify` on Node 24 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass and the report names the new coverage.
 
+## 5. Pre-push requirement split
+
+- [x] 5.1 Restore the compressed pre-push behavior in `specs/development-workflow/spec.md`: keep `Strict artifact validation gate` with every existing scenario and add `Coverage stamp verification` for the dropped clauses; verify `openspec_inspect` with `action: "validate"` and `strict: true` passes and the original scenario names remain.
+- [x] 5.2 Add `test/pre-push-spec.test.mjs` to assert the active delta, and after archive the main spec, contains `coverage-gate` and the non-verifying-stamp obligation; verify `node --test test/pre-push-spec.test.mjs` passes.
+
 ## Workflow follow-up
 
 - Archive the change after the user asks and the apply review is ready.

@@ -115,6 +115,19 @@ The brief does not include the full spec bodies; the reviewer reads the artifact
 
 With `reviewers: 0`, a self-report can ignore the brief. With `reviewers: 1`, the reviewer may miss the section. The readiness gate is the same in both modes: a passing report cannot make a blocking result ready. The brief instruction tells the reviewer to report a blocking length finding, but the host does not depend on that report.
 
+### Restore and split the compressed pre-push requirement
+
+Commit `71fa884`, made after the draft seal and before the implementation commits, shortened the merged `Strict artifact validation gate` description from 653 to 418 characters. The rewrite dropped the `coverage-gate` reference and the "any other stamp outcome" obligation without a delta, task or test. The apply review flagged it as an unowned main-spec change and a contradiction with this change's own no-compression rule.
+
+The user approved a plan change to restore the behavior and split it in this change, which is the dedicated length change:
+
+- `## MODIFIED Requirements` keeps the `Strict artifact validation gate` header and every existing scenario, and replaces the compressed body with the validation and lab-gate obligations.
+- `## ADDED Requirements` adds `Coverage stamp verification` with the restored `coverage-gate` reference and the non-verifying-stamp obligation, plus its own scenarios.
+- The archive therefore replaces the compressed body with two requirements, each within the 500-character limit, and no normative clause is lost.
+- `specs/development-workflow/spec.md` is covered by the recorded plan-change waiver. A regression test reads the active delta, and after archive the main spec, so the restored clauses remain checked.
+
+This is not a compression workaround: the existing scenarios stay in place, and the removed behavior is added as a new requirement per the official split procedure.
+
 ## Risks / Trade-offs
 
 - [The `show` text length diverges from the validator's body length] → The CLI is pinned; the boundary tests assert 500 and 501 through the same `show` projection and the integration test asserts the measured value. If a future CLI changes the projection, the pinned-version contract test fails before release.
@@ -124,6 +137,7 @@ With `reviewers: 0`, a self-report can ignore the brief. With `reviewers: 1`, th
 - [A blocking result blocks a draft review that has no fix yet] → That is the gate's purpose. The brief and the gate error give the official options; the author can change the artifacts and resume, or ask for a dedicated split change.
 - [The draft is frozen after apply starts] → The draft no longer adds the length reason when the shared `applyStarted` value is true, including a store-backed change with no base, and the apply entry skips the recheck; apply review performs it and the author can edit the plan with the existing waiver.
 - [Apply review is disabled or unavailable after apply starts] → No post-apply owner performs the length recheck. That policy already opts out of apply review, and the first apply entry checked the plan before implementation; the limitation is stated rather than adding a second gate that would contradict the policy.
+- [The restored pre-push split is a plan change during apply] → The user approved it in writing and the waiver lists `proposal.md`, `design.md`, `tasks.md` and `specs/development-workflow/spec.md`; the apply review must accept exactly those changed files.
 
 ## Migration Plan
 

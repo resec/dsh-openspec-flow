@@ -15,6 +15,7 @@ The official handling is not to compress the text. A requirement keeps one behav
 - Recheck the length at the first apply entry, and at apply review start or resume when apply review is enabled and available, so a later plan edit or a changed main-spec baseline cannot bypass the gate. After apply starts, the frozen draft no longer gates on the length result; apply review owns that recheck. A project that disables or cannot run apply review has no post-apply length gate.
 - Update the propose skill's not-ready branch: when only the length gate blocks and no finding is open, edit the artifacts and resume without disposing.
 - Document the gate and the handling in `docs/review.md`, the README review section and the propose skill.
+- Restore the pre-push requirement compressed by commit `71fa884` and split it in this change: keep `Strict artifact validation gate` with every existing scenario, and add `Coverage stamp verification` for the restored `coverage-gate` reference and the non-verifying-stamp obligation.
 - Keep the review record schema additive: a legacy record without the new measurement remains readable and is checked at its first apply entry; resuming records the result.
 
 No automatic rewrite, truncation or compression is added.
@@ -31,6 +32,7 @@ None.
 - `review-documentation`: the review document and README state the gate, the blocking rule and the no-compression guidance.
 - `tool-surface`: the next action for a length-only block names draft resume, not dispose.
 - `skill-adaptation`: the propose skill resumes a length-only block without disposing a finding.
+- `development-workflow`: the compressed pre-push requirement is restored and split, preserving every existing scenario.
 
 ## Impact
 
@@ -40,4 +42,6 @@ None.
 - `lib/review/readiness.js`: include a recorded blocking result in the readiness reasons and return draft resume as the next action for that state.
 - Tests: `test/review-length.test.mjs`, `test/review-unit.test.mjs`, `test/review-draft.test.mjs`, `test/review-apply.test.mjs`, `test/review-doc.test.mjs` and the skill tests.
 - Documentation: `docs/review.md`, the README review section and `skills/openspec-propose/SKILL.md`.
+- Spec: `specs/development-workflow/spec.md` restores the full behavior and splits the pre-push requirement.
+- Tests: `test/pre-push-spec.test.mjs` checks the restored clauses in the active delta and, after archive, in the main spec.
 - No tool name, tool parameter or review record file name changes.

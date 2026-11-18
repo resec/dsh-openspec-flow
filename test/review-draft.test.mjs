@@ -47,6 +47,7 @@ test('self review passes the apply gate', async () => {
   assert.equal(record.mode, 'self')
   assert.equal(record.independent, false)
   assert.equal(record.state, 'passed')
+  assert.equal(record.length.blocking, false)
   assert.ok(record.applyBaseCommit === undefined || typeof record.applyBaseCommit === 'string')
 })
 
@@ -113,7 +114,111 @@ ${grown}
 
   await assert.rejects(
     call(fake, 'openspec_apply_next', { change: CHANGE }),
-    /requirement description limit/,
+    /requirement description limit.*openspec_review action=resume review=draft/s,
+  )
+
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme', 'spec.md'), `## ADDED Requirements
+
+### Requirement: Theme persistence
+
+The app SHALL keep the selected theme across restarts.
+
+#### Scenario: A restart keeps the theme
+
+- **WHEN** the app restarts
+- **THEN** the selected theme is restored
+`)
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const cleared = await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    report: report(),
+  })
+  assert.equal(cleared.ready, true)
+  const clearedRecord = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(clearedRecord.length.blocking, false)
+})
+
+test('a legacy record without length is rechecked at the first apply entry', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme', 'spec.md'), `## ADDED Requirements
+
+### Requirement: Long theme note
+
+The app SHALL keep a long theme note.${' detail'.repeat(100)}
+
+#### Scenario: A long theme note is read
+
+- **WHEN** the theme note is read
+- **THEN** it is accepted
+`)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+  const path = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(path, 'utf8'))
+  delete record.length
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`)
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'seal the legacy record'])
+
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /requirement description limit.*openspec_review action=resume review=draft/s,
+  )
+})
+
+test('a changed main-spec baseline is rechecked at the first apply entry', async () => {
+  const { root } = gitFixture()
+  const fake = setup(root)
+  const changeSpec = join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme', 'spec.md')
+  const mainSpec = join(root, 'openspec', 'specs', 'theme', 'spec.md')
+  mkdirSync(join(root, 'openspec', 'specs', 'theme'), { recursive: true })
+  const baseline = `The app SHALL let users switch themes.${' detail'.repeat(90)}`
+  const grown = `The app SHALL let users switch themes.${' detail'.repeat(70)}`
+  const mainText = (body) => `# Theme Specification
+
+## Purpose
+
+Lets users choose a visual theme and keeps that choice across sessions.
+
+## Requirements
+
+### Requirement: Theme selection
+
+${body}
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`
+  writeFileSync(mainSpec, mainText(baseline))
+  writeFileSync(changeSpec, `## MODIFIED Requirements
+
+### Requirement: Theme selection
+
+${grown}
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const submitted = await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  assert.equal(submitted.ready, true, 'the unchanged overlong baseline does not block')
+
+  writeFileSync(mainSpec, mainText(`The app SHALL let users switch themes.${' detail'.repeat(50)}`))
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /requirement description limit.*openspec_review action=resume review=draft/s,
   )
 })
 

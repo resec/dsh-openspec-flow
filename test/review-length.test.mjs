@@ -111,6 +111,7 @@ test('the brief section carries the measurements and official handling', () => {
   assert.match(section, /Do not compress/)
   assert.match(section, /dedicated change/)
   assert.match(section, /Report a blocking length finding/)
+  assert.match(section, /openspec_review action=resume review=draft/)
   assert.equal(renderRequirementLengthSection({ limit: 500, blocking: false, issues: [], legacy: [] }), '')
 })
 
@@ -203,5 +204,6 @@ test('the gate message names the growth and the official handling', () => {
   assert.match(message, /656/)
   assert.match(message, /455/)
   assert.match(message, /Do not compress/)
+  assert.match(message, /openspec_review action=resume review=draft/)
   assert.equal(lengthGateMessage({ blocking: false, issues: [], legacy: [] }, 'clean'), undefined)
 })
