@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { createReviewChannel } from '../lib/review/settings.js'
+import { compareCards, createReviewChannel } from '../lib/review/settings.js'
 import { sessionKeyOf } from '../lib/review/cards.js'
 
 /** Build a project, a review directory and the channel. */
@@ -326,6 +326,51 @@ test('cards sort by write time inside one phase', async () => {
       to: '2026-01-01T00:30:00.000Z',
     })
     assert.deepEqual(result.value.cards.map((card) => card.review), ['draft', 'apply'])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('compareCards orders by phase, write time and round', () => {
+  const card = (phase, round, writtenAt) => ({ payload: { phase, round }, writtenAt })
+  const atOne = '2026-01-01T00:01:00.000Z'
+  const atTwo = '2026-01-01T00:02:00.000Z'
+  assert.ok(compareCards(card('review', 1, atTwo), card('resolution', 1, atOne)) < 0)
+  assert.ok(compareCards(card('other', 1, atOne), card('review', 1, atTwo)) > 0)
+  assert.ok(compareCards({ payload: { phase: 'review', round: 1 }, writtenAt: null }, card('review', 2, atOne)) > 0)
+  assert.ok(compareCards(card('review', 2, atOne), { payload: { phase: 'review', round: 1 }, writtenAt: null }) < 0)
+  assert.ok(compareCards(card('review', 1, atOne), card('review', 2, atTwo)) < 0)
+  assert.ok(compareCards(card('review', 2, atTwo), card('review', 1, atOne)) > 0)
+  assert.ok(compareCards(card('review', 1, atOne), card('review', 2, atOne)) < 0)
+  assert.equal(compareCards(card('review', 2, atOne), card('review', 2, atOne)), 0)
+})
+
+test('a card without a write time follows the watermark fallback', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const path = cardFile(directory)
+    const file = JSON.parse(readFileSync(path, 'utf8'))
+    delete file.writtenAt
+    writeFileSync(path, JSON.stringify(file))
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a card without a write time is skipped when a turn end is given', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const path = cardFile(directory)
+    const file = JSON.parse(readFileSync(path, 'utf8'))
+    delete file.writtenAt
+    writeFileSync(path, JSON.stringify(file))
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, to: '2026-01-01T00:10:00.000Z',
+    })
+    assert.deepEqual(result.value.cards, [])
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
