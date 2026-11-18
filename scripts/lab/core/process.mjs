@@ -36,6 +36,31 @@ export function run(command, args, options = {}) {
   }
 }
 
+/** Characters retained when a command output is summarized. */
+export const OUTPUT_SUMMARY_LIMIT = 1_500
+
+/** Marker that shows where the middle of a summarized output was omitted. */
+export const OUTPUT_SUMMARY_MARKER = '\n...\n'
+
+/**
+ * Bound a command output while keeping its head and its tail.
+ *
+ * The head names the failing step and the tail carries the last stack frames,
+ * so a summarized failure keeps its cause instead of starting mid-word. A
+ * non-string input summarizes to an empty string: an absent stream must not
+ * replace the real failure with a type error.
+ *
+ * @param text - raw command output.
+ * @param limit - characters to retain, excluding the marker.
+ * @returns the trimmed output, or its head, the marker and its tail.
+ */
+export function summarizeOutput(text, limit = OUTPUT_SUMMARY_LIMIT) {
+  const value = typeof text === 'string' ? text.trim() : ''
+  if (value.length <= limit) return value
+  const head = Math.ceil(limit * 0.6)
+  return `${value.slice(0, head)}${OUTPUT_SUMMARY_MARKER}${value.slice(-(limit - head))}`
+}
+
 /**
  * Start a long-running command and append its output to one log file.
  * @param command - executable.
