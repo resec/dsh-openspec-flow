@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-18
+goal: Let external contributors plan, implement, test and open a pull request
+  without DSH or the plugin tools, while the maintainer keeps review and archive
+  control.
