@@ -90,3 +90,25 @@ Bootstrap SHALL report the lab DSH cache location and the `npm run lab -- cache 
 
 - **WHEN** the absolute-floor and new-code rows label a metric differently from the configuration
 - **THEN** the documentation test fails and names the row and metric
+
+## MODIFIED Requirements
+
+### Requirement: Bootstrap provisions the toolchain
+
+The repository SHALL provide a bootstrap entrypoint that resolves a Node 24 runtime satisfying `engines.node` from the host or downloads and verifies the pinned fallback inside the clone, then installs locked dependencies, Git hooks and the Playwright Chromium binary under `.cache/lab/pw-browsers`. A full mode SHALL run `npm run verify` and `npm run test:lab -- --mock-only` in place of the plain test suite; the suite runs inside that verification.
+
+#### Scenario: The host has a qualifying runtime
+
+- **WHEN** a qualifying Node 24 is available on the host
+- **THEN** bootstrap uses it and downloads no other runtime
+
+#### Scenario: The host has no qualifying runtime
+
+- **WHEN** no qualifying runtime exists on the host
+- **THEN** bootstrap downloads the pinned version into the clone and verifies it before use
+
+#### Scenario: Full mode runs the complete gate
+
+- **WHEN** bootstrap runs in full mode and the doctor passes
+- **THEN** dependencies, hooks and Chromium are provisioned
+- **AND** verification and the lab run, with the suite executed inside verification

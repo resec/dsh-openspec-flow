@@ -44,7 +44,7 @@ function parseCoverageTable(markdown) {
 function assertCoverageRows(rows, config) {
   for (const [label, key] of Object.entries(ROWS)) {
     const documented = rows[label]
-    if (documented === undefined) throw new Error(`CONTRIBUTING.md has no ${label} row`)
+    if (documented === undefined) throw new Error(`CONTRIBUTING.md has no ${label} row for line, branch and function`)
     const expected = config.thresholds[key]
     for (const metric of ['line', 'branch', 'function']) {
       if (documented[metric] !== expected[metric]) {

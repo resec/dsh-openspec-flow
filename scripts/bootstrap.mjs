@@ -7,7 +7,7 @@
  * It never writes tracked files, shell configuration or DSH profiles.
  */
 
-import { existsSync, rmSync, statfsSync } from 'node:fs'
+import { existsSync, realpathSync, rmSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -22,7 +22,7 @@ const NPM_CACHE = process.env.npm_config_cache ?? join(ROOT, '.cache', 'npm')
 const USAGE = `Usage: scripts/bootstrap.sh [options]
 
 Options:
-  --full                 Run npm run verify and npm run test:lab -- --mock-only.
+  --full                 Run npm run verify and npm run test:lab -- --mock-only instead of the plain suite.
   --skip-test            Skip npm test.
   --skip-install         Reuse node_modules instead of running npm ci.
   --skip-playwright      Skip the Playwright Chromium installation.
@@ -65,7 +65,7 @@ export function parseBootstrapArgs(argv) {
       case '--help': options.help = true; break
       case '--playwright-host': {
         const value = argv[index + 1]
-        if (value === undefined) throw new Error('--playwright-host needs a value')
+        if (value === undefined || value.startsWith('--')) throw new Error('--playwright-host needs a value')
         options.playwrightHost = value
         index += 1
         break
@@ -238,7 +238,24 @@ function main() {
   console.log('Next: source scripts/activate.sh to use a clone-local runtime, then npm run verify.')
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/**
+ * Whether this module is the script the process was started with.
+ *
+ * `import.meta.url` is the real path while `process.argv[1]` keeps the spelling
+ * the caller used, so a symlinked invocation is resolved on the argv side
+ * before the comparison and never silently skips the run.
+ * @returns true when the module is the entry point.
+ */
+function isEntryPoint() {
+  if (process.argv[1] === undefined) return false
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+  } catch {
+    return import.meta.url === pathToFileURL(process.argv[1]).href
+  }
+}
+
+if (isEntryPoint()) {
   try {
     main()
   } catch (error) {

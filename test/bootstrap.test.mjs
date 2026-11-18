@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -175,6 +183,34 @@ test('parses the re-run and download options', () => {
 
 test('refuses a download host without a value', () => {
   assert.throws(() => parseBootstrapArgs(['--playwright-host']), /needs a value/)
+  assert.throws(() => parseBootstrapArgs(['--playwright-host', '--full']), /needs a value/)
+})
+
+test('an invocation through a symlinked directory still runs the entry point', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'bootstrap-symlink-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const link = join(base, 'repo')
+  symlinkSync(ROOT, link, 'dir')
+  const result = spawnSync(process.execPath, [join(link, 'scripts', 'bootstrap.mjs'), '--help'], {
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Usage: scripts\/bootstrap\.sh/)
+})
+
+test('the help surfaces name the new options and the non-duplicated full mode', () => {
+  const help = spawnSync(process.execPath, [join(ROOT, 'scripts', 'bootstrap.mjs'), '--help'], {
+    encoding: 'utf8',
+  })
+  assert.equal(help.status, 0, help.stderr)
+  assert.match(help.stdout, /instead of the plain suite/)
+  const shell = readFileSync(join(ROOT, 'scripts', 'bootstrap.sh'), 'utf8')
+  const contributing = readFileSync(join(ROOT, 'CONTRIBUTING.md'), 'utf8')
+  for (const option of ['--skip-install', '--playwright-host', '--reset-browsers']) {
+    assert.ok(help.stdout.includes(option), option)
+    assert.ok(shell.includes(option), option)
+    assert.ok(contributing.includes(option), option)
+  }
 })
 
 test('refuses a browser reset when Playwright is skipped', () => {
