@@ -17,12 +17,18 @@ The repository SHALL plan non-trivial plugin work as an OpenSpec change under `o
 
 ### Requirement: Apply uses the installed plugin's compact loop
 
-The repository SHALL use the `openspec-apply-change` skill and the `openspec_apply_next` / `openspec_mark_task_done` tools for apply.
+The repository SHALL use the `openspec-apply-change` skill and the `openspec_apply_next` / `openspec_mark_task_done` tools for maintainer-authored and plugin-driven apply. An external contribution whose implementation arrives with its change in one pull request SHALL record task completion in `tasks.md`, by hand or with the plugin, before merge.
 
 #### Scenario: A task is completed
 
-- **WHEN** a task's specified behavior is fully implemented
+- **WHEN** a maintainer or plugin-driven apply completes a task
 - **THEN** the task is marked with `openspec_mark_task_done` and the returned `next` is used without re-running `openspec_apply_next`
+
+#### Scenario: An external contribution records completion
+
+- **WHEN** an external contributor implements a task before opening the pull request
+- **THEN** `tasks.md` records the completion, by hand or with the plugin
+- **AND** the maintainer does not require `openspec_apply_next` for that pull request
 
 ### Requirement: Verification gates a change
 
@@ -56,7 +62,7 @@ The repository SHALL publish `main` to the `origin` remote at `git@github.com:re
 
 ### Requirement: Archive precedes commit and push
 
-The repository SHALL commit and push only after `openspec_archive` has moved the change under `openspec/changes/archive/` and merged its delta specs, so the archive commit is the commit that carries the merged specs.
+The repository SHALL archive a change before the archive commit is pushed to `origin/main`, so the archive commit carries the merged specs. A maintainer-authored change SHALL be archived before its implementation is pushed. An external contribution MAY merge its active change through a pull request; the maintainer SHALL archive it after merge, and the archive commit SHALL follow the apply review.
 
 #### Scenario: A change is archived
 
@@ -65,8 +71,15 @@ The repository SHALL commit and push only after `openspec_archive` has moved the
 
 #### Scenario: A change is not yet archived
 
-- **WHEN** a change's tasks are incomplete or `openspec_validate` fails
-- **THEN** no archive commit is created and `origin/main` receives nothing from that change
+- **WHEN** a maintainer-authored change's tasks are incomplete or `openspec_validate` fails
+- **THEN** no archive commit is created and no implementation from that change is pushed
+
+#### Scenario: An external contribution is merged before archive
+
+- **WHEN** an external pull request carrying an active change is merged
+- **THEN** the merge commit carries the active change
+- **AND** the maintainer archives it after merge
+- **AND** the archive commit follows the apply review
 
 ### Requirement: DSH runtime version alignment
 
@@ -268,22 +281,28 @@ The repository SHALL document one procedure for moving `engines.dsh` to a new ex
 
 ### Requirement: Repository changes pass the review gates
 
-The repository SHALL run draft review after the planning artifacts are complete and before implementation, and apply review after the implementation is committed and before archive. It SHALL not archive a change whose apply review is not ready.
+The repository SHALL run draft review before implementation for maintainer-authored changes, and before merge for an external contribution whose change artifacts and implementation arrive in one pull request. It SHALL run apply review after implementation is committed and before archive, and SHALL not archive a change whose apply review is not ready.
 
 #### Scenario: A change starts implementation
 
-- **WHEN** a contributor starts apply
+- **WHEN** a maintainer starts apply
 - **THEN** the draft review is ready or the apply tool refuses
 
 #### Scenario: A change is archived
 
-- **WHEN** a contributor archives a change
+- **WHEN** a maintainer archives a change
 - **THEN** the apply review is ready, or apply review is disabled or unavailable
 
 #### Scenario: A review is not ready
 
 - **WHEN** the draft or apply review reports a blocker
-- **THEN** the change is not implemented or archived until the blocker is fixed or waived
+- **THEN** the change is not merged, implemented or archived until the blocker is fixed or waived
+
+#### Scenario: An external contribution is reviewed
+
+- **WHEN** a pull request carries an active change and its implementation together
+- **THEN** the maintainer runs the draft review before merge
+- **AND** runs the apply review before archive
 
 ### Requirement: Plain test runs reuse a Node compile cache
 
