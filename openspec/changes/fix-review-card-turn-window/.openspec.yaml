@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-18
+goal: A review card written after a turn ends is never bound to that turn, and
+  cards in one turn are ordered by write time so a later apply round cannot
+  appear before an earlier draft round.
