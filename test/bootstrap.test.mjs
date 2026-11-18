@@ -1,0 +1,118 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import test from 'node:test'
+import {
+  assetName,
+  assetUrl,
+  globalCandidateRoots,
+  normalizeVersion,
+  parseBaselineNodeVersion,
+  parseShasum,
+  readBaselineNodeVersion,
+  selectNodeCandidate,
+  shasumsUrl,
+} from '../scripts/bootstrap-lib.mjs'
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
+const BASELINE = JSON.parse(readFileSync(join(ROOT, 'coverage.baseline.json'), 'utf8')).node.version.replace(/^v/, '')
+
+test('reads the baseline Node version from coverage.baseline.json', () => {
+  assert.equal(readBaselineNodeVersion(ROOT), BASELINE)
+  assert.equal(parseBaselineNodeVersion('{"node":{"version":"v24.9.0"}}'), '24.9.0')
+})
+
+test('rejects a baseline without a concrete node version', () => {
+  assert.throws(() => parseBaselineNodeVersion('{}'), /node version/)
+  assert.throws(() => parseBaselineNodeVersion('{"node":{"version":"24"}}'), /node version/)
+})
+
+test('normalizes a version with or without the v prefix', () => {
+  assert.equal(normalizeVersion('v24.22.2'), '24.22.2')
+  assert.equal(normalizeVersion('24.22.2'), '24.22.2')
+  assert.throws(() => normalizeVersion('24'), /unsupported Node version/)
+})
+
+test('selects the highest qualifying host runtime', () => {
+  const selected = selectNodeCandidate(
+    [
+      { version: 'v26.13.1', path: '/host/26' },
+      { version: 'v24.8.0', path: '/host/24.8' },
+      { version: 'v24.9.0', path: '/host/24.9' },
+      { version: 'v24.22.2', path: '/host/24.22.2' },
+    ],
+    { primaryMajor: 24, range: '>=24.9.0' },
+  )
+  assert.equal(selected.path, '/host/24.22.2')
+})
+
+test('selects nothing when no candidate qualifies', () => {
+  assert.equal(
+    selectNodeCandidate(
+      [{ version: 'v26.13.1', path: '/host/26' }, { version: 'v24.8.0', path: '/host/24.8' }],
+      { primaryMajor: 24, range: '>=24.9.0' },
+    ),
+    undefined,
+  )
+})
+
+test('names the platform asset and URL', () => {
+  assert.equal(
+    assetName({ version: 'v24.22.2', platform: 'darwin', arch: 'arm64' }),
+    'node-v24.22.2-darwin-arm64.tar.gz',
+  )
+  assert.equal(
+    assetName({ version: '24.22.2', platform: 'linux', arch: 'x64' }),
+    'node-v24.22.2-linux-x64.tar.gz',
+  )
+  assert.equal(
+    assetUrl({ version: 'v24.22.2', platform: 'darwin', arch: 'arm64' }),
+    'https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz',
+  )
+  assert.equal(
+    assetUrl({ version: 'v24.22.2', platform: 'darwin', arch: 'arm64', mirror: 'https://mirror.test/node/' }),
+    'https://mirror.test/node/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz',
+  )
+  assert.equal(
+    shasumsUrl('v24.22.2', 'https://mirror.test/node/'),
+    'https://mirror.test/node/v24.22.2/SHASUMS256.txt',
+  )
+})
+
+test('rejects an unsupported platform', () => {
+  assert.throws(
+    () => assetName({ version: '24.22.2', platform: 'win32', arch: 'x64' }),
+    /unsupported platform/,
+  )
+})
+
+test('parses the checksum for the exact asset', () => {
+  const text = [
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  node-v24.22.2-darwin-arm64.tar.gz',
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  node-v24.22.2-darwin-x64.tar.gz',
+  ].join('\n')
+  assert.equal(
+    parseShasum(text, 'node-v24.22.2-darwin-arm64.tar.gz'),
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  )
+  assert.equal(parseShasum(text, 'node-v24.22.2-linux-x64.tar.gz'), undefined)
+})
+
+test('lists the global candidate roots without calling a version manager', () => {
+  const roots = globalCandidateRoots({ home: '/Users/tester', platform: 'darwin' })
+  assert.equal(roots.fnm, '/Users/tester/.local/share/fnm/node-versions')
+  assert.equal(roots.nvm, '/Users/tester/.nvm/versions/node')
+  assert.equal(roots.volta, '/Users/tester/.volta/tools/image/node')
+  assert.equal(roots.asdf, '/Users/tester/.asdf/installs/nodejs')
+  assert.ok(roots.brew.includes('/opt/homebrew/opt/node@24/bin/node'))
+})
+
+test('prints the baseline version from the shell without a download', () => {
+  const result = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh'), '--print-node-version'], {
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), BASELINE)
+})

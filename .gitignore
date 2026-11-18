@@ -19,5 +19,12 @@ dist/
 # Local skill migration backups
 .dsh/openspec-flow-backup/
 
+# OpenSpec CLI generated skill copies; the plugin serves its own
+**/skills/openspec-*/
+!/skills/openspec-*/
+**/skills/.openspec-target
+**/commands/opsx/
+**/commands/openspec/
+
 # OS metadata
 .DS_Store

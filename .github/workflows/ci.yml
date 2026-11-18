@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: node-pin
+        shell: bash
+        run: |
+          version=$(node -p 'require("./coverage.baseline.json").node.version.replace(/^v/, "")')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-pin.outputs.version }}
+          cache: npm
+      - run: npm ci
+      - name: change check
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-pr-change.mjs --base "${{ github.event.pull_request.base.sha }}"
+      - name: generated skill check
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-generated-skills.mjs --base "${{ github.event.pull_request.base.sha }}"
+      - run: npm run openspec:check
+      - run: npm run verify
+
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: .cache/lab/pw-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - id: node-pin
+        shell: bash
+        run: |
+          version=$(node -p 'require("./coverage.baseline.json").node.version.replace(/^v/, "")')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-pin.outputs.version }}
+          cache: npm
+      - run: npm ci
+      - name: install CJK font
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - uses: actions/cache@v4
+        with:
+          path: .cache/lab/pw-browsers
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      - uses: actions/cache@v4
+        with:
+          path: .cache/lab/dsh
+          key: ${{ runner.os }}-dsh-${{ hashFiles('package.json') }}
+      - name: install Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run lab -- doctor
+      - run: npm run test:lab -- --mock-only

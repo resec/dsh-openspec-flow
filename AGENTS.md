@@ -1,6 +1,6 @@
 # Project instructions
 
-This repository develops the `dsh-openspec-flow` plugin. `README.md` covers the tool surface, configuration, and limits; this file covers how work is planned and checked.
+This repository develops the `dsh-openspec-flow` plugin. `README.md` covers the tool surface, configuration, and limits; this file covers how work is planned and checked. External contributions follow [CONTRIBUTING.md](CONTRIBUTING.md) and use the CLI-only path there; they do not require the plugin.
 
 ## OpenSpec workflow
 
@@ -24,7 +24,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 - Plain ESM JavaScript with Node built-ins only. Any `@deepseek-ai/*` runtime import or dependency is forbidden; review cards are files under the change's review directory and are served by the review channel.
 - `engines.dsh` pins the exact DSH runtime the plugin is verified against, and `engines.node` mirrors that runtime's Node floor; the floor is stated once in the `project-invariants` capability (`Runtime baseline`). When upgrading the DSH dependency, read the target version's `engines.node` first and update both fields together; a mismatch makes DSH skip the bundle.
-- Tests and coverage run only on the primary Node major 24 and require a concrete version satisfying `engines.node`. Entrypoints check the `node` on PATH; they never call fnm, nvm, volta, or read `.nvmrc`. If the runtime does not qualify, they fail before starting tests.
+- Tests and coverage run only on the primary Node major 24 and require a concrete version satisfying `engines.node`. Test and coverage entrypoints check the `node` on `PATH`; they never call fnm, nvm, volta, or read `.nvmrc`. `scripts/bootstrap.sh` is the only entrypoint that may read common global install directories to choose a runtime, and it never invokes a version manager. If the runtime does not qualify, the test entrypoints fail before starting tests.
 - The OpenSpec CLI is an exact runtime dependency (`@fission-ai/openspec` 2.0.0, stated by the `project-invariants` `OpenSpec CLI pin` requirement). The plugin resolves only its own installed copy; do not reintroduce `cliPath`, PATH lookup, or project-local lookup.
 - Keep tool descriptions and output schemas in `lib/tools/`, the projection and cache in `lib/state.js`, project initialization in `lib/init.js`, packaged-skill discovery in `lib/skills.js` and `lib/skill.js`, and the shipped skills in `skills/` in sync with behavior.
 - Every packaged skill's `metadata.generatedBy` must equal `dsh-openspec-flow@<package.json version>`; the skill test enforces it.

@@ -1,0 +1,4 @@
+# Maintainer review for protected paths.
+.github/ @resec
+.githooks/ @resec
+coverage.baseline.json @resec

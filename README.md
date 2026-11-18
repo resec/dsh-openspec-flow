@@ -271,6 +271,8 @@ npm test
 
 本仓库现在也是自己的 OpenSpec 项目，用插件本身管理自己的变更：
 
+- 首次准备：`./scripts/bootstrap.sh`；需要完整门禁时用 `--full`，追加 `npm run verify` 与 `npm run test:lab -- --mock-only`。
+- 外部贡献：不要求安装 DSH 或插件，流程、证据与受限路径见 [CONTRIBUTING.md](CONTRIBUTING.md)；CI 在 Ubuntu 上跑验证与 lab。
 - OpenSpec 根：`openspec/`；流程技能由插件 provider 提供，仓库不再保存副本；项目说明：[AGENTS.md](AGENTS.md)。
 - 新变更：`./node_modules/.bin/openspec new change <name>`，或插件安装后的 `openspec_new_change`。
 - apply：按 `openspec-apply-change` 技能走 `openspec_apply_next` → 按批 `openspec_mark_task_done`。

@@ -53,7 +53,9 @@
     "contract:check": "node scripts/check-cli-contract.mjs",
     "openspec:check": "openspec validate --all --strict && openspec validate --archived --strict",
     "hooks:install": "node scripts/install-hooks.mjs",
-    "bundle:pack": "node scripts/bundle-pack.mjs"
+    "bundle:pack": "node scripts/bundle-pack.mjs",
+    "layout:check": "node scripts/check-generated-skills.mjs --workspace",
+    "check:pr": "node scripts/check-pr-change.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": "2.0.0"
