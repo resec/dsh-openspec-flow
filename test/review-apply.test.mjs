@@ -1346,3 +1346,15 @@ test('a waiver whose coverage cannot be computed reports the error', async () =>
   assert.equal(waived.ready, false)
   assert.match(waived.reasons.join(' '), /coverage could not be computed/)
 })
+
+test('a waiver accepts a file that does not exist yet', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.',
+    files: [`openspec/changes/${CHANGE}/specs/new-capability/spec.md`],
+  })
+  assert.deepEqual(waived.planChangeWaiver.files, ['specs/new-capability/spec.md'])
+})

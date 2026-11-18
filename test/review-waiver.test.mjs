@@ -93,3 +93,25 @@ test('normalization refuses a non-string entry', () => {
   assert.match(result.refused[0].reason, /not a string/)
   assert.match(result.refused[1].reason, /not a string/)
 })
+
+test('normalization strips a leading dot slash before the prefix tests', () => {
+  const result = normalizeWaiverFiles([
+    './openspec/changes/add-dark-mode/tasks.md',
+    './openspec/changes/other/tasks.md',
+    './openspec/specs/theme/spec.md',
+  ], OPTIONS)
+  assert.deepEqual(result.files, ['tasks.md'])
+  assert.equal(result.refused.length, 2)
+  assert.match(result.refused[0].reason, /another change/)
+  assert.match(result.refused[1].reason, /outside the change directory/)
+})
+
+test('a store-backed change refuses a dot-slash project-relative form', () => {
+  const result = normalizeWaiverFiles(['./openspec/changes/add-dark-mode/proposal.md'], {
+    changeRoot: CHANGE_ROOT,
+    changePath: undefined,
+  })
+  assert.deepEqual(result.files, [])
+  assert.equal(result.refused.length, 1)
+  assert.match(result.refused[0].reason, /change-relative or absolute/)
+})
