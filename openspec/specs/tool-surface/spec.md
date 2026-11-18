@@ -679,6 +679,12 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 - **WHEN** `waive` with `scope: "plan-change"` runs before apply started
 - **THEN** the call fails and names the draft review
 
+#### Scenario: Waiver result names uncovered drift
+
+- **WHEN** a waiver is recorded while the apply review record exists and a drift file stays outside its normalized file set
+- **THEN** the result names that file
+- **AND** the result does not report the waiver as covering it
+
 ### Requirement: Archive waits for a ready apply review
 
 `openspec_archive` SHALL check the apply locks and the apply review before reading the change list or running validation. A lock naming another identity fails the call and moves nothing. An enabled unready apply review returns no archive result and moves nothing; a disabled review or a project without git skips that check. With no lock it proceeds without writing one, and after a successful archive it releases the locks naming the archived change.
