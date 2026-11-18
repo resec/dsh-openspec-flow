@@ -1,2 +1,3 @@
 schema: spec-driven
 created: 2026-11-18
+goal: A failed profile initialization reports the first line of the command output together with its tail within a bounded message, and keeps the untouched output in the run directory.

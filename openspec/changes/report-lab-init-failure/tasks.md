@@ -8,13 +8,21 @@
 ## 2. Guard the behaviour
 
 - [x] 2.1 Add `test/lab-process.test.mjs`: an over-long output keeps its first line and its last line and carries the marker; an output within the budget arrives unchanged; the retained text does not grow with a much larger output; a non-string input summarizes to an empty string. Verify with `node --test test/lab-process.test.mjs`.
-- [x] 2.2 Confirm the new test fails against the previous tail-only behaviour, then passes against the helper. Verify by temporarily reverting the assertion target in a scratch run and observing the red result.
+- [x] 2.2 Confirm the new test fails against the previous tail-only behaviour, then passes against the helper. Verify by temporarily reverting the assertion target in a scratch run and observing the red result. Observed: with the tail-only slice four cases failed; with the helper all pass.
 
 ## 3. Validate the change
 
 - [x] 3.1 Run `./node_modules/.bin/openspec validate report-lab-init-failure --strict` and confirm it reports the change as valid.
 - [x] 3.2 Run `npm test`, `npm run openspec:check` and `npm run verify` on Node 24 and record the pass counts and the coverage verdict. Verify by the exit status of each command.
 - [x] 3.3 Run `node scripts/check-pr-change.mjs --base origin/main` and confirm it accepts the change with no unchecked task and no restricted path.
+
+## 4. Address the review
+
+- [x] 4.1 Remove the caller-supplied `limit` from `summarizeOutput`: with a budget of two or less the head consumed the whole budget, the tail length became zero and `slice(-0)`, which is `slice(0)`, returned the entire output. Verify with `node --input-type=module -e` on the former limits 0, 1, 2 and 2.5 and with `npm test`.
+- [x] 4.2 Write the untouched initialization output to `<run>/artifacts/init-<mode>.log` and name that file in the failure, so the requirement that the output stays in the run directory holds. Verify by reading `ensureProfile` and by the message assertions in `test/lab-process.test.mjs`.
+- [x] 4.3 Cover the message builder apart from the split (`profileInitFailure`), replace the `deepEqual` on numbers with `equal`, and drop the repeated `startsWith` assertions. Verify with `node --test test/lab-process.test.mjs`.
+- [x] 4.4 State the whitespace rule in the delta spec and stop claiming the message starts or ends with the output, because the profile name prefixes it and the artifact path follows it. Verify with `openspec validate report-lab-init-failure --strict`.
+- [x] 4.5 Run `npm run layout:check` and record its result, as `CONTRIBUTING.md` asks before a push. Verify by the exit status.
 
 ## Workflow follow-up
 

@@ -3,70 +3,67 @@ import assert from 'node:assert/strict'
 import {
   OUTPUT_SUMMARY_LIMIT,
   OUTPUT_SUMMARY_MARKER,
+  profileInitFailure,
   summarizeOutput,
 } from '../scripts/lab/core/process.mjs'
 
+const CAUSE = 'Error: Failed to initialize the profile store'
+const LAST_LINE = 'Node.js v24.22.2'
+
 /**
- * Build an output whose lines are distinguishable and whose first line names
- * the cause, the way a real DSH boot failure does.
- * @param lines - number of lines to produce.
+ * Build an output whose first line names the cause and whose last line closes
+ * the process, the way a real DSH boot failure does.
+ * @param lines - number of stack lines to add.
  * @returns the joined output.
  */
 function bootFailure(lines = 200) {
-  const body = []
-  body.push('Error: Failed to initialize the profile store')
+  const body = [CAUSE]
   for (let index = 1; index < lines; index += 1) {
     body.push(`    at step${index} (/opt/dsh/lib/profile-boot.js:${index}:4)`)
   }
-  body.push('Node.js v24.22.2')
+  body.push(LAST_LINE)
   return body.join('\n')
 }
 
-test('an output within the budget arrives unchanged', () => {
-  const text = 'Error: a short failure\nNode.js v24.22.2'
+test('an output within the budget is returned whole', () => {
+  const text = `${CAUSE}\n  code: EIO\n${LAST_LINE}`
   assert.equal(summarizeOutput(text), text)
 })
 
-test('an output at the budget arrives unchanged', () => {
+test('an output exactly at the budget keeps no marker', () => {
   const text = 'x'.repeat(OUTPUT_SUMMARY_LIMIT)
   assert.equal(summarizeOutput(text), text)
   assert.equal(summarizeOutput(text).includes(OUTPUT_SUMMARY_MARKER), false)
 })
 
-test('an over-long output keeps its first line', () => {
+test('an over-long output carries its first line', () => {
   const text = bootFailure()
-  const summary = summarizeOutput(text)
   assert.ok(text.length > OUTPUT_SUMMARY_LIMIT)
-  assert.ok(
-    summary.startsWith('Error: Failed to initialize the profile store'),
-    `summary must start with the cause, got: ${summary.slice(0, 80)}`,
-  )
+  assert.equal(summarizeOutput(text).slice(0, CAUSE.length), CAUSE)
 })
 
-test('an over-long output keeps its last line and marks the omission', () => {
-  const text = bootFailure()
-  const summary = summarizeOutput(text)
-  assert.ok(summary.endsWith('Node.js v24.22.2'))
-  assert.ok(summary.includes(OUTPUT_SUMMARY_MARKER))
-  assert.deepEqual(
-    summary.split(OUTPUT_SUMMARY_MARKER).length,
-    2,
-    'the marker must appear exactly once',
-  )
+test('an over-long output carries its last line and marks the omission', () => {
+  const summary = summarizeOutput(bootFailure())
+  assert.ok(summary.endsWith(LAST_LINE))
+  assert.equal(summary.split(OUTPUT_SUMMARY_MARKER).length, 2, 'the marker must appear exactly once')
 })
 
-test('the retained text stays bounded as the output grows', () => {
+test('the split keeps the head share and the total bound', () => {
+  const summary = summarizeOutput(bootFailure())
+  assert.equal(summary.length, OUTPUT_SUMMARY_LIMIT + OUTPUT_SUMMARY_MARKER.length)
+  assert.equal(summary.indexOf(OUTPUT_SUMMARY_MARKER), 900)
+})
+
+test('the retained text does not grow with the output', () => {
   const small = summarizeOutput(bootFailure(200))
   const large = summarizeOutput(bootFailure(20_000))
   assert.equal(small.length, large.length)
-  assert.ok(small.length <= OUTPUT_SUMMARY_LIMIT + OUTPUT_SUMMARY_MARKER.length)
 })
 
-test('the trimming keeps the budget for output padded with whitespace', () => {
-  const padded = `\n\n${bootFailure()}\n\n`
-  const summary = summarizeOutput(padded)
-  assert.ok(summary.startsWith('Error: Failed to initialize the profile store'))
-  assert.ok(summary.endsWith('Node.js v24.22.2'))
+test('leading and trailing whitespace is dropped before the split', () => {
+  const summary = summarizeOutput(`\n\n${bootFailure()}\n\n`)
+  assert.equal(summary.slice(0, CAUSE.length), CAUSE)
+  assert.ok(summary.endsWith(LAST_LINE))
 })
 
 test('a non-string input summarizes to an empty string', () => {
@@ -75,8 +72,16 @@ test('a non-string input summarizes to an empty string', () => {
   assert.equal(summarizeOutput(42), '')
 })
 
-test('a custom limit is honoured', () => {
-  const summary = summarizeOutput(bootFailure(), 100)
-  assert.equal(summary.length, 100 + OUTPUT_SUMMARY_MARKER.length)
-  assert.ok(summary.startsWith('Error: Failed to initialize the profile store'))
+test('the profile failure message carries the output and the artifact path', () => {
+  const message = profileInitFailure('verify-headless', bootFailure(), '/tmp/run/artifacts/init-headless.log')
+  assert.ok(message.startsWith('could not initialize verify-headless: '))
+  assert.ok(message.includes(CAUSE))
+  assert.ok(message.includes(LAST_LINE))
+  assert.ok(message.includes(OUTPUT_SUMMARY_MARKER))
+  assert.ok(message.endsWith('(full output: /tmp/run/artifacts/init-headless.log)'))
+})
+
+test('the profile failure message omits the path when nothing was written', () => {
+  const message = profileInitFailure('verify-web', `${CAUSE}\n${LAST_LINE}`)
+  assert.equal(message, `could not initialize verify-web: ${CAUSE}\n${LAST_LINE}`)
 })

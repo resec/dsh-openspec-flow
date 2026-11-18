@@ -11,7 +11,7 @@ import { createRun, finalizeRun, writeJson } from './core/run-dir.mjs'
 import { dshVersion, ensureDsh } from './core/cache.mjs'
 import { dumpConfig, installPlugin, packPlugin, writeMockPatch } from './core/install.mjs'
 import { assertHostUnchanged, hostFingerprint } from './core/host-guard.mjs'
-import { startLogged, summarizeOutput } from './core/process.mjs'
+import { profileInitFailure, startLogged } from './core/process.mjs'
 import { startMockProvider } from './mock/provider.mjs'
 import { runHeadless } from './drivers/headless.mjs'
 import { parseStartupUrl } from './drivers/http.mjs'
@@ -150,7 +150,12 @@ export async function createLab({
       [dsh.bin, '--profile', profile, '--from-default-profile', mode, '--dump-config'],
       { timeoutMs: 120_000, env: labEnv, cwd: run.project },
     ))
-    if (init.status !== 0) throw new Error(`could not initialize ${profile}: ${summarizeOutput(init.stderr || init.stdout)}`)
+    if (init.status !== 0) {
+      const output = init.stderr === '' ? init.stdout : init.stderr
+      const logPath = join(run.artifacts, `init-${mode}.log`)
+      writeFileSync(logPath, output)
+      throw new Error(profileInitFailure(profile, output, logPath))
+    }
     const installed = installPlugin({
       dshBin: dsh.bin,
       profile,
