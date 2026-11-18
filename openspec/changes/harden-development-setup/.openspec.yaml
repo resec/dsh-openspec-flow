@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-18
+goal: macOS 与 Linux 上测试入口使用规范临时路径；bootstrap 支持重跑与镜像选项且 full
+  模式不重复跑测试；CONTRIBUTING 写清覆盖率门槛；AGENTS 第 7 步限定为维护者路径。
