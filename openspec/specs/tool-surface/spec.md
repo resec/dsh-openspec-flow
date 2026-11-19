@@ -435,7 +435,7 @@ The block SHALL close when the agent returns to idle after the turn it was opene
 
 ### Requirement: Read surface is a single inspect entry
 
-The plugin SHALL expose exactly one read tool, `openspec_inspect`, in the core block. Its `action` parameter SHALL select one of `list`, `status`, `show`, `instructions`, `context` or `validate`. The plugin SHALL NOT register `openspec_list`, `openspec_status`, `openspec_show`, `openspec_instructions`, `openspec_context` or `openspec_validate` as separate tools.
+The plugin SHALL expose exactly one read tool, `openspec_inspect`, in the core block. Its `action` parameter SHALL select one of `list`, `status`, `show`, `instructions`, `context`, `validate` or `worktree`. The plugin SHALL NOT register `openspec_list`, `openspec_status`, `openspec_show`, `openspec_instructions`, `openspec_context`, `openspec_validate` or a separate worktree status tool.
 
 #### Scenario: Six reads share one entry
 
@@ -445,7 +445,7 @@ The plugin SHALL expose exactly one read tool, `openspec_inspect`, in the core b
 #### Scenario: Old read tool names are absent
 
 - **WHEN** the model-facing catalog of an OpenSpec project is inspected
-- **THEN** it contains `openspec_inspect` and no `openspec_list`, `openspec_status`, `openspec_show`, `openspec_instructions`, `openspec_context` or `openspec_validate` entry
+- **THEN** it contains `openspec_inspect` and no `openspec_list`, `openspec_status`, `openspec_show`, `openspec_instructions`, `openspec_context`, `openspec_validate` or worktree status entry
 
 #### Scenario: Management block is unchanged
 
@@ -454,7 +454,7 @@ The plugin SHALL expose exactly one read tool, `openspec_inspect`, in the core b
 
 ### Requirement: Inspect actions preserve their response bodies
 
-Each `openspec_inspect` action SHALL return the same projection, with the same fields and values, as the former tool it replaces for the same input. The only permitted differences are tool references inside response bodies: `nextSteps[].tool` and `members[].fetch.tool` SHALL name `openspec_inspect`, and their `arguments` SHALL carry the action they require.
+Each `openspec_inspect` action except `worktree` SHALL return the same projection, with the same fields and values, as the former tool it replaces. The only permitted differences are tool references inside response bodies: `nextSteps[].tool` and `members[].fetch.tool` SHALL name `openspec_inspect`, and their `arguments` SHALL carry the action they require.
 
 #### Scenario: List action matches the former list projection
 
@@ -488,9 +488,14 @@ Each `openspec_inspect` action SHALL return the same projection, with the same f
 - **WHEN** `openspec_inspect` runs `action: "validate"` with `scope` or `strict`
 - **THEN** the result keeps the former `valid`, `issues`, `items`, `scope`, `change` and `root` fields
 
+#### Scenario: Worktree action is not a replacement
+
+- **WHEN** `openspec_inspect` runs `action: "worktree"`
+- **THEN** the result is the new state, lock and doctor projection, not a former tool projection
+
 ### Requirement: Inspect validates action and parameter combinations
 
-`openspec_inspect` SHALL reject an action whose required parameter is missing and any parameter the selected action does not accept. The rejection SHALL happen before any read runs, and the error SHALL name the action and the offending parameter.
+`openspec_inspect` SHALL reject an action whose required parameter is missing and any parameter the selected action does not accept. The rejection SHALL happen before any read runs, and the error SHALL name the action and the offending parameter. The `worktree` action SHALL require `change` and accept an optional `store`.
 
 #### Scenario: Status without a change
 
@@ -515,8 +520,14 @@ Each `openspec_inspect` action SHALL return the same projection, with the same f
 
 #### Scenario: Unknown action is refused
 
-- **WHEN** `openspec_inspect` receives an action outside the six values
+- **WHEN** `openspec_inspect` receives an action outside the seven values
 - **THEN** the parameter schema rejects the call before execution
+
+#### Scenario: Worktree without a change
+
+- **WHEN** `openspec_inspect` runs `action: "worktree"` without `change`
+- **THEN** the call fails naming `worktree` and `change`
+- **AND** no read process starts
 
 ### Requirement: Inspect output schema has one branch per action
 
@@ -524,7 +535,7 @@ Each `openspec_inspect` action SHALL return the same projection, with the same f
 
 #### Scenario: Each action matches one branch
 
-- **WHEN** any of the six actions returns a successful projection
+- **WHEN** any of the seven actions returns a successful projection
 - **THEN** exactly one `oneOf` branch accepts that result
 
 #### Scenario: An action loses its branch
@@ -1265,3 +1276,32 @@ When a draft review has a recorded report, no finding is open, and the only outs
 
 - **WHEN** a caller passes `baseline` to an action other than apply `start` or `resume`
 - **THEN** the action behaves as if `baseline` were absent
+
+### Requirement: Apply worktree recovery is exposed as one tool
+
+The plugin SHALL expose `openspec_apply_worktree` with the `recover` action. The call SHALL accept `change`, an optional `store`, a `scope` of `lifecycle` or `change`, and an `expectedOwner` token. `change` SHALL be required for the change scope. An unknown action, an invalid scope or a missing token SHALL be refused. The reviewer preset SHALL deny the tool.
+
+#### Scenario: Recovery reports the recovered scope
+
+- **WHEN** recovery removes a dead change lock with the matching token
+- **THEN** the result carries `recovered: true` and `scope: "change"`
+
+#### Scenario: Recovery requires its owner token
+
+- **WHEN** a caller omits `expectedOwner`
+- **THEN** the tool refuses the call before reading or removing a lock
+
+#### Scenario: An invalid scope is refused
+
+- **WHEN** a caller passes a scope outside `lifecycle` and `change`
+- **THEN** the tool refuses the call before reading or removing a lock
+
+#### Scenario: An unknown action is refused
+
+- **WHEN** a caller passes an action outside `recover`
+- **THEN** the tool refuses the call and names `recover`
+
+#### Scenario: The reviewer cannot use the tool
+
+- **WHEN** the independent reviewer's tool catalog is assembled
+- **THEN** `openspec_apply_worktree` is absent
