@@ -48,7 +48,7 @@ Agent 工作流全部由插件技能与工具覆盖。
 | 修订规划 | `openspec-update-change`；`openspec_inspect`（`action: "instructions"`、`"validate"`） | 修改现有 artifacts；没有专用写工具 |
 | 归档 | `openspec-archive-change`；`openspec_inspect`（`action: "instructions"`）、`openspec_review`（`review: "apply"`）、`openspec_archive` | 先读归档 `context`/`guidance`、检查 apply review、校验、检查任务，再移动并合并 delta specs |
 | 管理 | `/opsx-admin`；`openspec_init`、`openspec_store_list`、`openspec_schemas` | 项目初始化、store 与 schema 查询；默认不暴露，用户命令开启一次回合 |
-| 评审记录 | `openspec_review` | 记录在 `openspec/.review/<store>#<change>/`，含 `plan-change-waiver.json`；`openspec/.gitignore` 忽略 `.review/`；apply 锁在 git 域的 worktree git directory 或非 git 域的 `openspec/.review/apply.lock.json` |
+| 评审记录 | `openspec_review` | git 项目记录在 `<git common dir>/openspec-flow/review/<store>#<change>/`（嵌套 OpenSpec 根带 `@root-<hash>` 后缀），非 git 项目仍在 `openspec/.review/<store>#<change>/`；旧记录首次访问复制一次并保留；含 `plan-change-waiver.json`；apply 锁在 git 域的 worktree git directory 或非 git 域的 `openspec/.review/apply.lock.json` |
 
 ## 评审
 
@@ -194,7 +194,7 @@ profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需�
 
 页面分 draft 与 apply 两段，字段为 enabled、reviewers（0/1）、waitMinutes 与 reviewer 模型；draft 与 apply review 不设轮次上限。模型有两种来源：
 
-- `inherit`：新 change 锁定 policy 时解析执行变更的模型（先 `agentDefaultModel`，再当前 agent 的模型），把 provider、model 与 effort 写进 `openspec/.review/<store>#<change>/policy.json`；解析不到时拒绝创建 change。
+- `inherit`：新 change 锁定 policy 时解析执行变更的模型（先 `agentDefaultModel`，再当前 agent 的模型），把 provider、model 与 effort 写进评审记录目录的 `policy.json`（git 项目为 `<git common dir>/openspec-flow/review/<store>#<change>/`）；解析不到时拒绝创建 change。
 - `explicit`：provider 与 model 必填；模型暴露可选努力时 effort 必填，否则省略并按适配器默认。
 
 保存分两阶段校验：先按 Config schema 校验完整候选（形状与上下界），再用 `llm` 目录校验 provider、model 与 effort；两次都通过才调用 `configEditor.edit` 写入 profile。被拒绝时不改文件并把原因返回页面。保存成功后该插件行会重启，已锁定 change 的 policy 不受影响。
@@ -225,7 +225,7 @@ profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需�
 - **一次取数**：`openspec_apply_next` 执行一次 `instructions apply --json`，把完整载荷留在进程内，只向模型返回投影。
 - **每批 O(1)**：`openspec_mark_task_done` 先解析整批 id 并逐行翻转目标复选框，任一 id 缺失则整批不写；进度按缓存增量更新，下一任务从缓存任务表选取。
 - **写操作可恢复**：`openspec_archive` 先校验后移动；`openspec_init` 只在缺少配置时创建目录，不覆盖已有配置。
-- **评审先于实施**：`openspec_new_change` 先锁定 review policy；draft review 的工件哈希、finding 与 readiness 决定 `openspec_apply_next` 是否放行；apply review 的 tree 哈希决定 `openspec_archive` 是否放行；评审记录在 `openspec/.review/` 并由 `openspec/.gitignore` 忽略；apply 锁在 git 域的 worktree git directory 或非 git 域的 `openspec/.review/apply.lock.json`。
+- **评审先于实施**：`openspec_new_change` 先锁定 review policy；draft review 的工件哈希、finding 与 readiness 决定 `openspec_apply_next` 是否放行；apply review 的 tree 哈希决定 `openspec_archive` 是否放行；评审记录在 git 项目的 `<git common dir>/openspec-flow/review/`；非 git 项目在 `openspec/.review/` 并由 `openspec/.gitignore` 忽略；apply 锁在 git 域的 worktree git directory 或非 git 域的 `openspec/.review/apply.lock.json`。
 - **按项目注入规则**：流程规则通过 agent 自己的 context 注册为作用域内 system prompt 段；非 OpenSpec 项目返回空文本。
 
 ## 真实模型评测

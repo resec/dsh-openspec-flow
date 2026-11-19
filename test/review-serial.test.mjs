@@ -6,6 +6,7 @@ import {
 import { join } from 'node:path'
 import test from 'node:test'
 import { applyLockLocation } from '../lib/review/apply-lock.js'
+import { reviewDirectory } from '../lib/review/store.js'
 import {
   CHANGE, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
 } from './review-fixtures.mjs'
@@ -112,7 +113,7 @@ test('apply review takes the lock and refuses another change', async () => {
   await call(fake, 'openspec_review', {
     action: 'self-report', change: SECOND, report: report(),
   })
-  const draftFile = join(root, 'openspec', '.review', `local#${SECOND}`, 'review.json')
+  const draftFile = join(reviewDirectory(root, undefined, SECOND), 'review.json')
   const draftRecord = JSON.parse(readFileSync(draftFile, 'utf8'))
   draftRecord.applyBaseCommit = run(['rev-parse', 'HEAD~1'])
   writeFileSync(draftFile, `${JSON.stringify(draftRecord, null, 2)}\n`)
@@ -259,10 +260,10 @@ test('two changes start independent reviewers side by side', async () => {
   assert.equal(second.mode, 'reviewer')
   assert.equal(activations.length, 2)
   const firstRecord = JSON.parse(readFileSync(
-    join(root, 'openspec', '.review', `local#${CHANGE}`, 'review.json'), 'utf8',
+    join(reviewDirectory(root, undefined, CHANGE), 'review.json'), 'utf8',
   ))
   const secondRecord = JSON.parse(readFileSync(
-    join(root, 'openspec', '.review', `local#${SECOND}`, 'review.json'), 'utf8',
+    join(reviewDirectory(root, undefined, SECOND), 'review.json'), 'utf8',
   ))
   assert.notEqual(firstRecord.reviewers.slots[0].agentId, secondRecord.reviewers.slots[0].agentId)
 })

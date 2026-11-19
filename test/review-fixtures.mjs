@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply } from '../index.js'
 import { clearCache } from '../lib/cache.js'
+import { reviewDirectory } from '../lib/review/store.js'
 import { createFakeContext } from './fake-context.mjs'
 
 export const PROBE_ROOT = fileURLToPath(new URL('./fixtures/probe/openspec', import.meta.url))
@@ -48,11 +49,11 @@ export async function call(fake, name, args) {
 }
 
 export function reviewDir(root) {
-  return join(root, 'openspec', '.review', `local#${CHANGE}`)
+  return reviewDirectory(root, null, CHANGE)
 }
 
 export function writePolicy(root, change, reviews) {
-  const directory = join(root, 'openspec', '.review', `local#${change}`)
+  const directory = reviewDirectory(root, null, change)
   mkdirSync(directory, { recursive: true })
   writeFileSync(
     join(directory, 'policy.json'),

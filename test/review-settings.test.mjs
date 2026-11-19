@@ -7,6 +7,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -662,5 +663,29 @@ test('the route registers as one prefix and unregisters with the plugin', async 
     assert.doesNotThrow(() => registerReviewChannel({}, { timeoutMs: 30_000, reviews: {} }))
   } finally {
     dir.dispose()
+  }
+})
+
+
+test('a legacy policy is listed once and migrated to the shared root', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-openspec-legacy-policy-'))
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    const legacy = join(root, 'openspec', '.review', 'local#demo')
+    mkdirSync(legacy, { recursive: true })
+    const reviews = {
+      draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    }
+    writeFileSync(join(legacy, 'policy.json'), `${JSON.stringify({ schemaVersion: 1, change: 'demo', store: null, reviews }, null, 2)}\n`)
+    const other = join(root, 'openspec', '.review', 'local#other')
+    mkdirSync(other, { recursive: true })
+    writeFileSync(join(other, 'policy.json'), `${JSON.stringify({ schemaVersion: 1, reviews }, null, 2)}\n`)
+    const facts = projectFacts(root)
+    assert.equal(facts.changes.length, 2)
+    assert.deepEqual(facts.changes.map((entry) => entry.change).sort(), ['demo', 'local#other'])
+    assert.ok(reviewDirectory(root, null, 'demo').includes('openspec-flow'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

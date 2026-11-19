@@ -9,6 +9,7 @@ import test from 'node:test'
 import {
   CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
+import { reviewDirectory } from '../lib/review/store.js'
 
 test.after(cleanupFixtures)
 
@@ -17,7 +18,7 @@ test('new change locks a policy and ignores later settings', async () => {
   const fake = setup(root, { draft: { enabled: false, reviewers: 0 } })
   const created = await call(fake, 'openspec_new_change', { name: 'add-light-mode' })
   assert.equal(created.change.id, 'add-light-mode')
-  const policyPath = join(root, 'openspec', '.review', 'local#add-light-mode', 'policy.json')
+  const policyPath = join(reviewDirectory(root, undefined, 'add-light-mode'), 'policy.json')
   assert.equal(existsSync(policyPath), true)
   const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
   assert.equal(policy.reviews.draft.enabled, false)
@@ -29,7 +30,7 @@ test('a no-git project locks apply review off even when settings enable it', asy
   const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
   await call(fake, 'openspec_new_change', { name: 'add-no-git-apply' })
   const policy = JSON.parse(readFileSync(
-    join(root, 'openspec', '.review', 'local#add-no-git-apply', 'policy.json'),
+    join(reviewDirectory(root, undefined, 'add-no-git-apply'), 'policy.json'),
     'utf8',
   ))
   assert.equal(policy.git.enabled, false)
@@ -42,7 +43,7 @@ test('a git project locks apply review from the settings', async () => {
   const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
   await call(fake, 'openspec_new_change', { name: 'add-git-apply' })
   const policy = JSON.parse(readFileSync(
-    join(root, 'openspec', '.review', 'local#add-git-apply', 'policy.json'),
+    join(reviewDirectory(root, undefined, 'add-git-apply'), 'policy.json'),
     'utf8',
   ))
   assert.equal(policy.git.enabled, true)
@@ -958,6 +959,7 @@ test('apply refuses a seal commit without a change-directory file', async () => 
   await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
   run(['add', `openspec/changes/${CHANGE}`])
   run(['commit', '-m', 'seal the change'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
   run(['add', 'openspec/.gitignore'])
   run(['commit', '-m', 'ignore only'])
   await assert.rejects(

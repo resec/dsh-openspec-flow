@@ -151,23 +151,23 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 
 ## 记录布局
 
-评审记录放在变更目录之外，归档后仍保留。评审目录由 `git check-ignore` 判断是否已被忽略：已被仓库级规则忽略时，插件不再写 `openspec/.gitignore`；未被忽略时才写；无 git 项目仍写，检查失败时保守写。
+评审记录放在变更目录之外，归档后仍保留。git 项目的共享记录根位于 git common directory 内，既不写 `openspec/.gitignore` 也不运行 `git check-ignore`；旧记录根与非 git 项目才按 `git check-ignore` 判断：已被仓库级规则忽略时不写 `openspec/.gitignore`，未被忽略时才写，检查失败时保守写。
 
 | 路径 | 内容 |
 | --- | --- |
-| `openspec/.review/<store>#<change>/policy.json` | 锁定的评审策略 |
-| `openspec/.review/<store>#<change>/intent.md` | 首轮 `start` 写入的 draft 意图文本；`resume` 只读取，不修改 |
-| `openspec/.review/<store>#<change>/review.json` | draft review 记录 |
-| `openspec/.review/<store>#<change>/apply-review.json` | apply review 记录 |
-| `openspec/.review/<store>#<change>/plan-change-waiver.json` | apply 阶段规划变更的用户豁免：原文、批准者、时间与文件清单 |
-| `openspec/.review/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
-| `openspec/.review/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
-| `openspec/.review/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
-| `openspec/.review/<store>#<change>/cards/<sessionKey>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
-| `openspec/.review/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
+| `<reviewRoot>/<store>#<change>/policy.json` | 锁定的评审策略 |
+| `<reviewRoot>/<store>#<change>/intent.md` | 首轮 `start` 写入的 draft 意图文本；`resume` 只读取，不修改 |
+| `<reviewRoot>/<store>#<change>/review.json` | draft review 记录 |
+| `<reviewRoot>/<store>#<change>/apply-review.json` | apply review 记录 |
+| `<reviewRoot>/<store>#<change>/plan-change-waiver.json` | apply 阶段规划变更的用户豁免：原文、批准者、时间与文件清单 |
+| `<reviewRoot>/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
+| `<reviewRoot>/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
+| `<reviewRoot>/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
+| `<reviewRoot>/<store>#<change>/cards/<sessionKey>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
+| `<reviewRoot>/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
-`<store>#` 在无 store 时为 `local#`。评审根通过 `openspec/.gitignore` 的 `.review/` 行忽略；有 git 的项目在写记录前用 `git check-ignore` 校验，无法忽略时拒绝写入。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
+`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
 
 ## 失败处理
 

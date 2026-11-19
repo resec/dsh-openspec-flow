@@ -205,7 +205,7 @@ CI green is necessary but not sufficient. The maintainer also reviews the change
 
 - The maintainer reviews every external pull request.
 - The draft review runs before merge. Because the change and its implementation arrive together, the draft review reviews the committed change artifacts and the pull request intent; it is not a pre-implementation gate for an external contributor.
-- If you have the plugin, you may run a draft review locally and paste its report into the pull request. The review record stays under `openspec/.review/` and is not committed. It is optional; the maintainer still records the review.
+- If you have the plugin, you may run a draft review locally and paste its report into the pull request. The review record stays outside the worktree in a git project (under the git common directory) or under `openspec/.review/` without git, and is not committed. It is optional; the maintainer still records the review.
 - The merge commit may carry the active change. After merge, the maintainer runs the apply review and archives the change. Do not archive it in the pull request.
 - Local review records, profile state and plugin installation are never required in the pull request.
 
@@ -218,4 +218,4 @@ CI green is necessary but not sufficient. The maintainer also reviews the change
 
 ## Using the plugin locally (optional)
 
-If you already have DSH and `dsh-openspec-flow` installed, you may use `openspec_new_change`, `openspec_mark_task_done` and `openspec_review` instead of the CLI and hand-edited checkboxes. The pull request must still carry the change artifacts, the checked `tasks.md`, the code and the test evidence; nothing under `openspec/.review/` is committed.
+If you already have DSH and `dsh-openspec-flow` installed, you may use `openspec_new_change`, `openspec_mark_task_done` and `openspec_review` instead of the CLI and hand-edited checkboxes. The pull request must still carry the change artifacts, the checked `tasks.md`, the code and the test evidence; review records are never committed.

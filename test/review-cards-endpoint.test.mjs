@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { compareCards, createReviewChannel } from '../lib/review/settings.js'
 import { sessionKeyOf } from '../lib/review/cards.js'
+import { reviewDirectory } from '../lib/review/store.js'
 
 /** Build a project, a review directory and the channel. */
 function fixture(options = {}) {
@@ -433,5 +435,35 @@ test('a request without a turn end resets the watermark to now', async () => {
     )
   } finally {
     rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+
+test('legacy cards remain readable until migration and are suppressed after removal', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-legacy-'))
+  const legacy = join(root, 'openspec', '.review', 'local#demo')
+  mkdirSync(join(legacy, 'cards'), { recursive: true })
+  execFileSync('git', ['-C', root, 'init', '-q'])
+  const channel = createReviewChannel({
+    ctx: {
+      get(name) {
+        if (name === 'agents') return { list: () => [{ session: { id: 'changer' } }] }
+        if (name === 'workingDirectory') return { get: () => root }
+        return undefined
+      },
+      logger: { warn: () => {} },
+    },
+    settings: { timeoutMs: 1000, reviews: { draft: {}, apply: {} } },
+  })
+  try {
+    cardFile(legacy)
+    const before = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(before.value.cards.length, 1)
+    const shared = reviewDirectory(root, null, 'demo')
+    rmSync(shared, { recursive: true, force: true })
+    const after = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 2 })
+    assert.deepEqual(after.value.cards, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

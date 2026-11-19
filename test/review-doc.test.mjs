@@ -130,6 +130,10 @@ export function checkDocument(text, spec) {
   }
   if (text.includes('maxRounds')) problems.push('names the removed round cap maxRounds')
   if (!text.includes(spec.record.root)) problems.push(`missing record root ${spec.record.root}`)
+  if (!text.includes('<git common dir>/openspec-flow/review')) problems.push('missing shared record root')
+  if (!text.includes('@root-')) problems.push('missing nested-root suffix')
+  if (!text.includes('.migrated')) problems.push('missing migration marker')
+  if (!text.includes('既不写 `openspec/.gitignore` 也不运行 `git check-ignore`')) problems.push('missing shared-root ignore skip')
   if (!text.includes('<store>#<change>')) problems.push('missing record key <store>#<change>')
   for (const name of [spec.record.draftFile, spec.record.applyFile, spec.record.waiverFile]) {
     if (!text.includes(name)) problems.push(`missing record file ${name}`)
