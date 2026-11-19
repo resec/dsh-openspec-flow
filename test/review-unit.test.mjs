@@ -24,7 +24,7 @@ import {
   writeJsonAtomic,
 } from '../lib/review/store.js'
 import { normalizeReviews, draftSettings } from '../lib/review/config.js'
-import { buildDraftBrief } from '../lib/review/brief.js'
+import { buildDraftBrief, renderReportContract } from '../lib/review/brief.js'
 import { diffArtifactFiles, draftObject } from '../lib/review/object.js'
 import {
   applyVerificationsTo,
@@ -156,12 +156,49 @@ test('the brief names the axes and the report contract', () => {
     intentHash: object.intentHash,
     files: object.files,
     projectRoot: root,
+    round: 1,
   })
   assert.match(brief, /Draft review brief/)
+  assert.match(brief, /"id": "R1-01"/)
+  assert.match(brief, /"verifications": \[\]/)
+  assert.match(brief, /`title`/)
+  assert.match(brief, /review prompts, not report values/)
+  assert.match(brief, /verified-fixed, still-open, regressed/)
+  assert.match(brief, /required only for `critical` and `major`/)
+  assert.equal(brief.split('A finding carries').length - 1, 1)
+  assert.equal(brief.split('After you submit').length - 1, 1)
+  assert.equal(brief.split('A `pass` verdict cannot').length - 1, 1)
   assert.match(brief, /Coherence/)
   assert.match(brief, /Intent fit/)
   assert.match(brief, /"verdict"/)
   assert.doesNotMatch(brief, /\bCLI\b/i)
+})
+
+test('the report contract follows the round and the recorded findings', () => {
+  const { root, changeRoot } = changeFixture()
+  const object = draftObject(changeRoot, 'goal')
+  const base = {
+    change: 'demo',
+    objectHash: object.objectHash,
+    intentHash: object.intentHash,
+    files: object.files,
+    projectRoot: root,
+  }
+  const second = buildDraftBrief({ ...base, round: 2, findings: [] })
+  assert.match(second, /"id": "R2-01"/)
+  assert.doesNotMatch(second, /R1-01/)
+  const withFixed = buildDraftBrief({ ...base, round: 2, findings: [{ id: 'R1-01', status: 'fixed' }] })
+  assert.match(withFixed, /"verifications": \[\{ "id": "R1-01"/)
+  const noEligible = buildDraftBrief({ ...base, round: 2, findings: [{ id: 'R1-01', status: 'verified' }] })
+  assert.match(noEligible, /"verifications": \[\]/)
+  assert.doesNotMatch(noEligible, /"verifications": \[\{/)
+  assert.throws(() => buildDraftBrief(base), /positive integer round/)
+  assert.throws(() => buildDraftBrief({ ...base, round: 0 }), /positive integer round/)
+  assert.throws(
+    () => renderReportContract({ round: 1, locationHint: ' ' }),
+    /location hint/,
+  )
+  assert.throws(() => renderReportContract({ round: 1 }), /location hint/)
 })
 
 test('report validation rejects malformed findings and contradictory verdicts', () => {
@@ -289,6 +326,7 @@ test('the draft brief renders the requirement length section', () => {
     intentHash: object.intentHash,
     files: object.files,
     projectRoot: root,
+    round: 1,
     requirementLength: {
       limit: 500,
       blocking: true,
@@ -388,6 +426,7 @@ test('the brief lists a related main spec when it exists', () => {
     intentHash: object.intentHash,
     files: object.files,
     projectRoot: root,
+    round: 1,
   })
   assert.match(brief, /Related main specs/)
   assert.match(brief, /openspec\/specs\/theme\/spec\.md/)

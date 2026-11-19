@@ -852,6 +852,8 @@ test('the reviewer entry fails closed when the initial restriction throws', () =
 test('buildApplyBrief records the host validation and handles its absent branch', () => {
   const base = {
     change: CHANGE,
+    round: 1,
+    findings: [],
     commitSha: 'a'.repeat(40),
     treeSha: 'b'.repeat(40),
     baseCommit: 'd'.repeat(40),
@@ -875,6 +877,16 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   )
   assert.match(buildApplyBrief({ ...base, validation: { strict: true, issues: [] } }), /- \(none\)/)
   const seal = buildApplyBrief({ ...base, validation: { strict: true, issues: [] } })
+  assert.match(seal, /"id": "R1-01"/)
+  assert.match(seal, /"verifications": \[\]/)
+  assert.match(seal, /repository-relative path and line/)
+  assert.match(seal, /`title`/)
+  assert.match(seal, /review prompts, not report values/)
+  assert.match(seal, /verified-fixed, still-open, regressed/)
+  assert.match(seal, /required only for `critical` and `major`/)
+  assert.equal(seal.split('A finding carries').length - 1, 1)
+  assert.equal(seal.split('After you submit').length - 1, 1)
+  assert.equal(seal.split('A `pass` verdict cannot').length - 1, 1)
   assert.match(seal, /^- base: d{40}$/m)
   assert.match(seal, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
   assert.match(seal, /The diff starts at the base tree/)
@@ -889,6 +901,33 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   const merge = buildApplyBrief({ ...base, baseSource: 'merge-base', validation: { strict: true, issues: [] } })
   assert.match(merge, /git merge-base HEAD origin\/main/)
   assert.match(merge, /no seal commit was recorded/)
+})
+
+test('the apply brief verifies a recorded fixed finding', () => {
+  const base = {
+    change: CHANGE,
+    commitSha: 'a'.repeat(40),
+    treeSha: 'b'.repeat(40),
+    baseCommit: 'd'.repeat(40),
+    baseSource: 'seal',
+    baseTreeSha: 'c'.repeat(40),
+    diffPath: 'apply-round-2/diff.patch',
+    changedPaths: [],
+  }
+  const brief = buildApplyBrief({
+    ...base,
+    round: 2,
+    findings: [{ id: 'R1-01', status: 'fixed' }],
+    validation: { strict: true, issues: [] },
+  })
+  assert.match(brief, /"id": "R2-01"/)
+  assert.match(brief, /"verifications": \[\{ "id": "R1-01"/)
+  assert.match(
+    buildApplyBrief({ ...base, round: 1, validation: { strict: true, issues: [] } }),
+    /"verifications": \[\]/,
+  )
+  assert.throws(() => buildApplyBrief(base), /positive integer round/)
+  assert.throws(() => buildApplyBrief({ ...base, round: 0 }), /positive integer round/)
 })
 
 test('the reviewer preset tool names match the declaration', () => {
