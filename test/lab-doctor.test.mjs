@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkCjkFont, checkPnpm, formatDoctor, PNPM_VERSION, runDoctor } from '../scripts/lab/core/doctor.mjs'
@@ -82,8 +82,9 @@ test('a missing fc-list returns a correction-oriented failure', () => {
   assert.match(check.detail, /FONTCONFIG_FILE|CJK font/)
 })
 
-test('a missing CJK font names the package CI installs', () => {
+test('a missing CJK font names the package CI installs', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'openspec-cjk-font-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
   const bin = join(dir, 'fc-list')
   writeFileSync(bin, '#!/bin/sh\nexit 0\n')
   chmodSync(bin, 0o755)
