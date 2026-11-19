@@ -22,7 +22,7 @@
 
 - [x] 4.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change; verify it reports no warnings.
 - [x] 4.2 Run `npm run test:affected -- lib/tools/review.js lib/review/store.js lib/review/policy.js lib/review/apply-lock.js` and then `npm run verify` with Node 24 from `.cache/toolchain/node/bin`; verify the summary and coverage pass.
-- [ ] 4.3 Commit the implementation, then run the apply review and confirm it is ready before archive.
+- [x] 4.3 Commit the implementation, then run the apply review and confirm it is ready before archive.
 
 ## Workflow follow-up
 
