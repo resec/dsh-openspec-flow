@@ -68,17 +68,27 @@ test('the lab job provisions the pinned pnpm before npm ci', () => {
 })
 
 test('every action reference uses the Node 24 major', () => {
+  const allowed = new Set([
+    'actions/checkout@v7',
+    'actions/setup-node@v7',
+    'actions/cache@v6',
+    'pnpm/action-setup@v6',
+  ])
+  const references = [...WORKFLOW.matchAll(/uses:\s*(\S+)/g)].map((match) => match[1])
+  assert.equal(references.length, 7, 'the workflow has seven uses references')
+  for (const reference of references) {
+    assert.ok(allowed.has(reference), `${reference} is not an allowlisted Node 24 action reference`)
+  }
   for (const [reference, count] of [
     ['actions/checkout@v7', 2],
     ['actions/setup-node@v7', 2],
     ['actions/cache@v6', 2],
     ['pnpm/action-setup@v6', 1],
   ]) {
-    const escaped = reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const found = WORKFLOW.match(new RegExp(escaped, 'g')) ?? []
-    assert.equal(found.length, count, `${reference} must appear ${count} time(s)`)
-  }
-  for (const action of ['actions/checkout', 'actions/setup-node', 'actions/cache', 'pnpm/action-setup']) {
-    assert.doesNotMatch(WORKFLOW, new RegExp(`${action}@v[0-4]`), `${action} must not use a Node 20 major`)
+    assert.equal(
+      references.filter((entry) => entry === reference).length,
+      count,
+      `${reference} must appear ${count} time(s)`,
+    )
   }
 })
