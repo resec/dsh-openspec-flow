@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-19
+goal: "Any review brief the plugin hands to a reviewer states the report
+  contract for the current round: the finding id prefix and example, the
+  verification status enum, and when verifications are empty."
