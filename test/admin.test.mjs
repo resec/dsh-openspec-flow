@@ -13,6 +13,7 @@ import { createFakeContext } from './fake-context.mjs'
 
 const CORE_TOOLS = [
   'openspec_apply_next',
+  'openspec_apply_worktree',
   'openspec_archive',
   'openspec_inspect',
   'openspec_mark_task_done',
@@ -60,7 +61,7 @@ test('the block opens for one turn and closes when the agent returns to idle', (
   assert.equal(steered[0].source.kind, 'user')
 
   const openNames = visibleTools(fake, agent)
-  assert.equal(openNames.length, 9)
+  assert.equal(openNames.length, 10)
   for (const name of ADMIN_TOOLS) assert.ok(openNames.includes(name), `${name} is visible while open`)
 
   fake.setStatus(agent, 'running')
@@ -120,7 +121,7 @@ test('a host without a command registry keeps every tool visible', () => {
   assert.equal(fake.commands.length, 0)
   const { agent } = fake.createAgent()
   assert.equal(fake.toolOptions.get('openspec_init').when({ agent }), true)
-  assert.equal(visibleTools(fake, agent).length, 9)
+  assert.equal(visibleTools(fake, agent).length, 10)
   resetAdminState()
 })
 
@@ -156,6 +157,6 @@ test('a command registry without register keeps every tool visible', () => {
   apply(fake.ctx, {})
 
   const { agent } = fake.createAgent()
-  assert.equal(visibleTools(fake, agent).length, 9)
+  assert.equal(visibleTools(fake, agent).length, 10)
   resetAdminState()
 })

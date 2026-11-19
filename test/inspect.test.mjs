@@ -76,7 +76,7 @@ test.after(() => {
 test('registers one read entry and no former read tools', () => {
   const fake = setup()
   const names = [...fake.tools.keys()]
-  assert.equal(names.length, 9)
+  assert.equal(names.length, 10)
   assert.ok(names.includes('openspec_inspect'))
   for (const old of ['openspec_list', 'openspec_status', 'openspec_show', 'openspec_instructions', 'openspec_context', 'openspec_validate']) {
     assert.ok(!names.includes(old), `${old} is not registered`)
@@ -97,6 +97,8 @@ test('rejects a missing required parameter before the read starts', async () => 
   await assert.rejects(inspect(fake, 'status', {}), /Action 'status' requires 'change'\./)
   await assert.rejects(inspect(fake, 'show', {}), /Action 'show' requires 'name'\./)
   await assert.rejects(inspect(fake, 'instructions', { change: CHANGE }), /Action 'instructions' requires 'artifact'\./)
+  await assert.rejects(inspect(fake, 'worktree', {}), /Action 'worktree' requires 'change'\./)
+  await assert.rejects(inspect(fake, 'worktree', { change: CHANGE, artifact: 'proposal' }), /'artifact' is only valid for the instructions action\./)
   assert.equal(fake.stats.spawns, 0)
 })
 
@@ -108,7 +110,7 @@ test('rejects a parameter owned by another action', async () => {
   )
   await assert.rejects(
     inspect(fake, 'context', { change: CHANGE }),
-    /'change' is only valid for the status, instructions or validate action\./,
+    /'change' is only valid for the status, instructions, validate or worktree action\./,
   )
   assert.equal(fake.stats.spawns, 0)
 })
@@ -131,6 +133,7 @@ test('every action matches exactly one output branch', async () => {
     context: await inspect(fake, 'context'),
     validate: await inspect(fake, 'validate', { change: CHANGE }),
     validateSpecs: await inspect(fake, 'validate', { scope: 'specs' }),
+    worktree: await inspect(fake, 'worktree', { change: CHANGE }),
   }
   for (const [action, result] of Object.entries(results)) {
     assert.equal(matches(schema, result), true, `${action} matches exactly one branch`)

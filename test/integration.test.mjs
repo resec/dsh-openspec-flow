@@ -16,6 +16,7 @@ const CHANGE = 'add-dark-mode'
 const CHANGE_DIR = 'openspec/changes/add-dark-mode'
 const TOOL_NAMES = [
   'openspec_apply_next',
+  'openspec_apply_worktree',
   'openspec_archive',
   'openspec_init',
   'openspec_inspect',

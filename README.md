@@ -1,12 +1,12 @@
 # dsh-openspec-flow
 
-DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 工具完成 propose、new、inspect、draft review、apply、archive 与 init，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 6 个工具属于核心变更流程并默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
+DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 10 个 `openspec_*` 工具完成 propose、new、inspect、draft review、apply、archive、init 与 apply worktree 锁恢复，不再手敲 `openspec` 命令。OpenSpec CLI 仍是 schema、root、store、校验与归档语义的权威，由插件在内部调用。其中 7 个工具默认暴露，3 个管理工具只在用户运行 `/opsx-admin` 后对当次回合暴露。
 
 ## 能力
 
 | 分组 | 工具 | 作用 |
 | --- | --- | --- |
-| 读 | `openspec_inspect` | 单一读入口；`action` 选择 `list`（`specs: true` 列能力规格）、`status`、`show`、`instructions`、`context` 或 `validate` |
+| 读 | `openspec_inspect` | 单一读入口；`action` 选择 `list`（`specs: true` 列能力规格）、`status`、`show`、`instructions`、`context`、`validate` 或 `worktree` |
 | 管理 | `openspec_schemas` | 列出插件支持的 schema；仅内置 `spec-driven`；管理块，`/opsx-admin` 后可见 |
 | 管理 | `openspec_store_list` | 列出已注册 store；管理块，`/opsx-admin` 后可见 |
 | 写 | `openspec_new_change` | 创建变更目录与 `.openspec.yaml`；先检查项目 schema，不支持则拒绝 |
@@ -16,6 +16,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 9 个 `openspec_*` 
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply`；另接受可选 `base` 与可选 `baseline`（apply review 基线：默认 `draft`，`none` 用于没有 draft 记录的已提交分支且要求非空 `base`；draft 段禁用时显式 `draft` 被拒绝；空白 `base` 忽略） |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
+| apply worktree | `openspec_apply_worktree` | `action: "recover"`：按 `scope`（`lifecycle` 或 `change`）与 `expectedOwner` token 恢复死锁；状态与锁健康用 `openspec_inspect` 的 `action: "worktree"` 查看，只读；不创建、删除或 land worktree |
 
 评审轮次由插件信息卡汇报：`self-report`、reviewer `submit`、`wait`、`report`、`resume` 与处置完成时写入 `cards/<sessionKey>-<phase>-<round>.json`；客户端通过 `reviewCards/get` 按 turn 查询并携带该 turn 的起止时间，写入时间晚于 turn 结束的卡片留给后续 turn，同一 turn 的卡片按写入时间排序。卡片在回合末尾显示，默认折叠，展开包含完整报告正文与 plan-change waiver。卡片不写入会话日志、不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件不依赖 `@deepseek-ai/*` 包。
 
@@ -65,7 +66,7 @@ finding 处置可一次调用 `dispositions` 批量完成：`dispose` 与 findin
 
 ## CLI 对照
 
-对照对象为插件内置的 OpenSpec 2.0.0 CLI 与插件注册的 9 个工具。命令与选项清单来自 [tag v2.0.0 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v2.0.0/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
+对照对象为插件内置的 OpenSpec 2.0.0 CLI 与插件注册的 10 个工具。命令与选项清单来自 [tag v2.0.0 的 CLI 参考](https://github.com/Fission-AI/OpenSpec/blob/v2.0.0/docs-lab/reference/cli.md)，并以本机 `openspec --help` 逐条核对；参考文件按 tag 固定，不随上游文档变化。已废弃的 `openspec change` 与 `openspec spec` 不在对照范围内；「不支持」表示插件没有对应工具，命令仍可在终端执行。
 
 「命令性质」按读写对象标注：`规格读` 读取变更、主规格或生成它们所需的工作流元数据；`规格写` 创建变更内容，或写入、移动主规格与变更目录；`Store 管理` 管理本机 store 注册与 store 目录；`Workset 管理` 管理本机个人工作视图；`OpenSpec 管理` 管理项目初始化、工具集成、全局配置、schema 定义、CLI 版本检查/安装/补全/反馈；`只读诊断` 只读根、store 引用或工作上下文。分组命令（`config`、`schema`、`store`、`workset`、`completion`）按域标注，不拆分读写子命令；`context --code-workspace` 是唯一会写文件的例外。这里的「只读」指不写规格内容，不代表 CLI 进程没有任何 I/O。
 
@@ -347,6 +348,7 @@ skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
 docs/review.md           评审系统完整说明（不进入发布包）
+docs/apply-worktree.md   apply worktree 状态、锁、检查与恢复（不进入发布包）
 docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```
