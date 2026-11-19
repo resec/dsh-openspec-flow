@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-19
+goal: Independent reviews stop delivering review cards to the changer session
+  (including legacy cards); self reviews keep their review card. The collapsed
+  summary shows the change name before the review kind when recorded.
