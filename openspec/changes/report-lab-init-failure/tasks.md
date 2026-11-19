@@ -7,7 +7,7 @@
 
 ## 2. Guard the behaviour
 
-- [x] 2.1 Add `test/lab-process.test.mjs`: an over-long output keeps its first line and its last line and carries the marker; an output within the budget arrives unchanged; the retained text does not grow with a much larger output; a non-string input summarizes to an empty string. Verify with `node --test test/lab-process.test.mjs`.
+- [x] 2.1 Add `test/lab-process.test.mjs`: an over-long output keeps its first line and its last line and carries the marker; an output within the budget arrives whole; the retained text does not grow with a much larger output; a non-string input summarizes to an empty string. Verify with `node --test test/lab-process.test.mjs`.
 - [x] 2.2 Confirm the new test fails against the previous tail-only behaviour, then passes against the helper. Verify by temporarily reverting the assertion target in a scratch run and observing the red result. Observed: with the tail-only slice four cases failed; with the helper all pass.
 
 ## 3. Validate the change
@@ -23,6 +23,14 @@
 - [x] 4.3 Cover the message builder apart from the split (`profileInitFailure`), replace the `deepEqual` on numbers with `equal`, and drop the repeated `startsWith` assertions. Verify with `node --test test/lab-process.test.mjs`.
 - [x] 4.4 State the whitespace rule in the delta spec and stop claiming the message starts or ends with the output, because the profile name prefixes it and the artifact path follows it. Verify with `openspec validate report-lab-init-failure --strict`.
 - [x] 4.5 Run `npm run layout:check` and record its result, as `CONTRIBUTING.md` asks before a push. Verify by the exit status.
+
+## 5. Close the second review
+
+- [x] 5.1 Move the write behind `recordProfileInitFailure` in `scripts/lab/core/profile-init.mjs`, so the persistence has a seam a test can drive with a temporary directory. Verify with `node --test test/lab-profile-init.test.mjs`, and by deleting the write to observe all three cases fail.
+- [x] 5.2 Degrade instead of masking: a rejected write returns the message without a file path. Verify with the write-failure case against an absent directory.
+- [x] 5.3 Replace the unreachable `Math.min` guard with an exported `OUTPUT_SUMMARY_HEAD`, assert the head-below-limit invariant in the tests, and return the output whole when a summary would not shorten it. Verify with the boundary cases at `OUTPUT_SUMMARY_LIMIT + 1` and at `OUTPUT_SUMMARY_LIMIT + marker + 1`.
+- [x] 5.4 Keep an empty output readable as `no output` rather than a bare colon. Verify with the empty-output case.
+- [x] 5.5 Name `init-<mode>.log` in `docs/lab.md`, restore the Non-Goal about other lab error messages, and align the proposal with the two requirements. Verify with `npm test` and `openspec validate report-lab-init-failure --strict`.
 
 ## Workflow follow-up
 
