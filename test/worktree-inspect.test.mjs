@@ -74,6 +74,11 @@ test('worktree inspection is read-only and reports ready state', async () => {
   assert.equal(result.state.valid, true)
   assert.equal(result.worktree.exists, true)
   assert.deepEqual(result.locks.map((entry) => entry.held), [false, false])
+  const branch = fake.tools.get('openspec_inspect').output.schema.oneOf.find((entry) => entry.properties?.repair !== undefined)
+  assert.ok(branch, 'the worktree output branch exists')
+  for (const lock of result.locks) {
+    for (const key of Object.keys(lock)) assert.ok(key in branch.properties.locks.items.properties, `lock field ${key} is declared`)
+  }
   assert.equal(result.repair.action, 'none')
   assert.equal('cache' in result, false)
   assert.equal('profile' in result, false)

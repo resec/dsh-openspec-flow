@@ -38,7 +38,7 @@ Release removes the directory only when the caller's token still matches. A chan
 ```text
 status: ready | repair-required | unavailable
 state: { path, exists, valid, error?, change?, store?, worktree?, branch?, status? }
-locks: [{ scope, path, held, owner?, alive? }]
+locks: [{ scope, path, held, state?, reason?, owner?, alive? }]
 worktree: { path?, exists }
 repair: { action: none | recover | manual, scope?, expectedOwner?, message? }
 ```
