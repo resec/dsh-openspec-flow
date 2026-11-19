@@ -120,16 +120,19 @@ export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, hea
   const names = activeChangeNames(paths)
   if (names.length === 0) {
     errors.push('the pull request must add or update an active change under openspec/changes/<name>/')
-  }
-  for (const name of names) {
-    const tasks = tasksByChange[name]
-    if (tasks === undefined) {
-      errors.push(`the change ${name} has no tasks.md`)
-      continue
-    }
-    const unchecked = uncheckedTasks(tasks)
-    if (unchecked.length > 0) {
-      errors.push(`the change ${name} has unchecked tasks: ${unchecked.map((task) => task.id).join(', ')}`)
+  } else if (names.length > 1) {
+    errors.push(`the pull request must touch exactly one active change; found: ${names.join(', ')}`)
+  } else {
+    for (const name of names) {
+      const tasks = tasksByChange[name]
+      if (tasks === undefined) {
+        errors.push(`the change ${name} has no tasks.md`)
+        continue
+      }
+      const unchecked = uncheckedTasks(tasks)
+      if (unchecked.length > 0) {
+        errors.push(`the change ${name} has unchecked tasks: ${unchecked.map((task) => task.id).join(', ')}`)
+      }
     }
   }
   for (const path of paths) {

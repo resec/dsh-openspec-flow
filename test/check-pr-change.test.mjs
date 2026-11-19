@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   activeChangeNames,
+  evaluateChange,
   hasDependencyChange,
   isActiveChangePath,
   isRestrictedPath,
@@ -49,6 +50,38 @@ test('rejects the restricted paths', () => {
   }
   assert.equal(isRestrictedPath('lib/tools/review.js'), false)
   assert.equal(isRestrictedPath('package.json'), false)
+})
+
+test('evaluateChange requires exactly one active change and keeps other diagnostics', () => {
+  const one = evaluateChange({
+    paths: ['openspec/changes/a/proposal.md'],
+    tasksByChange: { a: '- [x] 1.1 Done' },
+  })
+  assert.deepEqual(one, [])
+
+  const zero = evaluateChange({ paths: ['lib/plugin.js'] })
+  assert.match(zero.join('\n'), /must add or update an active change/)
+
+  const two = evaluateChange({
+    paths: ['openspec/changes/a/proposal.md', 'openspec/changes/b/proposal.md'],
+  })
+  assert.match(two.join('\n'), /exactly one active change; found: a, b/)
+
+  const restricted = evaluateChange({
+    paths: [
+      'openspec/changes/a/proposal.md',
+      'openspec/changes/b/proposal.md',
+      '.github/workflows/ci.yml',
+    ],
+  })
+  assert.match(restricted.join('\n'), /exactly one active change; found: a, b/)
+  assert.match(restricted.join('\n'), /restricted path changed: \.github\/workflows\/ci\.yml/)
+
+  const unchecked = evaluateChange({
+    paths: ['openspec/changes/a/proposal.md'],
+    tasksByChange: { a: '- [ ] 1.1 Todo' },
+  })
+  assert.match(unchecked.join('\n'), /unchecked tasks: 1\.1/)
 })
 
 test('detects a dependency change but allows a scripts-only edit', () => {

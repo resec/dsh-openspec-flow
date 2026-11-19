@@ -74,6 +74,11 @@ test('CONTRIBUTING.md names the baseline guard and the coverage commands', () =>
   assert.match(CONTRIBUTING, /npm run coverage -- --report-only/)
 })
 
+test('CONTRIBUTING.md requires exactly one active change', () => {
+  assert.match(CONTRIBUTING, /exactly one active change/i)
+  assert.doesNotMatch(CONTRIBUTING, /at least one active change/i)
+})
+
 test('AGENTS.md scopes the push step to the maintainer', () => {
   const pushLine = AGENTS.split('\n').find((line) => line.includes('origin/main') && line.includes('push'))
   assert.ok(pushLine, 'AGENTS.md has no push step naming origin/main')

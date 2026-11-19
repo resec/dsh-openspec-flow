@@ -82,7 +82,7 @@ On macOS the default temporary directory is a symlink; the test entrypoints cano
 
 ## Change-first workflow
 
-Every pull request must carry at least one active change under `openspec/changes/<name>/`. The change is planned, implemented, tested and merged in the same pull request. Do not archive it in the pull request.
+Every pull request must carry exactly one active change under `openspec/changes/<name>/`. The change is planned, implemented, tested and merged in the same pull request. Do not archive it in the pull request.
 
 1. Open an issue using the bug or task template. State the reproduction, expected behavior, acceptance commands and the paths you expect to touch.
 2. Create the change:

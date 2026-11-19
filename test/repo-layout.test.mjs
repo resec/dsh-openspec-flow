@@ -9,6 +9,13 @@ import { PROBE_ROOT } from './review-fixtures.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
+test('the root and nested ignore rules cover review records', () => {
+  const rootIgnore = readFileSync(join(ROOT, '.gitignore'), 'utf8')
+  assert.match(rootIgnore, /^openspec\/\.review\/$/m)
+  const nestedIgnore = readFileSync(join(ROOT, 'openspec', '.gitignore'), 'utf8')
+  assert.match(nestedIgnore, /^\.review\/$/m)
+})
+
 test('the tracked tree carries no generated OpenSpec skill copies', (t) => {
   const result = spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
   if (result.error || result.status !== 0) {

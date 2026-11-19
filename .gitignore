@@ -26,5 +26,9 @@ dist/
 **/commands/opsx/
 **/commands/openspec/
 
+# Review records live in worktrees; the nested openspec/.gitignore stays the
+# project-level rule and this root entry covers branches that do not carry it
+openspec/.review/
+
 # OS metadata
 .DS_Store
