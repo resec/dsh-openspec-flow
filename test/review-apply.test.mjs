@@ -1045,3 +1045,316 @@ test('a started apply freezes draft dispositions and not apply ones', async () =
   const draftAfter = JSON.parse(readFileSync(draftFile, 'utf8'))
   assert.equal(draftAfter.findings[0].status, 'open')
 })
+
+test('a waiver records project-relative and absolute paths change-relative', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const changeRoot = join(root, 'openspec', 'changes', CHANGE)
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.',
+    files: [`openspec/changes/${CHANGE}/proposal.md`, join(changeRoot, 'tasks.md'), 'design.md'],
+  })
+  assert.deepEqual(waived.planChangeWaiver.files, ['design.md', 'proposal.md', 'tasks.md'])
+  const stored = JSON.parse(readFileSync(join(reviewDir(root), 'plan-change-waiver.json'), 'utf8'))
+  assert.deepEqual(stored.files, ['design.md', 'proposal.md', 'tasks.md'])
+})
+
+test('a second waiver normalizes a legacy recorded set', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  writeFileSync(join(reviewDir(root), 'plan-change-waiver.json'), `${JSON.stringify({
+    text: 'legacy',
+    approvedBy: 'user',
+    files: [`openspec/changes/${CHANGE}/proposal.md`, 'proposal.md'],
+    recordedAt: new Date().toISOString(),
+  })}\n`)
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved the task.', files: ['tasks.md'],
+  })
+  assert.deepEqual(waived.planChangeWaiver.files, ['proposal.md', 'tasks.md'])
+})
+
+test('a refused waiver entry names the entry and writes nothing', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive', scope: 'plan-change', change: CHANGE,
+      approvedBy: 'user', waiver: 'Approved.', files: ['../outside.md'],
+    }),
+    /refused these files:[\s\S]*\.\.\/outside\.md[\s\S]*outside the change directory/,
+  )
+  assert.equal(existsSync(join(reviewDir(root), 'plan-change-waiver.json')), false)
+  const filtered = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: [' design.md ', ''],
+  })
+  assert.deepEqual(filtered.planChangeWaiver.files, ['design.md'])
+})
+
+test('a legacy waiver with project-relative paths lets apply review start', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  writeFileSync(join(reviewDir(root), 'plan-change-waiver.json'), `${JSON.stringify({
+    text: 'legacy',
+    approvedBy: 'user',
+    files: [`openspec/changes/${CHANGE}/tasks.md`],
+    recordedAt: new Date().toISOString(),
+  })}\n`)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 2. More\n\n- [ ] 2.1 More work\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.review, 'apply')
+  assert.match(started.brief, /- files: tasks\.md/)
+})
+
+test('the unwaived error carries the change-relative example', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'design.md'), '# Design changed\n')
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 2. More\n\n- [ ] 2.1 More work\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /files: \["design\.md","tasks\.md"\][\s\S]*relative to the change directory/,
+  )
+})
+
+test('a legacy-form waiver lets a later apply round resume', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 2. More\n\n- [ ] 2.1 More work\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /needs a user waiver for the changed plan files: tasks\.md/,
+  )
+  await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: [`openspec/changes/${CHANGE}/tasks.md`],
+  })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(resumed.round, 2)
+})
+
+test('a legacy waiver with an unnormalizable entry does not block a covered start', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  writeFileSync(join(reviewDir(root), 'plan-change-waiver.json'), `${JSON.stringify({
+    text: 'legacy',
+    approvedBy: 'user',
+    files: ['openspec/changes/other-change/tasks.md', 'tasks.md'],
+    recordedAt: new Date().toISOString(),
+  })}\n`)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 2. More\n\n- [ ] 2.1 More work\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.review, 'apply')
+  assert.match(started.brief, /- files: tasks\.md/)
+})
+
+test('a waiver before the apply review does not claim coverage', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+  })
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /coverage is checked when the apply review starts/)
+})
+
+test('a waiver result names the uncovered drift', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Proposal changed\n')
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 2. More\n\n- [ ] 2.1 More work\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+  })
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /does not cover tasks\.md/)
+})
+
+test('a waiver that covers every drift file reports ready', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Proposal changed\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: [`openspec/changes/${CHANGE}/proposal.md`],
+  })
+  assert.equal(waived.ready, true)
+  assert.deepEqual(waived.reasons, [])
+})
+
+test('a waiver in a draft-disabled project is recorded without coverage', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'seal the draft'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', base,
+  })
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+  })
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /draft review is disabled or its record is missing/)
+  const stored = JSON.parse(readFileSync(join(reviewDir(root), 'plan-change-waiver.json'), 'utf8'))
+  assert.deepEqual(stored.files, ['proposal.md'])
+})
+
+test('a waiver with a legacy draft record without artifact files lists no artifact', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const recordPath = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(recordPath, 'utf8'))
+  delete record.artifactFiles
+  writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Proposal changed\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+  })
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /no per-file drift was recorded/)
+  assert.doesNotMatch(waived.reasons.join(' '), /does not cover/)
+})
+
+test('a store-backed waiver refuses the project-relative form and keeps change-relative', async () => {
+  const { root, run } = gitFixture()
+  const external = mkdtempSync(join(tmpdir(), 'openspec-flow-store-'))
+  const externalChange = join(external, 'changes', CHANGE)
+  try {
+    cpSync(join(root, 'openspec', 'changes', CHANGE), externalChange, { recursive: true })
+    const fake = setup(root)
+    const original = fake.ctx.subprocess.spawn
+    fake.ctx.subprocess.spawn = (spec) => {
+      if (spec.argv.includes('status') && spec.argv.includes('--change')) {
+        const payload = JSON.stringify({
+          root: { path: root },
+          changeRoot: externalChange,
+          changeName: CHANGE,
+          schemaName: 'spec-driven',
+        })
+        return {
+          done: Promise.resolve({ exitCode: 0, signal: undefined }),
+          collected: {
+            stdout: { readFrom: () => ({ text: payload, lossy: false }) },
+            stderr: { readFrom: () => ({ text: '', lossy: false }) },
+          },
+          terminate() {},
+          waitForExit() {
+            return Promise.resolve(true)
+          },
+        }
+      }
+      return original(spec)
+    }
+    await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+    await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+    const recordPath = join(reviewDir(root), 'review.json')
+    const record = JSON.parse(readFileSync(recordPath, 'utf8'))
+    record.applyBaseCommit = run(['rev-parse', 'HEAD'])
+    writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`)
+    await assert.rejects(
+      call(fake, 'openspec_review', {
+        action: 'waive', scope: 'plan-change', change: CHANGE,
+        approvedBy: 'user', waiver: 'Approved.', files: [`openspec/changes/${CHANGE}/proposal.md`],
+      }),
+      /refused these files:[\s\S]*change-relative or absolute/,
+    )
+    const waived = await call(fake, 'openspec_review', {
+      action: 'waive', scope: 'plan-change', change: CHANGE,
+      approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+    })
+    assert.deepEqual(waived.planChangeWaiver.files, ['proposal.md'])
+  } finally {
+    rmSync(external, { recursive: true, force: true })
+  }
+})
+
+test('a waiver after apply start with no drift reports no drift pending', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+  })
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /no drift is pending/)
+})
+
+test('a waiver whose coverage cannot be computed reports the error', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  rmSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'))
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['tasks.md'],
+  })
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /coverage could not be computed/)
+})
+
+test('a waiver accepts a file that does not exist yet', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.',
+    files: [`openspec/changes/${CHANGE}/specs/new-capability/spec.md`],
+  })
+  assert.deepEqual(waived.planChangeWaiver.files, ['specs/new-capability/spec.md'])
+})

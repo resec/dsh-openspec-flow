@@ -7,7 +7,7 @@ Defines the single user-facing review document and the checks that keep it align
 
 ### Requirement: The review document covers the whole review system
 
-`docs/review.md` SHALL describe in one place: the purpose of review, the draft and apply objects, the phase boundaries, concurrent draft reviews, the serial apply lock, reviewer modes and models, policy locking and configuration, the report and finding contract, severity, verdict, readiness, records, failure handling, and the no-git exception with the `policy`/`enabled`/`available` status fields.
+`docs/review.md` SHALL describe in one place: the purpose of review, the draft and apply objects, the phase boundaries, concurrent draft reviews, the serial apply lock, reviewer modes and models, policy locking and configuration, the report and finding contract, severity, verdict, readiness, records, failure handling, the no-git exception with the `policy`/`enabled`/`available` status fields, and the `mode`/`independent` fields with their derivation and recorded-value rule.
 
 #### Scenario: A reader starts from the document
 
@@ -61,6 +61,7 @@ Defines the single user-facing review document and the checks that keep it align
 
 - **WHEN** the reader reaches the status description
 - **THEN** it explains `policy`, `enabled` and `available`, including that unavailable takes precedence over an unset policy
+- **AND** it explains `mode` and `independent`: the locked `reviewers` value determines them for an enabled and available review, a disabled or unavailable review reports `self`/`false`, and a recorded review reports its recorded values
 
 #### Scenario: The document explains the frozen reviewer
 

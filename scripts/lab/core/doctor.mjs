@@ -177,7 +177,7 @@ export function checkCjkFont(env = process.env, platform = process.platform) {
     return { name: 'cjk-font', status: 'fail', detail: `fc-list :lang=zh failed; install a CJK font or set FONTCONFIG_FILE` }
   }
   if (result.stdout.trim() === '') {
-    return { name: 'cjk-font', status: 'fail', detail: 'no CJK font found; install Noto Sans CJK or set FONTCONFIG_FILE' }
+    return { name: 'cjk-font', status: 'fail', detail: 'no CJK font found; install fonts-wqy-zenhei or set FONTCONFIG_FILE' }
   }
   return { name: 'cjk-font', status: 'ok', detail: result.stdout.split('\n')[0] }
 }

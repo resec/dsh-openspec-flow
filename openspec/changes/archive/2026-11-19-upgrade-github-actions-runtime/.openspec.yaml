@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-19
+goal: The CI workflow uses actions/checkout@v7, actions/setup-node@v7,
+  actions/cache@v6 and pnpm/action-setup@v6, all of which declare the Node 24
+  runtime; the workflow test asserts all four versions so a regression to a Node
+  20 release fails the suite.

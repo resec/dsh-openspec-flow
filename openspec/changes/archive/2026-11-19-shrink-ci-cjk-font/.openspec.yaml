@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-19
+goal: The CI lab job installs a CJK font package small enough that the download
+  no longer dominates the job (fonts-wqy-zenhei instead of fonts-noto-cjk), the
+  workflow test asserts the chosen package, and the doctor names the same
+  package in its missing-font message.

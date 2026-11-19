@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-18
+goal: An apply review start or resume accepts a waiver recorded with any
+  supported path form, and never reports a waiver as recorded when none of its
+  files cover the drift.
