@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-19
+goal: Keep review records out of the worktree without relying on the nested
+  ignore file, and reject a pull request that carries more than one active
+  change.
