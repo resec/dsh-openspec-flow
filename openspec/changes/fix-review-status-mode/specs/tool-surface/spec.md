@@ -49,3 +49,8 @@
 
 - **WHEN** a review record exists with `mode: "reviewer"` and `independent: true`
 - **THEN** the status reports those recorded values even when the policy would now resolve differently
+
+#### Scenario: An unreadable policy fails both status kinds
+
+- **WHEN** the locked `policy.json` cannot be parsed
+- **THEN** draft status and apply status both fail with the parse error

@@ -27,7 +27,7 @@ The `tool-surface` status requirement specifies `policy`, `enabled` and `availab
 ## Impact
 
 - Code: `lib/tools/review.js` (`projectReview` and the `reviewStatus` branches).
-- Tests: `test/review-apply.test.mjs`, `test/review-draft.test.mjs`, `test/review-doc.test.mjs`.
+- Tests: `test/review-status-mode.test.mjs`, `test/review-doc.test.mjs`.
 - Docs: `docs/review.md`.
 - No review record schema, tool parameter, card payload, dependency or `dist/` change.
 

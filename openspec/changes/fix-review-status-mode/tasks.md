@@ -25,7 +25,7 @@
 
 ## 4. Integration
 
-- [x] 4.1 Run `node --test test/review-apply.test.mjs test/review-draft.test.mjs test/review-doc.test.mjs` on Node 24 and verify every test passes.
+- [x] 4.1 Run `node --test test/review-status-mode.test.mjs test/review-doc.test.mjs` on Node 24 and verify every test passes.
 - [x] 4.2 Run `npm run verify` on Node 24 and verify the test summary and the coverage verdict both pass.
 - [x] 4.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and verify the change passes.
 

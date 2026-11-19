@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
@@ -58,6 +58,7 @@ test('a disabled apply policy keeps self mode', async () => {
   assert.equal(status.mode, 'self')
   assert.equal(status.independent, false)
   assert.equal(status.enabled, false)
+  assert.equal(status.nextAction, 'openspec_archive')
 })
 
 test('a disabled draft policy keeps self mode', async () => {
@@ -70,6 +71,7 @@ test('a disabled draft policy keeps self mode', async () => {
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'draft' })
   assert.equal(status.mode, 'self')
   assert.equal(status.independent, false)
+  assert.equal(status.nextAction, 'openspec_review action=start review=draft')
 })
 
 test('a no-git project keeps self mode for apply status', async () => {
@@ -138,4 +140,19 @@ test('apply status reports self mode for reviewers 0', async () => {
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
   assert.equal(status.mode, 'self')
   assert.equal(status.independent, false)
+})
+
+test('a recorded reviewer review keeps its mode when the policy is absent', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false, reviewers: 0 } })
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const recordPath = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(recordPath, 'utf8'))
+  record.mode = 'reviewer'
+  record.independent = true
+  writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`)
+  rmSync(join(reviewDir(root), 'policy.json'))
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'draft' })
+  assert.equal(status.mode, 'reviewer')
+  assert.equal(status.independent, true)
 })
