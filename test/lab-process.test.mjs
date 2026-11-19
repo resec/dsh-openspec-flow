@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  OUTPUT_SUMMARY_HEAD,
   OUTPUT_SUMMARY_LIMIT,
   OUTPUT_SUMMARY_MARKER,
   profileInitFailure,
@@ -25,15 +26,33 @@ function bootFailure(lines = 200) {
   return body.join('\n')
 }
 
+test('the head share leaves room for the tail', () => {
+  assert.ok(OUTPUT_SUMMARY_HEAD >= 1)
+  assert.ok(OUTPUT_SUMMARY_HEAD < OUTPUT_SUMMARY_LIMIT)
+})
+
 test('an output within the budget is returned whole', () => {
   const text = `${CAUSE}\n  code: EIO\n${LAST_LINE}`
   assert.equal(summarizeOutput(text), text)
 })
 
-test('an output exactly at the budget keeps no marker', () => {
+test('an output at the budget keeps no marker', () => {
   const text = 'x'.repeat(OUTPUT_SUMMARY_LIMIT)
   assert.equal(summarizeOutput(text), text)
   assert.equal(summarizeOutput(text).includes(OUTPUT_SUMMARY_MARKER), false)
+})
+
+test('an output the summary would not shorten is returned whole', () => {
+  const text = 'x'.repeat(OUTPUT_SUMMARY_LIMIT + 1)
+  assert.equal(summarizeOutput(text), text)
+  assert.equal(summarizeOutput(text).includes(OUTPUT_SUMMARY_MARKER), false)
+})
+
+test('an output beyond the marker overhead is summarized', () => {
+  const text = 'x'.repeat(OUTPUT_SUMMARY_LIMIT + OUTPUT_SUMMARY_MARKER.length + 1)
+  const summary = summarizeOutput(text)
+  assert.ok(summary.length < text.length)
+  assert.ok(summary.includes(OUTPUT_SUMMARY_MARKER))
 })
 
 test('an over-long output carries its first line', () => {
@@ -51,7 +70,7 @@ test('an over-long output carries its last line and marks the omission', () => {
 test('the split keeps the head share and the total bound', () => {
   const summary = summarizeOutput(bootFailure())
   assert.equal(summary.length, OUTPUT_SUMMARY_LIMIT + OUTPUT_SUMMARY_MARKER.length)
-  assert.equal(summary.indexOf(OUTPUT_SUMMARY_MARKER), 900)
+  assert.equal(summary.indexOf(OUTPUT_SUMMARY_MARKER), OUTPUT_SUMMARY_HEAD)
 })
 
 test('the retained text does not grow with the output', () => {
@@ -66,10 +85,20 @@ test('leading and trailing whitespace is dropped before the split', () => {
   assert.ok(summary.endsWith(LAST_LINE))
 })
 
+test('a short output with surrounding whitespace arrives trimmed', () => {
+  const message = profileInitFailure('verify-web', `\n  ${CAUSE}\n${LAST_LINE}  \n`)
+  assert.equal(message, `could not initialize verify-web: ${CAUSE}\n${LAST_LINE}`)
+})
+
 test('a non-string input summarizes to an empty string', () => {
   assert.equal(summarizeOutput(undefined), '')
   assert.equal(summarizeOutput(null), '')
   assert.equal(summarizeOutput(42), '')
+})
+
+test('an empty output still produces a readable message', () => {
+  const message = profileInitFailure('verify-headless', '', '/tmp/run/artifacts/init-headless.log')
+  assert.equal(message, 'could not initialize verify-headless: no output (full output: /tmp/run/artifacts/init-headless.log)')
 })
 
 test('the profile failure message carries the output and the artifact path', () => {

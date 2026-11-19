@@ -21,11 +21,13 @@ None.
 
 ### Modified Capabilities
 
-- `lab-harness`: adds a requirement that a profile-initialization failure carries the head and the tail of the command output within a bounded length, drops surrounding whitespace, and keeps the untouched output in the run directory. Scenarios cover an over-long output, an output within the budget, the bound, and the kept output file.
+- `lab-harness`: adds two requirements. The first covers the message: both ends of the output within a bounded length, surrounding whitespace dropped, and a summary only when it shortens the output. The second covers the kept output: written under the run directory and named in the failure, with a rejected write leaving the diagnosis intact. Scenarios cover an over-long output, an output within the budget, an output the summary would not shorten, the bound, the kept file and a rejected write.
 
 ## Impact
 
-- `scripts/lab/index.mjs`: the `ensureProfile` failure path writes the untouched output to `<run>/artifacts/init-<mode>.log` and builds its message with the formatter.
-- `scripts/lab/core/process.mjs`: new exported helper and limit constant.
-- `test/lab-process.test.mjs`: new regression tests.
+- `scripts/lab/index.mjs`: the `ensureProfile` failure path delegates to `recordProfileInitFailure`.
+- `scripts/lab/core/process.mjs`: the summary helper, the head constant and the message builder.
+- `scripts/lab/core/profile-init.mjs`: writes the untouched output into the run artifacts and degrades when the write is rejected.
+- `test/lab-process.test.mjs`, `test/lab-profile-init.test.mjs`: the regression tests for the summary and for the write.
+- `docs/lab.md`: the artifact list names `init-<mode>.log`.
 - No plugin runtime change, no dependency change, no change to the packaged tarball, `dist/`, hooks or workflows.

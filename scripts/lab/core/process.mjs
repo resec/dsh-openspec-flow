@@ -11,11 +11,11 @@ import { createWriteStream, existsSync, readFileSync } from 'node:fs'
 /** Characters retained when a command output is summarized. */
 export const OUTPUT_SUMMARY_LIMIT = 1_500
 
+/** Characters kept from the head of a summarized output; the tail takes the rest. */
+export const OUTPUT_SUMMARY_HEAD = 900
+
 /** Marker that shows where the middle of a summarized output was omitted. */
 export const OUTPUT_SUMMARY_MARKER = '\n...\n'
-
-/** Share of the budget taken from the head of the output, in tenths. */
-const OUTPUT_HEAD_TENTHS = 6
 
 /**
  * Bound a command output while keeping its head and its tail.
@@ -23,20 +23,21 @@ const OUTPUT_HEAD_TENTHS = 6
  * Leading and trailing whitespace is dropped first, so the retained head starts
  * at content and the retained tail does not end in blank lines. The head names
  * the failing step and the tail carries the last stack frames, so a summarized
- * failure keeps its cause instead of starting mid-word. The split always leaves
- * at least one character for the tail: a zero-length tail would reach the
- * output through `slice(-0)`, which is `slice(0)` and returns everything.
- * A non-string input summarizes to an empty string, because an absent stream
- * must not replace the real failure with a type error.
+ * failure keeps its cause instead of starting mid-word. An output that the
+ * summary would not shorten is returned whole, and the budget is split across
+ * `OUTPUT_SUMMARY_HEAD` and the remainder, so the tail is never empty — a
+ * zero-length tail would reach the output through `slice(-0)`, which is
+ * `slice(0)`. A non-string input summarizes to an empty string, because an
+ * absent stream must not replace the real failure with a type error.
  *
  * @param text - raw command output.
- * @returns the trimmed output, or its head, the marker and its tail.
+ * @returns the trimmed output, its whole text, or its head, marker and tail.
  */
 export function summarizeOutput(text) {
   const value = typeof text === 'string' ? text.trim() : ''
-  if (value.length <= OUTPUT_SUMMARY_LIMIT) return value
-  const head = Math.min(Math.ceil((OUTPUT_SUMMARY_LIMIT * OUTPUT_HEAD_TENTHS) / 10), OUTPUT_SUMMARY_LIMIT - 1)
-  return `${value.slice(0, head)}${OUTPUT_SUMMARY_MARKER}${value.slice(-(OUTPUT_SUMMARY_LIMIT - head))}`
+  if (value.length <= OUTPUT_SUMMARY_LIMIT + OUTPUT_SUMMARY_MARKER.length) return value
+  const tail = OUTPUT_SUMMARY_LIMIT - OUTPUT_SUMMARY_HEAD
+  return `${value.slice(0, OUTPUT_SUMMARY_HEAD)}${OUTPUT_SUMMARY_MARKER}${value.slice(-tail)}`
 }
 
 /**
@@ -44,13 +45,14 @@ export function summarizeOutput(text) {
  *
  * @param profile - profile name.
  * @param output - captured command output.
- * @param logPath - file that keeps the untouched output.
+ * @param logPath - file that keeps the untouched output, when it was written.
  * @returns the failure message.
  */
 export function profileInitFailure(profile, output, logPath) {
   const summary = summarizeOutput(output)
-  if (logPath === undefined) return `could not initialize ${profile}: ${summary}`
-  return `could not initialize ${profile}: ${summary} (full output: ${logPath})`
+  const detail = summary === '' ? 'no output' : summary
+  if (logPath === undefined) return `could not initialize ${profile}: ${detail}`
+  return `could not initialize ${profile}: ${detail} (full output: ${logPath})`
 }
 
 /**
