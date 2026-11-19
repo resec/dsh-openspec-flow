@@ -88,13 +88,15 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 ## 报告与 finding
 
+draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：finding id 必须匹配 `R<round>-NN`，首轮 `verifications` 为空，后续轮只引用本轮开始前已记录的 finding；report 的 `axis` 取下文枚举，brief 的 `## Axes` 标题只是评审提示。
+
 报告由 `verdict`、`summary`、`findings`、`verifications`、`outOfScope`、`residualRisks` 组成：
 
 - `verdict`：`pass`、`changes-requested` 或 `blocked`。`blocked` 表示评审无法进行，原因写进 `summary` 或 finding。
 - `findings`：每条含 `id`（如 `R1-01`）、`severity`、`axis`、`location`、`title`、`problem`、`evidence`、`suggestion`；`critical` 与 `major` 还必须给出 `impact`、`rule`、`failure`。
 - `severity`：`critical`、`major`、`minor`、`nit`。前两者是阻塞项。
 - `axis`：`intent`、`coherence`、`spec-conflict`、`standards`、`feasibility`、`quality`。
-- `verifications`：后续轮次逐条声明上一轮 finding 的状态：`verified-fixed`、`still-open`、`regressed`。
+- `verifications`：后续轮次逐条声明本轮开始前已记录 finding 的状态：`verified-fixed`、`still-open`、`regressed`。
 
 字段只校验类型与非空：`summary`、finding 的文本字段、`verification.evidence` 以及 `outOfScope`/`residualRisks` 的条目都不设字符上限，后两个数组也不设条数上限。报告在写入前整体校验，任一结构错误都会拒绝整份报告。
 

@@ -28,6 +28,9 @@ test('self review passes the apply gate', async () => {
   assert.match(started.brief, /Draft review brief/)
   assert.equal(started.brief.split('\n')[2], DRAFT_OPENING)
   assert.doesNotMatch(started.brief, /you (wrote|drafted|planned)|as the changer/i)
+  assert.match(started.brief, /"id": "R1-01"/)
+  assert.match(started.brief, /"verifications": \[\]/)
+  assert.match(started.brief, /`title`/)
   const validation = argv.find((args) => args.includes('validate'))
   assert.ok(validation, 'the draft start validates the change')
   assert.ok(!validation.includes('--strict'), 'the draft start stays non-strict')
@@ -318,6 +321,8 @@ test('resume refuses a new round while a finding is open', async () => {
   })
   const next = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   assert.equal(next.round, 2)
+  assert.match(next.brief, /"id": "R2-01"/)
+  assert.match(next.brief, /"verifications": \[\{ "id": "R1-01"/)
 })
 
 test('a later round verifies a fixed blocker and passes apply', async () => {

@@ -79,6 +79,9 @@ test('apply review starts on the committed tree and records its base', async () 
   assert.equal(started.treeSha, run(['rev-parse', 'HEAD^{tree}']))
   assert.ok(started.brief)
   assert.match(started.brief, /Apply review brief/)
+  assert.match(started.brief, /"id": "R1-01"/)
+  assert.match(started.brief, /"verifications": \[\]/)
+  assert.match(started.brief, /repository-relative path and line/)
   assert.match(started.brief, /- validation: host strict pass \(0 issues\)/)
   assert.match(started.brief, /host validated the committed change with strict validation/)
   assert.match(started.brief, /do not run validation yourself/)
@@ -397,6 +400,8 @@ test('apply start and resume reject dispositions and gate open findings', async 
     action: 'resume', change: CHANGE, review: 'apply',
   })
   assert.equal(next.round, 2)
+  assert.match(next.brief, /"id": "R2-01"/)
+  assert.match(next.brief, /"verifications": \[\{ "id": "R1-01"/)
 })
 
 test('the apply gate points an abandoned review at a new change', async () => {
