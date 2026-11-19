@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-19
+goal: Allow a maintainer to run one apply review on an external pull request
+  worktree without a draft review record, and keep that worktree clean when the
+  review directory is already ignored at the repository level.
