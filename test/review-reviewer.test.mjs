@@ -803,11 +803,11 @@ test('the reviewer preset composes the web tools without a provider', () => {
 })
 
 test('the reviewer entry denies global Host tools and keeps the preset tools', () => {
-  const hostTools = ['read', 'read_image', 'openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree']
+  const hostTools = ['read', 'read_image', 'openspec_review', 'openspec_apply_next', 'openspec_apply_worktree', 'issues_create', 'create_worktree']
   const reviewer = createFakeContext({ cwd: process.cwd(), globalTools: hostTools })
   reviewerApply(reviewer.ctx)
   assert.deepEqual(reviewer.restrictions, [{
-    deny: ['openspec_review', 'openspec_apply_next', 'issues_create', 'create_worktree'],
+    deny: ['openspec_review', 'openspec_apply_next', 'openspec_apply_worktree', 'issues_create', 'create_worktree'],
   }])
   assert.equal(reviewer.tools.has('openspec_reviewer'), true)
 

@@ -94,7 +94,10 @@ test('a missing, unknown or invalid field is rejected', () => {
 
 test('safe segments are refused before a state path is written', () => {
   const root = repository()
-  assert.throws(() => applyStatePath(root, null, '../demo'), /change must be one non-empty path segment/)
+  for (const value of ['.', '..', 'a/b', 'a\\b', 'a\0b']) {
+    assert.throws(() => applyStatePath(root, null, value), /change must be one non-empty path segment/)
+  }
+  assert.match(applyStatePath(root, null, 'foo..bar'), /local#foo\.\.bar\.json$/u)
   assert.throws(() => applyStatePath(root, 'a/b', 'demo'), /store must be one non-empty path segment/)
 })
 
@@ -119,4 +122,13 @@ test('a state file keeps the previous bytes when the write fails', () => {
     chmodSync(directory, 0o755)
   }
   assert.equal(readFileSync(path, 'utf8'), `${JSON.stringify(state(root))}\n`)
+})
+
+
+test('a linked worktree reads the state written by the main worktree', () => {
+  const root = repository()
+  const linked = join(temporary(), 'linked')
+  git(root, ['worktree', 'add', '-q', linked, '-b', 'linked'])
+  writeApplyState(root, null, 'demo', state(root))
+  assert.deepEqual(readApplyState(linked, null, 'demo'), state(root))
 })

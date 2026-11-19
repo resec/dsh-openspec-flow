@@ -112,3 +112,34 @@ Each `openspec_inspect` action except `worktree` SHALL return the same projectio
 
 - **WHEN** `openspec_inspect` runs `action: "worktree"`
 - **THEN** the result is the new state, lock and doctor projection, not a former tool projection
+
+## ADDED Requirements
+
+### Requirement: Apply worktree recovery is exposed as one tool
+
+The plugin SHALL expose `openspec_apply_worktree` with the `recover` action. The call SHALL accept `change`, an optional `store`, a `scope` of `lifecycle` or `change`, and an `expectedOwner` token. `change` SHALL be required for the change scope. An unknown action, an invalid scope or a missing token SHALL be refused. The reviewer preset SHALL deny the tool.
+
+#### Scenario: Recovery reports the recovered scope
+
+- **WHEN** recovery removes a dead change lock with the matching token
+- **THEN** the result carries `recovered: true` and `scope: "change"`
+
+#### Scenario: Recovery requires its owner token
+
+- **WHEN** a caller omits `expectedOwner`
+- **THEN** the tool refuses the call before reading or removing a lock
+
+#### Scenario: An invalid scope is refused
+
+- **WHEN** a caller passes a scope outside `lifecycle` and `change`
+- **THEN** the tool refuses the call before reading or removing a lock
+
+#### Scenario: An unknown action is refused
+
+- **WHEN** a caller passes an action outside `recover`
+- **THEN** the tool refuses the call and names `recover`
+
+#### Scenario: The reviewer cannot use the tool
+
+- **WHEN** the independent reviewer's tool catalog is assembled
+- **THEN** `openspec_apply_worktree` is absent

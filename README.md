@@ -26,7 +26,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 10 个 `openspec_*`
 
 ## 管理块
 
-核心变更流程的 6 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
+核心变更流程的 7 个工具与 5 条技能默认对模型可见；管理块 3 个工具（`openspec_schemas`、`openspec_store_list`、`openspec_init`）默认既不出现也不可调用。用户运行命令后才对当次回合暴露：
 
 - `/opsx-admin <意图>`：打开管理块，并把意图作为当次请求提交；该回合结束（agent 回到 idle）自动关闭。
 - `/opsx-admin off`：提前关闭。

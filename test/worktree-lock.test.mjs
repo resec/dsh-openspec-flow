@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 
 import { gitCommonDir } from '../lib/review/store.js'
@@ -39,7 +39,7 @@ test('the lifecycle lock is exclusive and releases', async () => {
   const first = await acquireLock(common, 'lifecycle', { what: 'first', timeoutMs: 1000 })
   await assert.rejects(
     acquireLock(common, 'lifecycle', { what: 'second', timeoutMs: 60 }),
-    /another operation holds the lifecycle lock/,
+    /another operation holds the lifecycle lock .*pid \d+, token .*expectedOwner=.*/,
   )
   assert.equal(inspectLock(lockPath(common, 'lifecycle')).state, 'alive')
   assert.deepEqual(releaseLock(first), { released: true })
@@ -76,6 +76,7 @@ test('the lifecycle lock cannot be acquired after a change lock', async () => {
     acquireLock(common, 'lifecycle', { timeoutMs: 1000 }),
     /lifecycle lock must be acquired before a change lock/,
   )
+  assert.equal(inspectLock(lockPath(common, 'lifecycle')).state, 'missing')
   releaseLock(change)
 })
 
@@ -239,4 +240,19 @@ test('acquisition uses the default timeout for a free lock', async () => {
   const common = gitCommonDir(root)
   const handle = await acquireLock(common, 'lifecycle', { what: 'default' })
   assert.deepEqual(releaseLock(handle), { released: true })
+})
+
+
+test('a failed creation leaves no lock path', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  mkdirSync(dirname(path), { recursive: true })
+  chmodSync(dirname(path), 0o555)
+  try {
+    await assert.rejects(acquireLock(common, 'change', { change: 'demo', timeoutMs: 100 }), /EACCES|EPERM|EROFS/)
+  } finally {
+    chmodSync(dirname(path), 0o755)
+  }
+  assert.equal(existsSync(path), false)
 })

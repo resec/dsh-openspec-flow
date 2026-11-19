@@ -75,6 +75,9 @@ test('worktree inspection is read-only and reports ready state', async () => {
   assert.equal(result.worktree.exists, true)
   assert.deepEqual(result.locks.map((entry) => entry.held), [false, false])
   assert.equal(result.repair.action, 'none')
+  assert.equal('cache' in result, false)
+  assert.equal('profile' in result, false)
+  assert.equal('port' in result, false)
   assert.equal(readFileSync(applyStatePath(root, null, 'demo'), 'utf8'), before)
 })
 
@@ -167,4 +170,28 @@ test('recover rejects an unknown action and a non-git project', async () => {
     }),
     /unavailable outside a git repository/,
   )
+})
+
+
+test('an absent state is unavailable and writes nothing', async () => {
+  const root = repository()
+  const fake = setup(root)
+  const result = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(result.status, 'unavailable')
+  assert.equal(result.state.exists, false)
+  assert.equal(result.repair.action, 'none')
+  assert.equal(existsSync(applyStatePath(root, null, 'demo')), false)
+})
+
+test('a lock directory without an owner is a manual repair', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  mkdirSync(lockPath(common, 'change', { change: 'demo' }), { recursive: true })
+  const fake = setup(root)
+  const result = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(result.status, 'repair-required')
+  assert.equal(result.repair.action, 'manual')
+  assert.match(result.repair.message, /no usable owner/)
+  assert.equal(result.locks[1].held, true)
+  assert.equal(result.locks[1].state, 'corrupt')
 })

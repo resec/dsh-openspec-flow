@@ -43,7 +43,7 @@ worktree: { path?, exists }
 repair: { action: none | recover | manual, scope?, expectedOwner?, message? }
 ```
 
-A missing worktree or corrupt state gives `repair.action: "manual"`; a dead lock gives `repair.action: "recover"` with the scope and owner token. The action does not inspect npm, pnpm, Chromium, DSH profiles or ports; those belong to repository development scripts.
+A git project with no state file reports `status: "unavailable"`. A missing worktree or corrupt state gives `repair.action: "manual"`; a lock directory with no usable owner gives `repair.action: "manual"` naming the lock; a dead lock gives `repair.action: "recover"` with the scope and owner token. The action does not inspect npm, pnpm, Chromium, DSH profiles or ports; those belong to repository development scripts.
 
 ## Recovery
 
