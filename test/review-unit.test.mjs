@@ -108,10 +108,32 @@ test('the review ignore entry is not written when a repository rule already igno
     return result.stdout.trim()
   }
   run(['init'])
+  run(['config', 'user.email', 'test@example.com'])
+  run(['config', 'user.name', 'Test'])
   writeFileSync(join(root, '.gitignore'), 'openspec/.review/\n')
+  run(['add', '.gitignore'])
+  run(['commit', '-m', 'ignore review'])
   ensureReviewIgnored(root, join(root, 'openspec', '.review', 'local#demo'))
   assert.equal(existsSync(join(root, 'openspec', '.gitignore')), false)
+  assert.equal(run(['status', '--porcelain']), '')
   assert.doesNotThrow(() => assertReviewIgnored(root, join(root, 'openspec', '.review', 'local#demo')))
+})
+
+test('a failed ignore check keeps the write', () => {
+  const root = temp()
+  const run = (args) => {
+    const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  run(['init'])
+  const outside = mkdtempSync(join(tmpdir(), 'openspec-flow-outside-'))
+  try {
+    ensureReviewIgnored(root, outside)
+  } finally {
+    rmSync(outside, { recursive: true, force: true })
+  }
+  assert.match(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), /\.review\//)
 })
 
 test('the lock is exclusive and released', () => {

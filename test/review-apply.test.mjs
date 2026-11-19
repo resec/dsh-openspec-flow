@@ -329,7 +329,7 @@ test('apply review can run with draft review disabled and an explicit base', asy
   assert.equal(started.review, 'apply')
   assert.equal(started.baseline, 'none')
   assert.match(started.brief, /- baseline: none/)
-  assert.match(started.brief, /The base is the explicit base passed to this round\./)
+  assert.match(started.brief, /The base is the explicit base passed to this review\./)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.baseCommit, base)
   assert.equal(record.baseline, 'none')
@@ -368,10 +368,13 @@ test('a no-draft apply review starts without a draft record and reports its base
   assert.doesNotMatch(started.brief, /## Plan changes since the draft/)
   assert.doesNotMatch(started.brief, /## Plan change waiver/)
   const resumed = await call(fake, 'openspec_review', {
-    action: 'resume', change: CHANGE, review: 'apply', base,
+    action: 'resume', change: CHANGE, review: 'apply',
   })
   assert.equal(resumed.round, 1)
   assert.equal(resumed.baseline, 'none')
+  assert.equal(resumed.baseTreeSha, started.baseTreeSha)
+  const resumedRecord = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(resumedRecord.baseCommit, base)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -439,6 +442,60 @@ test('a legacy apply record without baseline reports draft', async () => {
     action: 'status', change: CHANGE, review: 'apply',
   })
   assert.equal(status.baseline, 'draft')
+})
+
+test('a resume cannot change the recorded baseline', async () => {
+  const { root, run } = gitFixture()
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', baseline: 'none', base,
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'resume', change: CHANGE, review: 'apply', baseline: 'draft', base,
+    }),
+    /baseline is none/,
+  )
+
+  const second = gitFixture()
+  const secondFake = setup(second.root)
+  await passDraft(secondFake, second.root, second.run)
+  await call(secondFake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await assert.rejects(
+    call(secondFake, 'openspec_review', {
+      action: 'resume', change: CHANGE, review: 'apply', baseline: 'none',
+    }),
+    /baseline is draft/,
+  )
+})
+
+test('an explicit draft baseline is refused when the draft policy is disabled', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, review: 'apply', baseline: 'draft', base,
+    }),
+    /draft review is disabled/,
+  )
+})
+
+test('an explicit draft baseline is accepted when the draft policy is enabled', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const base = run(['rev-parse', 'HEAD'])
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', baseline: 'draft', base,
+  })
+  assert.equal(started.baseline, 'draft')
 })
 
 test('apply review ignores a blank base and keeps the seal source', async () => {

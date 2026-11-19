@@ -896,7 +896,7 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   assert.match(seal, /see `## Base and diff` for the scope/)
   assert.match(seal, /Review any plan change in the diff on the plan axes/)
   const explicit = buildApplyBrief({ ...base, baseSource: 'explicit', validation: { strict: true, issues: [] } })
-  assert.match(explicit, /The base is the explicit base passed to this round\./)
+  assert.match(explicit, /The base is the explicit base passed to this review\./)
   assert.doesNotMatch(explicit, /seal commit recorded/)
   const merge = buildApplyBrief({ ...base, baseSource: 'merge-base', validation: { strict: true, issues: [] } })
   assert.match(merge, /git merge-base HEAD origin\/main/)

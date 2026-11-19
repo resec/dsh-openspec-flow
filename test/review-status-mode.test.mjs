@@ -142,6 +142,22 @@ test('apply status reports self mode for reviewers 0', async () => {
   assert.equal(status.independent, false)
 })
 
+test('apply status reports the recorded no-draft baseline', async () => {
+  const { root, run } = gitFixture()
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', baseline: 'none', base,
+  })
+  const status = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.baseline, 'none')
+})
+
 test('a recorded reviewer review keeps its mode when the policy is absent', async () => {
   const root = fixture()
   const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false, reviewers: 0 } })
