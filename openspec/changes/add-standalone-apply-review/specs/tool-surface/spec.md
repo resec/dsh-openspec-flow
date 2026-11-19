@@ -67,6 +67,11 @@
 - **WHEN** the draft policy is disabled and a caller starts an apply review with an omitted baseline
 - **THEN** the review opens and records `baseline: "none"`
 
+#### Scenario: An explicit draft baseline is refused when the draft policy is disabled
+
+- **WHEN** the draft policy is disabled and a caller explicitly passes `baseline: "draft"`
+- **THEN** the call fails and names `baseline: "none"`
+
 #### Scenario: A resume keeps the recorded baseline
 
 - **WHEN** a caller resumes an apply review with an explicit baseline different from the recorded baseline

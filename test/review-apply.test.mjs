@@ -337,7 +337,8 @@ test('apply review can run with draft review disabled and an explicit base', asy
 
 test('apply review can run with draft review disabled and the merge-base fallback', async () => {
   const { root, run } = gitFixture()
-  run(['add', `openspec/changes/${CHANGE}`])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
   run(['commit', '-m', 'seal the draft'])
   const seal = run(['rev-parse', 'HEAD'])
   run(['branch', 'origin/main', seal])
@@ -350,6 +351,13 @@ test('apply review can run with draft review disabled and the merge-base fallbac
   assert.match(started.brief, /The base is `git merge-base HEAD origin\/main`; no seal commit was recorded for this change\./)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.baseline, 'none')
+  assert.equal(record.baseSource, 'merge-base')
+  const resumed = await call(fake, 'openspec_review', {
+    action: 'resume', change: CHANGE, review: 'apply',
+  })
+  assert.match(resumed.brief, /The base is `git merge-base HEAD origin\/main`; no seal commit was recorded for this change\./)
+  const resumedRecord = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(resumedRecord.baseSource, 'merge-base')
 })
 
 test('a no-draft apply review starts without a draft record and reports its baseline', async () => {
