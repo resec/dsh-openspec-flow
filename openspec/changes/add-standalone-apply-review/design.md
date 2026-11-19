@@ -30,7 +30,7 @@ See `proposal.md` for the motivation. The relevant current state:
 
 On `start`, an omitted value resolves to `draft` when the policy's draft section is enabled and to `none` when it is disabled. The second case preserves the existing draft-disabled apply review: it already runs without a draft record, and recording it as `draft` would misstate what the review checked. On `resume`, an omitted value means the recorded baseline; an explicit different value is refused.
 
-An explicit `none` is refused when a draft record already exists. Such a change has a draft baseline and the apply review's plan-drift and plan-change-waiver checks; allowing `none` there would skip the user-approval gate for a plan change.
+An explicit `none` is refused when a draft record already exists. Such a change has a draft baseline and the apply review's plan-drift and plan-change-waiver checks; allowing `none` there would skip the user-approval gate for a plan change. An explicit `draft` is refused when the policy disables the draft section, because the record would otherwise claim a draft baseline that was never checked.
 
 Rejected: making the draft optional whenever its record is missing. That would let a local caller bypass the draft gate with no signal in the call or the record.
 

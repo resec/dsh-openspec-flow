@@ -506,6 +506,20 @@ test('an explicit draft baseline is accepted when the draft policy is enabled', 
   assert.equal(started.baseline, 'draft')
 })
 
+test('an explicit base on resume sets the explicit source', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const base = run(['rev-parse', 'HEAD'])
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const resumed = await call(fake, 'openspec_review', {
+    action: 'resume', change: CHANGE, review: 'apply', base,
+  })
+  assert.match(resumed.brief, /The base is the explicit base passed to this review\./)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseSource, 'explicit')
+})
+
 test('apply review ignores a blank base and keeps the seal source', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
