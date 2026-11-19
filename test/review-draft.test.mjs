@@ -325,6 +325,21 @@ test('resume refuses a new round while a finding is open', async () => {
   assert.match(next.brief, /"verifications": \[\{ "id": "R1-01"/)
 })
 
+test('a record without findings still renders the report contract', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const path = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(path, 'utf8'))
+  delete record.findings
+  writeFileSync(path, JSON.stringify(record, null, 2))
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 1)
+  assert.match(resumed.brief, /"verifications": \[\]/)
+})
+
 test('a later round verifies a fixed blocker and passes apply', async () => {
   const root = fixture()
   const fake = setup(root)

@@ -171,7 +171,8 @@ test('the review document states the shared brief report contract', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /同一渲染器按当前轮生成/)
   assert.match(text, /R<round>-NN/)
-  assert.match(text, /首轮 `verifications` 为空/)
+  assert.match(text, /`verified-fixed`、`still-open`、`regressed`/)
+  assert.match(text, /首轮为空/)
   assert.match(text, /本轮开始前已记录/)
 })
 

@@ -163,6 +163,9 @@ test('the brief names the axes and the report contract', () => {
   assert.match(brief, /"verifications": \[\]/)
   assert.match(brief, /`title`/)
   assert.match(brief, /review prompts, not report values/)
+  assert.match(brief, /verified-fixed, still-open, regressed/)
+  assert.match(brief, /required only for `critical` and `major`/)
+  assert.equal(brief.split('A finding carries').length - 1, 1)
   assert.equal(brief.split('After you submit').length - 1, 1)
   assert.equal(brief.split('A `pass` verdict cannot').length - 1, 1)
   assert.match(brief, /Coherence/)
@@ -190,10 +193,12 @@ test('the report contract follows the round and the recorded findings', () => {
   assert.match(noEligible, /"verifications": \[\]/)
   assert.doesNotMatch(noEligible, /"verifications": \[\{/)
   assert.throws(() => buildDraftBrief(base), /positive integer round/)
+  assert.throws(() => buildDraftBrief({ ...base, round: 0 }), /positive integer round/)
   assert.throws(
     () => renderReportContract({ round: 1, locationHint: ' ' }),
     /location hint/,
   )
+  assert.throws(() => renderReportContract({ round: 1 }), /location hint/)
 })
 
 test('report validation rejects malformed findings and contradictory verdicts', () => {

@@ -88,7 +88,7 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 ## 报告与 finding
 
-draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：finding id 必须匹配 `R<round>-NN`，首轮 `verifications` 为空，后续轮只引用本轮开始前已记录的 finding；report 的 `axis` 取下文枚举，brief 的 `## Axes` 标题只是评审提示。
+draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：finding id 必须匹配 `R<round>-NN`；`verifications` 状态取 `verified-fixed`、`still-open`、`regressed`，首轮为空，后续轮只引用本轮开始前已记录的 finding；report 的 `axis` 取下文枚举，brief 的 `## Axes` 标题只是评审提示。
 
 报告由 `verdict`、`summary`、`findings`、`verifications`、`outOfScope`、`residualRisks` 组成：
 

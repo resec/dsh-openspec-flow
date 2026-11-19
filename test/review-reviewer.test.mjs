@@ -882,6 +882,9 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   assert.match(seal, /repository-relative path and line/)
   assert.match(seal, /`title`/)
   assert.match(seal, /review prompts, not report values/)
+  assert.match(seal, /verified-fixed, still-open, regressed/)
+  assert.match(seal, /required only for `critical` and `major`/)
+  assert.equal(seal.split('A finding carries').length - 1, 1)
   assert.equal(seal.split('After you submit').length - 1, 1)
   assert.equal(seal.split('A `pass` verdict cannot').length - 1, 1)
   assert.match(seal, /^- base: d{40}$/m)
@@ -924,6 +927,7 @@ test('the apply brief verifies a recorded fixed finding', () => {
     /"verifications": \[\]/,
   )
   assert.throws(() => buildApplyBrief(base), /positive integer round/)
+  assert.throws(() => buildApplyBrief({ ...base, round: 0 }), /positive integer round/)
 })
 
 test('the reviewer preset tool names match the declaration', () => {

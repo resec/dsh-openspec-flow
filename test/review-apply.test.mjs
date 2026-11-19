@@ -404,6 +404,22 @@ test('apply start and resume reject dispositions and gate open findings', async 
   assert.match(next.brief, /"verifications": \[\{ "id": "R1-01"/)
 })
 
+test('an apply record without findings still renders the report contract', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const path = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(path, 'utf8'))
+  delete record.findings
+  writeFileSync(path, JSON.stringify(record, null, 2))
+  const resumed = await call(fake, 'openspec_review', {
+    action: 'resume', change: CHANGE, review: 'apply',
+  })
+  assert.equal(resumed.round, 1)
+  assert.match(resumed.brief, /"verifications": \[\]/)
+})
+
 test('the apply gate points an abandoned review at a new change', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
