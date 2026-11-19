@@ -89,7 +89,7 @@ test('review tool results carry no card payload or card-specific field', async (
   assert.equal(reported.report.verdict, 'changes-requested')
 })
 
-test('a failed card write does not fail the tool', async () => {
+test('a failed card write does not fail the tool and report does not backfill it', async () => {
   const root = fixture()
   const fake = setup(root)
   await callWith(fake, 'openspec_review', {
@@ -101,10 +101,13 @@ test('a failed card write does not fail the tool', async () => {
   }, { id: 'review-test' })
   assert.equal(submitted.ready, false)
   assert.ok(fake.warnings.some((message) => message.includes('no Session is available')))
+  await callWith(fake, 'openspec_review', { action: 'report', change: CHANGE }, { id: 'review-test', session: { id: 'changer' } })
   assert.deepEqual(cardsIn(root, 'changer'), [])
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.deepEqual(record.cards ?? [], [])
 })
 
-test('an independent review writes the reviewer card and the main-session card once', async () => {
+test('an independent review writes only the reviewer card', async () => {
   const { apply: reviewerApply } = await import('../reviewer.js')
   const { createFakeContext } = await import('./fake-context.mjs')
   const { externalSetup } = await import('./review-fixtures.mjs')
@@ -130,9 +133,8 @@ test('an independent review writes the reviewer card and the main-session card o
   const reviewerCards = cardsIn(root, 'reviewer-1')
   const mainCards = cardsIn(root, 'changer')
   assert.equal(reviewerCards.length, 1)
-  assert.equal(mainCards.length, 1, 'wait writes the main card and report does not duplicate it')
+  assert.equal(mainCards.length, 0, 'wait and report write no changer card')
   assert.equal(reviewerCards[0].phase, 'review')
-  assert.equal(mainCards[0].phase, 'review')
 })
 
 test('a passing round with a disposed minor finding writes the resolution card', async () => {
@@ -166,7 +168,7 @@ test('a passing round with a disposed minor finding writes the resolution card',
   assert.equal(cards[1].findings[0].note, 'Follow up in ISS-9.')
 })
 
-test('report writes the main card when wait did not', async () => {
+test('report without wait writes no changer card', async () => {
   const { apply: reviewerApply } = await import('../reviewer.js')
   const { createFakeContext } = await import('./fake-context.mjs')
   const { externalSetup } = await import('./review-fixtures.mjs')
@@ -182,9 +184,7 @@ test('report writes the main card when wait did not', async () => {
     action: 'submit', change: CHANGE, review: 'draft', report: report(),
   }, { agent: { id: 'reviewer-1', session: { id: 'reviewer-1' } }, signal: new AbortController().signal })
   await callWith(fake, 'openspec_review', { action: 'report', change: CHANGE }, changer)
-  const mainCards = cardsIn(root, 'changer')
-  assert.equal(mainCards.length, 1)
-  assert.equal(mainCards[0].phase, 'review')
+  assert.deepEqual(cardsIn(root, 'changer'), [])
 })
 
 test('report for an older round writes no new card', async () => {

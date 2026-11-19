@@ -519,7 +519,7 @@ test('cards select by turn, collapse and expose the full report', async () => {
   assert.deepEqual(selectCards(view).map((card) => card.phase), ['review', 'resolution'])
   assert.deepEqual(selectCards({ cards: [] }), [])
   assert.deepEqual(selectCards(undefined), [])
-  assert.equal(cardSummary(reviewCard), '评审汇报 · draft · 第 2 轮 · changes-requested · critical 0 · major 1 · minor 0 · nit 0')
+  assert.equal(cardSummary(reviewCard), '评审汇报 · demo · draft · 第 2 轮 · changes-requested · critical 0 · major 1 · minor 0 · nit 0')
   assert.ok(!cardSummary(reviewCard).includes('下一步'))
 
   const sections = cardSections(reviewCard)
@@ -570,8 +570,10 @@ test('the collapsed summary counts every recorded finding by severity', async ()
     ],
   }
   assert.equal(cardSummary(base), '评审汇报 · draft · 第 4 轮 · pass · critical 1 · major 1 · minor 2 · nit 1')
+  assert.equal(cardSummary({ ...base, change: 'demo' }), '评审汇报 · demo · draft · 第 4 轮 · pass · critical 1 · major 1 · minor 2 · nit 1')
+  assert.equal(cardSummary({ ...base, change: '  ' }), '评审汇报 · draft · 第 4 轮 · pass · critical 1 · major 1 · minor 2 · nit 1')
   assert.equal(cardSummary({ ...base, findings: undefined }), '评审汇报 · draft · 第 4 轮 · pass · critical 0 · major 0 · minor 0 · nit 0')
-  assert.match(cardSummary({ ...base, phase: 'resolution' }), /^处理汇报/)
+  assert.match(cardSummary({ ...base, change: 'demo', phase: 'resolution' }), /^处理汇报 · demo · draft · 第 4 轮/)
 })
 
 test('the expanded card keeps recorded optional finding and disposition rows', async () => {

@@ -133,15 +133,17 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 
 每轮结束由插件写一张信息卡文件，模型不再复述报告。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
 
+独立评审中，changer 会话的评审卡不投递：Host 在返回与绑定之前，按卡片记录的 `review` 类型选择 `review.json` 或 `apply-review.json`，记录标记 `independent` 且卡片会话等于 `changerSessionId` 时跳过，不绑定；升级前写入的同类卡同样不投递。记录缺失、不可读或未标记独立评审时按原规则投递。
+
 写入点：
 
-- 评审汇报：`self-report`（自评审）、reviewer `submit`（reviewer 会话）、changer `wait`（主会话）；`report` 作为补写，已写过时不重复。
+- 评审汇报：`self-report`（自评审，changer 会话）与 reviewer `submit`（reviewer 会话）各写一张；独立评审的 changer `wait` 与 `report` 不写评审卡，`report` 仍返回完整报告。
 - 处理汇报：`resume` 新开一轮且关闭轮已有报告与处置时；或处置后已就绪、下一步为 apply/archive 时最后一次 `dispose`/`waive`。
 - 同一会话、同一轮、同一 phase 只写一次，由 review 记录的 `cards` 标记去重。
 
 卡片形态：
 
-- 默认折叠，摘要显示标题、轮次、结论与 `critical`、`major`、`minor`、`nit` 四档 findings 计数；计数覆盖全部已记录 finding，摘要不显示下一步；点击展开。
+- 默认折叠，摘要按 `汇报类型 · change 名 · 评审类型 · 轮次 · 结论 · 四档计数` 显示；change 名缺失时省略该段。计数覆盖全部已记录 finding，摘要不显示下一步；点击展开。
 - 展开显示完整内容：报告的 verdict 与 summary、每条 finding 的 problem/evidence/impact/rule/failure/suggestion（`规则`、`失败路径` 未记录时不显示）、verification evidence、处置 note 与验证轮次（`豁免`、`批准者` 未记录时不显示）、residualRisks、outOfScope、plan-change waiver（批准者、时间、文本、文件、draft/current hash）以及未就绪原因。同一种状态的 finding 就绪原因合并为一行，blocking 组保留 `blocking` 前缀；不匹配该形式的原因逐条原样显示。
 - 不设截断、不分页；展开区可滚动。标签固定中文，报告原文保留。
 

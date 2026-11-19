@@ -701,9 +701,12 @@ window.__ModuleLoader__.load({
     function cardSummary(card) {
       const phase = card.phase === 'resolution' ? '处理汇报' : '评审汇报'
       const review = card.review === 'apply' ? 'apply' : 'draft'
+      const change = typeof card.change === 'string' && card.change.trim() !== ''
+        ? `${card.change.trim()} · `
+        : ''
       const counts = severityCounts(card)
       const severities = SEVERITIES.map((severity) => `${severity} ${String(counts[severity])}`).join(' · ')
-      return `${phase} · ${review} · 第 ${cardValue(card.round)} 轮 · ${cardValue(card.verdict)} · ${severities}`
+      return `${phase} · ${change}${review} · 第 ${cardValue(card.round)} 轮 · ${cardValue(card.verdict)} · ${severities}`
     }
 
     /** One finding's full report fields. */

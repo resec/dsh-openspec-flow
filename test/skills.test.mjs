@@ -62,6 +62,10 @@ test('review skills report through the plugin card without restating the report'
   for (const name of ['openspec-propose', 'openspec-apply-change']) {
     const raw = readFileSync(packagedSkillPath(name), 'utf8')
     assert.match(raw, /reported by the plugin card/, name)
+    assert.match(raw, /in the reviewer session for an independent review/, name)
+    assert.match(raw, /in the changer session for a self review/, name)
+    assert.match(raw, /does not show a review card in the changer session/, name)
+    assert.doesNotMatch(raw, /in the main session when the changer/, name)
     assert.match(raw, /Do not restate findings/, name)
     assert.match(raw, /one short note only for information the report cannot express/, name)
   }

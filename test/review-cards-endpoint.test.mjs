@@ -35,6 +35,7 @@ function fixture(options = {}) {
 function cardFile(directory, options = {}) {
   const {
     sessionId = 'changer',
+    review = 'draft',
     phase = 'review',
     round = 1,
     turn = null,
@@ -47,7 +48,7 @@ function cardFile(directory, options = {}) {
     sessionId,
     sessionKey: sessionKeyOf(sessionId),
     change: 'demo',
-    review: 'draft',
+    review,
     phase,
     round,
     turn,
@@ -55,7 +56,7 @@ function cardFile(directory, options = {}) {
     payload: payload ?? {
       phase,
       change: 'demo',
-      review: 'draft',
+      review,
       round,
       verdict: 'pass',
       findings: [],
@@ -64,6 +65,25 @@ function cardFile(directory, options = {}) {
   }
   writeFileSync(join(directory, 'cards', name), `${JSON.stringify(file, null, 2)}\n`)
   return join(directory, 'cards', name)
+}
+
+/** Write one review record for the fixture directory. */
+function reviewRecord(directory, options = {}) {
+  const {
+    kind = 'draft',
+    independent = true,
+    changerSessionId,
+  } = options
+  const record = {
+    change: 'demo',
+    review: kind,
+    independent,
+    mode: independent ? 'reviewer' : 'self',
+    state: 'in-review',
+  }
+  if (changerSessionId !== null) record.changerSessionId = changerSessionId ?? 'changer'
+  const file = kind === 'apply' ? 'apply-review.json' : 'review.json'
+  writeFileSync(join(directory, file), `${JSON.stringify(record, null, 2)}\n`)
 }
 
 test('an unclaimed card binds to the first turn and stays after a refresh', async () => {
@@ -465,6 +485,144 @@ test('legacy cards remain readable until migration and are suppressed after remo
     rmSync(shared, { recursive: true, force: true })
     const after = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 2 })
     assert.deepEqual(after.value.cards, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('an independent review withholds the changer review card and keeps the resolution card', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory)
+    const reviewPath = cardFile(directory, { phase: 'review', round: 1 })
+    cardFile(directory, { phase: 'resolution', round: 1 })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.deepEqual(result.value.cards.map((card) => card.phase), ['resolution'])
+    assert.equal(JSON.parse(readFileSync(reviewPath, 'utf8')).turn, null)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('an already-bound changer review card stays hidden', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory)
+    const path = cardFile(directory, { turn: 5 })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 5 })
+    assert.deepEqual(result.value.cards, [])
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 5)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a reviewer review card is delivered for an independent review', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory)
+    cardFile(directory, { sessionId: 'reviewer-1' })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'reviewer-1', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(result.value.cards[0].review, 'draft')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a self review keeps the changer review card', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory, { independent: false })
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a directory with both records selects the record by the card review kind', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory, { kind: 'draft', independent: false })
+    reviewRecord(directory, { kind: 'apply' })
+    const applyPath = cardFile(directory, { review: 'apply', round: 2 })
+    cardFile(directory, { review: 'draft', round: 1 })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(result.value.cards[0].review, 'draft')
+    assert.equal(JSON.parse(readFileSync(applyPath, 'utf8')).turn, null)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a card without a review kind compares against the draft record', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory, { kind: 'draft', independent: false })
+    reviewRecord(directory, { kind: 'apply' })
+    const path = cardFile(directory)
+    const file = JSON.parse(readFileSync(path, 'utf8'))
+    delete file.review
+    writeFileSync(path, JSON.stringify(file))
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a record without changerSessionId keeps delivery', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory, { changerSessionId: null })
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a corrupt record keeps delivery and logs a warning', async () => {
+  const { directory, channel, warnings } = fixture()
+  try {
+    writeFileSync(join(directory, 'review.json'), '{ not json')
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+    assert.ok(warnings.some((message) => message.includes('could not be read for card filtering')))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a legacy changer review card is withheld for an independent review', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-legacy-withhold-'))
+  const legacy = join(root, 'openspec', '.review', 'local#demo')
+  mkdirSync(join(legacy, 'cards'), { recursive: true })
+  execFileSync('git', ['-C', root, 'init', '-q'])
+  reviewRecord(legacy)
+  const path = cardFile(legacy)
+  const channel = createReviewChannel({
+    ctx: {
+      get(name) {
+        if (name === 'agents') return { list: () => [{ session: { id: 'changer' } }] }
+        if (name === 'workingDirectory') return { get: () => root }
+        return undefined
+      },
+      logger: { warn: () => {} },
+    },
+    settings: { timeoutMs: 1000, reviews: { draft: {}, apply: {} } },
+  })
+  try {
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.deepEqual(result.value.cards, [])
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -18,7 +18,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 10 个 `openspec_*`
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
 | apply worktree | `openspec_apply_worktree` | `action: "recover"`：按 `scope`（`lifecycle` 或 `change`）与 `expectedOwner` token 恢复死锁；状态与锁健康用 `openspec_inspect` 的 `action: "worktree"` 查看，只读；不创建、删除或 land worktree |
 
-评审轮次由插件信息卡汇报：`self-report`、reviewer `submit`、`wait`、`report`、`resume` 与处置完成时写入 `cards/<sessionKey>-<phase>-<round>.json`；客户端通过 `reviewCards/get` 按 turn 查询并携带该 turn 的起止时间，写入时间晚于 turn 结束的卡片留给后续 turn，同一 turn 的卡片按写入时间排序。卡片在回合末尾显示，默认折叠，展开包含完整报告正文与 plan-change waiver。卡片不写入会话日志、不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件不依赖 `@deepseek-ai/*` 包。
+评审轮次由插件信息卡汇报：`self-report` 与 reviewer `submit` 分别写入评审卡，`resume` 与处置完成时写入处理卡；独立评审的 changer 会话不显示评审卡，`wait`/`report` 不再写卡，`report` 仍返回完整报告。客户端通过 `reviewCards/get` 按 turn 查询并携带该 turn 的起止时间，写入时间晚于 turn 结束的卡片留给后续 turn，同一 turn 的卡片按写入时间排序。卡片在回合末尾显示，默认折叠，摘要显示 change 名（缺失时省略）、轮次、结论与四档计数，展开包含完整报告正文与 plan-change waiver。卡片不写入会话日志、不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件不依赖 `@deepseek-ai/*` 包。
 
 写操作都有前置检查：`openspec_new_change` 与 `openspec_archive` 拒绝隐式创建根；`openspec_apply_next` 在 draft review 未就绪时拒绝，在另一 change 持有 apply 锁时拒绝，并在 git 项目首次调用时要求封存 commit（干净树、只含变更目录与 `openspec/.gitignore` 或其他 `openspec/changes/` 路径、工件哈希未变）；`openspec_archive` 在另一 change 持有 apply 锁时拒绝，在 apply review 启用且项目有 git、但评审未就绪时拒绝，成功后释放本 change 的锁；`openspec_new_change` 在写入前拒绝非内置 schema 或同名覆盖；`openspec_archive` 在任务未完成或校验失败时不动文件；`openspec_init` 不覆盖已有配置，也不写技能文件。
 

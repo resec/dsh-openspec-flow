@@ -50,7 +50,7 @@ After the loop reaches `all_done`, and before reporting completion:
 
 ## Review report
 
-Each round is reported by the plugin card: in the reviewer session for an independent review, and in the main session when the changer calls `wait` or `report`. Do not restate findings, evidence, risks, scope or disposition notes. Write one short note only for information the report cannot express and the user must know, such as a trade-off, an authorization need, a wait timeout or the next step. Do not count rounds; continue until the review is ready.
+Each round is reported by the plugin card: in the reviewer session for an independent review, and in the changer session for a self review. An independent review does not show a review card in the changer session; `report` still returns the stored report. Do not restate findings, evidence, risks, scope or disposition notes. Write one short note only for information the report cannot express and the user must know, such as a trade-off, an authorization need, a wait timeout or the next step. Do not count rounds; continue until the review is ready.
 
 ## Finish
 
