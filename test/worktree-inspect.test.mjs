@@ -157,7 +157,7 @@ test('a non-git project reports worktree state unavailable', async () => {
   const fake = setup(root)
   const result = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
   assert.equal(result.status, 'unavailable')
-  assert.equal(result.state.path, null)
+  assert.equal(result.state.path, undefined)
   assert.deepEqual(result.locks, [])
   assert.equal(result.repair.action, 'manual')
 })
