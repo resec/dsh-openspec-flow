@@ -327,12 +327,15 @@ test('apply review can run with draft review disabled and an explicit base', asy
     action: 'start', change: CHANGE, review: 'apply', base,
   })
   assert.equal(started.review, 'apply')
+  assert.equal(started.baseline, 'none')
+  assert.match(started.brief, /- baseline: none/)
   assert.match(started.brief, /The base is the explicit base passed to this round\./)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.baseCommit, base)
+  assert.equal(record.baseline, 'none')
 })
 
-test('apply review names the merge base when no seal is recorded', async () => {
+test('apply review can run with draft review disabled and the merge-base fallback', async () => {
   const { root, run } = gitFixture()
   run(['add', `openspec/changes/${CHANGE}`])
   run(['commit', '-m', 'seal the draft'])
@@ -342,7 +345,100 @@ test('apply review names the merge base when no seal is recorded', async () => {
   const started = await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, review: 'apply',
   })
+  assert.equal(started.baseline, 'none')
+  assert.match(started.brief, /- baseline: none/)
   assert.match(started.brief, /The base is `git merge-base HEAD origin\/main`; no seal commit was recorded for this change\./)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseline, 'none')
+})
+
+test('a no-draft apply review starts without a draft record and reports its baseline', async () => {
+  const { root, run } = gitFixture()
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root)
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', baseline: 'none', base,
+  })
+  assert.equal(started.baseline, 'none')
+  assert.match(started.brief, /This review has no draft baseline/)
+  assert.doesNotMatch(started.brief, /- intent:/)
+  assert.doesNotMatch(started.brief, /## Plan changes since the draft/)
+  assert.doesNotMatch(started.brief, /## Plan change waiver/)
+  const resumed = await call(fake, 'openspec_review', {
+    action: 'resume', change: CHANGE, review: 'apply', base,
+  })
+  assert.equal(resumed.round, 1)
+  assert.equal(resumed.baseline, 'none')
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const status = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.baseline, 'none')
+  const reportResult = await call(fake, 'openspec_review', {
+    action: 'report', change: CHANGE, review: 'apply',
+  })
+  assert.equal(reportResult.baseline, 'none')
+})
+
+test('an explicit no-draft baseline needs a base', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const fake = setup(root)
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, review: 'apply', baseline: 'none',
+    }),
+    /needs a non-empty base/,
+  )
+})
+
+test('an explicit no-draft baseline is refused when a draft record exists', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const base = run(['rev-parse', 'HEAD'])
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, review: 'apply', baseline: 'none', base,
+    }),
+    /already has a draft review/,
+  )
+})
+
+test('the default apply review still requires a draft record', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const fake = setup(root)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /needs a completed draft review/,
+  )
+})
+
+test('a legacy apply record without baseline reports draft', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', baseline: 'none', base,
+  })
+  const path = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(path, 'utf8'))
+  delete record.baseline
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`)
+  const status = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.baseline, 'draft')
 })
 
 test('apply review ignores a blank base and keeps the seal source', async () => {
@@ -362,6 +458,9 @@ test('openspec_review declares the optional apply base and ignores it outside ap
   assert.equal(schema.properties.base.type, 'string')
   assert.ok(schema.properties.base.description.includes('Apply review base'))
   assert.equal(schema.required.includes('base'), false)
+  assert.equal(schema.properties.baseline.type, 'string')
+  assert.deepEqual(schema.properties.baseline.enum, ['draft', 'none'])
+  assert.equal(schema.required.includes('baseline'), false)
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, base: 'ignored' })
   assert.equal(status.review, 'draft')
   assert.equal(status.state, 'not-started')

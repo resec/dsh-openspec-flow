@@ -63,7 +63,7 @@ An apply review started with `baseline: "none"` SHALL NOT require a draft record
 #### Scenario: A draft-disabled omitted baseline keeps the base fallback
 
 - **WHEN** the draft policy is disabled, the caller omits `baseline`, and no base is passed
-- **THEN** the review opens and the base falls back to the recorded base or `git merge-base HEAD origin/main`
+- **THEN** the review opens and the base falls back to `git merge-base HEAD origin/main`
 
 #### Scenario: An existing draft record refuses the no-draft baseline
 

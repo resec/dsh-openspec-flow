@@ -28,7 +28,7 @@
 #### Scenario: A blank base on a draft-disabled policy falls back
 
 - **WHEN** the draft policy is disabled, the caller omits `baseline`, and `base` is blank or missing
-- **THEN** the base falls back to the recorded base or `git merge-base HEAD origin/main` as before
+- **THEN** the base falls back to `git merge-base HEAD origin/main` as before
 
 #### Scenario: Other actions ignore base
 

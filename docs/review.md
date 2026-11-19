@@ -20,6 +20,8 @@
 
 apply review 需要 git 仓库、干净工作区与至少一个提交。没有 git 的项目只能用 draft review；`openspec_new_change` 在锁定策略时忽略 apply review 的启用设置，把新建策略的 apply 段关闭。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
 
+apply review 默认使用 draft 基线：draft 段启用时，`start` 仍要求已完成的 draft review。`openspec_review` 接受可选 `baseline`：`draft`（draft 段启用时的默认）或 `none`。显式 `baseline: "none"` 用于没有 draft 记录的已提交分支：跳过 draft record、intent、plan drift 与 plan-change waiver 检查，必须显式给出非空 `base`，且已有 draft 记录时拒绝。draft 段禁用时，省略 baseline 解析为 `none`，沿用原有的 base 解析（显式 base 或 merge-base）。apply 记录、status 与 report 报告该 baseline；旧 apply 记录没有该字段时按 `draft` 报告。
+
 git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须提交封存 commit：变更目录连同插件写入的 `openspec/.gitignore`，也可包含其他 `openspec/changes/` 路径。工具要求工作区干净（其他 change 目录的未提交规划文件除外）、`HEAD` 至少改一个变更目录内的文件、目录外只允许该忽略文件和其他 `openspec/changes/` 路径，且工件哈希仍等于 draft 记录；任一不满足即拒绝。封存 commit 记录为 apply 的 base。apply 开始后 draft review 冻结，不能再 `resume`；此时修改 planning 工件须先取得用户书面豁免，用 `openspec_review`（`action: "waive"`、`scope: "plan-change"`、`files`）记录。`files` 以 change 目录为基准记录，也接受项目相对与绝对路径，例如 `files: ["proposal.md","tasks.md"]`；逃逸 change 目录或指向其他 change 的路径会被拒绝；apply review 会拒绝不在豁免清单内的变更文件。
 
 本仓库以本地 tarball 包安装插件，评审器执行的是 profile 中的已安装副本，不是工作区源码。编辑工作区源码不改变已装副本，也不会触发 HMR 重载，因此评审进行中修改插件源码不会替换评审器，评审按已装版本完整完成。需要新插件逻辑生效时，重新打包、先在 Plugins 页面移除再安装；步骤见 [`installing-bundles.md`](installing-bundles.md)。
@@ -149,7 +151,7 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 
 ## 记录布局
 
-评审记录放在变更目录之外，归档后仍保留：
+评审记录放在变更目录之外，归档后仍保留。评审目录由 `git check-ignore` 判断是否已被忽略：已被仓库级规则忽略时，插件不再写 `openspec/.gitignore`；未被忽略时才写；无 git 项目仍写，检查失败时保守写。
 
 | 路径 | 内容 |
 | --- | --- |

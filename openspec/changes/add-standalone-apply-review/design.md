@@ -38,7 +38,7 @@ Rejected: a global setting that disables draft review. It would change every cha
 
 ### The no-draft branch is local to the apply entry
 
-When the resolved baseline is `none`, the apply entry skips the draft-record, intent, plan-drift and plan-change-waiver block as one unit, but only after refusing a change that already has a draft record. An explicit `baseline: "none"` requires an explicit non-empty `base`; a draft-disabled policy that omits `baseline` resolves to `none` but keeps the existing base fallback (recorded base or `git merge-base HEAD origin/main`), so that legacy path is unchanged. It still requires a clean tree, a commit, `--strict` validation and the apply lock. The base source remains `explicit` when a base is passed, so the existing brief line and base-tree diff need no new source kind.
+When the resolved baseline is `none`, the apply entry skips the draft-record, intent, plan-drift and plan-change-waiver block as one unit, but only after refusing a change that already has a draft record. An explicit `baseline: "none"` requires an explicit non-empty `base`; a draft-disabled policy that omits `baseline` resolves to `none` but keeps the existing merge-base fallback, so that legacy path is unchanged. It still requires a clean tree, a commit, `--strict` validation and the apply lock. The base source remains `explicit` when a base is passed, so the existing brief line and base-tree diff need no new source kind.
 
 The alternative of creating a synthetic draft record would give the apply review a draft lifecycle it never had: the record would need an intent, an artifact hash and a readiness state, and archive would later read a draft that no human reviewed.
 

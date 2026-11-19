@@ -187,6 +187,25 @@ test('the review document and README state the apply brief base scope', () => {
   assert.match(readme, /可选 `base`/)
 })
 
+test('the review document and README state the no-draft apply baseline', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    'baseline',
+    '`none`',
+    '显式 `baseline: "none"`',
+    '已有 draft 记录时拒绝',
+    'git check-ignore',
+    'openspec/.gitignore',
+  ]) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  assert.match(readme, /baseline/)
+  assert.match(readme, /`none`/)
+  assert.match(readme, /默认 `draft`/)
+  assert.match(readme, /非空 `base`/)
+})
+
 test('the review document and README state the requirement length gate', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [

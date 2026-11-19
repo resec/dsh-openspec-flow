@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -98,6 +98,20 @@ test('the review ignore entry is appended once', () => {
   const text = readFileSync(join(root, 'openspec', '.gitignore'), 'utf8')
   assert.equal(text, 'node_modules/\n.review/\n')
   assert.doesNotThrow(() => assertReviewIgnored(root, join(root, 'openspec', '.review', 'x')))
+})
+
+test('the review ignore entry is not written when a repository rule already ignores it', () => {
+  const root = temp()
+  const run = (args) => {
+    const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  run(['init'])
+  writeFileSync(join(root, '.gitignore'), 'openspec/.review/\n')
+  ensureReviewIgnored(root, join(root, 'openspec', '.review', 'local#demo'))
+  assert.equal(existsSync(join(root, 'openspec', '.gitignore')), false)
+  assert.doesNotThrow(() => assertReviewIgnored(root, join(root, 'openspec', '.review', 'local#demo')))
 })
 
 test('the lock is exclusive and released', () => {
