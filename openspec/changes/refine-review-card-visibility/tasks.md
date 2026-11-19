@@ -22,8 +22,8 @@
 
 ## 4. Integration
 
-- [ ] 4.1 Run `npm run verify` on Node 24.22.2 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass.
-- [ ] 4.2 Review the final diff for unintended changes to the card payload, review records, card file layout or tool results; verify by inspecting `git diff --stat` and the touched public shapes.
+- [x] 4.1 Run `npm run verify` on Node 24.22.2 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass.
+- [x] 4.2 Review the final diff for unintended changes to the card payload, review records, card file layout or tool results; verify by inspecting `git diff --stat` and the touched public shapes.
 
 ## Workflow follow-up
 
