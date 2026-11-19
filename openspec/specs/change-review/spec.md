@@ -638,35 +638,6 @@ An apply review start or resume SHALL refuse a changed artifact outside the reco
 - **THEN** the apply review start or resume accepts the file
 - **AND** the error does not name it as unwaived
 
-### Requirement: The changer checks the reviewer report without polling
-
-`wait` SHALL NOT poll. It SHALL return `ready` when the latest round has a report or the reviewer is waived, `overdue` at the deadline, and `waiting` otherwise; `waiting` sets `waitState: "waiting"` and ends the turn. The result SHALL come from a post-write read that re-reads inside the lock and changes only `changerSessionId`. A best-effort card-marker write after the result SHALL be logged on failure and SHALL NOT change it. The deadline remains `waitMinutes`.
-
-#### Scenario: Reviewer already submitted
-
-- **WHEN** the latest round has a report before `wait` is called
-- **THEN** `wait` returns `ready` and the readiness calculation runs
-
-#### Scenario: No report before the deadline
-
-- **WHEN** the latest round has no report and the deadline has not passed
-- **THEN** `wait` returns `waiting` and instructs the changer to end its turn
-
-#### Scenario: Deadline has passed
-
-- **WHEN** the wait deadline has passed and no report arrived
-- **THEN** `wait` returns `overdue`
-
-#### Scenario: Wait does not sleep on a poll interval
-
-- **WHEN** `wait` is called for a pending reviewer
-- **THEN** it returns from the post-write read without a poll loop
-
-#### Scenario: A contended card write keeps the wait result
-
-- **WHEN** the card marker write cannot acquire the review lock
-- **THEN** the failure is logged and `wait` returns the same `ready` result
-
 ### Requirement: A reviewer submit wakes the changer
 
 A successful `openspec_reviewer` submit SHALL wake the changer through `subagents.sendMessage` with `steer` delivery. Targets SHALL be the recorded changer session and the pending-deadline waiter, deduplicated. The message SHALL name the change, review kind, round, verdict, readiness and next action (which may be `openspec_apply_next`, `openspec_archive` or an `openspec_review` action). A failed wakeup SHALL NOT fail or roll back the submission; it SHALL be logged.
@@ -1481,3 +1452,27 @@ The plugin SHALL copy a legacy review record to the shared root once when neithe
 
 - **WHEN** the plugin copies a legacy record to the shared root
 - **THEN** the legacy directory and its files remain in place
+
+### Requirement: The changer reads the reviewer report without polling
+
+`wait` SHALL NOT poll. It SHALL return `ready` when the latest round has a report or the reviewer is waived, `overdue` at the deadline, and `waiting` otherwise; `waiting` sets `waitState: "waiting"` and ends the turn. The result SHALL come from a post-write read that re-reads inside the lock and changes only `changerSessionId`. The deadline remains `waitMinutes`.
+
+#### Scenario: Reviewer already submitted
+
+- **WHEN** the latest round has a report before `wait` is called
+- **THEN** `wait` returns `ready` and the readiness calculation runs
+
+#### Scenario: No report before the deadline
+
+- **WHEN** the latest round has no report and the deadline has not passed
+- **THEN** `wait` returns `waiting` and instructs the changer to end its turn
+
+#### Scenario: Deadline has passed
+
+- **WHEN** the wait deadline has passed and no report arrived
+- **THEN** the wait returns `overdue`
+
+#### Scenario: Wait does not sleep on a poll interval
+
+- **WHEN** `wait` is called for a pending reviewer
+- **THEN** it returns from the post-write read without a poll loop

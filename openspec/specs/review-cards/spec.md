@@ -40,27 +40,6 @@ The file payload SHALL carry the phase, change, review kind, round, verdict, sta
 - **WHEN** the report file cannot be read
 - **THEN** the payload omits the report body and keeps the recorded finding states
 
-### Requirement: The main session receives the independent review card
-
-For an independent review the changer's `wait` SHALL write the latest submitted round's review card file for the changer session when it returns `ready`; `report` SHALL write it only when the requested round is the latest submitted round and the card marker is absent. The record SHALL mark the card by session, phase and round. The reviewer's `submit` SHALL write the card file for the reviewer session only.
-
-#### Scenario: Wait writes the main-session card
-
-- **WHEN** a changer calls `wait` and the reviewer already submitted
-- **THEN** the main session gets one review card file
-- **AND** the review record marks the card as written
-
-#### Scenario: Report does not duplicate the card
-
-- **WHEN** a changer calls `report` after `wait` already wrote the card
-- **THEN** no second card file is written
-- **AND** the report is still returned
-
-#### Scenario: Report writes the card when wait did not
-
-- **WHEN** a changer calls `report` for a submitted round whose card was never written
-- **THEN** the main session gets one review card file
-
 ### Requirement: The client queries cards for the current turn
 
 The Client SHALL render, in a `conversation.chat.turnTail` entry, the cards returned by `reviewCards/get` for the current session and turn number. A turn without cards SHALL render nothing, and a card bound to another turn SHALL NOT be reused.
@@ -88,7 +67,7 @@ The Client SHALL render, in a `conversation.chat.turnTail` entry, the cards retu
 
 ### Requirement: The Host binds cards to the turn
 
-The Host SHALL return cards already bound to the requested turn, bind unclaimed cards written within that turn to it, and persist the binding for a refresh. It SHALL use the turn start time when provided and otherwise the per-session delivery watermark at `<reviewDir>/card-delivery.json`, outside `cards/`. When a request carries a turn end time, the Host SHALL NOT advance the watermark past that time.
+The Host SHALL return cards already bound to the requested turn, bind unclaimed cards written within that turn to it, and persist the binding for a refresh. It SHALL NOT return or bind a review card withheld by the independent-review delivery rule. It SHALL use the turn start time when provided and otherwise the per-session delivery watermark at `<reviewDir>/card-delivery.json`, outside `cards/`. When a request carries a turn end time, the Host SHALL NOT advance the watermark past that time.
 
 #### Scenario: Unclaimed cards are bound
 
@@ -262,12 +241,19 @@ The expanded card SHALL list readiness reasons one per line and SHALL merge reas
 
 ### Requirement: Legacy cards remain readable after the shared-root upgrade
 
-The plugin SHALL keep cards written under the legacy review root readable after the shared-root upgrade. When no shared record exists for a change but a legacy record or legacy card directory exists, the client card reader SHALL return those cards from the legacy root until the record is copied. The reader SHALL NOT copy or migrate the record.
+The plugin SHALL keep cards written under the legacy review root readable after the shared-root upgrade. When no shared record exists for a change but a legacy record or legacy card directory exists, the client card reader SHALL return those cards from the legacy root until the record is copied, except a review card withheld by the independent-review delivery rule. The reader SHALL NOT copy or migrate the record.
 
 #### Scenario: A legacy card stays visible
 
 - **WHEN** a card exists under `openspec/.review/<store>#<change>/cards/` and the shared root has no record for that change
+- **AND** the delivery rule does not withhold it
 - **THEN** `reviewCards/get` still returns that card
+
+#### Scenario: A withheld legacy changer card stays hidden
+
+- **WHEN** a legacy changer review card belongs to an independent review
+- **THEN** `reviewCards/get` does not return it
+- **AND** it is not bound to the turn
 
 #### Scenario: A copied record reads shared cards
 
@@ -287,3 +273,90 @@ A returned legacy card SHALL still be bound to the request turn and the delivery
 
 - **WHEN** the card reader returns a legacy card for the current turn
 - **THEN** it writes the turn binding and delivery watermark under the existing card contract without copying the record
+
+### Requirement: A review card is written by the reporting session
+
+At the review point the Host SHALL write the review card for the session that submits the report: the changer session for `self-report` in a self review, and the reviewer session for `openspec_reviewer` `submit` in an independent review. `wait` and `report` SHALL NOT write a review card or add a card marker. The resolution card keeps its current write points.
+
+#### Scenario: Self review writes the changer card
+
+- **WHEN** a changer submits `self-report` for a self review
+- **THEN** one card file with `phase: "review"` is written for the changer session
+- **AND** the review record marks the card as written
+
+#### Scenario: Independent review writes only the reviewer card
+
+- **WHEN** a reviewer submits a report for an independent review
+- **THEN** one card file with `phase: "review"` is written for the reviewer session
+- **AND** no review card file is written for the changer session
+
+#### Scenario: Wait and report write no review card
+
+- **WHEN** a changer calls `wait` and then `report` after a reviewer submitted
+- **THEN** no review card file is written for the changer session
+- **AND** `report` still returns the stored report
+
+#### Scenario: Report does not backfill a self-review card
+
+- **WHEN** a self review's `self-report` wrote no card and the changer calls `report`
+- **THEN** no review card file or card marker is written
+
+### Requirement: The card's review kind selects the record
+
+The card's recorded `review` kind SHALL select the record the delivery rule compares against: `apply` selects `apply-review.json`, every other value selects `review.json`. A missing kind SHALL select `review.json`. The record lookup SHALL be cached per review directory and review kind within one request.
+
+#### Scenario: Both kinds in one directory
+
+- **WHEN** one review directory holds a draft self card and an apply changer card
+- **THEN** the draft self card is delivered
+- **AND** the apply changer card is withheld
+
+#### Scenario: A missing kind selects the draft record
+
+- **WHEN** a card carries no recorded `review` kind
+- **THEN** the delivery rule compares it against `review.json`
+
+### Requirement: The Host withholds the changer's independent review card
+
+For an independent review the Host SHALL NOT return or bind a `phase: "review"` card whose card session equals the review record's `changerSessionId`, including a card written before this rule. The record's `independent: true` or `mode: "reviewer"` SHALL identify an independent review. A missing or unreadable record, a missing `changerSessionId`, or a self review SHALL leave delivery unchanged.
+
+#### Scenario: Changer card is withheld
+
+- **WHEN** an independent review record names the changer session and the endpoint receives that session's review card
+- **THEN** the card is not returned
+- **AND** an unbound card is not bound to the turn
+
+#### Scenario: A bound changer card is withheld
+
+- **WHEN** the changer's review card already records the requested turn
+- **THEN** the card is still not returned
+
+#### Scenario: Reviewer card is delivered
+
+- **WHEN** the review card belongs to the reviewer session
+- **THEN** the card is returned
+
+#### Scenario: Self review card is delivered
+
+- **WHEN** the review record marks a self review
+- **THEN** the changer's review card is returned
+
+#### Scenario: A record that cannot prove independence keeps delivery
+
+- **WHEN** the review record is missing, unreadable or has no `changerSessionId`
+- **THEN** the card is returned under the existing delivery rules
+
+### Requirement: The collapsed summary shows the change name
+
+The collapsed summary SHALL show the recorded change name between the phase title and the review kind. The name SHALL be the recorded `change` value with surrounding whitespace removed; an absent, empty or non-string value SHALL omit the segment. The change name is recorded data and is not a translated label.
+
+#### Scenario: Change name appears in the summary
+
+- **WHEN** a card records `change: "add-export-api"`
+- **THEN** the collapsed summary reads `评审汇报 · add-export-api · draft · 第 2 轮 · …`
+- **AND** a resolution card uses the same order as `处理汇报 · add-export-api · draft · …`
+
+#### Scenario: A missing change name omits the segment
+
+- **WHEN** a card has no recorded change name
+- **THEN** the summary keeps `评审汇报 · draft · 第 2 轮 · …` without an empty segment
