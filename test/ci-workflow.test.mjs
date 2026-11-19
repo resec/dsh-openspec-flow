@@ -34,7 +34,7 @@ test('the verify job runs the change, skill and verification gates', () => {
 test('the lab job installs the browser where the doctor looks', () => {
   for (const command of [
     'PLAYWRIGHT_BROWSERS_PATH: .cache/lab/pw-browsers',
-    'fonts-noto-cjk',
+    'fonts-wqy-zenhei',
     'npx playwright install --with-deps chromium',
     'npm run lab -- doctor',
     'npm run test:lab -- --mock-only',
