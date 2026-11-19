@@ -64,7 +64,7 @@ worktree: { path?, exists }
 repair: { action: "none" | "recover" | "manual", scope?, expectedOwner?, message? }
 ```
 
-The action is read-only. `repair.action` is `recover` for a dead lock and `manual` for a missing worktree or corrupt state, because this change has no create or state-repair action. It never inspects npm, pnpm, Chromium, DSH profiles or ports.
+The action is read-only. `repair.action` is `recover` for a dead lock and `manual` for a missing worktree, a corrupt state or a lock with no usable owner, because this change has no create or state-repair action. It never inspects npm, pnpm, Chromium, DSH profiles or ports.
 
 `openspec_apply_worktree` exposes only `recover` in this change; create/land/remove actions belong to later changes. The tool is denied to the reviewer through the existing deny-all-global-Host-tools preset.
 
