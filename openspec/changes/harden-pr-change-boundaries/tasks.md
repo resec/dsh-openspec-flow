@@ -13,10 +13,10 @@
 
 ## 3. Integration verification
 
-- [ ] 3.1 Run `openspec_inspect` with `action: "validate"` and `strict: true`; verify it reports no warnings.
-- [ ] 3.2 Commit the implementation on the sealed tree; verify `git status --porcelain` is empty.
-- [ ] 3.3 Run `npm run test:affected -- scripts/check-pr-change.mjs .gitignore` and `npm run verify` with Node 24 from `.cache/toolchain/node/bin` on the committed tree; verify the suite and coverage pass.
-- [ ] 3.4 Start the apply review and confirm it is ready before archive.
+- [x] 3.1 Run `openspec_inspect` with `action: "validate"` and `strict: true`; verify it reports no warnings.
+- [x] 3.2 Commit the implementation on the sealed tree; verify `git status --porcelain` is empty.
+- [x] 3.3 Run `npm run test:affected -- scripts/check-pr-change.mjs .gitignore` and `npm run verify` with Node 24 from `.cache/toolchain/node/bin` on the committed tree; verify the suite and coverage pass.
+- [x] 3.4 Start the apply review and confirm it is ready before archive.
 
 ## Workflow follow-up
 
