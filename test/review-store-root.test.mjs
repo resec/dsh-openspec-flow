@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -103,4 +103,31 @@ test('a busy migration lock reports an actionable error', () => {
   const lock = join(reviewRoot(root), '.migrate', `${reviewRecordName(root, null, 'demo')}.lock`)
   mkdirSync(lock, { recursive: true })
   assert.throws(() => reviewDirectory(root, null, 'demo'), /migration is busy/u)
+})
+
+
+test('an existing shared record wins over the legacy copy', () => {
+  const root = repository()
+  const legacy = legacyReviewDirectory(root, null, 'demo')
+  mkdirSync(legacy, { recursive: true })
+  writeFileSync(join(legacy, 'policy.json'), 'legacy\n')
+  const shared = reviewDirectory(root, null, 'demo')
+  writeFileSync(join(shared, 'policy.json'), 'shared\n')
+  writeFileSync(join(legacy, 'policy.json'), 'legacy-updated\n')
+  assert.equal(reviewDirectory(root, null, 'demo'), shared)
+  assert.equal(existsSync(shared), true)
+  assert.match(execFileSync('cat', [join(shared, 'policy.json')], { encoding: 'utf8' }), /^shared$/mu)
+  assert.deepEqual(readdirSync(join(reviewRoot(root), '.migrate')).filter((name) => name.includes('.tmp-')), [])
+})
+
+test('a symlinked nested root keeps a distinct record name', () => {
+  const root = repository()
+  const nested = join(root, 'nested')
+  mkdirSync(nested)
+  const link = join(root, 'link')
+  symlinkSync(nested, link, 'dir')
+  const viaLink = reviewDirectory(link, null, 'demo')
+  const direct = reviewDirectory(nested, null, 'demo')
+  assert.equal(viaLink, direct)
+  assert.notEqual(viaLink, reviewDirectory(root, null, 'demo'))
 })

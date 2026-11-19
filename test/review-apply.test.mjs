@@ -261,7 +261,11 @@ test('a ready apply review allows archive and a blocker refuses it', async () =>
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await assert.rejects(
     call(fake, 'openspec_archive', { change: CHANGE }),
     /Next: openspec_review action=self-report review=apply/,
@@ -296,7 +300,11 @@ test('moving HEAD after an apply pass refuses archive', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -587,7 +595,11 @@ test('an apply record without findings still renders the report contract', async
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   const path = join(reviewDir(root), 'apply-review.json')
   const record = JSON.parse(readFileSync(path, 'utf8'))
   delete record.findings
@@ -603,7 +615,11 @@ test('the apply gate points an abandoned review at a new change', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', { action: 'abandon', change: CHANGE, review: 'apply' })
   await assert.rejects(
     call(fake, 'openspec_archive', { change: CHANGE }),
@@ -615,7 +631,11 @@ test('apply review is idempotent after pass and a legacy round cap does not bloc
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -687,7 +707,11 @@ test('an apply review disposes a dispositions batch', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report',
     change: CHANGE,
@@ -877,7 +901,11 @@ test('apply status reads a recorded tree', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   const status = await call(fake, 'openspec_review', {
     action: 'status', change: CHANGE, review: 'apply',
   })
@@ -903,7 +931,11 @@ test('apply status names resume with the apply kind when the tree moved', async 
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -918,7 +950,11 @@ test('apply resume refuses a record without a policy', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   rmSync(join(reviewDir(root), 'policy.json'))
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
@@ -1096,7 +1132,11 @@ test('apply review refuses an unwaived plan change on resume', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -1138,7 +1178,11 @@ test('the seal names a recovery that stays available after apply started', async
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   const recordPath = join(reviewDir(root), 'review.json')
   const record = JSON.parse(readFileSync(recordPath, 'utf8'))
   delete record.applyBaseCommit
@@ -1334,7 +1378,11 @@ test('a legacy-form waiver lets a later apply round resume', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -1387,7 +1435,11 @@ test('a waiver result names the uncovered drift', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -1407,7 +1459,11 @@ test('a waiver that covers every drift file reports ready', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -1445,7 +1501,11 @@ test('a waiver with a legacy draft record without artifact files lists no artifa
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
@@ -1522,7 +1582,11 @@ test('a waiver after apply start with no drift reports no drift pending', async 
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   const waived = await call(fake, 'openspec_review', {
     action: 'waive', scope: 'plan-change', change: CHANGE,
     approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
@@ -1535,7 +1599,11 @@ test('a waiver whose coverage cannot be computed reports the error', async () =>
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
-  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const intentTarget = /^- intent: (.+)$/mu.exec(started.brief)?.[1]
+  const diffTarget = /^- diff: (.+)$/mu.exec(started.brief)?.[1]
+  assert.ok(intentTarget !== undefined && existsSync(intentTarget), `apply brief intent path exists: ${intentTarget}`)
+  assert.ok(diffTarget !== undefined && existsSync(diffTarget), `apply brief diff path exists: ${diffTarget}`)
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })

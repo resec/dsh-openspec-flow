@@ -134,6 +134,7 @@ export function checkDocument(text, spec) {
   if (!text.includes('@root-')) problems.push('missing nested-root suffix')
   if (!text.includes('.migrated')) problems.push('missing migration marker')
   if (!text.includes('既不写 `openspec/.gitignore` 也不运行 `git check-ignore`')) problems.push('missing shared-root ignore skip')
+  if (!text.includes('旧记录根下的卡片')) problems.push('missing legacy card fallback')
   if (!text.includes('<store>#<change>')) problems.push('missing record key <store>#<change>')
   for (const name of [spec.record.draftFile, spec.record.applyFile, spec.record.waiverFile]) {
     if (!text.includes(name)) problems.push(`missing record file ${name}`)

@@ -684,7 +684,10 @@ test('a legacy policy is listed once and migrated to the shared root', () => {
     const facts = projectFacts(root)
     assert.equal(facts.changes.length, 2)
     assert.deepEqual(facts.changes.map((entry) => entry.change).sort(), ['demo', 'local#other'])
-    assert.ok(reviewDirectory(root, null, 'demo').includes('openspec-flow'))
+    const sharedDemo = reviewDirectory(root, null, 'demo')
+    assert.ok(sharedDemo.includes('openspec-flow'))
+    rmSync(sharedDemo, { recursive: true, force: true })
+    assert.equal(projectFacts(root).changes.some((entry) => entry.change === 'demo'), false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

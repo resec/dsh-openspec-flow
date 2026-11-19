@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -456,9 +456,11 @@ test('legacy cards remain readable until migration and are suppressed after remo
     settings: { timeoutMs: 1000, reviews: { draft: {}, apply: {} } },
   })
   try {
-    cardFile(legacy)
+    const cardPath = cardFile(legacy)
     const before = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
     assert.equal(before.value.cards.length, 1)
+    assert.equal(JSON.parse(readFileSync(cardPath, 'utf8')).turn, 1)
+    assert.ok(existsSync(join(legacy, 'card-delivery.json')))
     const shared = reviewDirectory(root, null, 'demo')
     rmSync(shared, { recursive: true, force: true })
     const after = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 2 })
