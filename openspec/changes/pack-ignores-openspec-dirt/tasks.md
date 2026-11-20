@@ -15,9 +15,9 @@
 
 ## 3. Integration checks
 
-- [ ] 3.1 Run `npm run test:affected -- lib/pack.js lib/bundle.js lib/status-paths.js lib/review/store.js` and verify the selected test files pass.
-- [ ] 3.2 Run `npm run verify` on Node 24 and verify both the test summary and the coverage verdict pass, including the new-code thresholds for `lib/status-paths.js`.
-- [ ] 3.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and verify it reports no findings.
+- [x] 3.1 Run `npm run test:affected -- lib/pack.js lib/bundle.js lib/status-paths.js lib/review/store.js` and verify the selected test files pass.
+- [x] 3.2 Run `npm run verify` on Node 24 and verify both the test summary and the coverage verdict pass, including the new-code thresholds for `lib/status-paths.js`.
+- [x] 3.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` and verify it reports no findings.
 
 ## Workflow follow-up
 
