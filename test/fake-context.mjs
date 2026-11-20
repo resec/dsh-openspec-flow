@@ -132,8 +132,12 @@ export function createFakeContext({
         const id = session?.id
         return sessionDirectories.get(id) ?? cwd
       },
-      async ensure() {
-        return cwd
+      async ensure(agent) {
+        return sessionDirectories.get(agent?.session?.id ?? agent?.id) ?? cwd
+      },
+      async set(agent, path) {
+        sessionDirectories.set(agent?.session?.id ?? agent?.id, path)
+        return path
       },
     },
     subprocess: {

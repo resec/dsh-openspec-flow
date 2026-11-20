@@ -120,6 +120,7 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 | `reviewer.js` | `ctx.tools.definitions()` 的全局视图、`ctx.tools.restrict({ deny })`、`tools/change` 事件 | `ToolRestriction` 的 deny 语义、scope 父链、禁用名集合；reviewer 目录是 preset 的七个工具，`read_image` 只在 Host 提供 `attachments` 时注册 |
 | `cordis.patch.yml:22-28` | preset 的 `tool-fs` 子行开启 `readImage`；`read_image` 依赖 Host `attachments` 服务与声明图片输入的模型路由 | `readImage` 键、`ctx.attachments` 服务名、模型图片模态；缺 `attachments` 时工具不注册 |
 | `lib/tools/shared.js:108,110` | `workingDirectory.ensure`、`defaultDirectory` | 方法名与返回类型 |
+| `lib/worktree/create.js` | `workingDirectory.set(agent, path, signal)` | 方法名、三参数签名与返回类型 |
 | `lib/tools/shared.js:221` | `output.render` 返回 `[{ type: 'text', text }]` | `ContentBlock` 结构 |
 | `lib/openspec.js:252-282` | `subprocess.spawn` 的 `argv`、`cwd`、`stdio`、`graceMs`、`signal`、`env`；`handle.done`；`collected.stdout.readFrom` | spawn 规格与收集输出接口 |
 | `lib/policy.js:85-102` | `agent.ctx.systemPrompt`、`systemPrompt.section` 与 `getSectionOrder('PLAN_POLICY')` | agent 上下文与服务方法签名 |
@@ -138,7 +139,7 @@ DSH 侧对应的声明文件与符号：
 | `dsh-tools` | `lib/types/index.d.ts` | `ToolsService.definitions`、`ToolsService.restrict`、`ToolRestriction`、`tools/change` 事件 |
 | `dsh-scope` | `lib/types/index.d.ts` | scope 父链绑定（`scopeOf`、`bindScopeParent` 的语义）；restriction 在 agent 视图上的交集行为 |
 | `dsh-subprocess` | `lib/types/types.d.ts` | `SubprocessSpawnSpec`、`SubprocessHandle`、`SubprocessCollectedOutputs` |
-| `dsh-working-directory` | `lib/types/index.d.ts` | `get`、`ensure`、`defaultDirectory` |
+| `dsh-working-directory` | `lib/types/index.d.ts` | `get`、`ensure`、`set`、`defaultDirectory` |
 | `dsh-system-prompt` | `lib/types/index.d.ts` | `section`、`getSectionOrder`、`PromptSectionOrderName` |
 | `dsh-agent` | `lib/types/index.d.ts` | `list()` |
 | `dsh-skill` | `lib/types/index.d.ts` | `registerProvider`、`SkillProvider` |
@@ -334,7 +335,7 @@ DSH 安装树（全局 npm 安装，相对 `$(npm root -g)/@deepseek-ai/dsh`）�
 - `node_modules/@deepseek-ai/dsh-app-boot/lib/index.js`：`evaluatePluginCompatibility`、`loadProfileDirectory`、`pluginCompatibilityWarning`、`readProfileVersionExemptions`。
 - `node_modules/@deepseek-ai/dsh-tools/lib/types/contracts.d.ts`：`ToolDefinition`、`ToolOutputDefinition`。
 - `node_modules/@deepseek-ai/dsh-subprocess/lib/types/types.d.ts`：`SubprocessSpawnSpec`、`SubprocessHandle`、`SubprocessCollectedOutputs`。
-- `node_modules/@deepseek-ai/dsh-working-directory/lib/types/index.d.ts`：`get`、`ensure`、`defaultDirectory`。
+- `node_modules/@deepseek-ai/dsh-working-directory/lib/types/index.d.ts`：`get`、`ensure`、`set`、`defaultDirectory`。
 - `node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts`：`section`、`getSectionOrder`。
 - `node_modules/@deepseek-ai/dsh-agent/lib/types/index.d.ts`：`list()`。
 - `node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts`：`registerProvider`。

@@ -48,6 +48,7 @@ export function apply(ctx, config) {
   const settings = {
     timeoutMs: Number.isInteger(config?.timeoutMs) ? config.timeoutMs : 30_000,
     reviews: config?.reviews ?? normalizeReviews(undefined).value,
+    worktree: config?.worktree ?? { enabled: true },
   }
   registerAdminGate(ctx)
   registerTools(ctx, settings)

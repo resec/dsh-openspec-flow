@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,12 +29,13 @@ export function fixture() {
   return root
 }
 
-export function setup(root, reviews) {
+export function setup(root, reviews, options = {}) {
   clearCache()
   const fake = createFakeContext({ cwd: root })
   apply(fake.ctx, {
     timeoutMs: 30_000,
     reviews: reviews ?? { draft: { enabled: true }, apply: { enabled: true } },
+    worktree: options.worktree ?? { enabled: false },
   })
   return fake
 }
@@ -232,7 +233,12 @@ export function reviewerPresetToolNames(plugins) {
  * `.cache/` stays inspectable when it fails.
  */
 export function cleanupFixtures() {
-  const leaked = CREATED.filter((root) => existsSync(join(root, '.cache')))
+  const leaked = CREATED.filter((root) => {
+    const cache = join(root, '.cache')
+    if (!existsSync(cache)) return false
+    if (!statSync(cache).isDirectory()) return true
+    return readdirSync(cache).some((name) => name !== 'openspec-flow')
+  })
   assert.deepEqual(
     leaked.map((root) => join(root, '.cache')),
     [],

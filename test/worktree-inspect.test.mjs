@@ -55,6 +55,8 @@ function state(root, extra = {}) {
     status: 'active',
     createdAt: '2026-01-01T00:00:00.000Z',
     lastUsedAt: '2026-01-01T00:00:00.000Z',
+    lockToken: 'token',
+    lockPid: 123,
     ...extra,
   }
 }

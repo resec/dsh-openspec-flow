@@ -18,6 +18,7 @@ test('defaults timeoutMs and accepts an explicit value', () => {
           enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
+      worktree: { enabled: true },
     },
   })
   assert.deepEqual(validate({ timeoutMs: 5_000 }), {
@@ -31,6 +32,7 @@ test('defaults timeoutMs and accepts an explicit value', () => {
           enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
+      worktree: { enabled: true },
     },
   })
 })
@@ -57,6 +59,7 @@ test('accepts a disabled draft review and bounded limits', () => {
           enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
         },
       },
+      worktree: { enabled: true },
     },
   })
 })
@@ -119,4 +122,11 @@ test('rejects an invalid timeout', () => {
   const result = validate({ timeoutMs: 1 })
   assert.ok(Array.isArray(result.issues))
   assert.match(result.issues[0].message, /timeoutMs must be an integer/)
+})
+
+
+test('accepts the worktree switch and rejects a non-boolean', () => {
+  assert.equal(validate({ worktree: { enabled: false } }).value.worktree.enabled, false)
+  assert.equal(validate({}).value.worktree.enabled, true)
+  assert.match(validate({ worktree: { enabled: 'yes' } }).issues[0].message, /worktree\.enabled/)
 })

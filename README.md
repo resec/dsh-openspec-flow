@@ -174,6 +174,7 @@ npm run bundle:pack
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `timeoutMs` | `30000` | 单次 CLI 调用的墙钟上限，1000–300000。 |
+| `worktree.enabled` | `true` | 是否把 git apply 放进每 change 的 worktree；关闭时保留旧的单树 apply，供兼容或排查使用。 |
 | `reviews.draft.enabled` | `true` | 新 change 是否锁定 draft review。 |
 | `reviews.draft.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
 | `reviews.draft.waitMinutes` | `15` | draft review 的默认等待上限，1–120。 |
@@ -348,7 +349,7 @@ skills/                  五份流程技能
 locale/{en,zh}.json      Plugin Manager 标题与描述
 icon.svg                 插件图标
 docs/review.md           评审系统完整说明（不进入发布包）
-docs/apply-worktree.md   apply worktree 状态、锁、检查与恢复（不进入发布包）
+docs/apply-worktree.md   apply worktree 创建、会话路由、状态/锁、检查与恢复（不进入发布包）
 docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```

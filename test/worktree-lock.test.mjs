@@ -256,3 +256,25 @@ test('a failed creation leaves no lock path', async () => {
   }
   assert.equal(existsSync(path), false)
 })
+
+test('the same owner re-enters with the recorded token', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const first = await acquireLock(common, 'change', { change: 'demo' })
+  const again = await acquireLock(common, 'change', { change: 'demo', reuseToken: first.owner.token })
+  assert.equal(again.reused, true)
+  assert.equal(again.owner.token, first.owner.token)
+  releaseLock(first)
+})
+
+test('a dead free lock can be reclaimed by apply', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 999999, at: new Date().toISOString(), what: 'dead' })}\n`)
+  const handle = await acquireLock(common, 'change', { change: 'demo', reclaimDead: true })
+  assert.notEqual(handle.owner.token, 'dead')
+  assert.equal(inspectLock(path).state, 'alive')
+  releaseLock(handle)
+})

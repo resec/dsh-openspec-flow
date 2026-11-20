@@ -46,6 +46,8 @@ function state(root, extra = {}) {
     status: 'active',
     createdAt: '2026-01-01T00:00:00.000Z',
     lastUsedAt: '2026-01-01T00:00:00.000Z',
+    lockToken: 'token',
+    lockPid: 123,
     ...extra,
   }
 }
@@ -85,6 +87,10 @@ test('a missing, unknown or invalid field is rejected', () => {
     { ...state(root), store: 7 },
     { ...state(root), sealedCommit: 7 },
     { ...state(root), createdAt: 7 },
+    { ...state(root), lockToken: 7 },
+    { ...state(root), lockPid: null },
+    { ...state(root), lockPid: 0 },
+    { ...state(root), status: 'landed' },
   ]) {
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, `${JSON.stringify(broken)}\n`)
