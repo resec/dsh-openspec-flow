@@ -67,6 +67,12 @@ test('a mislabelled or drifted row fails with the row and metric', () => {
   assert.throws(() => assertCoverageRows(parseCoverageTable(drifted), CONFIG), /New-code branch/)
 })
 
+test('CONTRIBUTING.md links the worktree environment and resolves the browser path', () => {
+  assert.match(CONTRIBUTING, /docs\/apply-worktree-dev\.md/)
+  assert.match(CONTRIBUTING, /PLAYWRIGHT_BROWSERS_PATH/)
+  assert.match(CONTRIBUTING, /--reset-browsers[^\n]*resolved browser directory/)
+})
+
 test('CONTRIBUTING.md names the baseline guard and the coverage commands', () => {
   assert.equal(CONFIG.thresholds.deltaMaxDrop, 1)
   assert.match(CONTRIBUTING, /1\.00 percentage point/)

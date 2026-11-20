@@ -30,7 +30,7 @@ The script:
 
 1. Uses a qualifying Node 24 from `PATH` or a common global install location, or downloads the version recorded in `coverage.baseline.json` into `.cache/toolchain/` and verifies its checksum.
 2. Runs `npm ci` unless `--skip-install` reuses `node_modules`, and installs the Git hooks.
-3. Installs Playwright Chromium under `.cache/lab/pw-browsers` unless it is already present or skipped.
+3. Installs Playwright Chromium under `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`, unless it is already present or skipped.
 4. Runs `npm run lab -- doctor`.
 5. Runs the plain test suite in default mode.
 
@@ -52,7 +52,7 @@ source scripts/activate.sh
 
 ### Lab prerequisites
 
-Chromium is installed where the lab looks: `.cache/lab/pw-browsers`. Do not install it into the host's default Playwright cache.
+Chromium is installed where the lab looks: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`. Do not install it into the host's default Playwright cache. An apply worktree can share the main checkout's browser and package caches through [`docs/apply-worktree-dev.md`](docs/apply-worktree-dev.md).
 
 The lab also needs pnpm on `PATH`; DSH forwards plugin installation to it. Bootstrap's doctor step and the pre-push lab gate also require it, so install it before the first bootstrap or push. Install the version pinned by the CI workflow:
 
@@ -70,7 +70,7 @@ On Linux, the lab doctor also requires a CJK font. If the doctor reports one mis
 --skip-install         Reuse node_modules instead of running npm ci.
 --skip-playwright      Skip the Chromium installation.
 --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
---reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
+--reset-browsers       Remove the resolved browser directory (PLAYWRIGHT_BROWSERS_PATH or .cache/lab/pw-browsers) before installing Chromium.
 --force                Continue past the 3 GiB free-disk threshold.
 --node-mirror URL      Use a Node distribution mirror.
 --registry URL         Use an npm registry.
@@ -78,7 +78,7 @@ On Linux, the lab doctor also requires a CJK font. If the doctor reports one mis
 
 Run `./scripts/bootstrap.sh --help` for the full list.
 
-On macOS the default temporary directory is a symlink; the test entrypoints canonicalize `TMPDIR` for the child test process, so no host workaround is needed. When the Chromium download is slow or blocked, pass `--playwright-host` or set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror. An interrupted install can leave a `__dirlock` under `.cache/lab/pw-browsers`; `--reset-browsers` removes that clone-local directory before installing again. After a failed later step, rerun with `--skip-install`; `--full` does not repeat the plain suite. The lab caches the pinned DSH under `.cache/lab/dsh`; `npm run lab -- cache prune` reclaims entries older than 30 days.
+On macOS the default temporary directory is a symlink; the test entrypoints canonicalize `TMPDIR` for the child test process, so no host workaround is needed. When the Chromium download is slow or blocked, pass `--playwright-host` or set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror. An interrupted install can leave a `__dirlock` under the resolved browser directory; `--reset-browsers` removes that directory before installing again. After a failed later step, rerun with `--skip-install`; `--full` does not repeat the plain suite. The lab caches the pinned DSH under `.cache/lab/dsh`; `npm run lab -- cache prune` reclaims entries older than 30 days.
 
 ## Change-first workflow
 

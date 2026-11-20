@@ -58,6 +58,10 @@ The lab's DSH web server already uses `--port 0` and the mock provider uses `lis
 
 pnpm does not reliably read `PNPM_STORE_DIR` on its own, so the environment exports the path and the documentation gives the explicit `--store-dir "$PNPM_STORE_DIR"` form. `check` reports the observed pnpm version so a developer can confirm the pinned tool. The JSON output also carries the store path.
 
+### Worktree names in subprocess tests
+
+The plugin names a worktree directory with `local#<change>`. `URL.pathname` percent-encodes the `#`, so subprocess tests that resolve a script from `import.meta.url` must use `fileURLToPath`. The coverage-stamp subprocess tests were updated for this reason; it is test infrastructure for the worktree environment, not a coverage behavior change.
+
 ## Risks / Trade-offs
 
 - **A separate-git-dir layout may not name the main worktree** → the script fails with the git command and does not guess; the documented workaround is `git worktree repair`.

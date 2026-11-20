@@ -1,10 +1,26 @@
 # Spec Delta
 
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: Explicit browser path precedence
+### Requirement: Bootstrap provisions the toolchain
 
-When `PLAYWRIGHT_BROWSERS_PATH` is set, bootstrap SHALL use that absolute path for the Chromium presence check and installation instead of the default `.cache/lab/pw-browsers`; when it is unset, bootstrap SHALL use `.cache/lab/pw-browsers`.
+The repository SHALL provide a bootstrap entrypoint that resolves a Node 24 runtime satisfying `engines.node` from the host or downloads and verifies the pinned fallback inside the clone, then installs locked dependencies, Git hooks and the Playwright Chromium binary under `PLAYWRIGHT_BROWSERS_PATH` when set, else `.cache/lab/pw-browsers`. A full mode SHALL run `npm run verify` and `npm run test:lab -- --mock-only` in place of the plain test suite; the suite runs inside that verification.
+
+#### Scenario: The host has a qualifying runtime
+
+- **WHEN** a qualifying Node 24 is available on the host
+- **THEN** bootstrap uses it and downloads no other runtime
+
+#### Scenario: The host has no qualifying runtime
+
+- **WHEN** no qualifying runtime exists on the host
+- **THEN** bootstrap downloads the pinned version into the clone and verifies it before use
+
+#### Scenario: Full mode runs the complete gate
+
+- **WHEN** bootstrap runs in full mode and the doctor passes
+- **THEN** dependencies, hooks and Chromium are provisioned
+- **AND** verification and the lab run, with the suite executed inside verification
 
 #### Scenario: An explicit browser path is used
 
@@ -15,8 +31,6 @@ When `PLAYWRIGHT_BROWSERS_PATH` is set, bootstrap SHALL use that absolute path f
 
 - **WHEN** `PLAYWRIGHT_BROWSERS_PATH` is unset
 - **THEN** bootstrap uses `.cache/lab/pw-browsers`
-
-## MODIFIED Requirements
 
 ### Requirement: Bootstrap leaves host state alone
 

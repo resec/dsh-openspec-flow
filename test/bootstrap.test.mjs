@@ -25,12 +25,18 @@ import {
   shasumsUrl,
 } from '../scripts/bootstrap-lib.mjs'
 import {
+  acquireInstallLockSync,
+  installLockPath,
+  releaseInstallLock,
+} from '../scripts/worktree-env.mjs'
+import {
+  browsersPath,
   completionHint,
   dependenciesError,
   parseBootstrapArgs,
   playwrightEnv,
-  resetBrowsers,
   resolvePlan,
+  runBrowserStep,
 } from '../scripts/bootstrap.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -223,7 +229,6 @@ test('refuses a browser reset when Playwright is skipped', () => {
 test('the default plan installs, runs the plain suite and checks the doctor', () => {
   const plan = resolvePlan(parseBootstrapArgs([]), { browserPresent: false, dependenciesPresent: true })
   assert.equal(plan.install, true)
-  assert.equal(plan.chromium, true)
   assert.equal(plan.doctor, true)
   assert.equal(plan.plainTest, true)
   assert.equal(plan.verification, false)
@@ -236,7 +241,6 @@ test('full mode verifies and runs the lab without a plain suite pass', () => {
   assert.equal(plan.plainTest, false)
   assert.equal(plan.verification, true)
   assert.equal(plan.lab, true)
-  assert.equal(plan.chromium, false)
 })
 
 test('--skip-test turns only the plain suite off', () => {
@@ -246,14 +250,18 @@ test('--skip-test turns only the plain suite off', () => {
   assert.equal(plan.doctor, true)
 })
 
-test('--skip-playwright keeps Chromium off when no browser exists', () => {
-  const plan = resolvePlan(parseBootstrapArgs(['--skip-playwright']), { browserPresent: false, dependenciesPresent: true })
-  assert.equal(plan.chromium, false)
+test('--skip-playwright leaves the other steps in place', () => {
+  const options = parseBootstrapArgs(['--skip-playwright'])
+  const plan = resolvePlan(options, { dependenciesPresent: true })
+  assert.equal(options.skipPlaywright, true)
+  assert.equal(plan.plainTest, true)
 })
 
-test('--reset-browsers forces Chromium even with a browser present', () => {
-  const plan = resolvePlan(parseBootstrapArgs(['--reset-browsers']), { browserPresent: true, dependenciesPresent: true })
-  assert.equal(plan.chromium, true)
+test('--reset-browsers parses without affecting the other plan steps', () => {
+  const options = parseBootstrapArgs(['--reset-browsers'])
+  const plan = resolvePlan(options, { dependenciesPresent: true })
+  assert.equal(options.resetBrowsers, true)
+  assert.equal(plan.doctor, true)
 })
 
 test('--skip-install reuses dependencies and reports a missing directory', () => {
@@ -272,12 +280,63 @@ test('maps the download host to the Playwright environment', () => {
   })
 })
 
-test('resetBrowsers removes the clone-local browser directory', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'bootstrap-browsers-'))
-  mkdirSync(join(directory, 'chromium'))
-  writeFileSync(join(directory, 'chromium', 'marker'), 'x')
-  resetBrowsers(directory)
-  assert.equal(existsSync(directory), false)
+test('bootstrap resolves the explicit or default browser path', () => {
+  assert.equal(browsersPath({}), join(ROOT, '.cache', 'lab', 'pw-browsers'))
+  assert.equal(browsersPath({ PLAYWRIGHT_BROWSERS_PATH: '/shared/browsers' }), '/shared/browsers')
+  assert.equal(browsersPath({ PLAYWRIGHT_BROWSERS_PATH: 'relative/browsers' }), join(ROOT, 'relative', 'browsers'))
+})
+
+test('the browser step forwards --playwright-host to the installer', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-host-'))
+  const browsers = join(root, 'pw-browsers')
+  let seen
+  try {
+    runBrowserStep(
+      { resetBrowsers: false, playwrightHost: 'https://mirror.example' },
+      {
+        browsersPath: browsers,
+        install: ({ browsersPath: path, host }) => {
+          seen = host
+          mkdirSync(join(path, 'chrome'), { recursive: true })
+          writeFileSync(join(path, 'chrome', 'chrome'), '')
+        },
+      },
+    )
+    assert.equal(seen, 'https://mirror.example')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the bootstrap browser step contends on the same shared lock', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-lock-'))
+  const browsers = join(root, 'pw-browsers')
+  const marker = join(browsers, 'chrome', 'chrome')
+  let installs = 0
+  mkdirSync(join(browsers, 'chrome'), { recursive: true })
+  writeFileSync(marker, 'present')
+  const install = () => {
+    installs += 1
+    mkdirSync(join(browsers, 'chrome'), { recursive: true })
+    writeFileSync(marker, 'installed')
+  }
+  const held = acquireInstallLockSync(installLockPath(browsers), 'parent', { timeoutMs: 1000 })
+  try {
+    assert.throws(
+      () => runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, install, lockOptions: { timeoutMs: 30, pollMs: 5 } }),
+      /timed out waiting/,
+    )
+    assert.equal(existsSync(marker), true)
+    assert.equal(installs, 0)
+  } finally {
+    releaseInstallLock(held)
+  }
+  try {
+    assert.deepEqual(runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, install }), { installed: true, reused: false })
+    assert.equal(installs, 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('names npm ci when dependencies are missing', () => {

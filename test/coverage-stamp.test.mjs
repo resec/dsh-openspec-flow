@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
   STAMP_INPUTS,
@@ -267,7 +268,7 @@ test('a directory without git refuses reuse', () => {
 
 test('the check command exits nonzero without a stamp and zero with one', () => {
   const root = makeRepo()
-  const script = new URL('../scripts/coverage-stamp.mjs', import.meta.url).pathname
+  const script = fileURLToPath(new URL('../scripts/coverage-stamp.mjs', import.meta.url))
   const missing = spawnSync(process.execPath, [script, 'check', '--root', root], { encoding: 'utf8' })
   assert.equal(missing.status, 1)
   assert.match(missing.stderr, /no stamp is recorded/)
@@ -278,7 +279,7 @@ test('the check command exits nonzero without a stamp and zero with one', () => 
 })
 
 test('the check command rejects an unknown command and argument', () => {
-  const script = new URL('../scripts/coverage-stamp.mjs', import.meta.url).pathname
+  const script = fileURLToPath(new URL('../scripts/coverage-stamp.mjs', import.meta.url))
   const unknownCommand = spawnSync(process.execPath, [script, 'resume'], { encoding: 'utf8' })
   assert.equal(unknownCommand.status, 2)
   assert.match(unknownCommand.stderr, /unknown command/)

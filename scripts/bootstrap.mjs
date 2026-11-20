@@ -7,17 +7,27 @@
  * It never writes tracked files, shell configuration or DSH profiles.
  */
 
-import { existsSync, realpathSync, rmSync, statfsSync } from 'node:fs'
+import { existsSync, realpathSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
 import { MIN_FREE_BYTES } from './bootstrap-lib.mjs'
-import { findBrowserExecutable } from './lab/core/doctor.mjs'
+import { prepareChromium, resolveBrowsersPath } from './worktree-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const BROWSERS_PATH = join(ROOT, '.cache', 'lab', 'pw-browsers')
 const NPM_CACHE = process.env.npm_config_cache ?? join(ROOT, '.cache', 'npm')
+
+/**
+ * Resolve the browser path bootstrap uses for this run.
+ * @param env - environment to resolve.
+ * @returns the absolute browser path.
+ */
+export function browsersPath(env = process.env) {
+  return resolveBrowsersPath({ root: ROOT, env })
+}
+
+const BROWSERS_PATH = browsersPath()
 
 const USAGE = `Usage: scripts/bootstrap.sh [options]
 
@@ -90,15 +100,13 @@ export function parseBootstrapArgs(argv) {
 /**
  * Build the step plan for one bootstrap run.
  * @param options - parsed bootstrap options.
- * @param state - `browserPresent` and `dependenciesPresent` observations.
+ * @param state - the `dependenciesPresent` observation.
  * @returns the booleans that decide each step, plus the dependency refusal.
  */
 export function resolvePlan(options, state) {
-  const browserPresent = state?.browserPresent === true
   const dependenciesPresent = state?.dependenciesPresent === true
   return {
     install: options.skipInstall !== true,
-    chromium: options.skipPlaywright !== true && (options.resetBrowsers === true || !browserPresent),
     doctor: true,
     plainTest: options.skipTest !== true && options.full !== true,
     verification: options.full === true,
@@ -117,11 +125,25 @@ export function playwrightEnv(host) {
 }
 
 /**
- * Remove the clone-local browser directory before a fresh install.
- * @param directory - the browser directory under the clone cache.
+ * Run the Chromium preparation step, including the download-host option.
+ * @param options - parsed bootstrap options.
+ * @param overrides - browser path, npm environment and install seam.
+ * @returns `{ installed, reused }`.
  */
-export function resetBrowsers(directory) {
-  rmSync(directory, { recursive: true, force: true })
+export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, npmEnv = {}, install, lockOptions = {} } = {}) {
+  const prepare = install ?? (({ browsersPath: browser, host }) => run('npx', ['playwright', 'install', 'chromium'], {
+    ...npmEnv,
+    ...playwrightEnv(host),
+    PLAYWRIGHT_BROWSERS_PATH: browser,
+  }))
+  return prepareChromium({
+    browsersPath: path,
+    reset: options.resetBrowsers,
+    host: options.playwrightHost,
+    cwd: ROOT,
+    install: prepare,
+    ...lockOptions,
+  })
 }
 
 /**
@@ -183,9 +205,7 @@ function main() {
 
   const npmEnv = { npm_config_cache: NPM_CACHE, ...(options.registry === undefined ? {} : { npm_config_registry: options.registry }) }
   const total = options.full ? 7 : 5
-  const browserPresent = findBrowserExecutable(BROWSERS_PATH) !== undefined
   const plan = resolvePlan(options, {
-    browserPresent,
     dependenciesPresent: existsSync(join(ROOT, 'node_modules')),
   })
   if (plan.missingDependencies) throw new Error(dependenciesError())
@@ -200,16 +220,11 @@ function main() {
   log(2, total, 'installing Git hooks')
   run('npm', ['run', 'hooks:install'], npmEnv)
 
-  if (plan.chromium) {
-    if (options.resetBrowsers) resetBrowsers(BROWSERS_PATH)
-    log(3, total, 'installing Playwright Chromium')
-    run('npx', ['playwright', 'install', 'chromium'], {
-      ...npmEnv,
-      ...playwrightEnv(options.playwrightHost),
-      PLAYWRIGHT_BROWSERS_PATH: BROWSERS_PATH,
-    })
+  if (options.skipPlaywright) {
+    log(3, total, 'Playwright Chromium skipped')
   } else {
-    log(3, total, 'Playwright Chromium already present or skipped')
+    const prepared = runBrowserStep(options, { npmEnv })
+    log(3, total, prepared.installed ? 'installed Playwright Chromium' : 'Playwright Chromium already present')
   }
 
   const labEnv = { PLAYWRIGHT_BROWSERS_PATH: BROWSERS_PATH, ...npmEnv }
