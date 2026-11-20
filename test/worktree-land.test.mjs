@@ -36,6 +36,8 @@ test('land merges, archives, writes the manifest and marks archived', async () =
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
   assert.equal(existsSync(state.worktree), true)
   assert.match(run(['branch', '--list', state.branch]), new RegExp(state.branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.equal(run(['status', '--porcelain']), '')
+  assert.equal(run(['ls-tree', '-r', '--name-only', 'HEAD', `openspec/changes/${CHANGE}`]), '')
 })
 
 test('land refuses without user approval', async () => {
@@ -415,8 +417,34 @@ test('land refuses a missing change lock', async () => {
   const lock = join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d')
   const fs = await import('node:fs')
   fs.rmSync(lock, { recursive: true, force: true })
+  const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+  assert.equal(landed.change, CHANGE)
+})
+
+test('land refuses when strict validation fails', async () => {
+  const { fake } = await readyLand()
+  const original = fake.ctx.subprocess.spawn
+  fake.ctx.subprocess.spawn = (spec) => {
+    if (spec.argv.some((arg) => arg === 'validate')) {
+      return {
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        control: undefined,
+        collected: {
+          stdout: { readFrom: () => ({ text: '{"items":[{"valid":false}]}' }) },
+          stderr: { readFrom: () => ({ text: '' }) },
+        },
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+        terminate() {},
+        waitForExit() {},
+      }
+    }
+    return original(spec)
+  }
   await assert.rejects(
     call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
-    /missing or corrupt|recover/,
+    /validate refused/,
   )
 })
