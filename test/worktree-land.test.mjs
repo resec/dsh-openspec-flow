@@ -222,7 +222,7 @@ test('land refuses incomplete tasks and abandoned removal needs approval', async
   })
   await assert.rejects(
     call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
-    /incomplete tasks/,
+    /incomplete task/i,
   )
   const state = readApplyState(root, null, CHANGE)
   fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
@@ -447,4 +447,14 @@ test('land refuses when strict validation fails', async () => {
     call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
     /validate refused/,
   )
+})
+
+
+
+test('the shared archive operation honors skipSpecs', async () => {
+  const { fixture } = await import('./review-fixtures.mjs')
+  const root = fixture()
+  const fake = setup(root)
+  const archived = await call(fake, 'openspec_archive', { change: CHANGE, skipSpecs: true })
+  assert.equal(archived.archived, true)
 })
