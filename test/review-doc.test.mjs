@@ -443,3 +443,27 @@ test('the README states the review kind and the draft freeze', () => {
   assert.match(readme, /apply 启动后 draft 记录冻结/)
   assert.match(readme, /openspec_review action=dispose review=<kind>/)
 })
+
+test('the review document and README state the card lookup deduplication and batch request', () => {
+  const doc = readFileSync(DOC_PATH, 'utf8')
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  for (const phrase of [
+    '每个评审根在单次请求内最多扫描一次',
+    '按卡片文件绝对路径去重',
+    '`turns` 批量请求',
+    '`byTurn`',
+    '重复 turn 只保留首项',
+    '只写一次 `card-delivery.json`',
+    '`clearGitRootCache()`',
+  ]) {
+    assert.ok(doc.includes(phrase), `the document states ${phrase}`)
+  }
+  for (const phrase of [
+    '`turns` 批量请求',
+    '`byTurn`',
+    '同一张卡只返回一次',
+    '[docs/review.md](docs/review.md)',
+  ]) {
+    assert.ok(readme.includes(phrase), `the README states ${phrase}`)
+  }
+})

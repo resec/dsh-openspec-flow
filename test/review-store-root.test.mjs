@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import {
-  ensureReviewIgnored, legacyReviewDirectory, reviewDirectory, reviewRecordName, reviewRoot,
+  clearGitRootCache, ensureReviewIgnored, gitCommonDir, gitTopLevel, legacyReviewDirectory, reviewDirectory, reviewRecordName, reviewRoot,
 } from '../lib/review/store.js'
 
 const roots = []
@@ -130,4 +130,23 @@ test('a symlinked nested root keeps a distinct record name', () => {
   const direct = reviewDirectory(nested, null, 'demo')
   assert.equal(viaLink, direct)
   assert.notEqual(viaLink, reviewDirectory(root, null, 'demo'))
+})
+
+test('git root resolution is cached per project root until cleared', () => {
+  clearGitRootCache()
+  const root = temporary()
+  let calls = 0
+  const run = (_command, args) => {
+    calls += 1
+    return { status: 0, stdout: args.includes('--git-common-dir') ? '/tmp/common\n' : '/tmp/top\n' }
+  }
+  assert.equal(gitCommonDir(root, run), '/tmp/common')
+  assert.equal(gitCommonDir(root, run), '/tmp/common')
+  assert.equal(calls, 1)
+  assert.equal(gitTopLevel(root, run), '/tmp/top')
+  assert.equal(gitTopLevel(root, run), '/tmp/top')
+  assert.equal(calls, 2)
+  clearGitRootCache()
+  assert.equal(gitCommonDir(root, run), '/tmp/common')
+  assert.equal(calls, 3)
 })

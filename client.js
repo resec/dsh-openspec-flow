@@ -649,6 +649,11 @@ window.__ModuleLoader__.load({
       return Array.isArray(cards) ? cards.filter((card) => card !== null && typeof card === 'object') : []
     }
 
+    /** Select one turn's cards from a batch answer. */
+    function selectCardArray(value) {
+      return Array.isArray(value) ? value.filter((card) => card !== null && typeof card === 'object') : []
+    }
+
     /** Finding severities, in report order. */
     const SEVERITIES = ['critical', 'major', 'minor', 'nit']
 
@@ -868,12 +873,86 @@ window.__ModuleLoader__.load({
         cards.map((card, index) => h(ReviewCard, { key: `${cardValue(card.phase)}-${String(index)}`, card })))
     }
 
+    /**
+     * Merge one session's turn queries into batch requests.
+     *
+     * Entries queued in the same microtask share one request, and a session
+     * sends at most 64 turns per request. A failed batch falls back to one
+     * request per turn. The dedupe key lives only in the pending batch and is
+     * dropped on flush, so a later remount issues a new request.
+     * @param call - channel call function.
+     * @returns `{ request(sessionId, { turn, from, to }) }`.
+     */
+    function createCardBatcher(call) {
+      const pending = new Map()
+      const single = (sessionId, entry) => Promise.resolve(call(ENDPOINTS.cards, {
+        sessionId,
+        turn: entry.turn,
+        ...(entry.from !== undefined ? { from: entry.from } : {}),
+        ...(entry.to !== undefined ? { to: entry.to } : {}),
+      })).then((result) => (result?.ok === true ? selectCards(result.value) : [])).catch(() => [])
+      const send = (sessionId, entries) => {
+        for (let index = 0; index < entries.length; index += 64) {
+          const chunk = entries.slice(index, index + 64)
+          if (chunk.length === 1) {
+            const entry = chunk[0]
+            single(sessionId, entry).then((cards) => entry.resolve(cards))
+            continue
+          }
+          const turns = chunk.map((entry) => ({
+            turn: entry.turn,
+            ...(entry.from !== undefined ? { from: entry.from } : {}),
+            ...(entry.to !== undefined ? { to: entry.to } : {}),
+          }))
+          Promise.resolve(call(ENDPOINTS.cards, { sessionId, turns })).then((result) => {
+            const byTurn = result?.ok === true && result.value !== null && typeof result.value === 'object'
+              ? result.value.byTurn
+              : undefined
+            for (const entry of chunk) entry.resolve(selectCardArray(byTurn?.[String(entry.turn)]))
+          }).catch(() => {
+            for (const entry of chunk) single(sessionId, entry).then((cards) => entry.resolve(cards))
+          })
+        }
+      }
+      return {
+        request(sessionId, options) {
+          const turn = options?.turn
+          if (typeof sessionId !== 'string' || sessionId === '' || !Number.isInteger(turn) || turn < 1) {
+            return Promise.resolve([])
+          }
+          const from = options?.from
+          const to = options?.to
+          const key = `${String(turn)}|${from ?? ''}|${to ?? ''}`
+          let bucket = pending.get(sessionId)
+          if (bucket === undefined) {
+            bucket = { entries: new Map(), scheduled: false }
+            pending.set(sessionId, bucket)
+          }
+          const existing = bucket.entries.get(key)
+          if (existing !== undefined) return existing.promise
+          const entry = { turn, from, to, resolve: null, promise: null }
+          entry.promise = new Promise((resolve) => { entry.resolve = resolve })
+          bucket.entries.set(key, entry)
+          if (!bucket.scheduled) {
+            bucket.scheduled = true
+            Promise.resolve().then(() => {
+              if (pending.get(sessionId) !== bucket) return
+              pending.delete(sessionId)
+              send(sessionId, [...bucket.entries.values()])
+            })
+          }
+          return entry.promise
+        },
+      }
+    }
+
     return {
       inject: ['slots', 'locale', 'connection'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'openspec-flow: review config dictionary')
         const t = ctx.locale.bind(NS)
         const call = (endpoint, payload) => ctx.connection.rpc.call(CHANNEL, endpoint, payload)
+        const batcher = createCardBatcher(call)
 
         /** Turn-tail entry: query the review channel for the current turn's cards. */
         function ReviewCardTail({ turn, sessionId }) {
@@ -891,14 +970,10 @@ window.__ModuleLoader__.load({
             let alive = true
             if (effectiveSessionId === '') return undefined
             if (!Number.isInteger(turnNumber)) return undefined
-            const payload = { sessionId: effectiveSessionId, turn: turnNumber }
             const from = turnTimeIso(startTime)
-            if (from !== undefined) payload.from = from
             const to = turnTimeIso(endTime)
-            if (to !== undefined) payload.to = to
-            Promise.resolve(call(ENDPOINTS.cards, payload)).then((result) => {
-              if (!alive) return
-              setLoaded({ key, cards: result?.ok === true ? selectCards(result.value) : [] })
+            batcher.request(effectiveSessionId, { turn: turnNumber, from, to }).then((cards) => {
+              if (alive) setLoaded({ key, cards })
             }).catch(() => {
               if (alive) setLoaded({ key, cards: [] })
             })
@@ -934,6 +1009,8 @@ window.__ModuleLoader__.load({
         lockLine,
         createController,
         selectCards,
+        selectCardArray,
+        createCardBatcher,
         cardTailElement,
         cardSummary,
         cardSections,

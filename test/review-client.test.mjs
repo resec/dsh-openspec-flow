@@ -36,13 +36,21 @@ async function loadBundle() {
   await import(new URL('../client.js', import.meta.url).href)
   const entry = loaded[0]
   const effectDeps = []
+  const stateSetters = []
+  const cleanups = []
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
-    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useState: (initial) => {
+      let value = typeof initial === 'function' ? initial() : initial
+      return [value, (next) => {
+        stateSetters.push(next)
+        value = typeof next === 'function' ? next(value) : next
+      }]
+    },
     useEffect: (fn, deps) => {
       effectDeps.push(deps)
       const cleanup = fn()
-      if (typeof cleanup === 'function') cleanup()
+      cleanups.push(typeof cleanup === 'function' ? cleanup : undefined)
     },
     useCallback: (fn) => fn,
     useMemo: (fn) => fn(),
@@ -51,7 +59,7 @@ async function loadBundle() {
     assert.equal(name, 'react')
     return react
   })
-  cached = { entry, plugin, effectDeps }
+  cached = { entry, plugin, effectDeps, stateSetters, cleanups }
   return cached
 }
 
@@ -692,4 +700,157 @@ test('the expanded card merges same-kind readiness reasons', async () => {
     ['原因 5', 'finding R2-03 is deferred'],
     ['原因 6', 'the change artifacts changed since the review started'],
   ])
+})
+
+test('the card batcher merges one session and dispatches byTurn', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    if (Array.isArray(payload.turns)) {
+      const byTurn = {}
+      for (const entry of payload.turns) byTurn[String(entry.turn)] = [{ phase: 'review', round: entry.turn }]
+      return { ok: true, value: { byTurn } }
+    }
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const [first, second] = await Promise.all([
+    batcher.request('session-1', { turn: 50, from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:10:00.000Z' }),
+    batcher.request('session-1', { turn: 51, from: '2026-01-01T00:10:00.000Z', to: '2026-01-01T00:20:00.000Z' }),
+  ])
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0].turns.map((entry) => entry.turn), [50, 51])
+  assert.deepEqual(calls[0].turns[1], {
+    turn: 51, from: '2026-01-01T00:10:00.000Z', to: '2026-01-01T00:20:00.000Z',
+  })
+  assert.equal(first[0].round, 50)
+  assert.equal(second[0].round, 51)
+})
+
+test('the card batcher caps a request at 64 turns', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    if (Array.isArray(payload.turns)) {
+      const byTurn = {}
+      for (const entry of payload.turns) byTurn[String(entry.turn)] = [{ phase: 'review', round: entry.turn }]
+      return { ok: true, value: { byTurn } }
+    }
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const results = await Promise.all(
+    Array.from({ length: 65 }, (_value, index) => batcher.request('session-1', { turn: index + 1 })),
+  )
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].turns.length, 64)
+  assert.equal(calls[1].turn, 65)
+  assert.equal(results[64][0].round, 65)
+})
+
+test('the card batcher dedupes a pending turn and clears the key on flush', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const first = batcher.request('session-1', { turn: 7 })
+  const same = batcher.request('session-1', { turn: 7 })
+  assert.equal(first, same)
+  await first
+  await batcher.request('session-1', { turn: 7 })
+  assert.equal(calls.length, 2)
+})
+
+test('a failed batch falls back to single-turn requests', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    if (Array.isArray(payload.turns)) throw new Error('batch failed')
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const [first, second] = await Promise.all([
+    batcher.request('session-1', { turn: 1 }),
+    batcher.request('session-1', { turn: 2 }),
+  ])
+  assert.equal(calls.length, 3)
+  assert.equal(calls[1].turn, 1)
+  assert.equal(calls[2].turn, 2)
+  assert.equal(first[0].round, 1)
+  assert.equal(second[0].round, 2)
+})
+
+test('an empty batch entry renders no cards', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const call = async (_endpoint, payload) => (Array.isArray(payload.turns)
+    ? { ok: true, value: { byTurn: {} } }
+    : { ok: true, value: { cards: [] } })
+  const batcher = createCardBatcher(call)
+  const [first, second] = await Promise.all([
+    batcher.request('session-1', { turn: 3 }),
+    batcher.request('session-1', { turn: 4 }),
+  ])
+  assert.deepEqual(first, [])
+  assert.deepEqual(second, [])
+})
+
+test('each turn tail renders only its own turn cards', async () => {
+  const { plugin } = await loadBundle()
+  const { cardTailElement } = plugin.__test
+  const textOf = (card) => {
+    const element = cardTailElement([card])
+    const list = element.props.children[0]
+    const first = Array.isArray(list) ? list[0] : list
+    return JSON.stringify(first.type(first.props))
+  }
+  const firstText = textOf({ phase: 'review', review: 'draft', change: 'demo', round: 50, verdict: 'pass', findings: [] })
+  const secondText = textOf({ phase: 'review', review: 'draft', change: 'demo', round: 51, verdict: 'pass', findings: [] })
+  assert.ok(firstText.includes('第 50 轮'))
+  assert.ok(!firstText.includes('第 51 轮'))
+  assert.ok(secondText.includes('第 51 轮'))
+  assert.ok(!secondText.includes('第 50 轮'))
+})
+
+test('an unmounted turn tail does not update state', async () => {
+  const { plugin, cleanups, stateSetters } = await loadBundle()
+  cleanups.length = 0
+  stateSetters.length = 0
+  const built = clientContext()
+  let resolveCall
+  const pending = new Promise((resolve) => { resolveCall = resolve })
+  const calls = []
+  built.ctx.connection.rpc.call = async (channel, endpoint, payload) => {
+    calls.push(payload)
+    return pending
+  }
+  plugin.apply(built.ctx)
+  const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
+  turnTail.component({ turn: { turn: 50 }, sessionId: 'session-unmount' })
+  turnTail.component({ turn: { turn: 51 }, sessionId: 'session-unmount' })
+  await Promise.resolve()
+  assert.equal(calls.length, 1)
+  for (const cleanup of cleanups) if (cleanup) cleanup()
+  resolveCall({
+    ok: true,
+    value: {
+      byTurn: {
+        50: [{ phase: 'review', round: 50 }],
+        51: [{ phase: 'review', round: 51 }],
+      },
+    },
+  })
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.deepEqual(stateSetters, [])
 })
