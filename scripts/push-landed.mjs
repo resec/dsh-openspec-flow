@@ -83,17 +83,12 @@ function isAncestor(cwd, ancestor, descendant) {
  * @throws {UsageError} on an unknown, duplicate or incomplete flag.
  */
 export function parseArgs(argv) {
-  const options = { push: false, dryRun: false, change: undefined, merge: undefined, manifest: undefined, help: false }
+  const options = { push: false, change: undefined, merge: undefined, manifest: undefined, help: false }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--push') {
       if (options.push) throw new UsageError('--push was passed more than once')
       options.push = true
-      continue
-    }
-    if (argument === '--dry-run') {
-      if (options.dryRun) throw new UsageError('--dry-run was passed more than once')
-      options.dryRun = true
       continue
     }
     if (argument === '--help' || argument === '-h') {
@@ -111,7 +106,6 @@ export function parseArgs(argv) {
     options[name] = value
     if (match[2] === undefined) index += 1
   }
-  if (options.push && options.dryRun) throw new UsageError('--push and --dry-run cannot be combined')
   return options
 }
 
@@ -184,14 +178,22 @@ export function validateManifest(manifest, file) {
  * @returns `{ file, manifest }` entries.
  * @throws when the directory is absent, empty or holds an unreadable manifest.
  */
-export function listManifests(directory) {
+export function listManifests(directory, options = {}) {
   if (!existsSync(directory)) throw new Error(`landed manifest directory ${directory} does not exist`)
   const names = readdirSync(directory).filter((name) => name.endsWith('.json')).sort()
   if (names.length === 0) throw new Error(`landed manifest directory ${directory} has no manifest`)
-  return names.map((name) => {
+  const entries = []
+  for (const name of names) {
     const file = join(directory, name)
-    return { file, manifest: readManifest(file) }
-  })
+    try {
+      entries.push({ file, manifest: readManifest(file) })
+    } catch (error) {
+      if (options.skipUnreadable !== true) throw error
+      process.stderr.write(`push-landed: skipping unreadable manifest ${file}: ${error instanceof Error ? error.message : String(error)}\n`)
+    }
+  }
+  if (entries.length === 0) throw new Error(`landed manifest directory ${directory} has no readable manifest`)
+  return entries
 }
 
 /**
@@ -373,7 +375,16 @@ export function main(argv = process.argv.slice(2)) {
   }
   const { root, commonDir } = resolveRepository(process.cwd())
   const directory = join(commonDir, MANIFEST_DIRECTORY)
-  const entry = selectManifest(listManifests(directory), options, process.cwd())
+  let entry
+  if (options.manifest !== undefined) {
+    const file = isAbsolute(options.manifest) ? options.manifest : resolve(process.cwd(), options.manifest)
+    entry = { file, manifest: validateManifest(readManifest(file), file) }
+  } else {
+    const entries = listManifests(directory, {
+      skipUnreadable: options.change !== undefined || options.merge !== undefined,
+    })
+    entry = selectManifest(entries, options, process.cwd())
+  }
   const head = validateLocalState(root, entry.manifest)
   const remote = fetchRemoteMain(root)
 

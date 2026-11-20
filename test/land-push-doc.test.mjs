@@ -23,6 +23,10 @@ test('the landed push document names the command, checks and recovery', () => {
     'npm run hooks:install',
     'Exit codes',
     'dry run',
+    'cannot be regenerated',
+    'unmatched',
+    'ambiguous',
+    'not an ancestor',
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }

@@ -66,8 +66,10 @@ The hook runs `npm run openspec:check`, the lab gate and the coverage decision b
 
 | Failure | Correction |
 | --- | --- |
-| no manifest | run `openspec_apply_worktree action=land` first; do not hand-write a manifest |
-| unreadable or incomplete manifest | inspect the named file; regenerate it with a fresh land |
+| no manifest for an unarchived change | run `openspec_apply_worktree action=land` first; do not hand-write a manifest |
+| archived change's manifest missing or unreadable | the manifest is written only by land and cannot be regenerated after archive; inspect `git log --first-parent`, the merge and archive commits and the archived change, then restore or remove the damaged file deliberately; never hand-write a manifest |
+| unmatched or ambiguous selection | pass a full `--merge` or an exact `--manifest`; remove a duplicate only after confirming which record is real |
+| merge commit is not an ancestor of the archive commit | do not push; re-derive the landed pair or re-land |
 | dirty path outside `openspec/changes/` | commit or remove the change; only other changes' planning files are exempt |
 | uncommitted path under the landed change's own directory | remove or commit it; the landed change must not reappear |
 | wrong branch or detached HEAD | switch the main worktree to `main` |

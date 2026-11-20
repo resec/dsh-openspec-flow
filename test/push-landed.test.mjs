@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -310,3 +310,88 @@ test('selection, missing manifests and usage errors are reported', () => {
     cleanup(repository)
   }
 })
+
+test('explicit selection bypasses a damaged sibling manifest', () => {
+  const repository = makeLanded()
+  try {
+    const directory = join(repository.root, '.git', 'openspec-flow', 'landed')
+    writeFileSync(join(directory, 'broken.json'), '{ not json\n')
+    const defaultRun = run(repository.root)
+    assert.equal(defaultRun.status, 1)
+    assert.match(defaultRun.stderr, /cannot read landed manifest/)
+
+    const explicit = run(repository.root, ['--manifest', repository.manifestFile])
+    assert.equal(explicit.status, 0, explicit.stderr)
+
+    const byChange = run(repository.root, ['--change', 'add-x'])
+    assert.equal(byChange.status, 0, byChange.stderr)
+    assert.match(byChange.stderr, /skipping unreadable manifest/)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('selection rejects unmatched and ambiguous records', () => {
+  const repository = makeLanded()
+  try {
+    const directory = join(repository.root, '.git', 'openspec-flow', 'landed')
+    const copy = join(directory, 'copy.json')
+    writeFileSync(copy, readFileSync(repository.manifestFile))
+    const ambiguousChange = run(repository.root, ['--change', 'add-x'])
+    assert.equal(ambiguousChange.status, 1)
+    assert.match(ambiguousChange.stderr, /more than one landed manifest/)
+    const ambiguousMerge = run(repository.root, ['--merge', repository.mergeCommit])
+    assert.equal(ambiguousMerge.status, 1)
+    assert.match(ambiguousMerge.stderr, /ambiguous/)
+    const unmatched = run(repository.root, ['--change', 'missing'])
+    assert.equal(unmatched.status, 1)
+    assert.match(unmatched.stderr, /no landed manifest has change/)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('manifest field and commit checks refuse malformed records', () => {
+  const repository = makeLanded()
+  try {
+    const directory = join(repository.root, '.git', 'openspec-flow', 'landed')
+    const missingField = { ...repository.manifest }
+    delete missingField.featureTree
+    const missingFile = join(directory, 'missing-field.json')
+    writeFileSync(missingFile, `${JSON.stringify(missingField, null, 2)}\n`)
+    const missing = run(repository.root, ['--manifest', missingFile])
+    assert.equal(missing.status, 1)
+    assert.match(missing.stderr, /has no featureTree/)
+
+    const absentArchive = { ...repository.manifest, archiveCommit: 'a'.repeat(40) }
+    const absentArchiveFile = join(directory, 'absent-archive.json')
+    writeFileSync(absentArchiveFile, `${JSON.stringify(absentArchive, null, 2)}\n`)
+    const absent = run(repository.root, ['--manifest', absentArchiveFile])
+    assert.equal(absent.status, 1)
+    assert.match(absent.stderr, /not a commit/)
+
+    const absentMerge = { ...repository.manifest, mergeCommit: 'b'.repeat(40) }
+    const absentMergeFile = join(directory, 'absent-merge.json')
+    writeFileSync(absentMergeFile, `${JSON.stringify(absentMerge, null, 2)}\n`)
+    const absentMergeResult = run(repository.root, ['--manifest', absentMergeFile])
+    assert.equal(absentMergeResult.status, 1)
+    assert.match(absentMergeResult.stderr, /not a commit/)
+
+    git(repository.root, ['checkout', '-q', '-b', 'side', repository.initial])
+    write(join(repository.root, 'side.txt'), 'side\n')
+    git(repository.root, ['add', 'side.txt'])
+    git(repository.root, ['commit', '-qm', 'side'])
+    const side = git(repository.root, ['rev-parse', 'HEAD'])
+    const sideTree = git(repository.root, ['rev-parse', `${side}^{tree}`])
+    git(repository.root, ['checkout', '-q', 'main'])
+    const notAncestor = { ...repository.manifest, mergeCommit: side, featureTree: sideTree }
+    const notAncestorFile = join(directory, 'not-ancestor.json')
+    writeFileSync(notAncestorFile, `${JSON.stringify(notAncestor, null, 2)}\n`)
+    const ancestor = run(repository.root, ['--manifest', notAncestorFile])
+    assert.equal(ancestor.status, 1)
+    assert.match(ancestor.stderr, /not an ancestor/)
+  } finally {
+    cleanup(repository)
+  }
+})
+
