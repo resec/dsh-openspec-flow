@@ -67,12 +67,12 @@ A git worktree apply SHALL use the per-change change lock instead of the impleme
 #### Scenario: A store change and a local change share one project lock
 
 - **WHEN** a store change and a local change in one project both call an apply entry
-- **THEN** only one proceeds, because they share the implementation domain
+- **THEN** the local worktree change uses its per-change lock while the store change also uses the store lock
 
 #### Scenario: Two store changes from different stores serialize in one project
 
 - **WHEN** two store changes from different stores are applied from one project
-- **THEN** both use the project implementation lock and only one proceeds
+- **THEN** both take their own per-change locks and also contend on the store lock when selected
 
 #### Scenario: A store-backed change takes the store domain lock
 
@@ -82,12 +82,12 @@ A git worktree apply SHALL use the per-change change lock instead of the impleme
 #### Scenario: Nested roots share one worktree lock
 
 - **WHEN** two changes live under different OpenSpec roots inside one git worktree
-- **THEN** both apply entries use the same implementation lock file
+- **THEN** the per-change change lock is shared through the git common directory
 
 #### Scenario: Linked worktrees take separate locks
 
 - **WHEN** two linked worktrees of one repository apply changes
-- **THEN** each worktree uses its own git-directory lock and both may proceed
+- **THEN** the per-change change lock is shared through the git common directory
 
 #### Scenario: Git domain lock leaves the tree clean
 

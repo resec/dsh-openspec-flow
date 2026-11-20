@@ -8,6 +8,8 @@ import {
 } from './review-fixtures.mjs'
 import { applyWorktreePath } from '../lib/worktree/create.js'
 import { readApplyState } from '../lib/worktree/state.js'
+import { lockPath } from '../lib/worktree/lock.js'
+import { gitCommonDir } from '../lib/review/store.js'
 
 test.after(cleanupFixtures)
 
@@ -92,7 +94,10 @@ test('an explicit user-created worktree gets a review-only state', async () => {
   run(['commit', '-m', 'seal for PR'])
   const pr = join(root, '..', `${root.split('/').pop()}-pr`)
   run(['worktree', 'add', pr, '-b', 'pr-branch'])
-  const base = run(['rev-parse', 'HEAD~1'])
+  writeFileSync(join(pr, 'pr-only.txt'), 'pr\n')
+  run(['-C', pr, 'add', 'pr-only.txt'])
+  run(['-C', pr, 'commit', '-m', 'pr change'])
+  const base = run(['rev-parse', 'HEAD'])
   try {
     await call(fake, 'openspec_review', {
       action: 'start', change: CHANGE, review: 'apply', worktree: pr,
@@ -105,6 +110,9 @@ test('an explicit user-created worktree gets a review-only state', async () => {
     assert.equal(state.sealedCommit, null)
     assert.equal(state.lockToken, null)
     assert.equal(state.lockPid, null)
+    const inspected = await call(fake, 'openspec_inspect', { action: 'worktree', change: CHANGE })
+    assert.equal(inspected.state.worktree, pr)
+    assert.equal(existsSync(pr), true)
     const reported = await call(fake, 'openspec_review', {
       action: 'self-report', change: CHANGE, review: 'apply', report: report(),
     })
@@ -133,6 +141,7 @@ test('a creation failure is reported after the draft gate', async () => {
     /git worktree add/,
   )
   assert.equal(readApplyState(root, null, CHANGE), undefined)
+  assert.equal(existsSync(lockPath(gitCommonDir(root), 'change', { change: CHANGE })), false)
   rmSync(join(root, '.cache'), { force: true })
 })
 

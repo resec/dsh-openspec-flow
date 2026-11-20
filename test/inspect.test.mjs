@@ -183,3 +183,13 @@ test('rejects an unknown parameter, a blank value and a missing validate change'
   await assert.rejects(inspect(fake, undefined), /Unsupported action 'undefined'/)
   assert.equal(fake.stats.spawns, 0)
 })
+
+test('inspect keeps a nested OpenSpec root instead of jumping to the git top level', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-inspect-nested-'))
+  CREATED.push(root)
+  cpSync(PROBE_ROOT, join(root, 'packages', 'x', 'openspec'), { recursive: true })
+  const fake = createFakeContext({ cwd: join(root, 'packages', 'x') })
+  apply(fake.ctx, { timeoutMs: 30_000 })
+  const status = await inspect(fake, 'status', { change: CHANGE })
+  assert.equal(status.change, CHANGE)
+})
