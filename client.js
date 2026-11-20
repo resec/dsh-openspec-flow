@@ -711,7 +711,10 @@ window.__ModuleLoader__.load({
         : ''
       const counts = severityCounts(card)
       const severities = SEVERITIES.map((severity) => `${severity} ${String(counts[severity])}`).join(' · ')
-      return `${phase} · ${change}${review} · 第 ${cardValue(card.round)} 轮 · ${cardValue(card.verdict)} · ${severities}`
+      const round = typeof card.roundToken === 'string' && card.roundToken !== ''
+        ? card.roundToken
+        : cardValue(card.round)
+      return `${phase} · ${change}${review} · 第 ${round} 轮 · ${cardValue(card.verdict)} · ${severities}`
     }
 
     /** One finding's full report fields. */
@@ -738,7 +741,7 @@ window.__ModuleLoader__.load({
         rows: [
           ['变更', card.change],
           ['评审', card.review],
-          ['轮次', card.round],
+          ['轮次', typeof card.roundToken === 'string' && card.roundToken !== '' ? card.roundToken : card.round],
           ['结论', card.verdict],
           ['状态', card.state],
           ['就绪', card.ready ? '是' : '否'],

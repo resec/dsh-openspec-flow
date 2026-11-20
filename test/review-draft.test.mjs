@@ -1122,3 +1122,19 @@ test('a disposition without a review kind is refused', async () => {
   assert.equal(record.findings[0].status, 'open')
   assert.equal(record.findings[0].waiver, undefined)
 })
+
+test('draft review refuses an extra round token', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 'E1' }),
+    /draft review has no extra rounds/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 'x' }),
+    /positive integer or an E<n> token/,
+  )
+})

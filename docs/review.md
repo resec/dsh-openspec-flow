@@ -31,7 +31,7 @@ git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须�
 1. `openspec_new_change` 创建变更目录前先为本变更锁定评审策略（`policy.json`），并把已解析的 reviewer 模型写入策略。
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`；`start` 只用于首轮。
 3. draft review 未就绪时 `openspec_review` 需要下一轮：用 `action: "resume"`，不传 `intent`。就绪后，git 项目先把变更目录与 `openspec/.gitignore` 提交为封存 commit（可含其他 `openspec/changes/` 路径），再调用 `openspec_apply_next`；工具校验干净树、提交路径与工件哈希，任一不满足即拒绝并记录该 commit 为 base，同时取得本 change 的 apply 锁。apply 开始后 draft review 冻结，不再接受 `resume`。
-4. 在 worktree 中实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`，并传入 worktree 路径）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录，`files` 以 change 目录为基准（也接受项目相对与绝对路径，示例 `files: ["proposal.md","tasks.md"]`，逃逸 change 目录或指向其他 change 的路径会被拒绝）；apply review 拒绝豁免清单之外的变更文件。apply brief 对规划变更按三条轴评审：plan coherence（变更后的 artifacts 彼此一致）、intent fit（仍满足用户目标与验收条件）、scope control（没有为迁就实现而弱化或移除需求）。
+4. 在 worktree 中实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`，并传入 worktree 路径）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录，`files` 以 change 目录为基准（也接受项目相对与绝对路径，示例 `files: ["proposal.md","tasks.md"]`，逃逸 change 目录或指向其他 change 的路径会被拒绝）；apply review 拒绝豁免清单之外的变更文件。apply brief 对规划变更按三条轴评审：plan coherence（变更后的 artifacts 彼此一致）、intent fit（仍满足用户目标与验收条件）、scope control（没有为迁就实现而弱化或移除需求）。当 land 因 worktree 落后 main 而拒绝时，它在 apply review 记录上写 `rebaseReview`（原 worktree head、评审 tree、mainHead 与时间）；用户 rebase、retest 后再次 `resume`，插件打开额外轮次 `E1`、`E2`。额外轮次记在独立的 `extraRounds` 数组，按共享 `seq` 排序，不增加 `rounds` 长度，也不占用普通轮次编号；其 finding id 为 `E<n>-NN`。apply review 就绪后仍保留标记，land 使用该额外轮次的 `treeSha`，在写入 manifest 与 archived 状态后于 review 目录锁内清除标记。rebase 后 tree 与已评审 tree 相同时，`resume` 直接清除标记而不开轮。
 5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。plugin-created worktree 的 active/landing 状态不能走 `openspec_archive`，由 `openspec_apply_worktree action=land` 在同一 lifecycle 临界区内 merge、archive 并提交 archive。
 
 任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；两种 status 都返回 `mode` 与 `independent`，apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
@@ -77,7 +77,7 @@ draft brief 的开头在两种模式下相同：要求对抗性审阅，不声�
 - `source: "explicit"` 使用配置里的 provider 与 model；模型暴露可选推理档位时带 `reasoningEffort`，否则按适配器默认。
 - 启动前插件会核对 provider、model 与 effort 仍在 `llm` 目录里，任一不可用都在创建子会话之前失败；子会话通过 `agentOptions` 收到锁定的路由。
 
-reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报告、读 finding 状态，或看就绪度）、`submit`（提交一份报告）、`status`（看就绪度）。`read` 的 `target` 为 `brief`、`own-report`（可带 `round`）、`findings` 与 `status`；`findings` 返回每条 finding 的 id、severity、status、title、首次轮次、验证轮次与最后验证状态，以及每轮的 verdict 与是否已有报告。`openspec_reviewer` 只在 `openspec-reviewer` preset 里注册，changer 的目录中不可见。
+reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报告、读 finding 状态，或看就绪度）、`submit`（提交一份报告）、`status`（看就绪度）。`read` 的 `target` 为 `brief`、`own-report`（可带 `round`）、`findings` 与 `status`；`round` 接受正整数或额外轮次 token `E<n>`，普通历史条目不带 `roundToken`。`findings` 返回每条 finding 的 id、severity、status、title、首次轮次、验证轮次与最后验证状态，以及每轮的 verdict、是否已有报告与额外轮次的 `roundToken`。`openspec_reviewer` 只在 `openspec-reviewer` preset 里注册，changer 的目录中不可见。
 
 ## 策略锁定
 
@@ -132,7 +132,7 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 
 ## 轮次汇报与信息卡
 
-每轮结束由插件写一张信息卡文件，模型不再复述报告。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
+每轮结束由插件写一张信息卡文件，模型不再复述报告。额外轮次卡片的文件元数据 `round` 使用该轮的 `seq`，payload 携带 `roundToken`；客户端摘要与展开信息显示 token（`E1`）而不是序号。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
 
 Host 只读取文件名以当前会话键开头的卡片文件；每个评审根在单次请求内最多扫描一次，并按卡片文件绝对路径去重，主工作树与 apply worktree 共享同一个 review 根时同一张卡只返回一次、只绑定一次。单 turn 请求保持原响应；客户端会把同一会话的多个 turn 查询在微任务内合并为 `turns` 批量请求（每批最多 64 个 turn，每个 turn 携带自己的窗口），Host 按 turn 升序依次应用绑定、窗口、独立评审 withholding 与水位规则，返回每个 turn 一个 `byTurn` 条目（无卡片时为空数组）；重复 turn 只保留首项。批量结束后的水位与按同样顺序逐个请求的结果一致，每个评审目录在批量中只写一次 `card-delivery.json`。批量请求失败时客户端回退为逐 turn 单请求；某个 turn 为空或缺失时该 turn 不显示卡片。Host 对每个项目根的 git 根解析做进程内缓存，测试或根变化后可用 `clearGitRootCache()` 清除。
 
@@ -168,6 +168,8 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 | `<reviewRoot>/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
 | `<reviewRoot>/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
 | `<reviewRoot>/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
+| `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/brief.md` | apply 额外轮次 brief；目录名使用 token |
+| `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/diff.patch` | apply 额外轮次 diff |
 | `<reviewRoot>/<store>#<change>/cards/<sessionKey>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
 | `<reviewRoot>/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
@@ -179,7 +181,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 - **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
-- **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。
+- **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。rebase 额外轮次不占普通轮次号，也不受轮次上限影响。
 - **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"` 与该 review 的 `review`；先处置再 `resume`。
 - **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`，两者缺少 `review` 同样拒绝。
 - **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。

@@ -34,6 +34,15 @@ import {
   summarizeFindings,
 } from '../lib/review/report.js'
 import { draftReadiness } from '../lib/review/readiness.js'
+import {
+  latestEntry,
+  latestExtraRound,
+  latestRound,
+  nextRoundSeq,
+  parseRoundToken,
+  resolveRoundEntry,
+  roundEntries,
+} from '../lib/review/record.js'
 import { submitReport } from '../lib/review/submit.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
@@ -399,7 +408,7 @@ test('finding summaries count statuses and blockers', () => {
 })
 
 test('recordFinding keeps the report fields and starts open', () => {
-  const recorded = recordFinding(finding(), 1)
+  const recorded = recordFinding(finding(), 1, 1)
   assert.equal(recorded.status, 'open')
   assert.equal(recorded.firstRound, 1)
   assert.equal(recorded.rule, 'A rule')
@@ -513,10 +522,10 @@ test('report validation covers unknown ids, duplicates and verdict conflicts', (
 
 test('verification transitions and dispositions cover every status', () => {
   const fixed = finding({ status: 'fixed' })
-  const verified = applyVerificationsTo([fixed], [{ id: 'R1-01', status: 'verified-fixed', evidence: 'ok' }], 2)
+  const verified = applyVerificationsTo([fixed], [{ id: 'R1-01', status: 'verified-fixed', evidence: 'ok' }], 2, 2)
   assert.equal(verified[0].status, 'verified')
   assert.equal(verified[0].verifiedInRound, 2)
-  const regressed = applyVerificationsTo([fixed], [{ id: 'R1-01', status: 'regressed', evidence: 'bad' }], 2)
+  const regressed = applyVerificationsTo([fixed], [{ id: 'R1-01', status: 'regressed', evidence: 'bad' }], 2, 2)
   assert.equal(regressed[0].status, 'open')
   assert.equal(regressed[0].lastVerification, 'regressed')
 
@@ -905,4 +914,68 @@ test('diffArtifactFiles treats a missing recorded list as all current files adde
 
 test('diffArtifactFiles returns nothing when both lists are absent', () => {
   assert.deepEqual(diffArtifactFiles(undefined, undefined), [])
+})
+
+test('round tokens parse normal numbers and extra tokens', () => {
+  assert.deepEqual(parseRoundToken(2), { kind: 'normal', number: 2, token: 2 })
+  assert.deepEqual(parseRoundToken('E1'), { kind: 'extra', number: 1, token: 'E1' })
+  assert.equal(parseRoundToken('E0'), undefined)
+  assert.equal(parseRoundToken('R1'), undefined)
+  assert.equal(parseRoundToken(0), undefined)
+})
+
+test('round entries order normal and extra rounds by sequence', () => {
+  const record = {
+    rounds: [{ round: 1, seq: 1, objectHash: 'a' }, { round: 2, seq: 2, objectHash: 'b' }],
+    extraRounds: [{ round: 'E1', seq: 3, objectHash: 'c' }],
+  }
+  assert.deepEqual(roundEntries(record).map((entry) => entry.round), [1, 2, 'E1'])
+  assert.equal(resolveRoundEntry(record, 'E1').objectHash, 'c')
+  assert.equal(latestEntry(record).round, 'E1')
+})
+
+test('extra round reports accept E ids and normal ids are refused', () => {
+  const base = { verdict: 'pass', summary: 'ok', findings: [], verifications: [] }
+  assert.doesNotThrow(() => assertReport(
+    { ...base, findings: [finding({ id: 'E1-01', severity: 'minor' })] },
+    { roundToken: 'E1', seq: 3, findings: [], kind: 'apply' },
+  ))
+  assert.throws(
+    () => assertReport(
+      { ...base, findings: [finding()] },
+      { roundToken: 'E1', seq: 3, findings: [], kind: 'apply' },
+    ),
+    /must match E1-NN/,
+  )
+})
+
+test('verifications across an extra round record the token and sequence', () => {
+  const fixed = finding({ status: 'fixed' })
+  const verified = applyVerificationsTo(
+    [fixed],
+    [{ id: 'R1-01', status: 'verified-fixed', evidence: 'ok' }],
+    'E1',
+    3,
+  )
+  assert.equal(verified[0].status, 'verified')
+  assert.equal(verified[0].verifiedInRound, 3)
+  assert.equal(verified[0].verifiedInRoundToken, 'E1')
+})
+
+test('a legacy record without sequence still orders rounds', () => {
+  const record = { rounds: [{ round: 1, objectHash: 'a' }, { round: 2, objectHash: 'b' }] }
+  assert.equal(latestEntry(record).round, 2)
+  assert.equal(nextRoundSeq(record), 3)
+})
+
+test('record accessors tolerate missing and unsupported inputs', () => {
+  assert.equal(latestRound(undefined), undefined)
+  assert.equal(latestExtraRound({}), undefined)
+  assert.equal(latestExtraRound(undefined), undefined)
+  assert.equal(latestEntry({}), undefined)
+  assert.equal(nextRoundSeq({}), 1)
+  assert.equal(resolveRoundEntry({ rounds: [] }, 'E1'), undefined)
+  assert.equal(resolveRoundEntry({ extraRounds: [] }, 9), undefined)
+  assert.equal(parseRoundToken('E01'), undefined)
+  assert.equal(parseRoundToken('x'), undefined)
 })

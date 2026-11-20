@@ -1627,3 +1627,79 @@ test('a waiver accepts a file that does not exist yet', async () => {
   })
   assert.deepEqual(waived.planChangeWaiver.files, ['specs/new-capability/spec.md'])
 })
+
+test('a rebase marker opens extra rounds without changing the normal rounds', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const first = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(first.roundToken, 'E1')
+  const after = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(after.rounds.length, record.rounds.length)
+  assert.equal(after.extraRounds.length, 1)
+  assert.equal(after.extraRounds[0].round, 'E1')
+  assert.equal(typeof after.extraRounds[0].seq, 'number')
+  assert.match(first.brief, /E1-01/)
+  const reused = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(reused.roundToken, 'E1')
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ findings: [minorFinding({ id: 'E1-01' })] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply',
+    dispositions: [{ id: 'E1-01', status: 'fixed', note: 'fixed in the worktree' }],
+  })
+  const second = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(second.roundToken, 'E2')
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ verifications: [{ id: 'E1-01', status: 'verified-fixed', evidence: 'checked' }] }),
+  })
+  const ready = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(ready.roundToken, 'E2')
+  assert.equal(ready.ready, true)
+  const final = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(final.rounds.length, record.rounds.length)
+  assert.equal(final.extraRounds.length, 2)
+  assert.equal(final.rebaseReview.treeSha, 'b'.repeat(40))
+})
+
+test('a rebased tree equal to the reviewed tree clears the marker without a round', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: record.treeSha,
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const result = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(result.roundToken, undefined)
+  const after = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(after.rebaseReview, undefined)
+  assert.equal(Array.isArray(after.extraRounds) ? after.extraRounds.length : 0, 0)
+})

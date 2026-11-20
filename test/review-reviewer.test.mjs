@@ -960,3 +960,53 @@ test('a passing apply submit wakes the changer toward archive', async () => {
   const text = last.content.map((part) => part.text ?? '').join('')
   assert.match(text, /next: openspec_archive/)
 })
+
+test('an independent reviewer reads and submits an extra round', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const policyPath = join(reviewDir(root), 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  policy.reviews.apply.reviewers = 1
+  writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
+  const external = externalSetup(root)
+  await call(external.fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const opened = await call(external.fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(opened.roundToken, 'E1')
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const brief = await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'read', target: 'brief', change: CHANGE, review: 'apply',
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(brief.roundToken, 'E1')
+  assert.match(brief.brief, /E1-01/)
+  const submitted = await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'apply', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(submitted.roundToken, 'E1')
+  assert.equal(submitted.ready, true)
+  const findings = await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'read', target: 'findings', change: CHANGE, review: 'apply',
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.ok(findings.rounds.some((entry) => entry.roundToken === 'E1'))
+})
+
+test('the reviewer tool declares extra round fields', () => {
+  const root = fixture()
+  const fake = createFakeContext({ cwd: root })
+  reviewerApply(fake.ctx)
+  const tool = fake.tools.get('openspec_reviewer')
+  const round = tool.parameters.properties.round
+  assert.ok(Array.isArray(round.anyOf), 'the reviewer accepts a number or a token')
+  assert.ok('roundToken' in tool.output.schema.properties)
+  assert.ok('roundToken' in tool.output.schema.properties.rounds.items.properties)
+})

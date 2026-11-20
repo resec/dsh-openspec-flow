@@ -202,3 +202,25 @@ test('a lock directory without an owner is a manual repair', async () => {
   assert.equal(result.locks[1].held, true)
   assert.equal(result.locks[1].state, 'corrupt')
 })
+
+test('an archived state names cleanup until both flags are complete', async () => {
+  const root = repository()
+  const fake = setup(root)
+  const worktree = join(root, '.cache', 'openspec-flow', 'worktrees', 'local#demo')
+  mkdirSync(worktree, { recursive: true })
+  writeApplyState(root, null, 'demo', state(root, {
+    worktree, status: 'archived', lockToken: null, lockPid: null,
+  }))
+  const pending = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(pending.repair.action, 'cleanup')
+  writeApplyState(root, null, 'demo', state(root, {
+    worktree,
+    status: 'archived',
+    lockToken: null,
+    lockPid: null,
+    cleanup: { worktreeRemoved: true, branchRemoved: true, at: '2026-01-02T00:00:00.000Z' },
+  }))
+  const cleaned = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(cleaned.status, 'ready')
+  assert.equal(cleaned.repair.action, 'none')
+})
