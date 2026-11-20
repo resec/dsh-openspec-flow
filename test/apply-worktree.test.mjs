@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import {
-  CHANGE, cleanupFixtures, gitFixture, passDraft, setup, call, report,
+  CHANGE, cleanupFixtures, externalSetup, gitFixture, passDraft, setup, call, report,
 } from './review-fixtures.mjs'
 import { applyWorktreePath } from '../lib/worktree/create.js'
 import { readApplyState } from '../lib/worktree/state.js'
@@ -200,4 +200,28 @@ test('a legacy apply lock holder blocks worktree apply', async () => {
     call(fake, 'openspec_apply_next', { change: CHANGE }),
     /other-change/,
   )
+})
+
+
+test('an independent apply reviewer is activated in the worktree', async () => {
+  const { root, run } = gitFixture()
+  const { fake, activations } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  if (existsSync(join(root, 'openspec', '.gitignore'))) run(['add', 'openspec/.gitignore'])
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'seal for reviewer'])
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const state = readApplyState(root, null, CHANGE)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply',
+  })
+  assert.equal(activations[0].cwd, state.worktree)
 })

@@ -516,6 +516,7 @@ test('a worktree apply acquires only the store-domain lock', () => {
   const acquired = acquireStoreApplyLock({
     cwd: implementation,
     resolvedRoot: storeRoot,
+    implementationRoot: implementation,
     store: 'team',
     change: 'demo',
     changeRoot,
@@ -523,5 +524,15 @@ test('a worktree apply acquires only the store-domain lock', () => {
   assert.equal(acquired.locks.length, 1)
   assert.equal(acquired.locks[0].kind, 'store')
   assert.equal(acquired.created.length, 1)
+  const reentered = acquireStoreApplyLock({
+    cwd: join(implementation, '.cache', 'worktree'),
+    resolvedRoot: storeRoot,
+    implementationRoot: implementation,
+    store: 'team',
+    change: 'demo',
+    changeRoot,
+  })
+  assert.equal(reentered.locks.length, 1)
+  assert.equal(reentered.created.length, 0)
   releaseApplyLocks(acquired.created)
 })
