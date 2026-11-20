@@ -673,6 +673,50 @@ test('two project roots sharing a review root return each card once', async () =
   }
 })
 
+test('two project roots with different review roots return both cards', async () => {
+  const first = fixture()
+  const second = mkdtempSync(join(tmpdir(), 'dsh-cards-other-'))
+  try {
+    mkdirSync(join(second, 'openspec'), { recursive: true })
+    const secondDirectory = join(second, 'openspec', '.review', 'local#demo')
+    mkdirSync(join(secondDirectory, 'cards'), { recursive: true })
+    cardFile(first.directory, { round: 1 })
+    cardFile(secondDirectory, { round: 2 })
+    const listings = []
+    const channel = createReviewChannel({
+      ctx: {
+        get(name) {
+          if (name === 'agents') {
+            return { list: () => [{ session: { id: 'changer' } }, { session: { id: 'reviewer' } }] }
+          }
+          if (name === 'workingDirectory') {
+            return { get: (agent) => ((agent?.session?.id ?? agent?.id) === 'changer' ? first.root : second) }
+          }
+          return undefined
+        },
+        logger: { warn: () => {} },
+      },
+      settings: { timeoutMs: 1000, reviews: { draft: {}, apply: {} } },
+      io: {
+        readdirSync: (target) => {
+          listings.push(target)
+          return readdirSync(target)
+        },
+      },
+    })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 2)
+    assert.deepEqual(result.value.cards.map((card) => card.round).sort(), [1, 2])
+    assert.equal(listings.filter((target) => target === reviewRoot(first.root)).length, 1)
+    assert.equal(listings.filter((target) => target === reviewRoot(second)).length, 1)
+  } finally {
+    rmSync(first.root, { recursive: true, force: true })
+    rmSync(second, { recursive: true, force: true })
+  }
+})
+
 test('a card file outside the session key is ignored', async () => {
   const { directory, channel } = fixture()
   try {
@@ -788,15 +832,36 @@ test('a repeated batch turn binds once', async () => {
   }
 })
 
+test('a batch withholds the changer review card and keeps the resolution card', async () => {
+  const { directory, channel } = fixture()
+  try {
+    reviewRecord(directory)
+    const reviewPath = cardFile(directory, { phase: 'review', round: 1 })
+    cardFile(directory, { phase: 'resolution', round: 1 })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: [{ turn: 1, from: '2026-01-01T00:00:00.000Z' }, { turn: 2 }],
+    })
+    const cards = [...result.value.byTurn['1'], ...result.value.byTurn['2']]
+    assert.equal(cards.length, 1)
+    assert.equal(cards[0].phase, 'resolution')
+    assert.equal(JSON.parse(readFileSync(reviewPath, 'utf8')).turn, null)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test('a batch rejects more than 64 turns and bad windows', async () => {
   const { directory, channel } = fixture()
   try {
+    const path = cardFile(directory)
     const tooMany = await channel.dispatch('reviewCards/get', {
       sessionId: 'changer',
       turns: Array.from({ length: 65 }, (_value, index) => ({ turn: index + 1 })),
     })
     assert.equal(tooMany.ok, false)
     assert.equal(tooMany.error.code, 'reviewCards/bad-argument')
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
     const zero = await channel.dispatch('reviewCards/get', {
       sessionId: 'changer', turns: [{ turn: 0 }],
     })
@@ -816,6 +881,20 @@ test('a batch with no turns answers an empty byTurn', async () => {
   try {
     const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turns: [] })
     assert.deepEqual(result.value.byTurn, {})
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a single-turn answer carries no byTurn object', async () => {
+  const { directory, channel } = fixture()
+  try {
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(Object.prototype.hasOwnProperty.call(result.value, 'byTurn'), false)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -842,13 +921,18 @@ test('a held directory lock keeps the turn entry with the other directories', as
     const second = join(root, 'openspec', '.review', 'local#b')
     mkdirSync(join(first, 'cards'), { recursive: true })
     mkdirSync(join(second, 'cards'), { recursive: true })
-    cardFile(first)
+    cardFile(first, { writtenAt: '2026-01-01T00:06:00.000Z' })
     const blocked = cardFile(second)
     mkdirSync(join(second, '.lock'))
     const result = await channel.dispatch('reviewCards/get', {
-      sessionId: 'changer', turns: [{ turn: 1, from: '2026-01-01T00:00:00.000Z' }],
+      sessionId: 'changer',
+      turns: [
+        { turn: 1, from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:02:00.000Z' },
+        { turn: 2, from: '2026-01-01T00:05:00.000Z', to: '2026-01-01T00:10:00.000Z' },
+      ],
     })
-    assert.equal(result.value.byTurn['1'].length, 1)
+    assert.deepEqual(result.value.byTurn['1'], [])
+    assert.equal(result.value.byTurn['2'].length, 1)
     assert.equal(JSON.parse(readFileSync(blocked, 'utf8')).turn, null)
   } finally {
     rmSync(root, { recursive: true, force: true })

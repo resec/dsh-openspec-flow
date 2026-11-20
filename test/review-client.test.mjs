@@ -36,13 +36,21 @@ async function loadBundle() {
   await import(new URL('../client.js', import.meta.url).href)
   const entry = loaded[0]
   const effectDeps = []
+  const stateSetters = []
+  const cleanups = []
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
-    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useState: (initial) => {
+      let value = typeof initial === 'function' ? initial() : initial
+      return [value, (next) => {
+        stateSetters.push(next)
+        value = typeof next === 'function' ? next(value) : next
+      }]
+    },
     useEffect: (fn, deps) => {
       effectDeps.push(deps)
       const cleanup = fn()
-      if (typeof cleanup === 'function') cleanup()
+      cleanups.push(typeof cleanup === 'function' ? cleanup : undefined)
     },
     useCallback: (fn) => fn,
     useMemo: (fn) => fn(),
@@ -51,7 +59,7 @@ async function loadBundle() {
     assert.equal(name, 'react')
     return react
   })
-  cached = { entry, plugin, effectDeps }
+  cached = { entry, plugin, effectDeps, stateSetters, cleanups }
   return cached
 }
 
@@ -795,4 +803,54 @@ test('an empty batch entry renders no cards', async () => {
   ])
   assert.deepEqual(first, [])
   assert.deepEqual(second, [])
+})
+
+test('each turn tail renders only its own turn cards', async () => {
+  const { plugin } = await loadBundle()
+  const { cardTailElement } = plugin.__test
+  const textOf = (card) => {
+    const element = cardTailElement([card])
+    const list = element.props.children[0]
+    const first = Array.isArray(list) ? list[0] : list
+    return JSON.stringify(first.type(first.props))
+  }
+  const firstText = textOf({ phase: 'review', review: 'draft', change: 'demo', round: 50, verdict: 'pass', findings: [] })
+  const secondText = textOf({ phase: 'review', review: 'draft', change: 'demo', round: 51, verdict: 'pass', findings: [] })
+  assert.ok(firstText.includes('第 50 轮'))
+  assert.ok(!firstText.includes('第 51 轮'))
+  assert.ok(secondText.includes('第 51 轮'))
+  assert.ok(!secondText.includes('第 50 轮'))
+})
+
+test('an unmounted turn tail does not update state', async () => {
+  const { plugin, cleanups, stateSetters } = await loadBundle()
+  cleanups.length = 0
+  stateSetters.length = 0
+  const built = clientContext()
+  let resolveCall
+  const pending = new Promise((resolve) => { resolveCall = resolve })
+  const calls = []
+  built.ctx.connection.rpc.call = async (channel, endpoint, payload) => {
+    calls.push(payload)
+    return pending
+  }
+  plugin.apply(built.ctx)
+  const turnTail = built.registrations.find((entry) => entry.options.name === 'conversation.chat.turnTail')
+  turnTail.component({ turn: { turn: 50 }, sessionId: 'session-unmount' })
+  turnTail.component({ turn: { turn: 51 }, sessionId: 'session-unmount' })
+  await Promise.resolve()
+  assert.equal(calls.length, 1)
+  for (const cleanup of cleanups) if (cleanup) cleanup()
+  resolveCall({
+    ok: true,
+    value: {
+      byTurn: {
+        50: [{ phase: 'review', round: 50 }],
+        51: [{ phase: 'review', round: 51 }],
+      },
+    },
+  })
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.deepEqual(stateSetters, [])
 })
