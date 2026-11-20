@@ -81,6 +81,10 @@ Lab and mock server ports are OS-assigned (`--port 0`, `listen(0)`). No worktree
 
 `DSH_HOME` is always the current worktree's own home. Do not point it at the main profile or another worktree; `check` rejects an inherited value that differs. Source the environment for installs and tests, not for an interactive DSH session that should keep the user's profile.
 
+## Pushing landed main
+
+This environment does not push. After a land, use the repository-side verifier and explicit push documented in [`land-push.md`](land-push.md); it reads the landed manifest and git state, not these caches or `DSH_HOME`.
+
 ## Rollback
 
 Stop sourcing the environment and use the old commands; the worktree-local defaults return. The shared root is additive: deleting `<shared>` does not touch source, plugin state, review records, landed manifests or apply worktrees. Do not delete the parent `.cache/openspec-flow/`, which also contains active worktrees.

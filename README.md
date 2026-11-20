@@ -293,9 +293,9 @@ npm test
 发布顺序：
 
 1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm run verify` 与 `npm run openspec:check` 通过。
-2. `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
-3. 提交归档结果、文档更新与合并后的 specs。
-4. 维护者推送到 `origin/main`；外部贡献止于 pull request。
+2. worktree apply 用 `openspec_apply_worktree action=land` 在同一 lifecycle 内合并并归档；非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
+3. worktree land 已提交归档结果；非 worktree 提交归档结果、文档更新与合并后的 specs。
+4. 维护者先运行 `node scripts/push-landed.mjs` 做 dry run，再运行 `--push` 校验 landed manifest 与远端并推送到 `origin/main`；外部贡献止于 pull request。详见 [docs/land-push.md](docs/land-push.md)。
 
 ## 限制
 
@@ -352,11 +352,12 @@ icon.svg                 插件图标
 docs/review.md           评审系统完整说明（不进入发布包）
 docs/apply-worktree.md   apply worktree 创建、会话路由、状态/锁、检查与恢复（不进入发布包）
 docs/apply-worktree-dev.md  仓库侧 apply worktree 开发环境：共享缓存、DSH home、浏览器锁与文档（不进入发布包）
+docs/land-push.md        land 后推送：manifest 校验、dry run、远端校对与恢复（不进入发布包）
 docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```
 
-apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)。
+apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)；land 后的推送见 [docs/land-push.md](docs/land-push.md)。
 
 ## 许可
 

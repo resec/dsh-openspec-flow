@@ -93,4 +93,4 @@ The `repair.action` is `none`, `recover`, `cleanup` or `manual`. A git project w
 
 ## Non-goals
 
-Pushing, landed-manifest history beyond one file per merge, and dependency caches are out of scope. Migration of an existing main-applied change is manual.
+The plugin does not push. Landed-manifest history beyond one file per merge and dependency caches are out of scope for the plugin; the repository-side push step is documented in [land-push.md](land-push.md). Migration of an existing main-applied change is manual.
