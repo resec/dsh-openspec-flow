@@ -28,7 +28,6 @@
 - [x] 4.2 Run `npm run test:affected -- scripts/worktree-env.mjs scripts/lab/core/paths.mjs scripts/lab/index.mjs scripts/lab/core/install.mjs scripts/bootstrap.mjs` and fix every failure.
 - [x] 4.3 Run `npm run openspec:check` and verify the active change and main specs validate.
 - [x] 4.4 Run `npm run verify` on Node 24 and fix every failure.
-- [x] 4.5 Make the coverage-stamp subprocess tests use `fileURLToPath` instead of `URL.pathname`, so a worktree directory containing `#` is not percent-encoded; verify `node --test test/coverage-stamp.test.mjs` passes in this worktree.
 
 ## Workflow follow-up
 
