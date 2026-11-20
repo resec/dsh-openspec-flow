@@ -14,10 +14,21 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
 import { MIN_FREE_BYTES } from './bootstrap-lib.mjs'
 import { findBrowserExecutable } from './lab/core/doctor.mjs'
+import { prepareChromium, resolveBrowsersPath } from './worktree-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const BROWSERS_PATH = join(ROOT, '.cache', 'lab', 'pw-browsers')
 const NPM_CACHE = process.env.npm_config_cache ?? join(ROOT, '.cache', 'npm')
+
+/**
+ * Resolve the browser path bootstrap uses for this run.
+ * @param env - environment to resolve.
+ * @returns the absolute browser path.
+ */
+export function browsersPath(env = process.env) {
+  return resolveBrowsersPath({ root: ROOT, env })
+}
+
+const BROWSERS_PATH = browsersPath()
 
 const USAGE = `Usage: scripts/bootstrap.sh [options]
 
@@ -200,16 +211,20 @@ function main() {
   log(2, total, 'installing Git hooks')
   run('npm', ['run', 'hooks:install'], npmEnv)
 
-  if (plan.chromium) {
-    if (options.resetBrowsers) resetBrowsers(BROWSERS_PATH)
-    log(3, total, 'installing Playwright Chromium')
-    run('npx', ['playwright', 'install', 'chromium'], {
-      ...npmEnv,
-      ...playwrightEnv(options.playwrightHost),
-      PLAYWRIGHT_BROWSERS_PATH: BROWSERS_PATH,
-    })
+  if (options.skipPlaywright) {
+    log(3, total, 'Playwright Chromium skipped')
   } else {
-    log(3, total, 'Playwright Chromium already present or skipped')
+    const prepared = prepareChromium({
+      browsersPath: BROWSERS_PATH,
+      reset: options.resetBrowsers,
+      cwd: ROOT,
+      install: ({ browsersPath, host }) => run('npx', ['playwright', 'install', 'chromium'], {
+        ...npmEnv,
+        ...playwrightEnv(host),
+        PLAYWRIGHT_BROWSERS_PATH: browsersPath,
+      }),
+    })
+    log(3, total, prepared.installed ? 'installed Playwright Chromium' : 'Playwright Chromium already present')
   }
 
   const labEnv = { PLAYWRIGHT_BROWSERS_PATH: BROWSERS_PATH, ...npmEnv }

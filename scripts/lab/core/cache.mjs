@@ -18,7 +18,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { DSH_CACHE, LOCKS, NPM_CACHE } from './paths.mjs'
+import { DSH_CACHE, LOCKS, resolveNpmCache } from './paths.mjs'
 import { run, sleep } from './process.mjs'
 
 /** The DSH package installed from npm. */
@@ -138,7 +138,7 @@ export function installDsh({ version, directory, offline = false, env = process.
     ['install', '--prefix', directory, '--no-audit', '--no-fund', `${DSH_PACKAGE}@${version}`],
     {
       timeoutMs: 20 * 60_000,
-      env: { ...env, npm_config_cache: env.LAB_NPM_CACHE ?? NPM_CACHE },
+      env: { ...env, npm_config_cache: resolveNpmCache({ env }) },
     },
   )
   if (result.status !== 0) {

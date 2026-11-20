@@ -6,11 +6,13 @@ The lab runs the packaged plugin in an isolated DSH and verifies behavior that s
 
 - Node 24 satisfying `engines.node`; the lab entrypoints use the repository preflight.
 - The pinned DSH, installed from npm at the plugin's `engines.dsh` version. The first online run caches it under `.cache/lab/dsh/`; later runs reuse it.
-- Playwright and its Chromium binary under `.cache/lab/pw-browsers`:
+- Playwright and its Chromium binary at `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`:
 
 ```sh
-PLAYWRIGHT_BROWSERS_PATH=.cache/lab/pw-browsers npx playwright install chromium
+PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-.cache/lab/pw-browsers}" npx playwright install chromium
 ```
+
+In an apply worktree, source the shared environment first; see [`apply-worktree-dev.md`](apply-worktree-dev.md).
 
 - `pnpm` on `PATH` at the version pinned by the CI lab job. DSH forwards plugin installation to pnpm:
 
@@ -117,4 +119,4 @@ Reports never contain tokens, cookies or API keys. Before the default post-pass 
 
 Entries live under `.cache/lab/dsh/<version>/<node-major>-<platform>-<arch>/`. An entry is installed in a temporary directory, verified with `--version`, marked `.complete` and renamed under a lock. `--fresh-dsh` installs a temporary DSH for that run; `--offline` uses only the cache and refuses to download. The two flags cannot be combined.
 
-The pnpm store is chosen by pnpm and may be shared with the host; the report records the actual store path. npm uses `.cache/lab/cache/npm` through `npm_config_cache`.
+The pnpm store is chosen by pnpm and may be shared with the host; the report records the actual store path. npm uses `LAB_NPM_CACHE` or `npm_config_cache` when set, otherwise `.cache/lab/cache/npm`. The apply worktree environment exports the shared paths and a per-worktree `DSH_HOME`; see [`apply-worktree-dev.md`](apply-worktree-dev.md).

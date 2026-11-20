@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ROOT } from './core/paths.mjs'
+import { ROOT, resolveBrowsersPath } from './core/paths.mjs'
 import { readPackage } from './core/paths.mjs'
 import { createRun, finalizeRun, writeJson } from './core/run-dir.mjs'
 import { dshVersion, ensureDsh } from './core/cache.mjs'
@@ -129,7 +129,7 @@ export async function createLab({
     DSH_HOME: run.home,
     DSH_AGENTS_HOME: run.agentsHome,
     LAB_MOCK_KEY: 'lab-mock-key',
-    PLAYWRIGHT_BROWSERS_PATH: env.PLAYWRIGHT_BROWSERS_PATH ?? join(root, '.cache', 'lab', 'pw-browsers'),
+    PLAYWRIGHT_BROWSERS_PATH: resolveBrowsersPath({ root, env }),
     ...(existsSync(join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf')) ? { FONTCONFIG_FILE: join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf') } : {}),
   }
   const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false }

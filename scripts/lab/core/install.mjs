@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { ROOT, NPM_CACHE } from './paths.mjs'
+import { ROOT, resolveNpmCache } from './paths.mjs'
 import { run } from './process.mjs'
 
 /**
@@ -23,7 +23,7 @@ export function packPlugin({ root = ROOT, outDir, env = process.env } = {}) {
   const result = run('npm', ['pack', '--json', '--pack-destination', outDir], {
     cwd: root,
     timeoutMs: 120_000,
-    env: { ...env, npm_config_cache: env.LAB_NPM_CACHE ?? NPM_CACHE },
+    env: { ...env, npm_config_cache: resolveNpmCache({ env }) },
   })
   if (result.status !== 0) throw new Error(`npm pack failed: ${(result.stderr || result.stdout).slice(-2_000)}`)
   const parsed = JSON.parse(result.stdout)
@@ -75,7 +75,7 @@ export function installPlugin({ dshBin, profile, tarball, offline = false, env =
   args.push(`file:${resolve(tarball)}`)
   const installed = run(node, args, {
     timeoutMs: 10 * 60_000,
-    env: { ...env, npm_config_cache: env.LAB_NPM_CACHE ?? NPM_CACHE },
+    env: { ...env, npm_config_cache: resolveNpmCache({ env }) },
   })
   if (installed.status !== 0) {
     throw new Error(`dsh plugin add failed: ${(installed.stderr || installed.stdout).slice(-2_000)}`)

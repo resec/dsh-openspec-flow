@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 /** Repository root. */
 export const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -23,6 +23,26 @@ export const BROWSERS_PATH = join(LAB_ROOT, 'pw-browsers')
 
 /** npm cache used by lab installs. */
 export const NPM_CACHE = join(LAB_ROOT, 'cache', 'npm')
+
+/**
+ * Resolve the npm cache from the environment.
+ * @param options - environment.
+ * @returns the cache path.
+ */
+export function resolveNpmCache({ env = process.env } = {}) {
+  return env.LAB_NPM_CACHE ?? env.npm_config_cache ?? NPM_CACHE
+}
+
+/**
+ * Resolve the Playwright browser path for one lab root.
+ * @param options - lab root and environment.
+ * @returns the absolute browser path.
+ */
+export function resolveBrowsersPath({ root = ROOT, env = process.env } = {}) {
+  const value = env.PLAYWRIGHT_BROWSERS_PATH
+  if (value === undefined || value.trim() === '') return join(root, '.cache', 'lab', 'pw-browsers')
+  return isAbsolute(value) ? value : join(root, value)
+}
 
 /** Per-run directories. */
 export const RUNS = join(LAB_ROOT, 'runs')

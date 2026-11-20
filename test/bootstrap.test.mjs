@@ -25,6 +25,7 @@ import {
   shasumsUrl,
 } from '../scripts/bootstrap-lib.mjs'
 import {
+  browsersPath,
   completionHint,
   dependenciesError,
   parseBootstrapArgs,
@@ -270,6 +271,12 @@ test('maps the download host to the Playwright environment', () => {
   assert.deepEqual(playwrightEnv('https://mirror.example'), {
     PLAYWRIGHT_DOWNLOAD_HOST: 'https://mirror.example',
   })
+})
+
+test('bootstrap resolves the explicit or default browser path', () => {
+  assert.equal(browsersPath({}), join(ROOT, '.cache', 'lab', 'pw-browsers'))
+  assert.equal(browsersPath({ PLAYWRIGHT_BROWSERS_PATH: '/shared/browsers' }), '/shared/browsers')
+  assert.equal(browsersPath({ PLAYWRIGHT_BROWSERS_PATH: 'relative/browsers' }), join(ROOT, 'relative', 'browsers'))
 })
 
 test('resetBrowsers removes the clone-local browser directory', () => {
