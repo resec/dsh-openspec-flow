@@ -278,3 +278,20 @@ test('two changes apply in independent worktrees', async () => {
   assert.equal(existsSync(firstState.worktree), true)
   assert.equal(existsSync(secondState.worktree), true)
 })
+
+test('disabling the switch does not allow archiving an existing plugin worktree', async () => {
+  const { root, run } = gitFixture()
+  const first = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(first, root, run)
+  await call(first, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply',
+  })
+  await call(first, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const second = setup(root, undefined, { worktree: { enabled: false } })
+  await assert.rejects(
+    call(second, 'openspec_archive', { change: CHANGE }),
+    /openspec_apply_worktree action=land/,
+  )
+})
