@@ -278,3 +278,15 @@ test('a dead free lock can be reclaimed by apply', async () => {
   assert.equal(inspectLock(path).state, 'alive')
   releaseLock(handle)
 })
+
+test('different changes hold independent change locks', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const first = await acquireLock(common, 'change', { change: 'first' })
+  const second = await acquireLock(common, 'change', { change: 'second' })
+  assert.notEqual(first.owner.token, second.owner.token)
+  assert.equal(inspectLock(first.path).state, 'alive')
+  assert.equal(inspectLock(second.path).state, 'alive')
+  releaseLock(first)
+  releaseLock(second)
+})

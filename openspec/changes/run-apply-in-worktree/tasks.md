@@ -25,7 +25,7 @@
 
 ## 4. Serialization and cleanup
 
-- [x] 4.1 Replace the project-wide implementation apply lock with the per-change lock for git worktree apply and record its token/pid for same-pid re-entry; verify two changes apply concurrently, the same change's second start fails, the same-pid apply owner can resync with the token and a dead owner's free lock is reacquired with a replaced token/pid, and a landing state is refused by apply.
+- [x] 4.1 Keep the store-domain project lock for store-backed changes while replacing the implementation-domain project lock with the per-change lock for git worktree apply, and record its token/pid for same-pid re-entry; verify two changes apply concurrently, the same change's second start fails, the same-pid apply owner can resync with the token and a dead owner's free lock is reacquired with a replaced token/pid, and a landing state is refused by apply.
 - [x] 4.2 Verify `openspec_archive` from main and from the worktree refuses a plugin-created active or landing state after the review gate, names `openspec_apply_worktree action=land`, leaves a PR state on the existing archive path, and non-git keeps the existing apply lock and archive path.
 - [x] 4.3 Verify creation holds only the change lock, the lifecycle lock is scoped to removal/land/archive, another change's existing apply is not blocked, and a creation failure removes the partial worktree and releases the change lock.
 

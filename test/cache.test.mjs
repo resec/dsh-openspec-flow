@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cacheKey, clearCache, readCache, writeCache } from '../lib/cache.js'
+import { cacheKey, clearCache, readCache, removeCache, writeCache } from '../lib/cache.js'
 
 test('evicts the oldest entry beyond the in-memory limit', () => {
   clearCache()
@@ -14,4 +14,13 @@ test('evicts the oldest entry beyond the in-memory limit', () => {
 test('returns undefined for a missing key', () => {
   clearCache()
   assert.equal(readCache('missing'), undefined)
+})
+
+
+test('removes one cached apply projection', () => {
+  clearCache()
+  const key = cacheKey('/project', 'change')
+  writeCache(key, { change: 'change' })
+  removeCache(key)
+  assert.equal(readCache(key), undefined)
 })

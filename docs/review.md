@@ -50,13 +50,14 @@ git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须�
 
 多个 change 可以同时持有 draft review：各自的记录、reviewer 槽位与等待计时器互不影响，`start`、`resume`、`self-report`、`wait` 与 `dispose` 只作用于被点名的 change。
 
-apply 到归档按 change 串行，由项目级 apply 锁保证：
+apply 锁按实现域与 store 域区分：
 
-- 每个 change 锁住自己的实现域（session 的 git worktree 根；无 worktree 时为最近的 OpenSpec 根；再退到 change 的解析根）。store-backed change 另外锁住 store 域，保证同一 store change 不会从两个项目同时 apply。
-- 锁身份是实现域锁的 `<store>#<change>`；store 域锁还比较 `implementationRoot`，第二个项目会被拒绝，同一项目重入允许。
-- git worktree apply 使用 per-change change lock，`openspec_apply_next` 与 apply review 的 `start`/`resume` 在同一 change 上串行；不同 change 可并行。非 git 项目继续使用原有 apply lock。draft review 不受影响。
-- 锁位置：git 域为 `<git dir>/openspec-flow/apply.lock.json`（worktree 的 git directory，链接 worktree 各自独立）；非 git 域为 `<domain>/openspec/.review/apply.lock.json`。锁记录 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt`。
-- 成功归档后释放本 change 的锁；归档失败保留。`changeRoot` 或 `implementationRoot` 已不存在的锁视为 stale，可被接管。暂停的 change 需要用户删除拒绝信息中列出的锁文件才能释放；agent 必须先请求用户，不能自行删除。
+- git worktree apply 用 `<git common dir>/openspec-flow/changes/<store>#<change>.lock.d` 串行同一 change；不同 change 的 change lock 相互独立，可以并行。实现域的项目级 apply 锁不再获取。
+- store-backed change 仍获取 store 域的项目级 apply 锁，保证同一 store change 不会从两个项目同时 apply；store 锁比较 `implementationRoot`，第二个项目被拒绝。
+- 非 git 项目和关闭 `worktree.enabled` 的兼容路径继续使用项目级 apply 锁。
+- 项目级锁位置：git 域为 `<git dir>/openspec-flow/apply.lock.json`；非 git 域为 `<domain>/openspec/.review/apply.lock.json`。锁记录 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt`。
+- change lock 的 owner 记录 `token`/`pid`；同一 pid 可凭 state 的 token 重入，死主的空闲锁可被 apply 重新获取。项目级锁在归档成功后释放本 change 的锁；归档失败保留。`changeRoot` 或 `implementationRoot` 已不存在的锁视为 stale。
+- 暂停的 change 需要用户删除拒绝信息中列出的锁文件才能释放；agent 必须先请求用户，不能自行删除。
 - 封存、apply review 与归档的干净树检查忽略其他 `openspec/changes/` 目录下的未提交规划文件；被评审 change 自身目录或 `openspec/changes/` 之外的未提交路径仍算脏。
 
 ## reviewer 模式

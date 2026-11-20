@@ -53,7 +53,7 @@ Writes use a temporary file and a rename. A corrupt or incomplete state is repor
 <git common dir>/openspec-flow/changes/<store>#<change>.lock.d
 ```
 
-A lock is created by writing an owner record into a temporary directory and renaming the complete directory into place. The owner record carries `schema`, `token`, `pid`, `at` and `what`. A waiter polls until its timeout, then fails naming the owner; it never removes a dead owner's lock. A caller may re-enter with the state's recorded token from the same pid. When the recorded pid is dead and the lock is free, apply may acquire it and replace the token/pid.
+A lock is created by writing an owner record into a temporary directory and renaming the complete directory into place. The owner record carries `schema`, `token`, `pid`, `at` and `what`. A waiter polls until its timeout, then fails naming the owner; the general waiter never removes a dead owner's lock, while apply may reclaim a dead free lock as described below. A caller may re-enter with the state's recorded token from the same pid. When the recorded pid is dead and the lock is free, apply may acquire it and replace the token/pid.
 
 The lifecycle lock is acquired first and released last. A change lock is acquired second and released first. Acquiring the lifecycle lock while holding a change lock is refused.
 

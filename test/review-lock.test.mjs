@@ -7,6 +7,7 @@ import test from 'node:test'
 import {
   LOCK_FIELDS,
   acquireApplyLocks,
+  acquireStoreApplyLock,
   applyLockBlocker,
   applyLockBlockedError,
   applyLockDomains,
@@ -502,4 +503,25 @@ test('two store changes from different stores serialize in one project', () => {
     implementationRoot: project,
   }), /team-a#a/)
   releaseApplyLocks(held.locks)
+})
+
+
+test('a worktree apply acquires only the store-domain lock', () => {
+  const implementation = temporary()
+  const storeRoot = temporary()
+  mkdirSync(join(implementation, 'openspec'), { recursive: true })
+  mkdirSync(join(storeRoot, 'openspec'), { recursive: true })
+  const changeRoot = join(implementation, 'openspec', 'changes', 'demo')
+  mkdirSync(changeRoot, { recursive: true })
+  const acquired = acquireStoreApplyLock({
+    cwd: implementation,
+    resolvedRoot: storeRoot,
+    store: 'team',
+    change: 'demo',
+    changeRoot,
+  })
+  assert.equal(acquired.locks.length, 1)
+  assert.equal(acquired.locks[0].kind, 'store')
+  assert.equal(acquired.created.length, 1)
+  releaseApplyLocks(acquired.created)
 })

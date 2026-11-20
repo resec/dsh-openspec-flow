@@ -11,7 +11,7 @@ import {
   applyWorktreePath,
   createOrReuseApplyWorktree,
 } from '../lib/worktree/create.js'
-import { applyStatePath, readApplyState } from '../lib/worktree/state.js'
+import { applyStatePath, readApplyState, writeApplyState } from '../lib/worktree/state.js'
 
 const roots = []
 
@@ -165,4 +165,42 @@ test('a missing agent is refused', async () => {
     }),
     /requires an agent/,
   )
+})
+
+
+test('a landing state is refused by apply', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'landing-test' }
+  const state = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  writeApplyState(root, null, 'demo', { ...state, status: 'landing' })
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+      signal: new AbortController().signal,
+    }),
+    /landing/,
+  )
+})
+
+test('a failed session move removes the new checkout', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  fake.workingDirectory.set = async () => {
+    throw new Error('set failed')
+  }
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head,
+      agent: { id: 'move-failed' }, signal: new AbortController().signal,
+    }),
+    /set failed/,
+  )
+  assert.equal(readApplyState(root, null, 'demo'), undefined)
+  assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
 })
