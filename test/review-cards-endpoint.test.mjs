@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { compareCards, createReviewChannel } from '../lib/review/settings.js'
 import { sessionKeyOf } from '../lib/review/cards.js'
-import { reviewDirectory } from '../lib/review/store.js'
+import { reviewDirectory, reviewRoot, writeJsonAtomic } from '../lib/review/store.js'
 
 /** Build a project, a review directory and the channel. */
 function fixture(options = {}) {
@@ -14,10 +14,12 @@ function fixture(options = {}) {
   const directory = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(directory, 'cards'), { recursive: true })
   const warnings = []
+  const agents = options.agents ?? [{ session: { id: 'changer' } }]
+  const cwdOf = options.cwdOf ?? (() => root)
   const ctx = {
     get(name) {
-      if (name === 'agents') return { list: () => [{ session: { id: 'changer' } }] }
-      if (name === 'workingDirectory') return { get: () => root }
+      if (name === 'agents') return { list: () => agents }
+      if (name === 'workingDirectory') return { get: (agent) => cwdOf(agent) }
       return undefined
     },
     logger: { warn: (message) => warnings.push(message) },
@@ -27,7 +29,7 @@ function fixture(options = {}) {
     root,
     directory,
     warnings,
-    channel: createReviewChannel({ ctx, settings, now: options.now }),
+    channel: createReviewChannel({ ctx, settings, now: options.now, io: options.io }),
   }
 }
 
@@ -141,7 +143,7 @@ test('a card written before the turn start is not bound', async () => {
 test('a corrupt card is skipped and the valid one is returned', async () => {
   const { directory, channel } = fixture()
   try {
-    writeFileSync(join(directory, 'cards', 'corrupt.json'), '{not json')
+    writeFileSync(join(directory, 'cards', `${sessionKeyOf('changer')}-corrupt-1.json`), '{not json')
     cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', {
       sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
@@ -178,7 +180,7 @@ test('invalid card shapes are skipped', async () => {
       null,
     ]
     invalid.forEach((value, index) => {
-      writeFileSync(join(directory, 'cards', `invalid-${String(index)}.json`), JSON.stringify(value))
+      writeFileSync(join(directory, 'cards', `${sessionKeyOf('changer')}-invalid-${String(index)}.json`), JSON.stringify(value))
     })
     cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', {
@@ -625,5 +627,279 @@ test('a legacy changer review card is withheld for an independent review', async
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('two project roots sharing a review root return each card once', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-shared-'))
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    mkdirSync(join(root, 'openspec'), { recursive: true })
+    mkdirSync(join(root, 'nested', 'openspec'), { recursive: true })
+    const directory = reviewDirectory(root, undefined, 'demo')
+    mkdirSync(join(directory, 'cards'), { recursive: true })
+    const path = cardFile(directory)
+    const listings = []
+    const io = {
+      readdirSync: (target) => {
+        listings.push(target)
+        return readdirSync(target)
+      },
+    }
+    const channel = createReviewChannel({
+      ctx: {
+        get(name) {
+          if (name === 'agents') {
+            return { list: () => [{ session: { id: 'changer' } }, { session: { id: 'reviewer' } }] }
+          }
+          if (name === 'workingDirectory') {
+            return { get: (agent) => ((agent?.session?.id ?? agent?.id) === 'changer' ? root : join(root, 'nested')) }
+          }
+          return undefined
+        },
+        logger: { warn: () => {} },
+      },
+      settings: { timeoutMs: 1000, reviews: { draft: {}, apply: {} } },
+      io,
+    })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 1)
+    assert.equal(listings.filter((target) => target === reviewRoot(root)).length, 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a card file outside the session key is ignored', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const foreign = join(directory, 'cards', 'foreign.json')
+    writeFileSync(foreign, JSON.stringify({
+      schemaVersion: 1,
+      sessionId: 'changer',
+      phase: 'review',
+      round: 1,
+      turn: null,
+      writtenAt: '2026-01-01T00:00:30.000Z',
+      payload: { phase: 'review' },
+    }))
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(JSON.parse(readFileSync(foreign, 'utf8')).turn, null)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a malformed file outside the session key does not fail the request', async () => {
+  const { directory, channel } = fixture()
+  try {
+    writeFileSync(join(directory, 'cards', 'other-session.json'), '{not json')
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, from: '2026-01-01T00:00:00.000Z',
+    })
+    assert.equal(result.value.cards.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a batch returns one entry per turn in ascending order', async () => {
+  const { directory, channel } = fixture()
+  try {
+    cardFile(directory, { turn: 4, round: 2, writtenAt: '2026-01-01T00:02:00.000Z' })
+    cardFile(directory, { turn: 5, round: 3, writtenAt: '2026-01-01T00:03:00.000Z' })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: [{ turn: 5 }, { turn: 4 }],
+    })
+    assert.deepEqual(Object.keys(result.value.byTurn), ['4', '5'])
+    assert.equal(result.value.byTurn['4'].length, 1)
+    assert.equal(result.value.byTurn['5'].length, 1)
+    assert.equal(result.value.byTurn['4'][0].round, 2)
+    assert.equal(result.value.byTurn['5'][0].round, 3)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('each batch turn applies its own window', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const path = cardFile(directory, { writtenAt: '2026-01-01T00:05:00.000Z' })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: [
+        { turn: 1, to: '2026-01-01T00:02:00.000Z' },
+        { turn: 2, from: '2026-01-01T00:04:00.000Z', to: '2026-01-01T00:10:00.000Z' },
+      ],
+    })
+    assert.deepEqual(result.value.byTurn['1'], [])
+    assert.equal(result.value.byTurn['2'].length, 1)
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 2)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a batch binds unclaimed cards in ascending turn order', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const early = cardFile(directory, { round: 1, writtenAt: '2026-01-01T00:01:00.000Z' })
+    const late = cardFile(directory, { round: 2, writtenAt: '2026-01-01T00:06:00.000Z' })
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: [
+        { turn: 2, from: '2026-01-01T00:05:00.000Z', to: '2026-01-01T00:10:00.000Z' },
+        { turn: 1, from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:02:00.000Z' },
+      ],
+    })
+    assert.equal(result.value.byTurn['1'].length, 1)
+    assert.equal(result.value.byTurn['2'].length, 1)
+    assert.equal(JSON.parse(readFileSync(early, 'utf8')).turn, 1)
+    assert.equal(JSON.parse(readFileSync(late, 'utf8')).turn, 2)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a repeated batch turn binds once', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const path = cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: [
+        { turn: 1, from: '2026-01-01T00:00:00.000Z' },
+        { turn: 1, from: '2026-01-01T00:00:00.000Z' },
+      ],
+    })
+    assert.equal(result.value.byTurn['1'].length, 1)
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a batch rejects more than 64 turns and bad windows', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const tooMany = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: Array.from({ length: 65 }, (_value, index) => ({ turn: index + 1 })),
+    })
+    assert.equal(tooMany.ok, false)
+    assert.equal(tooMany.error.code, 'reviewCards/bad-argument')
+    const zero = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turns: [{ turn: 0 }],
+    })
+    assert.equal(zero.ok, false)
+    const badTo = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turns: [{ turn: 1, to: 'not-a-time' }],
+    })
+    assert.equal(badTo.ok, false)
+    assert.match(badTo.error.message, /turn end/)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a batch with no turns answers an empty byTurn', async () => {
+  const { directory, channel } = fixture()
+  try {
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turns: [] })
+    assert.deepEqual(result.value.byTurn, {})
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('an unreadable matching card does not fail the batch', async () => {
+  const { directory, channel } = fixture()
+  try {
+    writeFileSync(join(directory, 'cards', `${sessionKeyOf('changer')}-corrupt-9.json`), '{not json')
+    cardFile(directory)
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turns: [{ turn: 1, from: '2026-01-01T00:00:00.000Z' }],
+    })
+    assert.equal(result.value.byTurn['1'].length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a held directory lock keeps the turn entry with the other directories', async () => {
+  const { root, channel } = fixture()
+  try {
+    const first = join(root, 'openspec', '.review', 'local#a')
+    const second = join(root, 'openspec', '.review', 'local#b')
+    mkdirSync(join(first, 'cards'), { recursive: true })
+    mkdirSync(join(second, 'cards'), { recursive: true })
+    cardFile(first)
+    const blocked = cardFile(second)
+    mkdirSync(join(second, '.lock'))
+    const result = await channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turns: [{ turn: 1, from: '2026-01-01T00:00:00.000Z' }],
+    })
+    assert.equal(result.value.byTurn['1'].length, 1)
+    assert.equal(JSON.parse(readFileSync(blocked, 'utf8')).turn, null)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a batch leaves the watermark of sequential requests and writes it once', async () => {
+  const now = () => Date.parse('2026-01-01T00:30:00.000Z')
+  const batch = fixture({ now })
+  const sequential = fixture({ now })
+  try {
+    const writeBatch = []
+    batch.channel = createReviewChannel({
+      ctx: {
+        get(name) {
+          if (name === 'agents') return { list: () => [{ session: { id: 'changer' } }] }
+          if (name === 'workingDirectory') return { get: () => batch.root }
+          return undefined
+        },
+        logger: { warn: () => {} },
+      },
+      settings: { timeoutMs: 1000, reviews: { draft: {}, apply: {} } },
+      now,
+      io: {
+        writeJsonAtomic: (target, value) => {
+          writeBatch.push(target)
+          writeJsonAtomic(target, value)
+        },
+      },
+    })
+    cardFile(batch.directory, { round: 1, writtenAt: '2026-01-01T00:05:00.000Z' })
+    cardFile(sequential.directory, { round: 1, writtenAt: '2026-01-01T00:05:00.000Z' })
+    await batch.channel.dispatch('reviewCards/get', {
+      sessionId: 'changer',
+      turns: [
+        { turn: 1, to: '2026-01-01T00:10:00.000Z' },
+        { turn: 2, to: '2026-01-01T00:20:00.000Z' },
+      ],
+    })
+    await sequential.channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 1, to: '2026-01-01T00:10:00.000Z',
+    })
+    await sequential.channel.dispatch('reviewCards/get', {
+      sessionId: 'changer', turn: 2, to: '2026-01-01T00:20:00.000Z',
+    })
+    const batchDelivery = JSON.parse(readFileSync(join(batch.directory, 'card-delivery.json'), 'utf8'))
+    const sequentialDelivery = JSON.parse(readFileSync(join(sequential.directory, 'card-delivery.json'), 'utf8'))
+    assert.deepEqual(batchDelivery, sequentialDelivery)
+    assert.equal(writeBatch.filter((target) => target.endsWith('card-delivery.json')).length, 1)
+  } finally {
+    rmSync(batch.root, { recursive: true, force: true })
+    rmSync(sequential.root, { recursive: true, force: true })
   }
 })

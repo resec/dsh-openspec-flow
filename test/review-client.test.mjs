@@ -693,3 +693,106 @@ test('the expanded card merges same-kind readiness reasons', async () => {
     ['原因 6', 'the change artifacts changed since the review started'],
   ])
 })
+
+test('the card batcher merges one session and dispatches byTurn', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    if (Array.isArray(payload.turns)) {
+      const byTurn = {}
+      for (const entry of payload.turns) byTurn[String(entry.turn)] = [{ phase: 'review', round: entry.turn }]
+      return { ok: true, value: { byTurn } }
+    }
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const [first, second] = await Promise.all([
+    batcher.request('session-1', { turn: 50, from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:10:00.000Z' }),
+    batcher.request('session-1', { turn: 51, from: '2026-01-01T00:10:00.000Z', to: '2026-01-01T00:20:00.000Z' }),
+  ])
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0].turns.map((entry) => entry.turn), [50, 51])
+  assert.deepEqual(calls[0].turns[1], {
+    turn: 51, from: '2026-01-01T00:10:00.000Z', to: '2026-01-01T00:20:00.000Z',
+  })
+  assert.equal(first[0].round, 50)
+  assert.equal(second[0].round, 51)
+})
+
+test('the card batcher caps a request at 64 turns', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    if (Array.isArray(payload.turns)) {
+      const byTurn = {}
+      for (const entry of payload.turns) byTurn[String(entry.turn)] = [{ phase: 'review', round: entry.turn }]
+      return { ok: true, value: { byTurn } }
+    }
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const results = await Promise.all(
+    Array.from({ length: 65 }, (_value, index) => batcher.request('session-1', { turn: index + 1 })),
+  )
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].turns.length, 64)
+  assert.equal(calls[1].turn, 65)
+  assert.equal(results[64][0].round, 65)
+})
+
+test('the card batcher dedupes a pending turn and clears the key on flush', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const first = batcher.request('session-1', { turn: 7 })
+  const same = batcher.request('session-1', { turn: 7 })
+  assert.equal(first, same)
+  await first
+  await batcher.request('session-1', { turn: 7 })
+  assert.equal(calls.length, 2)
+})
+
+test('a failed batch falls back to single-turn requests', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const calls = []
+  const call = async (_endpoint, payload) => {
+    calls.push(payload)
+    if (Array.isArray(payload.turns)) throw new Error('batch failed')
+    return { ok: true, value: { cards: [{ phase: 'review', round: payload.turn }] } }
+  }
+  const batcher = createCardBatcher(call)
+  const [first, second] = await Promise.all([
+    batcher.request('session-1', { turn: 1 }),
+    batcher.request('session-1', { turn: 2 }),
+  ])
+  assert.equal(calls.length, 3)
+  assert.equal(calls[1].turn, 1)
+  assert.equal(calls[2].turn, 2)
+  assert.equal(first[0].round, 1)
+  assert.equal(second[0].round, 2)
+})
+
+test('an empty batch entry renders no cards', async () => {
+  const { plugin } = await loadBundle()
+  const { createCardBatcher } = plugin.__test
+  const call = async (_endpoint, payload) => (Array.isArray(payload.turns)
+    ? { ok: true, value: { byTurn: {} } }
+    : { ok: true, value: { cards: [] } })
+  const batcher = createCardBatcher(call)
+  const [first, second] = await Promise.all([
+    batcher.request('session-1', { turn: 3 }),
+    batcher.request('session-1', { turn: 4 }),
+  ])
+  assert.deepEqual(first, [])
+  assert.deepEqual(second, [])
+})
