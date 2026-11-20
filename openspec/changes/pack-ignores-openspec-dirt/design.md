@@ -52,7 +52,7 @@ The gate ignores a dirty path when its normalized form is `openspec` or starts w
 
 ### D5. Keep `dirty: false` in the metadata
 
-The packed content still equals `HEAD` for every published path, because uncommitted `openspec/` paths cannot enter the tarball. The metadata keeps `dirty: false`, and the delta's OpenSpec-only scenario states it; the content check is the backstop if the published list ever grows into `openspec/`.
+The field reports whether the packed content differs from `HEAD`, not whether the tree is dirty: uncommitted `openspec/` paths cannot enter the tarball, so the published content still equals `HEAD` and the flag stays false. The delta redefines the metadata requirement that way and its OpenSpec-only scenario states the value; the content check is the backstop if the published list ever grows into `openspec/`.
 
 ## Risks / Trade-offs
 

@@ -20,7 +20,7 @@ None.
 
 ### Modified Capabilities
 
-- `bundle-packaging`: the dirty-tree requirement narrows from "the working tree must be clean" to "no uncommitted change outside `openspec/`", with the ignored set, its reporting and an unchanged `dirty` flag named.
+- `bundle-packaging`: the dirty-tree requirement narrows from "the working tree must be clean" to "no uncommitted change outside `openspec/`", with the ignored set named; the metadata requirement defines `dirty` as whether the packed content differed from `HEAD`, so an OpenSpec-only dirty tree keeps it false.
 
 ## Impact
 

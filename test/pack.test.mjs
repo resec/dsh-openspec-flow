@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { gzipSync } from 'node:zlib'
-import { artifactPaths, SCRATCH_DIR, DIST_DIR } from '../lib/bundle.js'
+import { artifactPaths, SCRATCH_DIR, DIST_DIR, tarballPaths } from '../lib/bundle.js'
 import { runPack, USAGE_LINES } from '../lib/pack.js'
 
 /**
@@ -118,6 +118,8 @@ test('prints the usage and exits zero', () => {
     assert.equal(result.code, 0)
     assert.deepEqual(result.lines.map((line) => line.text), USAGE_LINES)
     assert.ok(result.lines.some((line) => line.text.includes('dist/<name>-<version>/<name>-<version>.tgz')))
+    assert.ok(USAGE_LINES.some((line) => line.includes('openspec/')))
+    assert.ok(!USAGE_LINES.some((line) => line.includes('must be clean')))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -163,6 +165,41 @@ test('refuses a dirty tree and does not pack', () => {
     const result = runPack({ root, argv: [], exec })
     assert.equal(result.code, 1)
     assert.ok(result.lines.some((line) => line.text.includes('lib/mod.js')))
+    assert.ok(!calls.some((call) => call[0] === 'npm'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('packs when only OpenSpec paths are uncommitted', () => {
+  const root = fixture()
+  try {
+    const status = ' M openspec/changes/x/tasks.md\n?? openspec/changes/y/proposal.md\n'
+    const { exec, calls } = fakeExec({ status, revision: 'b'.repeat(40) })
+    const result = runPack({ root, argv: [], exec })
+    assert.equal(result.code, 0)
+    const { tarball, metadata } = artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0')
+    const record = JSON.parse(readFileSync(metadata, 'utf8'))
+    assert.equal(record.revision, 'b'.repeat(40))
+    assert.equal(record.dirty, false)
+    assert.ok(!tarballPaths(readFileSync(tarball)).some((path) => path.startsWith('openspec/')))
+    for (const path of ['openspec/changes/x/tasks.md', 'openspec/changes/y/proposal.md']) {
+      assert.ok(result.lines.some((line) => !line.error && line.text.includes(path)))
+      assert.ok(!result.lines.some((line) => line.error && line.text.includes(path)))
+    }
+    assert.ok(calls.some((call) => call[0] === 'npm'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('refuses a rename that moves a published file under OpenSpec', () => {
+  const root = fixture()
+  try {
+    const { exec, calls } = fakeExec({ status: 'R  lib/mod.js -> openspec/archive/mod.js\n' })
+    const result = runPack({ root, argv: [], exec })
+    assert.equal(result.code, 1)
+    assert.ok(result.lines.some((line) => line.error && line.text.includes('lib/mod.js')))
     assert.ok(!calls.some((call) => call[0] === 'npm'))
   } finally {
     rmSync(root, { recursive: true, force: true })

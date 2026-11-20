@@ -23,7 +23,7 @@ npm run bundle:pack
 
 前提与行为：
 
-- 工作树必须干净；未提交的改动会让 `revision` 不描述包内容，命令列出脏路径并退出非零。
+- 发布内容必须已提交；`openspec/` 下的未提交路径会被忽略并单独列出（它们不可能进入 tarball），`openspec/` 之外的未提交改动会让 `revision` 不描述包内容，命令列出阻断路径并退出非零。
 - 同一版本已存在产物时拒绝覆盖；确实需要重发同一版本时加 `--force`，两个文件一起替换并记录新的 `revision`。
 - 打包先写入 `.cache/pack/`，读取 tarball 字节校验必含内容与禁含路径；校验通过后才把版本目录整体发布到 `dist/`，失败时 `dist/` 保持原样，临时目录在成功和失败后都会删除。发布以目录为单位替换，中断不会留下新 tarball 配旧元数据。
 - 必含内容分两层：无条件核心集（`package.json`、`index.js`、`client.js`、`reviewer.js`、`cordis.patch.yml`、`icon.svg`、`lib/` 全部文件、`skills/` 全部文件、`locale/*.json`）与 `files` 列出的文件；核心集不依赖 `files`，所以清单删掉入口文件也会被拒绝。
