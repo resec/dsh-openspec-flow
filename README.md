@@ -16,7 +16,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 10 个 `openspec_*`
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply`；另接受可选 `base` 与可选 `baseline`（apply review 基线：默认 `draft`，`none` 用于没有 draft 记录的已提交分支且要求非空 `base`；draft 段禁用时显式 `draft` 被拒绝；空白 `base` 忽略） |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
-| apply worktree | `openspec_apply_worktree` | `action: "recover"`：按 `scope`（`lifecycle` 或 `change`）与 `expectedOwner` token 恢复死锁；状态与锁健康用 `openspec_inspect` 的 `action: "worktree"` 查看，只读；不创建、删除或 land worktree |
+| apply worktree | `openspec_apply_worktree` | `action: "land"`（需 `approvedBy: "user"`）：在 lifecycle 临界区 merge、archive 并提交，写 landed manifest；`action: "remove"`：删除 archived 或经批准的插件 checkout；`action: "recover"`：按 `scope` 与 `expectedOwner` 恢复死锁。状态与锁用 `openspec_inspect` 的 `action: "worktree"` 只读查看 |
 
 评审轮次由插件信息卡汇报：`self-report` 与 reviewer `submit` 分别写入评审卡，`resume` 与处置完成时写入处理卡；独立评审的 changer 会话不显示评审卡，`wait`/`report` 不再写卡，`report` 仍返回完整报告。客户端通过 `reviewCards/get` 按 turn 查询并携带该 turn 的起止时间，写入时间晚于 turn 结束的卡片留给后续 turn，同一 turn 的卡片按写入时间排序。卡片在回合末尾显示，默认折叠，摘要显示 change 名（缺失时省略）、轮次、结论与四档计数，展开包含完整报告正文与 plan-change waiver。卡片不写入会话日志、不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件不依赖 `@deepseek-ai/*` 包。
 
