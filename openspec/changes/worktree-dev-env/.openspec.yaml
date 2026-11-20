@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-20
+goal: Make apply worktrees cheap and isolated to run tests in, without changing
+  the plugin's worktree state or tool surface.
