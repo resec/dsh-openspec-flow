@@ -68,6 +68,8 @@ test('review and worktree schemas declare extra round and cleanup fields', () =>
   assert.ok('extraRounds' in review.output.schema.properties, 'the result declares extraRounds')
   const worktree = fake.tools.get('openspec_apply_worktree')
   assert.match(worktree.description, /cleanup/, 'the land description names the cleanup')
+  assert.ok('landCommit' in worktree.output.schema.properties, 'the land result declares landCommit')
+  assert.ok('mergeCommit' in worktree.output.schema.properties, 'the land result keeps the legacy alias')
   const cleanup = worktree.output.schema.properties.cleanup
   assert.ok(cleanup, 'the land result declares cleanup')
   assert.deepEqual(cleanup.required, ['complete', 'worktreeRemoved', 'branchRemoved'])

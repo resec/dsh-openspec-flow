@@ -39,7 +39,7 @@ function makeRepository() {
   return { root, origin, initial }
 }
 
-function makeLanded({ change = 'add-x' } = {}) {
+function makeLanded({ change = 'add-x', legacy = false } = {}) {
   const repository = makeRepository()
   const { root, origin } = repository
   git(root, ['checkout', '-q', '-b', 'feature'])
@@ -47,9 +47,13 @@ function makeLanded({ change = 'add-x' } = {}) {
   git(root, ['add', '.'])
   git(root, ['commit', '-qm', 'feature'])
   git(root, ['checkout', '-q', 'main'])
-  git(root, ['merge', '-q', '--no-ff', '-m', 'merge feature', 'feature'])
-  const mergeCommit = git(root, ['rev-parse', 'HEAD'])
-  const featureTree = git(root, ['rev-parse', `${mergeCommit}^{tree}`])
+  if (legacy) {
+    git(root, ['merge', '-q', '--no-ff', '-m', 'merge feature', 'feature'])
+  } else {
+    git(root, ['merge', '-q', '--ff-only', 'feature'])
+  }
+  const landCommit = git(root, ['rev-parse', 'HEAD'])
+  const featureTree = git(root, ['rev-parse', `${landCommit}^{tree}`])
 
   const changeDirectory = join(root, 'openspec', 'changes', change)
   const archiveDirectory = join(root, 'openspec', 'changes', 'archive', `2026-11-20-${change}`)
@@ -66,9 +70,9 @@ function makeLanded({ change = 'add-x' } = {}) {
     store: null,
     worktree: join(root, '.cache', 'openspec-flow', 'worktrees', `local#${change}`),
     branch: `openspec/apply/local-${change}`,
-    featureHead: mergeCommit,
+    featureHead: landCommit,
     featureTree,
-    mergeCommit,
+    landCommit,
     mainHead: archiveCommit,
     archiveCommit,
     applyReviewId: null,
@@ -76,14 +80,19 @@ function makeLanded({ change = 'add-x' } = {}) {
     approvedBy: 'user',
     landedAt: '2026-11-20T12:00:00.000Z',
   }
+  if (legacy) {
+    manifest.mergeCommit = landCommit
+    delete manifest.landCommit
+  }
   const manifestFile = writeManifest(root, manifest)
-  return { ...repository, root, origin, change, mergeCommit, archiveCommit, featureTree, manifest, manifestFile }
+  return { ...repository, root, origin, change, landCommit, archiveCommit, featureTree, manifest, manifestFile }
 }
 
 function writeManifest(root, manifest) {
   const directory = join(root, '.git', 'openspec-flow', 'landed')
   mkdirSync(directory, { recursive: true })
-  const file = join(directory, `${manifest.mergeCommit}.json`)
+  const commit = manifest.landCommit ?? manifest.mergeCommit
+  const file = join(directory, `${commit}.json`)
   writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`)
   return file
 }
@@ -106,6 +115,19 @@ test('dry run reports the latest manifest and leaves the remote unchanged', () =
     assert.match(result.stdout, /push-landed: manifest/)
     assert.match(result.stdout, /action: dry-run/)
     assert.equal(remoteMain(repository), before)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('a legacy mergeCommit manifest is selected by --merge and --land', () => {
+  const repository = makeLanded({ legacy: true })
+  try {
+    for (const args of [['--merge', repository.landCommit.slice(0, 8)], ['--land', repository.landCommit.slice(0, 8)]]) {
+      const result = run(repository.root, args)
+      assert.equal(result.status, 0, result.stderr)
+      assert.match(result.stdout, new RegExp(`land: ${repository.landCommit}`))
+    }
   } finally {
     cleanup(repository)
   }
@@ -179,7 +201,7 @@ test('a non-main branch and a non-user approval are refused', () => {
   }
 })
 
-test('a merge tree mismatch and an archive path outside the change are refused', () => {
+test('a land tree mismatch and an archive path outside the change are refused', () => {
   const repository = makeLanded()
   try {
     repository.manifest.featureTree = git(repository.root, ['rev-parse', 'HEAD^{tree}'])
@@ -281,7 +303,7 @@ test('a failing pre-push hook blocks the push', () => {
 test('selection, missing manifests and usage errors are reported', () => {
   const repository = makeLanded()
   try {
-    for (const args of [['--change', 'add-x'], ['--merge', repository.mergeCommit.slice(0, 8)], ['--manifest', repository.manifestFile]]) {
+    for (const args of [['--change', 'add-x'], ['--land', repository.landCommit.slice(0, 8)], ['--manifest', repository.manifestFile]]) {
       const selected = run(repository.root, args)
       assert.equal(selected.status, 0, selected.stderr)
     }
@@ -340,9 +362,9 @@ test('selection rejects unmatched and ambiguous records', () => {
     const ambiguousChange = run(repository.root, ['--change', 'add-x'])
     assert.equal(ambiguousChange.status, 1)
     assert.match(ambiguousChange.stderr, /more than one landed manifest/)
-    const ambiguousMerge = run(repository.root, ['--merge', repository.mergeCommit])
-    assert.equal(ambiguousMerge.status, 1)
-    assert.match(ambiguousMerge.stderr, /ambiguous/)
+    const ambiguousLand = run(repository.root, ['--land', repository.landCommit])
+    assert.equal(ambiguousLand.status, 1)
+    assert.match(ambiguousLand.stderr, /ambiguous/)
     const unmatched = run(repository.root, ['--change', 'missing'])
     assert.equal(unmatched.status, 1)
     assert.match(unmatched.stderr, /no landed manifest has change/)
@@ -370,12 +392,19 @@ test('manifest field and commit checks refuse malformed records', () => {
     assert.equal(absent.status, 1)
     assert.match(absent.stderr, /not a commit/)
 
-    const absentMerge = { ...repository.manifest, mergeCommit: 'b'.repeat(40) }
-    const absentMergeFile = join(directory, 'absent-merge.json')
-    writeFileSync(absentMergeFile, `${JSON.stringify(absentMerge, null, 2)}\n`)
-    const absentMergeResult = run(repository.root, ['--manifest', absentMergeFile])
-    assert.equal(absentMergeResult.status, 1)
-    assert.match(absentMergeResult.stderr, /not a commit/)
+    const absentLand = { ...repository.manifest, landCommit: 'b'.repeat(40) }
+    const absentLandFile = join(directory, 'absent-land.json')
+    writeFileSync(absentLandFile, `${JSON.stringify(absentLand, null, 2)}\n`)
+    const absentLandResult = run(repository.root, ['--manifest', absentLandFile])
+    assert.equal(absentLandResult.status, 1)
+    assert.match(absentLandResult.stderr, /not a commit/)
+
+    const conflicting = { ...repository.manifest, mergeCommit: 'c'.repeat(40) }
+    const conflictingFile = join(directory, 'conflicting.json')
+    writeFileSync(conflictingFile, `${JSON.stringify(conflicting, null, 2)}\n`)
+    const conflictingResult = run(repository.root, ['--manifest', conflictingFile])
+    assert.equal(conflictingResult.status, 1)
+    assert.match(conflictingResult.stderr, /different landCommit and mergeCommit/)
 
     git(repository.root, ['checkout', '-q', '-b', 'side', repository.initial])
     write(join(repository.root, 'side.txt'), 'side\n')
@@ -384,7 +413,7 @@ test('manifest field and commit checks refuse malformed records', () => {
     const side = git(repository.root, ['rev-parse', 'HEAD'])
     const sideTree = git(repository.root, ['rev-parse', `${side}^{tree}`])
     git(repository.root, ['checkout', '-q', 'main'])
-    const notAncestor = { ...repository.manifest, mergeCommit: side, featureTree: sideTree }
+    const notAncestor = { ...repository.manifest, landCommit: side, featureTree: sideTree }
     const notAncestorFile = join(directory, 'not-ancestor.json')
     writeFileSync(notAncestorFile, `${JSON.stringify(notAncestor, null, 2)}\n`)
     const ancestor = run(repository.root, ['--manifest', notAncestorFile])

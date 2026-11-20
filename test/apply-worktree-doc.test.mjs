@@ -27,7 +27,18 @@ test('the apply worktree document and README row describe the state and locks', 
 
 test('the apply worktree document names the land cleanup and rebase marker', () => {
   const doc = readFileSync(join(ROOT, 'docs', 'apply-worktree.md'), 'utf8')
-  for (const text of ['rebaseReview', 'worktreeRemoved', 'branchRemoved', 'cleanup.error']) {
+  for (const text of [
+    'rebaseReview',
+    'worktreeRemoved',
+    'branchRemoved',
+    'cleanup.error',
+    'fast-forward',
+    '--ff-only',
+    'landCommit',
+    'landMode',
+    'never resets or rewinds main',
+    'linear rebase',
+  ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }
 })

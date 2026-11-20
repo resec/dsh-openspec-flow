@@ -2,7 +2,7 @@
 /**
  * Push a landed apply-worktree change to `origin/main` after verifying its manifest.
  *
- * The plugin's land step writes `<git common dir>/openspec-flow/landed/<merge>.json` and never
+ * The plugin's land step writes `<git common dir>/openspec-flow/landed/<land>.json` and never
  * pushes. This repository-side command re-derives the land facts from that manifest, defaults to a
  * dry run, and performs the push only when `--push` is passed.
  */
@@ -83,7 +83,7 @@ function isAncestor(cwd, ancestor, descendant) {
  * @throws {UsageError} on an unknown, duplicate or incomplete flag.
  */
 export function parseArgs(argv) {
-  const options = { push: false, change: undefined, merge: undefined, manifest: undefined, help: false }
+  const options = { push: false, change: undefined, land: undefined, manifest: undefined, help: false }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--push') {
@@ -95,14 +95,19 @@ export function parseArgs(argv) {
       options.help = true
       continue
     }
-    const match = /^(--change|--merge|--manifest)(?:=(.*))?$/u.exec(argument)
+    const match = /^(--change|--land|--merge|--manifest)(?:=(.*))?$/u.exec(argument)
     if (match === null) throw new UsageError(`unknown argument '${argument}'`)
-    const name = match[1].slice(2)
+    const flag = match[1]
+    const name = flag === '--merge' ? 'land' : flag.slice(2)
     const value = match[2] !== undefined ? match[2] : argv[index + 1]
     if (value === undefined || value === '' || (match[2] === undefined && value.startsWith('--'))) {
-      throw new UsageError(`${match[1]} needs a value`)
+      throw new UsageError(`${flag} needs a value`)
     }
-    if (options[name] !== undefined) throw new UsageError(`${match[1]} was passed more than once`)
+    if (options[name] !== undefined) {
+      throw new UsageError(flag === '--land' || flag === '--merge'
+        ? 'only one --land/--merge selector is allowed'
+        : `${flag} was passed more than once`)
+    }
     options[name] = value
     if (match[2] === undefined) index += 1
   }
@@ -115,9 +120,10 @@ export function parseArgs(argv) {
  */
 export function usage() {
   return [
-    'usage: node scripts/push-landed.mjs [--push] [--change <name>|--merge <sha>|--manifest <path>]',
+    'usage: node scripts/push-landed.mjs [--push] [--change <name>|--land <sha>|--manifest <path>]',
     '',
     'Verifies a landed manifest and pushes main only with --push. The default is a dry run.',
+    '--merge is accepted as a legacy alias for --land.',
   ].join('\n')
 }
 
@@ -148,16 +154,18 @@ export function readManifest(file) {
  * @throws when a required field is missing or malformed.
  */
 export function validateManifest(manifest, file) {
-  for (const field of ['change', 'featureTree', 'mergeCommit', 'archiveCommit', 'approvedBy']) {
+  for (const field of ['change', 'featureTree', 'archiveCommit', 'approvedBy']) {
     if (typeof manifest[field] !== 'string' || manifest[field].trim() === '') {
       throw new Error(`landed manifest ${file} has no ${field}`)
     }
   }
-  for (const field of ['featureTree', 'mergeCommit', 'archiveCommit']) {
-    if (OBJECT_ID.test(manifest[field]) === false) {
-      throw new Error(`landed manifest ${file} has an invalid ${field} '${manifest[field]}'`)
-    }
+  if (OBJECT_ID.test(manifest.featureTree) === false) {
+    throw new Error(`landed manifest ${file} has an invalid featureTree '${manifest.featureTree}'`)
   }
+  if (OBJECT_ID.test(manifest.archiveCommit) === false) {
+    throw new Error(`landed manifest ${file} has an invalid archiveCommit '${manifest.archiveCommit}'`)
+  }
+  const landCommit = resolveLandCommit(manifest, file)
   if (manifest.store !== undefined && manifest.store !== null && typeof manifest.store !== 'string') {
     throw new Error(`landed manifest ${file} has an invalid store`)
   }
@@ -167,9 +175,32 @@ export function validateManifest(manifest, file) {
   return {
     ...manifest,
     featureTree: manifest.featureTree.toLowerCase(),
-    mergeCommit: manifest.mergeCommit.toLowerCase(),
+    landCommit,
     archiveCommit: manifest.archiveCommit.toLowerCase(),
   }
+}
+
+/**
+ * Resolve the landed commit from the new field or the legacy merge field.
+ * @param manifest - parsed manifest.
+ * @param file - manifest path for diagnostics.
+ * @returns lower-case commit id.
+ * @throws when neither field exists, both disagree or the value is malformed.
+ */
+function resolveLandCommit(manifest, file) {
+  const hasLand = typeof manifest.landCommit === 'string' && manifest.landCommit.trim() !== ''
+  const hasMerge = typeof manifest.mergeCommit === 'string' && manifest.mergeCommit.trim() !== ''
+  if (!hasLand && !hasMerge) {
+    throw new Error(`landed manifest ${file} has no landCommit or mergeCommit`)
+  }
+  if (hasLand && hasMerge && manifest.landCommit.toLowerCase() !== manifest.mergeCommit.toLowerCase()) {
+    throw new Error(`landed manifest ${file} has different landCommit and mergeCommit values`)
+  }
+  const value = hasLand ? manifest.landCommit : manifest.mergeCommit
+  if (OBJECT_ID.test(value) === false) {
+    throw new Error(`landed manifest ${file} has an invalid landCommit '${value}'`)
+  }
+  return value.toLowerCase()
 }
 
 /**
@@ -197,7 +228,7 @@ export function listManifests(directory, options = {}) {
 }
 
 /**
- * Select one manifest by explicit path, merge commit, change or latest landedAt.
+ * Select one manifest by explicit path, land commit, change or latest landedAt.
  * @param entries - manifest entries.
  * @param options - parsed options.
  * @param cwd - directory used to resolve a relative manifest path.
@@ -209,16 +240,23 @@ export function selectManifest(entries, options, cwd = process.cwd()) {
     const file = isAbsolute(options.manifest) ? options.manifest : resolve(cwd, options.manifest)
     return { file, manifest: validateManifest(readManifest(file), file) }
   }
-  if (options.merge !== undefined) {
-    const matches = entries.filter((entry) => String(entry.manifest.mergeCommit).toLowerCase().startsWith(options.merge.toLowerCase()))
-    if (matches.length === 0) throw new Error(`no landed manifest has merge commit ${options.merge}`)
-    if (matches.length > 1) throw new Error(`merge prefix ${options.merge} is ambiguous in the landed directory`)
+  if (options.land !== undefined) {
+    const prefix = options.land.toLowerCase()
+    const matches = entries.filter((entry) => {
+      const manifest = entry.manifest
+      const commit = typeof manifest.landCommit === 'string' && manifest.landCommit !== ''
+        ? manifest.landCommit
+        : manifest.mergeCommit
+      return String(commit).toLowerCase().startsWith(prefix)
+    })
+    if (matches.length === 0) throw new Error(`no landed manifest has land commit ${options.land}`)
+    if (matches.length > 1) throw new Error(`land prefix ${options.land} is ambiguous in the landed directory`)
     return { ...matches[0], manifest: validateManifest(matches[0].manifest, matches[0].file) }
   }
   if (options.change !== undefined) {
     const matches = entries.filter((entry) => entry.manifest.change === options.change)
     if (matches.length === 0) throw new Error(`no landed manifest has change ${options.change}`)
-    if (matches.length > 1) throw new Error(`change ${options.change} has more than one landed manifest; pass --merge`)
+    if (matches.length > 1) throw new Error(`change ${options.change} has more than one landed manifest; pass --land`)
     return { ...matches[0], manifest: validateManifest(matches[0].manifest, matches[0].file) }
   }
   const sorted = [...entries].sort((left, right) => {
@@ -269,7 +307,7 @@ export function validateLocalState(root, manifest) {
     throw new Error(`landed manifest ${manifest.change} was not approved by the user (approvedBy: ${manifest.approvedBy})`)
   }
 
-  for (const field of ['mergeCommit', 'archiveCommit']) {
+  for (const field of ['landCommit', 'archiveCommit']) {
     if (!gitSucceeds(root, ['cat-file', '-e', `${manifest[field]}^{commit}`])) {
       throw new Error(`landed manifest ${manifest.change} names ${field} ${manifest[field]}, which is not a commit`)
     }
@@ -279,15 +317,15 @@ export function validateLocalState(root, manifest) {
   if (head !== manifest.archiveCommit) {
     throw new Error(`HEAD ${head} is not the selected landed archiveCommit ${manifest.archiveCommit}; run the latest landed manifest`)
   }
-  if (!isAncestor(root, manifest.mergeCommit, manifest.archiveCommit)) {
-    throw new Error(`merge commit ${manifest.mergeCommit} is not an ancestor of archive commit ${manifest.archiveCommit}`)
+  if (!isAncestor(root, manifest.landCommit, manifest.archiveCommit)) {
+    throw new Error(`land commit ${manifest.landCommit} is not an ancestor of archive commit ${manifest.archiveCommit}`)
   }
-  const tree = gitText(root, ['rev-parse', `${manifest.mergeCommit}^{tree}`]).toLowerCase()
+  const tree = gitText(root, ['rev-parse', `${manifest.landCommit}^{tree}`]).toLowerCase()
   if (tree !== manifest.featureTree) {
-    throw new Error(`merge tree ${tree} does not match the reviewed featureTree ${manifest.featureTree}`)
+    throw new Error(`land tree ${tree} does not match the reviewed featureTree ${manifest.featureTree}`)
   }
 
-  const diff = gitText(root, ['diff', '--name-status', '--no-renames', manifest.mergeCommit, manifest.archiveCommit])
+  const diff = gitText(root, ['diff', '--name-status', '--no-renames', manifest.landCommit, manifest.archiveCommit])
   const own = `openspec/changes/${manifest.change}/`
   const unexpected = []
   for (const line of diff.split('\n').filter((entry) => entry.trim() !== '')) {
@@ -354,7 +392,7 @@ function report(entry, details) {
   process.stdout.write([
     `push-landed: manifest ${entry.file}`,
     `change: ${entry.manifest.change}`,
-    `merge: ${entry.manifest.mergeCommit}`,
+    `land: ${entry.manifest.landCommit}`,
     `archive: ${entry.manifest.archiveCommit}`,
     `tree: ${entry.manifest.featureTree}`,
     `remote: origin/main ${details.remote}`,
@@ -381,7 +419,7 @@ export function main(argv = process.argv.slice(2)) {
     entry = { file, manifest: validateManifest(readManifest(file), file) }
   } else {
     const entries = listManifests(directory, {
-      skipUnreadable: options.change !== undefined || options.merge !== undefined,
+      skipUnreadable: options.change !== undefined || options.land !== undefined,
     })
     entry = selectManifest(entries, options, process.cwd())
   }

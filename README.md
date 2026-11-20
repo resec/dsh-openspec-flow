@@ -16,7 +16,7 @@ DeepSeek Harness 的 OpenSpec 全流程插件。agent 通过 10 个 `openspec_*`
 | apply | `openspec_mark_task_done` | 一次翻转一批任务的复选框，返回逐项状态、新进度与下一任务 |
 | 评审 | `openspec_review` | draft review 与 apply review：`action` 选择 `start`（仅首轮，draft 需 `intent`）、`resume`（后续轮次，不接收 `intent`）、`wait`、`status`、`self-report`、`report`、`dispose`、`waive`、`retry`、`replace`、`waive-reviewer`、`extend` 或 `abandon`；`review` 选择 `draft` 或 `apply`；`round` 接受正整数或额外轮次 token `E<n>`（draft 只接受数字）；结果保留数字 `round` 并新增 `roundToken` 与 `extraRounds`；另接受可选 `base` 与可选 `baseline`（apply review 基线：默认 `draft`，`none` 用于没有 draft 记录的已提交分支且要求非空 `base`；draft 段禁用时显式 `draft` 被拒绝；空白 `base` 忽略） |
 | 评审者 | `openspec_reviewer` | 只由 `openspec-reviewer` preset 暴露：`read`、`submit`、`status`；changer 目录中不可见 |
-| apply worktree | `openspec_apply_worktree` | `action: "land"`（需 `approvedBy: "user"`）：在 lifecycle 临界区 merge、archive 并提交，写 landed manifest，随后删除 worktree 与本地 branch 并保留 archived 状态与 manifest；结果携带 `cleanup`（`complete`、`worktreeRemoved`、`branchRemoved`、可选 `error`），失败后再次 land 只重试清理；`action: "remove"`：删除 archived 或经批准的插件 checkout；`action: "recover"`：按 `scope` 与 `expectedOwner` 恢复死锁。状态与锁用 `openspec_inspect` 的 `action: "worktree"` 只读查看 |
+| apply worktree | `openspec_apply_worktree` | `action: "land"`（需 `approvedBy: "user"`）：在 lifecycle 临界区 fast-forward main、archive 并提交，写 landed manifest，随后删除 worktree 与本地 branch 并保留 archived 状态与 manifest；结果携带 `landCommit`（旧 `mergeCommit` 为兼容别名）与 `cleanup`（`complete`、`worktreeRemoved`、`branchRemoved`、可选 `error`），失败后再次 land 只重试清理；`action: "remove"`：删除 archived 或经批准的插件 checkout；`action: "recover"`：按 `scope` 与 `expectedOwner` 恢复死锁。状态与锁用 `openspec_inspect` 的 `action: "worktree"` 只读查看 |
 
 评审轮次由插件信息卡汇报：`self-report` 与 reviewer `submit` 分别写入评审卡，`resume` 与处置完成时写入处理卡；独立评审的 changer 会话不显示评审卡，`wait`/`report` 不再写卡，`report` 仍返回完整报告。客户端通过 `reviewCards/get` 按 turn 查询并携带该 turn 的起止时间；Host 按会话键选择卡片文件、每个 review 根最多扫描一次并按文件绝对路径去重，主工作树与 apply worktree 共享根时同一张卡只返回一次；单 turn 请求保持兼容，并新增 `turns` 批量请求，每个 turn 返回一个 `byTurn` 条目（无卡片时为空数组，重复 turn 只保留首项）。客户端按会话合并 turn 查询，批量失败时回退单 turn；批量水位与逐 turn 请求一致，每个评审目录在批量中只写一次卡片水位。写入时间晚于 turn 结束的卡片留给后续 turn，同一 turn 的卡片按写入时间排序；完整规则见 [docs/review.md](docs/review.md)。卡片在回合末尾显示，默认折叠，摘要显示 change 名（缺失时省略）、轮次、结论与四档计数，展开包含完整报告正文与 plan-change waiver。卡片不写入会话日志、不进入模型上下文，模型只写报告中不能表达且用户需要知道的一句话。插件不依赖 `@deepseek-ai/*` 包。
 
@@ -293,10 +293,9 @@ npm test
 发布顺序：
 
 1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm run verify` 与 `npm run openspec:check` 通过。
-2. worktree apply 用 `openspec_apply_worktree action=land` 在同一 lifecycle 内合并并归档；非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
+2. worktree apply 用 `openspec_apply_worktree action=land` 在同一 lifecycle 内 fast-forward main 并归档；非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
 3. worktree land 已提交归档结果；非 worktree 提交归档结果、文档更新与合并后的 specs。
 4. 维护者先运行 `node scripts/push-landed.mjs` 做 dry run，再运行 `--push` 校验 landed manifest 与远端并推送到 `origin/main`；外部贡献止于 pull request。详见 [docs/land-push.md](docs/land-push.md)。
-
 ## 限制
 
 - CLI 固定为 `@fission-ai/openspec` 2.0.0；升级 OpenSpec 需要发布新插件。

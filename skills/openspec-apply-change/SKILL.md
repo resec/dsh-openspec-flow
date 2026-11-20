@@ -55,5 +55,5 @@ Each round is reported by the plugin card: in the reviewer session for an indepe
 ## Finish
 
 - Call `openspec_inspect` with `action: "validate"` for the change.
-- Report the completed count, the remaining tasks, every validation issue and the apply review status. A plugin-created worktree change is finished by `openspec_apply_worktree action=land` with `approvedBy: "user"` only after the user explicitly asks; `openspec_archive` refuses it. Report the merge and archive commits and the cleanup outcome from the land result; land removes the worktree and local branch and keeps the archived state and manifest, and a failed cleanup is retried by calling land again.
+- Report the completed count, the remaining tasks, every validation issue and the apply review status. A plugin-created worktree change is finished by `openspec_apply_worktree action=land` with `approvedBy: "user"` only after the user explicitly asks; `openspec_archive` refuses it. Report the land and archive commits and the cleanup outcome from the land result; land removes the worktree and local branch and keeps the archived state and manifest, and a failed cleanup is retried by calling land again.
 - Archiving belongs to `openspec-archive-change`; use it only when the user asks.

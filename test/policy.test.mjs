@@ -56,6 +56,8 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /openspec_schemas/)
   assert.match(POLICY_TEXT, /explicit confirmation/)
   assert.match(POLICY_TEXT, /Archive only when the user explicitly asks/)
+  assert.match(POLICY_TEXT, /fast-forwards main, archives and commits in one lifecycle section/)
+  assert.doesNotMatch(POLICY_TEXT, /which merges and archives in one lifecycle section/)
   assert.match(POLICY_TEXT, /Main specs are updated only by/)
   assert.match(POLICY_TEXT, /no sync-only flow/)
   assert.match(POLICY_TEXT, /seal commit is the apply base/)

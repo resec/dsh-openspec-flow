@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 import { CHANGE, cleanupFixtures, gitFixture, passDraft, report, reviewDir, setup, call } from './review-fixtures.mjs'
@@ -10,12 +12,17 @@ import { manifestPath } from '../lib/worktree/land.js'
 
 test.after(cleanupFixtures)
 
-async function readyLand() {
+async function readyLand({ feature = false } = {}) {
   const { root, run } = gitFixture()
   run(['branch', '-M', 'main'])
   const fake = setup(root, undefined, { worktree: { enabled: true } })
   await passDraft(fake, root, run)
   const state = readApplyState(root, null, CHANGE)
+  if (feature) {
+    writeFileSync(join(state.worktree, 'feature.txt'), 'feature\n')
+    run(['-C', state.worktree, 'add', 'feature.txt'])
+    run(['-C', state.worktree, 'commit', '-m', 'feature work'])
+  }
   await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, review: 'apply',
   })
@@ -25,15 +32,87 @@ async function readyLand() {
   return { root, run, fake, state }
 }
 
-test('land merges, archives, writes the manifest and marks archived', async () => {
+async function withGitRace(root, mode, run) {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-land-race-'))
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' })
+  assert.equal(realGit.status, 0, realGit.stderr)
+  const wrapper = join(directory, 'git')
+  const counter = join(directory, 'count')
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'if [ "$1" = "-C" ] && [ "$2" = "$RACE_ROOT" ]; then',
+    '  if [ "$3" = "rev-parse" ] && [ "$4" = "HEAD" ] && [ "$RACE_MODE" = "recheck" ]; then',
+    '    count=$(cat "$RACE_COUNTER" 2>/dev/null || echo 0)',
+    '    count=$((count + 1))',
+    '    printf "%s\\n" "$count" > "$RACE_COUNTER"',
+    '    if [ "$count" = "2" ]; then',
+    '      "$REAL_GIT" -C "$2" commit --allow-empty -m "seal recheck" >/dev/null 2>&1',
+    '    fi',
+    '  fi',
+    '  if [ "$3" = "merge" ] && [ "$4" = "--ff-only" ] && [ "$RACE_MODE" = "merge" ]; then',
+    '    "$REAL_GIT" -C "$2" commit --allow-empty -m "seal merge" >/dev/null 2>&1',
+    '  fi',
+    'fi',
+    'exec "$REAL_GIT" "$@"',
+    '',
+  ].join('\n'), { mode: 0o755 })
+  chmodSync(wrapper, 0o755)
+  const saved = {}
+  for (const key of ['PATH', 'REAL_GIT', 'RACE_ROOT', 'RACE_MODE', 'RACE_COUNTER']) {
+    saved[key] = process.env[key]
+  }
+  process.env.PATH = `${directory}:${saved.PATH ?? ''}`
+  process.env.REAL_GIT = realGit.stdout.trim()
+  process.env.RACE_ROOT = root
+  process.env.RACE_MODE = mode
+  process.env.RACE_COUNTER = counter
+  try {
+    return await run()
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+async function prepareLegacyLanding({ archive = false } = {}) {
+  const { root, run, fake, state } = await readyLand({ feature: true })
+  const featureHead = run(['-C', state.worktree, 'rev-parse', 'HEAD'])
+  run(['-C', root, 'merge', '--no-ff', '-m', 'legacy land', state.branch])
+  const landCommit = run(['rev-parse', 'HEAD'])
+  let archiveCommit
+  if (archive) {
+    const archiveRoot = join(root, 'openspec', 'changes', 'archive')
+    mkdirSync(archiveRoot, { recursive: true })
+    run(['mv', `openspec/changes/${CHANGE}`, `openspec/changes/archive/2026-11-20-${CHANGE}`])
+    run(['add', '-A', '--', 'openspec/changes'])
+    run(['commit', '-m', 'legacy archive'])
+    archiveCommit = run(['rev-parse', 'HEAD'])
+  }
+  const current = readApplyState(root, null, CHANGE)
+  writeApplyState(root, null, CHANGE, { ...current, status: 'landing' })
+  return { root, run, fake, state, featureHead, landCommit, archiveCommit }
+}
+
+test('land fast-forwards, archives, writes the manifest and marks archived', async () => {
   const { root, run, fake, state } = await readyLand()
   const landed = await call(fake, 'openspec_apply_worktree', {
     action: 'land', change: CHANGE, approvedBy: 'user',
   })
   assert.equal(landed.change, CHANGE)
-  assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE} via land ${landed.mergeCommit.slice(0, 8)}`)
+  assert.equal(landed.landCommit, run(['rev-parse', `${landed.archiveCommit}^1`]))
+  assert.equal(landed.mergeCommit, landed.landCommit)
+  assert.equal(run(['log', '-1', '--format=%P', landed.landCommit]).split(' ').length, 1)
+  assert.equal(run(['rev-list', '--merges', `${state.baseCommit}..HEAD`]), '')
+  assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE} via land ${landed.landCommit.slice(0, 8)}`)
   assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
-  assert.equal(existsSync(manifestPath(root, landed.mergeCommit)), true)
+  assert.equal(existsSync(manifestPath(root, landed.landCommit)), true)
+  const manifest = JSON.parse(readFileSync(manifestPath(root, landed.landCommit), 'utf8'))
+  assert.equal(manifest.landCommit, landed.landCommit)
+  assert.equal(manifest.landMode, 'fast-forward')
+  assert.equal(manifest.mergeCommit, undefined)
   const landedState = readApplyState(root, null, CHANGE)
   assert.equal(landedState.status, 'archived')
   assert.equal(landedState.cleanup.worktreeRemoved, true)
@@ -43,6 +122,48 @@ test('land merges, archives, writes the manifest and marks archived', async () =
   assert.equal(run(['branch', '--list', state.branch]), '')
   assert.equal(run(['status', '--porcelain']), '')
   assert.equal(run(['ls-tree', '-r', '--name-only', 'HEAD', `openspec/changes/${CHANGE}`]), '')
+})
+
+test('land advances main to a feature commit without a merge commit', async () => {
+  const { root, run, fake, state } = await readyLand({ feature: true })
+  const before = run(['rev-parse', 'HEAD'])
+  const featureHead = run(['-C', state.worktree, 'rev-parse', 'HEAD'])
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.landCommit, featureHead)
+  assert.notEqual(landed.landCommit, before)
+  assert.equal(run(['rev-parse', `${landed.landCommit}^1`]), before)
+  assert.equal(run(['log', '-1', '--format=%P', landed.landCommit]).split(' ').length, 1)
+  assert.equal(run(['rev-list', '--merges', `${before}..HEAD`]), '')
+  assert.equal(run(['show', `${landed.landCommit}:feature.txt`]), 'feature')
+  assert.equal(existsSync(join(root, 'feature.txt')), true)
+})
+
+test('land resumes a legacy merge and records the legacy mode', async () => {
+  const { root, run, fake, landCommit } = await prepareLegacyLanding()
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.landCommit, landCommit)
+  assert.equal(landed.mergeCommit, landCommit)
+  assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
+  const manifest = JSON.parse(readFileSync(manifestPath(root, landCommit), 'utf8'))
+  assert.equal(manifest.landMode, 'legacy-merge')
+  assert.equal(manifest.landCommit, landCommit)
+})
+
+test('land resumes a legacy merge whose archive commit already exists', async () => {
+  const { root, run, fake, landCommit, archiveCommit } = await prepareLegacyLanding({ archive: true })
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.landCommit, landCommit)
+  assert.equal(landed.archiveCommit, archiveCommit)
+  assert.equal(run(['rev-parse', 'HEAD']), archiveCommit)
+  const manifest = JSON.parse(readFileSync(manifestPath(root, landCommit), 'utf8'))
+  assert.equal(manifest.landMode, 'legacy-merge')
+  assert.equal(manifest.archiveCommit, archiveCommit)
 })
 
 test('land refuses without user approval', async () => {
@@ -74,10 +195,11 @@ test('land works when apply review is disabled', async () => {
   })
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
   assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
-  const manifest = JSON.parse(readFileSync(manifestPath(root, landed.mergeCommit), 'utf8'))
+  const manifest = JSON.parse(readFileSync(manifestPath(root, landed.landCommit), 'utf8'))
   assert.equal(manifest.store, null)
   assert.equal(manifest.applyReviewId, null)
   assert.equal(manifest.reviewRecordHash, null)
+  assert.equal(manifest.landMode, 'fast-forward')
 })
 
 test('remove guards active and dirty checkouts', async () => {
@@ -145,14 +267,71 @@ test('land refuses a dirty main, dirty worktree, non-main and a worktree behind 
   }
 })
 
-test('land reuses an existing manifest for the current merge', async () => {
+test('land returns the fast-forward commit for an unchanged feature head', async () => {
   const { root, run, fake } = await readyLand()
   const head = run(['rev-parse', 'HEAD'])
   const path = manifestPath(root, head)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, `${JSON.stringify({ change: CHANGE, mergeCommit: head })}\n`)
   const result = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(result.landCommit, head)
   assert.equal(result.mergeCommit, head)
+})
+
+test('land rejects a non-linear feature history before updating main', async () => {
+  const { root, run, fake, state } = await readyLand()
+  const before = run(['rev-parse', 'HEAD'])
+  run(['-C', state.worktree, 'checkout', '-b', 'side'])
+  run(['-C', state.worktree, 'commit', '--allow-empty', '-m', 'side work'])
+  run(['-C', state.worktree, 'checkout', state.branch])
+  run(['-C', state.worktree, 'merge', '--no-ff', '-m', 'merge side', 'side'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /merge commits|linear/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']), before)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'active')
+})
+
+test('land rechecks main under the locks and preserves the moved head', async () => {
+  const { root, run, fake, state } = await readyLand()
+  const before = run(['rev-parse', 'HEAD'])
+  await withGitRace(root, 'recheck', async () => {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /behind main/,
+    )
+  })
+  const after = run(['rev-parse', 'HEAD'])
+  assert.notEqual(after, before)
+  assert.equal(run(['log', '-1', '--format=%s']), 'seal recheck')
+  assert.equal(existsSync(state.worktree), true)
+  const current = readApplyState(root, null, CHANGE)
+  assert.equal(current.status, 'active')
+  assert.equal(typeof current.lockToken, 'string')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.rebaseReview.mainHead, after)
+})
+
+test('a fast-forward race keeps the seal commit and records the marker', async () => {
+  const { root, run, fake, state } = await readyLand()
+  const before = run(['rev-parse', 'HEAD'])
+  await withGitRace(root, 'merge', async () => {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /fast-forward|merge|Not possible/i,
+    )
+  })
+  const after = run(['rev-parse', 'HEAD'])
+  assert.notEqual(after, before)
+  assert.equal(run(['log', '-1', '--format=%s']), 'seal merge')
+  assert.equal(run(['rev-list', '--merges', `${before}..HEAD`]), '')
+  assert.equal(existsSync(state.worktree), true)
+  const current = readApplyState(root, null, CHANGE)
+  assert.equal(current.status, 'active')
+  assert.equal(typeof current.lockToken, 'string')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.rebaseReview.mainHead, after)
 })
 
 test('land refuses an unready apply review and a tree mismatch', async () => {
@@ -392,7 +571,7 @@ test('a manifest write failure is retried after the archive commit', async () =>
   rmSync(landedDirectory, { force: true })
   const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
-  assert.equal(existsSync(manifestPath(root, retried.mergeCommit)), true)
+  assert.equal(existsSync(manifestPath(root, retried.landCommit)), true)
 })
 
 test('land refuses a dead or mismatched change lock', async () => {
@@ -488,16 +667,18 @@ test('archive observes a dead lifecycle lock', async () => {
   )
 })
 
-test('the merged-tree guard resets to the pre-merge main', async () => {
+test('the tree guard refuses without resetting main', async () => {
   const { root, run } = gitFixture()
   run(['branch', '-M', 'main'])
   const before = run(['rev-parse', 'HEAD'])
   writeFileSync(join(root, 'extra.txt'), 'extra\n')
   run(['add', 'extra.txt'])
   run(['commit', '-m', 'extra'])
-  const { assertMergedTree } = await import('../lib/worktree/land.js')
-  assert.throws(() => assertMergedTree(root, 'not-the-current-tree', before), /merged tree differs/)
-  assert.equal(run(['rev-parse', 'HEAD']), before)
+  const after = run(['rev-parse', 'HEAD'])
+  const { assertLandedTree } = await import('../lib/worktree/land.js')
+  assert.throws(() => assertLandedTree(root, 'not-the-current-tree'), /tree differs/)
+  assert.equal(run(['rev-parse', 'HEAD']), after)
+  assert.notEqual(before, after)
 })
 
 test('land writes a rebase marker when the worktree is behind main', async () => {
@@ -538,15 +719,16 @@ test('land uses a ready extra round tree after a rebase marker', async () => {
 test('land retries only cleanup for an archived state with a manifest', async () => {
   const { root, fake, state } = await readyLand()
   const { writeApplyState } = await import('../lib/worktree/state.js')
-  const fakeMerge = 'd'.repeat(40)
-  const path = manifestPath(root, fakeMerge)
+  const fakeLand = 'd'.repeat(40)
+  const path = manifestPath(root, fakeLand)
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, mergeCommit: fakeMerge, archiveCommit: 'e'.repeat(40) })}\n`)
+  writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, landCommit: fakeLand, landMode: 'fast-forward', archiveCommit: 'e'.repeat(40) })}\n`)
   writeApplyState(root, null, CHANGE, {
     ...state, status: 'archived', cleanup: { worktreeRemoved: false, branchRemoved: false },
   })
   const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
-  assert.equal(retried.mergeCommit, fakeMerge)
+  assert.equal(retried.landCommit, fakeLand)
+  assert.equal(retried.mergeCommit, fakeLand)
   assert.equal(retried.cleanup.complete, true)
   assert.equal(existsSync(state.worktree), false)
   const after = readApplyState(root, null, CHANGE)
@@ -725,7 +907,7 @@ test('land keeps the marker when the archive fails and records the pre-clear has
     await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
     const before = sha256(readFileSync(file, 'utf8'))
     const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
-    const manifest = JSON.parse(readFileSync(manifestPath(root, landed.mergeCommit), 'utf8'))
+    const manifest = JSON.parse(readFileSync(manifestPath(root, landed.landCommit), 'utf8'))
     assert.equal(manifest.reviewRecordHash, before)
     assert.equal(JSON.parse(readFileSync(file, 'utf8')).rebaseReview, undefined)
   }
