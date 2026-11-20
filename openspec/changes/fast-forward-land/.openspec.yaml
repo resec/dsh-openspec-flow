@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-21
+goal: Land advances main linearly to the reviewed feature head, fails safely if
+  main moves after the precheck, keeps old merge manifests readable, and pushes
+  the land and archive commits through push-landed.
