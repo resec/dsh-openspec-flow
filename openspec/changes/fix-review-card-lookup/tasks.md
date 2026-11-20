@@ -29,8 +29,8 @@
 ## 5. Integration
 
 - [x] 5.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for this change and fix every finding.
-- [ ] 5.2 Run `npm test`, `npm run verify` and `npm run openspec:check` on Node 24 and record the test and coverage results.
-- [ ] 5.3 Measure one `reviewCards/get` for a session with 56 completed turns, report the latency, confirm it stays below 300 ms on the warm cache, and confirm the duplicate card no longer appears.
+- [x] 5.2 Run `npm test`, `npm run verify` and `npm run openspec:check` on Node 24 and record the test and coverage results.
+- [x] 5.3 Measure one `reviewCards/get` for a session with 56 completed turns, report the latency, confirm it stays below 300 ms on the warm cache, and confirm the duplicate card no longer appears.
 
 ## Workflow follow-up
 
