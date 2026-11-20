@@ -128,7 +128,7 @@ finding 处置可一次调用 `dispositions` 批量完成：`dispose` 与 findin
 npm run bundle:pack
 ```
 
-命令忽略 `openspec/` 下的未提交路径并单独列出，只拒绝 `openspec/` 之外的未提交改动；它把当前提交发布为 `dist/dsh-openspec-flow-<version>/dsh-openspec-flow-<version>.tgz`，并在同一目录写同名 `.json` 元数据；未提交改动、同版本产物已存在且未加 `--force`、缺少核心运行时文件或含测试与 OpenSpec 路径时拒绝。打包先写入 `.cache/pack/`，校验通过后才发布到 `dist/`，失败不会留在 `dist/`。
+命令忽略 `openspec/` 下的未提交路径并单独列出，只拒绝 `openspec/` 之外的未提交改动；它把当前提交发布为 `dist/dsh-openspec-flow-<version>/dsh-openspec-flow-<version>.tgz`，并在同一目录写同名 `.json` 元数据；`openspec/` 之外的未提交改动、同版本产物已存在且未加 `--force`、缺少核心运行时文件或含测试与 OpenSpec 路径时拒绝。打包先写入 `.cache/pack/`，校验通过后才发布到 `dist/`，失败不会留在 `dist/`。
 
 安装：在 DSH 的 Plugins 页面先移除已安装的 bundle（若存在），再安装该 tarball，然后重启会话。安装后插件行 id 为 `openspec-flow`；本包是 Host-only bundle，无构建脚本、无 `@deepseek-ai/*` 运行时依赖，`@fission-ai/openspec` 由 profile 的包管理器一并安装。
 
