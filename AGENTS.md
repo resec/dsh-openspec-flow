@@ -33,7 +33,7 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 ## Bundle packaging
 
-The profile installs this repository as a local tarball under `dist/`, not as a linked directory. `npm run bundle:pack` packs a clean `HEAD` into `dist/dsh-openspec-flow-<version>/` as the tarball plus its `.json` metadata. The entrypoint refuses a dirty tree, an existing pair without `--force`, a tarball that misses an unconditional core runtime path or carries a test or OpenSpec path, and it leaves `dist/` unchanged on failure. It never writes the profile.
+The profile installs this repository as a local tarball under `dist/`, not as a linked directory. `npm run bundle:pack` packs the committed `HEAD` content into `dist/dsh-openspec-flow-<version>/` as the tarball plus its `.json` metadata. The entrypoint refuses uncommitted changes outside `openspec/` (uncommitted paths under `openspec/` are reported as ignored, because they cannot enter the tarball), an existing pair without `--force`, a tarball that misses an unconditional core runtime path or carries a test or OpenSpec path, and it leaves `dist/` unchanged on failure. It never writes the profile.
 
 The installed copy is frozen: editing plugin sources does not change it or reload the plugin, and a review completes on the installed version. Repack with `--force` and reinstall (remove the bundle in the Plugins page first, then add the tarball) only when new plugin logic must run. `docs/installing-bundles.md` carries the steps.
 

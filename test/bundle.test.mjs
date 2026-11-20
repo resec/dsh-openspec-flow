@@ -20,6 +20,7 @@ import {
   readManifest,
   SCRATCH_DIR,
   sha512Hex,
+  splitDirtyPaths,
   tarballPaths,
   verifyTarball,
 } from '../lib/bundle.js'
@@ -226,6 +227,24 @@ test('refuses an archive that ends inside an entry', () => {
 test('parses the dirty paths of a status listing', () => {
   assert.deepEqual(dirtyPaths(' M lib/a.js\n?? test/b.mjs\n'), ['lib/a.js', 'test/b.mjs'])
   assert.deepEqual(dirtyPaths(''), [])
+  assert.deepEqual(dirtyPaths('R  lib/a.js -> lib/b.js\n'), ['lib/a.js', 'lib/b.js'])
+  assert.deepEqual(dirtyPaths('?? "space name.md"\n'), ['space name.md'])
+})
+
+test('splits dirty paths into blocking and ignored OpenSpec paths', () => {
+  assert.deepEqual(splitDirtyPaths(['lib/a.js', 'openspec/changes/x/tasks.md', 'test/b.mjs']), {
+    blocking: ['lib/a.js', 'test/b.mjs'],
+    ignored: ['openspec/changes/x/tasks.md'],
+  })
+  assert.deepEqual(splitDirtyPaths(['openspec\\changes\\x\\tasks.md']), {
+    blocking: [],
+    ignored: ['openspec/changes/x/tasks.md'],
+  })
+  assert.deepEqual(splitDirtyPaths(['packages\\x\\openspec\\changes\\y\\tasks.md']), {
+    blocking: ['packages/x/openspec/changes/y/tasks.md'],
+    ignored: [],
+  })
+  assert.deepEqual(splitDirtyPaths([]), { blocking: [], ignored: [] })
 })
 
 test('computes the artifact paths and the sha512 digest', () => {
