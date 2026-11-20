@@ -130,7 +130,7 @@ export function playwrightEnv(host) {
  * @param overrides - browser path, npm environment and install seam.
  * @returns `{ installed, reused }`.
  */
-export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, npmEnv = {}, install } = {}) {
+export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, npmEnv = {}, install, lockOptions = {} } = {}) {
   const prepare = install ?? (({ browsersPath: browser, host }) => run('npx', ['playwright', 'install', 'chromium'], {
     ...npmEnv,
     ...playwrightEnv(host),
@@ -142,6 +142,7 @@ export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, np
     host: options.playwrightHost,
     cwd: ROOT,
     install: prepare,
+    ...lockOptions,
   })
 }
 

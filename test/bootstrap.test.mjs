@@ -25,6 +25,11 @@ import {
   shasumsUrl,
 } from '../scripts/bootstrap-lib.mjs'
 import {
+  acquireInstallLockSync,
+  installLockPath,
+  releaseInstallLock,
+} from '../scripts/worktree-env.mjs'
+import {
   browsersPath,
   completionHint,
   dependenciesError,
@@ -298,6 +303,37 @@ test('the browser step forwards --playwright-host to the installer', () => {
       },
     )
     assert.equal(seen, 'https://mirror.example')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the bootstrap browser step contends on the same shared lock', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-lock-'))
+  const browsers = join(root, 'pw-browsers')
+  const marker = join(browsers, 'chrome', 'chrome')
+  let installs = 0
+  mkdirSync(join(browsers, 'chrome'), { recursive: true })
+  writeFileSync(marker, 'present')
+  const install = () => {
+    installs += 1
+    mkdirSync(join(browsers, 'chrome'), { recursive: true })
+    writeFileSync(marker, 'installed')
+  }
+  const held = acquireInstallLockSync(installLockPath(browsers), 'parent', { timeoutMs: 1000 })
+  try {
+    assert.throws(
+      () => runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, install, lockOptions: { timeoutMs: 30, pollMs: 5 } }),
+      /timed out waiting/,
+    )
+    assert.equal(existsSync(marker), true)
+    assert.equal(installs, 0)
+  } finally {
+    releaseInstallLock(held)
+  }
+  try {
+    assert.deepEqual(runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, install }), { installed: true, reused: false })
+    assert.equal(installs, 1)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

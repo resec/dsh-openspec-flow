@@ -28,6 +28,28 @@ import {
 } from './drivers/web.mjs'
 import { findSessionLog, readSessionEvents } from './inspect/sessions.mjs'
 
+/** Arguments that make the isolated Web profile bind an OS-assigned port. */
+export const WEB_START_ARGS = ['--profile', 'verify-web', '--port', '0', '--no-open']
+
+/**
+ * Build the isolated lab environment for one run.
+ * @param options - lab root, run facts and environment.
+ * @returns the child environment.
+ */
+export function labEnvironmentForRun({ root = ROOT, run, env = process.env } = {}) {
+  if (run === undefined || typeof run.home !== 'string' || typeof run.agentsHome !== 'string') {
+    throw new Error('labEnvironmentForRun needs a run with home and agentsHome')
+  }
+  return {
+    ...env,
+    DSH_HOME: run.home,
+    DSH_AGENTS_HOME: run.agentsHome,
+    LAB_MOCK_KEY: 'lab-mock-key',
+    PLAYWRIGHT_BROWSERS_PATH: resolveBrowsersPath({ root, env }),
+    ...(existsSync(join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf')) ? { FONTCONFIG_FILE: join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf') } : {}),
+  }
+}
+
 /** Supported scenario models. */
 export const MODELS = ['mock', 'real']
 
@@ -124,14 +146,7 @@ export async function createLab({
     })
     throw error
   }
-  const labEnv = {
-    ...env,
-    DSH_HOME: run.home,
-    DSH_AGENTS_HOME: run.agentsHome,
-    LAB_MOCK_KEY: 'lab-mock-key',
-    PLAYWRIGHT_BROWSERS_PATH: resolveBrowsersPath({ root, env }),
-    ...(existsSync(join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf')) ? { FONTCONFIG_FILE: join(root, '.cache', 'lab', 'fontconfig', 'fonts.conf') } : {}),
-  }
+  const labEnv = labEnvironmentForRun({ root, run, env })
   const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false }
   const output = { run, dsh, mock, env: labEnv, version, plugin: pluginTarball, results: [] }
   writeJson(join(run.artifacts, 'manifest.json'), {
@@ -183,7 +198,7 @@ export async function createLab({
     try {
       processHandle = startLogged(
         process.execPath,
-        [dsh.bin, '--profile', 'verify-web', '--port', '0', '--no-open'],
+        [dsh.bin, ...WEB_START_ARGS],
         { cwd: run.project, env: labEnv, logPath },
       )
       const line = await processHandle.waitFor(/dsh web:/, 90_000)

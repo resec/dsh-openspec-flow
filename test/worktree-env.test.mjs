@@ -195,44 +195,34 @@ test('two worktree preparations serialize and one Chromium install wins', async 
   }
 })
 
-test('a reset waits for the held lock before removing and installing', async () => {
+test('a reset blocks on the held lock and keeps the browser until release', () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-reset-'))
   const browsers = join(root, 'pw-browsers')
-  const counter = join(root, 'installs.txt')
-  const lock = installLockPath(browsers)
-  const worker = join(root, 'worker.mjs')
-  writeFileSync(worker, `
-    import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
-    import { join } from 'node:path'
-    import { prepareChromium } from ${JSON.stringify(pathToFileURL(MODULE).href)}
-    const browsers = process.argv[2]
-    const counter = process.argv[3]
-    prepareChromium({
-      browsersPath: browsers,
-      reset: true,
-      install: () => {
-        appendFileSync(counter, 'install\\n')
-        mkdirSync(join(browsers, 'chrome'), { recursive: true })
-        writeFileSync(join(browsers, 'chrome', 'chrome'), '')
-      },
-    })
-  `)
-  const held = acquireInstallLockSync(lock, 'parent', { timeoutMs: 1000 })
-  const child = new Promise((resolve, reject) => {
-    const childProcess = spawn(process.execPath, [worker, browsers, counter], { stdio: ['ignore', 'pipe', 'pipe'] })
-    let stderr = ''
-    childProcess.stderr.on('data', (chunk) => { stderr += chunk })
-    childProcess.on('error', reject)
-    childProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderr || `exit ${code}`)))
-  })
+  const marker = join(browsers, 'chrome', 'chrome')
+  let installs = 0
+  mkdirSync(join(browsers, 'chrome'), { recursive: true })
+  writeFileSync(marker, 'present')
+  const install = () => {
+    installs += 1
+    mkdirSync(join(browsers, 'chrome'), { recursive: true })
+    writeFileSync(marker, 'installed')
+  }
+  const held = acquireInstallLockSync(installLockPath(browsers), 'parent', { timeoutMs: 1000 })
   try {
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    releaseInstallLock(held)
-    await child
-    assert.equal(readFileSync(counter, 'utf8').trim().split('\n').length, 1)
-    assert.equal(existsSync(join(browsers, 'chrome', 'chrome')), true)
+    assert.throws(
+      () => prepareChromium({ browsersPath: browsers, reset: true, install, timeoutMs: 30, pollMs: 5 }),
+      /timed out waiting/,
+    )
+    assert.equal(existsSync(marker), true)
+    assert.equal(installs, 0)
   } finally {
-    try { releaseInstallLock(held) } catch {}
+    releaseInstallLock(held)
+  }
+  try {
+    assert.deepEqual(prepareChromium({ browsersPath: browsers, reset: true, install }), { installed: true, reused: false })
+    assert.equal(installs, 1)
+    assert.equal(readFileSync(marker, 'utf8'), 'installed')
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
