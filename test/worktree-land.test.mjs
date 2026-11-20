@@ -373,7 +373,6 @@ test('land refuses when apply review never started', async () => {
 })
 
 
-
 test('a manifest write failure is retried after the archive commit', async () => {
   const { root, fake } = await readyLand()
   const landedDirectory = dirname(manifestPath(root, 'x'))
@@ -412,7 +411,7 @@ test('land refuses a dead or mismatched change lock', async () => {
   }
 })
 
-test('land refuses a missing change lock', async () => {
+test('land treats a missing change lock as free', async () => {
   const { root, fake } = await readyLand()
   const lock = join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d')
   const fs = await import('node:fs')
@@ -448,7 +447,6 @@ test('land refuses when strict validation fails', async () => {
     /validate refused/,
   )
 })
-
 
 
 test('the shared archive operation honors skipSpecs', async () => {
