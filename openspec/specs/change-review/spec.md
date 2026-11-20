@@ -870,7 +870,7 @@ The plugin SHALL scope every draft review operation to one change. Starting, res
 
 ### Requirement: One change holds its apply locks
 
-The plugin SHALL keep apply locks. An implementation-domain lock SHALL be identified by the review key `<store>#<change>`. A store-domain lock SHALL also record the implementation root, so a second project is refused while the same root may re-enter. Every apply entry SHALL acquire every required lock; a lock naming a different identity SHALL refuse the call and name the holder and path. Draft review SHALL remain available.
+A git worktree apply SHALL keep the per-change change lock for its implementation domain and SHALL also keep the store-domain apply lock for a store-backed change. Other paths SHALL keep the project apply locks. Locks SHALL name the review key; a store lock SHALL record the implementation root so a second project is refused. Every apply entry SHALL acquire the applicable lock; a foreign lock SHALL refuse and name the holder and path. Draft review SHALL remain available.
 
 #### Scenario: First ready change takes its locks
 
@@ -914,7 +914,7 @@ The plugin SHALL keep apply locks. An implementation-domain lock SHALL be identi
 
 ### Requirement: The apply lock covers every apply entry
 
-The lock SHALL be enforced regardless of git, store selection, the draft switch or a policy. It SHALL record a schema version, the change, store, change root, implementation root and start time.
+The applicable lock SHALL be enforced regardless of git, store selection, the draft switch or a policy. Git worktree apply SHALL use the per-change change lock and keep the store-domain lock when selected; compatibility and non-git paths SHALL use the project lock. A project lock SHALL record a schema version, the change, store, change root, implementation root and start time.
 
 #### Scenario: A draft-disabled change takes the lock
 
@@ -928,17 +928,17 @@ The lock SHALL be enforced regardless of git, store selection, the draft switch 
 
 ### Requirement: The apply lock covers the implementation and store domains
 
-Every change SHALL acquire the lock of its implementation domain: the session's git worktree root, else the nearest OpenSpec root at or above the session working directory, else the change's resolved root. A store-backed change SHALL also acquire the lock of its store domain. A git domain SHALL use its worktree git directory; any other domain SHALL use `openspec/.review/`.
+A git worktree apply SHALL use the per-change change lock instead of the implementation-domain project lock, and a store-backed change SHALL also acquire the store domain. Other paths SHALL acquire the implementation-domain project lock: the session's git worktree root, else the nearest OpenSpec root at or above the session working directory, else the change's resolved root. A git domain SHALL use its worktree git directory; any other domain SHALL use `openspec/.review/`.
 
 #### Scenario: A store change and a local change share one project lock
 
 - **WHEN** a store change and a local change in one project both call an apply entry
-- **THEN** only one proceeds, because they share the implementation domain
+- **THEN** the local worktree change uses its per-change lock while the store change also uses the store lock
 
 #### Scenario: Two store changes from different stores serialize in one project
 
 - **WHEN** two store changes from different stores are applied from one project
-- **THEN** both use the project implementation lock and only one proceeds
+- **THEN** both take their own per-change locks and also contend on the store lock when selected
 
 #### Scenario: A store-backed change takes the store domain lock
 
@@ -948,12 +948,12 @@ Every change SHALL acquire the lock of its implementation domain: the session's 
 #### Scenario: Nested roots share one worktree lock
 
 - **WHEN** two changes live under different OpenSpec roots inside one git worktree
-- **THEN** both apply entries use the same implementation lock file
+- **THEN** the per-change change lock is shared through the git common directory
 
 #### Scenario: Linked worktrees take separate locks
 
 - **WHEN** two linked worktrees of one repository apply changes
-- **THEN** each worktree uses its own git-directory lock and both may proceed
+- **THEN** the per-change change lock is shared through the git common directory
 
 #### Scenario: Git domain lock leaves the tree clean
 

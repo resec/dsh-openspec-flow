@@ -589,7 +589,7 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 
 ### Requirement: Apply waits for a ready draft review
 
-`openspec_apply_next` SHALL check the draft review and the apply locks before reading or advancing the apply state. An unready review fails the call and names `openspec_review`; a lock naming another identity fails it and names the holder and lock paths, regardless of git, store, draft switch or policy. The first apply after a ready review in a git project requires the seal commit and records it as the base; a later draft artifact mismatch no longer refuses.
+`openspec_apply_next` SHALL check the draft review and the applicable lock before the apply state. An unready review names `openspec_review`; a foreign lock names the holder. Git worktree apply uses the per-change lock for implementation and keeps the store-domain lock; compatibility and non-git use the project lock. A first git apply needs the seal commit as base; a later draft mismatch does not refuse.
 
 #### Scenario: Review is not ready
 
@@ -604,12 +604,12 @@ The plugin SHALL register `openspec_review` only while the draft review is enabl
 #### Scenario: Review is disabled
 
 - **WHEN** the change policy disables draft review
-- **THEN** `openspec_apply_next` proceeds without a review check and still enforces the apply lock
+- **THEN** `openspec_apply_next` proceeds without a review check and still enforces the applicable lock
 
 #### Scenario: Change has no policy
 
 - **WHEN** a legacy change has no review policy
-- **THEN** `openspec_apply_next` proceeds without a review check and still enforces the apply lock
+- **THEN** `openspec_apply_next` proceeds without a review check and still enforces the applicable lock
 
 #### Scenario: Ready review passes apply
 
@@ -1305,3 +1305,32 @@ The plugin SHALL expose `openspec_apply_worktree` with the `recover` action. The
 
 - **WHEN** the independent reviewer's tool catalog is assembled
 - **THEN** `openspec_apply_worktree` is absent
+
+### Requirement: Apply tools expose the worktree and the session directory
+
+`openspec_apply_next` SHALL return `worktree` with a path relative to `root.path`, branch, base and main root; `root.path` SHALL remain the main root. It SHALL move the changer session to the worktree before returning. `openspec_mark_task_done` and `openspec_inspect` `action: "validate"` SHALL use the worktree; the other inspect actions SHALL stay on main. `openspec_review` SHALL accept an optional `worktree` for apply review and activate the independent reviewer there.
+
+#### Scenario: Apply next names the worktree and main root
+
+- **WHEN** `openspec_apply_next` runs for a git change
+- **THEN** `root.path` is the main root and `worktree.path` is relative to `root.path`
+
+#### Scenario: Follow-up tools use the worktree
+
+- **WHEN** `openspec_mark_task_done` or the validate action runs after apply starts
+- **THEN** it uses the recorded worktree
+
+#### Scenario: Other reads stay on main
+
+- **WHEN** `openspec_inspect` runs `list`, `status`, `show`, `instructions` or `context`
+- **THEN** it reads main
+
+#### Scenario: Apply review uses the worktree
+
+- **WHEN** `openspec_review` starts an apply review for a worktree-applied change
+- **THEN** the reviewer is activated in that worktree
+
+#### Scenario: An explicit worktree is accepted
+
+- **WHEN** `openspec_review` receives a clean existing branch worktree
+- **THEN** it runs the apply review there
