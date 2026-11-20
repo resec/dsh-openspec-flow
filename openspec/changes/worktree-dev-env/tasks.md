@@ -13,7 +13,7 @@
 
 - [x] 2.1 Make `scripts/lab/core/paths.mjs` expose resolvers taking the lab root and environment, with the npm cache from `LAB_NPM_CACHE` or `npm_config_cache` and the browser path from `PLAYWRIGHT_BROWSERS_PATH`, defaulting to `<root>/.cache/lab/pw-browsers`; make `scripts/lab/index.mjs` pass its own root and `scripts/lab/core/install.mjs` accept `npm_config_cache`; verify precedence, a custom root without the environment and the existing defaults in the lab cache tests.
 - [x] 2.2 Make `scripts/bootstrap.mjs` resolve `PLAYWRIGHT_BROWSERS_PATH` once and enter the shared Chromium helper before the presence check, `--reset-browsers` and the installer, so the lock covers all three steps; verify the default path, the explicit shared path, the reset target and the lock coverage in the bootstrap tests.
-- [x] 2.3 Keep the lab's per-run `DSH_HOME` and OS-assigned ports; verify a lab run with the exported environment uses the shared npm cache and browser while its home stays under the run directory.
+- [x] 2.3 Keep the lab's per-run `DSH_HOME` and OS-assigned ports; verify the resolvers feed the shared npm and browser paths while the existing lab runner tests keep each run's home under its run directory and ports OS-assigned.
 - [x] 2.4 Add a concurrent-preparation regression that runs `init --browser` and the bootstrap browser step against one shared root with separate worktree-local `node_modules`/output directories, including a `--reset-browsers` run while another preparation holds the lock; verify both succeed, the reset waits for the lock, the non-reset pair runs one installation total, the reset then removes the directory and runs its own sequential installation, and no shared `node_modules` appears.
 - [x] 2.5 Update the `contributor-workflow` bootstrap tests and documentation assertions for the resolved browser path and the explicit shared path; verify `--reset-browsers` removes only the resolved directory and the default remains `.cache/lab/pw-browsers`.
 
@@ -28,6 +28,7 @@
 - [x] 4.2 Run `npm run test:affected -- scripts/worktree-env.mjs scripts/lab/core/paths.mjs scripts/lab/index.mjs scripts/lab/core/install.mjs scripts/bootstrap.mjs` and fix every failure.
 - [x] 4.3 Run `npm run openspec:check` and verify the active change and main specs validate.
 - [x] 4.4 Run `npm run verify` on Node 24 and fix every failure.
+- [x] 4.5 Make the coverage-stamp subprocess tests use `fileURLToPath` instead of `URL.pathname`, so a worktree directory containing `#` is not percent-encoded; verify `node --test test/coverage-stamp.test.mjs` passes in this worktree.
 
 ## Workflow follow-up
 

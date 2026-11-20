@@ -195,6 +195,48 @@ test('two worktree preparations serialize and one Chromium install wins', async 
   }
 })
 
+test('a reset waits for the held lock before removing and installing', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-reset-'))
+  const browsers = join(root, 'pw-browsers')
+  const counter = join(root, 'installs.txt')
+  const lock = installLockPath(browsers)
+  const worker = join(root, 'worker.mjs')
+  writeFileSync(worker, `
+    import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+    import { join } from 'node:path'
+    import { prepareChromium } from ${JSON.stringify(pathToFileURL(MODULE).href)}
+    const browsers = process.argv[2]
+    const counter = process.argv[3]
+    prepareChromium({
+      browsersPath: browsers,
+      reset: true,
+      install: () => {
+        appendFileSync(counter, 'install\\n')
+        mkdirSync(join(browsers, 'chrome'), { recursive: true })
+        writeFileSync(join(browsers, 'chrome', 'chrome'), '')
+      },
+    })
+  `)
+  const held = acquireInstallLockSync(lock, 'parent', { timeoutMs: 1000 })
+  const child = new Promise((resolve, reject) => {
+    const childProcess = spawn(process.execPath, [worker, browsers, counter], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stderr = ''
+    childProcess.stderr.on('data', (chunk) => { stderr += chunk })
+    childProcess.on('error', reject)
+    childProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderr || `exit ${code}`)))
+  })
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    releaseInstallLock(held)
+    await child
+    assert.equal(readFileSync(counter, 'utf8').trim().split('\n').length, 1)
+    assert.equal(existsSync(join(browsers, 'chrome', 'chrome')), true)
+  } finally {
+    try { releaseInstallLock(held) } catch {}
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('check reports missing paths, a mismatched inherited DSH_HOME and a held lock', () => {
   const root = makeRepository()
   const shared = join(root, 'shared')

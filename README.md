@@ -356,6 +356,8 @@ docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包�
 test/                    单元与真实 CLI 集成测试
 ```
 
+apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)。
+
 ## 许可
 
 MIT。

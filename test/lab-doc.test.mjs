@@ -27,4 +27,6 @@ test('AGENTS and the README point at the lab gate and documentation', () => {
   assert.match(readme, /npm run test:lab/)
   assert.match(readme, /docs\/lab\.md/)
   assert.match(readme, /scripts\/lab\//)
+  assert.match(agents, /apply-worktree-dev\.md/)
+  assert.match(readme, /apply-worktree-dev\.md/)
 })
