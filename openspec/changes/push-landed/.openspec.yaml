@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-20
+goal: Add a repository-side script and documentation that verify landed worktree
+  manifests and push main only on an explicit request, without changing plugin
+  behavior.
