@@ -224,3 +224,17 @@ test('an archived state names cleanup until both flags are complete', async () =
   assert.equal(cleaned.status, 'ready')
   assert.equal(cleaned.repair.action, 'none')
 })
+
+test('an archived state with a hand-deleted checkout is a manual repair', async () => {
+  const root = repository()
+  const fake = setup(root)
+  writeApplyState(root, null, 'demo', state(root, {
+    worktree: join(root, '.cache', 'openspec-flow', 'worktrees', 'local#deleted'),
+    status: 'archived',
+    lockToken: null,
+    lockPid: null,
+  }))
+  const view = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(view.repair.action, 'manual')
+  assert.match(view.repair.message, /does not exist/)
+})

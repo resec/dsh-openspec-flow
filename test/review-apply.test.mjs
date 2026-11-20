@@ -1783,3 +1783,30 @@ test('an extra round report is stored, read and waived by token', async () => {
     /not recorded/,
   )
 })
+
+test('an extra round resume refuses while a finding is open', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ findings: [minorFinding({ id: 'E1-01' })] }),
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /still open: E1-01/,
+  )
+})

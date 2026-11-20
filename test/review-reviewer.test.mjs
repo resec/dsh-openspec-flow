@@ -999,6 +999,11 @@ test('an independent reviewer reads and submits an extra round', async () => {
     action: 'read', target: 'findings', change: CHANGE, review: 'apply',
   }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
   assert.ok(findings.rounds.some((entry) => entry.roundToken === 'E1'))
+  const own = await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'read', target: 'own-report', round: 'E1', change: CHANGE, review: 'apply',
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(own.roundToken, 'E1')
+  assert.equal(own.report.verdict, 'pass')
 })
 
 test('the reviewer tool declares extra round fields', () => {
