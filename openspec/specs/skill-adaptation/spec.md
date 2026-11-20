@@ -181,7 +181,7 @@ Apply skill SHALL seal the change directory and the plugin's ignore file before 
 
 ### Requirement: Archive requires the apply review
 
-The shipped archive skill SHALL check the apply review status before calling `openspec_archive`. It SHALL stop only when `policy` is true, `enabled` is true, `available` is true and the review is not ready. When `available` is false, `policy` is false, or `enabled` is false, it SHALL state why and continue without waiting.
+The shipped archive skill SHALL check a plugin-created active apply worktree and direct it to `openspec_apply_worktree action=land`, not `openspec_archive`; a landed worktree change is already archived. Otherwise it SHALL check the apply review status before `openspec_archive`: stop only when policy, enabled and available are true and the review is not ready; continue with a stated reason when unavailable, disabled or no policy.
 
 #### Scenario: Archive starts after a ready review
 
@@ -202,6 +202,21 @@ The shipped archive skill SHALL check the apply review status before calling `op
 
 - **WHEN** the apply review status reports `policy: false`
 - **THEN** the skill states that no review policy is locked and calls `openspec_archive` without waiting
+
+#### Scenario: An active worktree change is sent to land
+
+- **WHEN** the change state is a plugin-created active apply worktree
+- **THEN** the skill directs the user to `openspec_apply_worktree action=land` and does not call `openspec_archive`
+
+#### Scenario: A landed worktree change is already archived
+
+- **WHEN** the change state is a landed plugin-created worktree
+- **THEN** the skill reports it is already archived
+
+#### Scenario: A PR worktree follows the archive path
+
+- **WHEN** the change state records a user-created PR worktree or no worktree
+- **THEN** the existing apply-review gate and `openspec_archive` path apply
 
 ### Requirement: Workflow skills wait for the independent reviewer
 
@@ -332,3 +347,12 @@ The packaged-skill test SHALL read the propose skill's draft review section and 
 - **WHEN** the packaged-skill test runs on the shipped skills
 - **THEN** every action occurrence in the propose draft section carries `review: "draft"` before the next action
 - **AND** every action occurrence in the apply section carries `review: "apply"` before the next action
+
+### Requirement: A worktree apply finishes with land
+
+After the apply review, a plugin-created worktree apply SHALL finish with `openspec_apply_worktree action=land`; the skill SHALL NOT report completion or archive before land.
+
+#### Scenario: A worktree apply finishes with land
+
+- **WHEN** a plugin-created worktree apply has a ready review
+- **THEN** the skill calls `openspec_apply_worktree action=land` as the terminal step

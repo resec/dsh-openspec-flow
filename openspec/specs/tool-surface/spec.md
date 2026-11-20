@@ -1279,7 +1279,7 @@ When a draft review has a recorded report, no finding is open, and the only outs
 
 ### Requirement: Apply worktree recovery is exposed as one tool
 
-The plugin SHALL expose `openspec_apply_worktree` with the `recover` action. The call SHALL accept `change`, an optional `store`, a `scope` of `lifecycle` or `change`, and an `expectedOwner` token. `change` SHALL be required for the change scope. An unknown action, an invalid scope or a missing token SHALL be refused. The reviewer preset SHALL deny the tool.
+`openspec_apply_worktree` SHALL expose `recover`, `land` and `remove`. `change` is required for land, remove and the change scope; `store` is optional. Recover requires scope/expectedOwner, land requires `approvedBy: "user"`, and remove abandon requires `approvedBy: "user"` and a reason. Unknown actions and missing approvals SHALL be refused. The reviewer preset SHALL deny it.
 
 #### Scenario: Recovery reports the recovered scope
 
@@ -1298,8 +1298,33 @@ The plugin SHALL expose `openspec_apply_worktree` with the `recover` action. The
 
 #### Scenario: An unknown action is refused
 
-- **WHEN** a caller passes an action outside `recover`
-- **THEN** the tool refuses the call and names `recover`
+- **WHEN** a caller passes an action outside `recover`, `land` and `remove`
+- **THEN** the tool refuses the call and names the three actions
+
+#### Scenario: Land reports the merge and archive
+
+- **WHEN** an approved land succeeds
+- **THEN** the result carries the merge commit, archive commit and manifest path
+
+#### Scenario: Land without user approval is refused
+
+- **WHEN** `land` omits `approvedBy: "user"`
+- **THEN** the call is refused before any merge
+
+#### Scenario: A missing change is refused
+
+- **WHEN** land, remove or a change-scope recover omits `change`
+- **THEN** the call is refused before reading or writing state
+
+#### Scenario: Land reports the state handle
+
+- **WHEN** land succeeds
+- **THEN** the result also carries the manifest path and the state
+
+#### Scenario: Remove reports the retained branch
+
+- **WHEN** an archived checkout is removed
+- **THEN** the result names the removed path and the retained branch
 
 #### Scenario: The reviewer cannot use the tool
 
