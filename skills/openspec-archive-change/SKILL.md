@@ -13,6 +13,8 @@ Archive only on an explicit request. A finished apply is not the same as a reque
 
 Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
 
+A plugin-created apply worktree is not archived here: `openspec_apply_worktree action=land` merges and archives it in one lifecycle section. Check `openspec_inspect action="worktree"` first; when the state is `active` or `landing` under `.cache/openspec-flow/worktrees`, stop and use land.
+
 ## Preconditions
 
 1. Call `openspec_inspect` with `action: "list"` and find the change. If `completedTasks` is less than `totalTasks`, report the remaining count and stop; archive waits for a completed change.

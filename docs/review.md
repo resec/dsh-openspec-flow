@@ -32,7 +32,7 @@ git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须�
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`；`start` 只用于首轮。
 3. draft review 未就绪时 `openspec_review` 需要下一轮：用 `action: "resume"`，不传 `intent`。就绪后，git 项目先把变更目录与 `openspec/.gitignore` 提交为封存 commit（可含其他 `openspec/changes/` 路径），再调用 `openspec_apply_next`；工具校验干净树、提交路径与工件哈希，任一不满足即拒绝并记录该 commit 为 base，同时取得本 change 的 apply 锁。apply 开始后 draft review 冻结，不再接受 `resume`。
 4. 在 worktree 中实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`，并传入 worktree 路径）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录，`files` 以 change 目录为基准（也接受项目相对与绝对路径，示例 `files: ["proposal.md","tasks.md"]`，逃逸 change 目录或指向其他 change 的路径会被拒绝）；apply review 拒绝豁免清单之外的变更文件。apply brief 对规划变更按三条轴评审：plan coherence（变更后的 artifacts 彼此一致）、intent fit（仍满足用户目标与验收条件）、scope control（没有为迁就实现而弱化或移除需求）。
-5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。plugin-created worktree 的 active/landing 状态不能走 `openspec_archive`，由 `openspec_apply_worktree action=land` 收尾。
+5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。plugin-created worktree 的 active/landing 状态不能走 `openspec_archive`，由 `openspec_apply_worktree action=land` 在同一 lifecycle 临界区内 merge、archive 并提交 archive。
 
 任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；两种 status 都返回 `mode` 与 `independent`，apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
 

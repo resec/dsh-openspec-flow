@@ -81,10 +81,22 @@ The `repair.action` is `none`, `recover` or `manual`. A git project with no stat
 
 Recovery removes the lock only when the observed token matches and the process is dead. It refuses a live owner, a changed owner or a missing owner, and does not delete state, worktrees, branches or review records.
 
-## Archive
+## Land and remove
 
-A worktree-applied change is landed by `openspec_apply_worktree action=land`, which is provided by the `land-apply-worktree` change. `openspec_archive` refuses a plugin-created `active` or `landing` state from any cwd and names that action. A user-created PR state keeps the existing archive path.
+`openspec_apply_worktree` exposes three actions:
+
+```json
+{ "action": "recover", "change": "add-dark-mode", "scope": "change", "expectedOwner": "<token>" }
+{ "action": "land", "change": "add-dark-mode", "approvedBy": "user" }
+{ "action": "remove", "change": "add-dark-mode" }
+```
+
+`land` runs in main under the lifecycle and a fresh change lock. It verifies the state owner, releases the recorded apply change lock, sets `landing`, merges the worktree branch with `--no-ff`, verifies the merged tree equals the required tree, archives and commits in the same section, writes `<common>/openspec-flow/landed/<merge>.json` and marks the state `archived`. It never pushes. A failed archive or commit keeps the merge and worktree for a retry.
+
+`remove` deletes only an archived plugin-created checkout (or an explicitly abandoned one with user approval and a reason), keeps its branch and deletes the state. A PR worktree is refused.
+
+`openspec_archive` refuses a plugin-created active or landing state and points at `openspec_apply_worktree action=land`.
 
 ## Non-goals
 
-Land, archive-in-land, landed manifests, removal and push are not implemented by this change. Dependency caches, DSH profiles and ports belong to repository scripts, not this plugin.
+Pushing, landed-manifest history beyond one file per merge, and dependency caches are out of scope. Migration of an existing main-applied change is manual.
