@@ -55,3 +55,20 @@ test('store parameter description is uniform', () => {
     assert.equal(entry.description, 'Registered store id.', `${entry.name}.parameters.store`)
   }
 })
+
+test('review and worktree schemas declare extra round and cleanup fields', () => {
+  const fake = createFakeContext({ cwd: process.cwd() })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: true }, apply: { enabled: true } } })
+  const review = fake.tools.get('openspec_review')
+  assert.ok(review, 'openspec_review is registered')
+  const round = review.parameters.properties.round
+  assert.ok(Array.isArray(round.anyOf), 'round accepts a number or a token')
+  assert.deepEqual(round.anyOf.map((entry) => entry.type), ['integer', 'string'])
+  assert.ok('roundToken' in review.output.schema.properties, 'the result declares roundToken')
+  assert.ok('extraRounds' in review.output.schema.properties, 'the result declares extraRounds')
+  const worktree = fake.tools.get('openspec_apply_worktree')
+  assert.match(worktree.description, /cleanup/, 'the land description names the cleanup')
+  const cleanup = worktree.output.schema.properties.cleanup
+  assert.ok(cleanup, 'the land result declares cleanup')
+  assert.deepEqual(cleanup.required, ['complete', 'worktreeRemoved', 'branchRemoved'])
+})

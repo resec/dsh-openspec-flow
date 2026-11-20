@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 
-import { CHANGE, cleanupFixtures, gitFixture, passDraft, report, setup, call } from './review-fixtures.mjs'
-import { readApplyState } from '../lib/worktree/state.js'
+import { CHANGE, cleanupFixtures, gitFixture, passDraft, report, reviewDir, setup, call } from './review-fixtures.mjs'
+import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
+import { sha256 } from '../lib/review/store.js'
 import { manifestPath } from '../lib/worktree/land.js'
 
 test.after(cleanupFixtures)
@@ -33,9 +34,13 @@ test('land merges, archives, writes the manifest and marks archived', async () =
   assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE} via land ${landed.mergeCommit.slice(0, 8)}`)
   assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
   assert.equal(existsSync(manifestPath(root, landed.mergeCommit)), true)
-  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
-  assert.equal(existsSync(state.worktree), true)
-  assert.match(run(['branch', '--list', state.branch]), new RegExp(state.branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  const landedState = readApplyState(root, null, CHANGE)
+  assert.equal(landedState.status, 'archived')
+  assert.equal(landedState.cleanup.worktreeRemoved, true)
+  assert.equal(landedState.cleanup.branchRemoved, true)
+  assert.equal(landed.cleanup.complete, true)
+  assert.equal(existsSync(state.worktree), false)
+  assert.equal(run(['branch', '--list', state.branch]), '')
   assert.equal(run(['status', '--porcelain']), '')
   assert.equal(run(['ls-tree', '-r', '--name-only', 'HEAD', `openspec/changes/${CHANGE}`]), '')
 })
@@ -48,14 +53,15 @@ test('land refuses without user approval', async () => {
   )
 })
 
-test('remove keeps the branch and deletes the state', async () => {
+test('remove is idempotent after land cleanup', async () => {
   const { root, fake, state } = await readyLand()
   await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
   const removed = await call(fake, 'openspec_apply_worktree', { action: 'remove', change: CHANGE })
-  assert.equal(removed.removed, true)
+  assert.equal(removed.removed, false)
   assert.equal(removed.branch, state.branch)
   assert.equal(existsSync(state.worktree), false)
-  assert.equal(readApplyState(root, null, CHANGE), undefined)
+  assert.notEqual(readApplyState(root, null, CHANGE), undefined)
 })
 
 test('land works when apply review is disabled', async () => {
@@ -74,17 +80,17 @@ test('land works when apply review is disabled', async () => {
   assert.equal(manifest.reviewRecordHash, null)
 })
 
-test('remove guards active, dirty and foreign checkouts', async () => {
-  const { root, fake, state } = await readyLand()
+test('remove guards active and dirty checkouts', async () => {
+  const { fake, state } = await readyLand()
   await assert.rejects(
     call(fake, 'openspec_apply_worktree', { action: 'remove', change: CHANGE }),
     /archived state or abandon/,
   )
-  await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
-  const fs = await import('node:fs')
-  fs.writeFileSync(join(state.worktree, 'dirty.txt'), 'dirty\n')
+  writeFileSync(join(state.worktree, 'dirty.txt'), 'dirty\n')
   await assert.rejects(
-    call(fake, 'openspec_apply_worktree', { action: 'remove', change: CHANGE }),
+    call(fake, 'openspec_apply_worktree', {
+      action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: 'cleaning',
+    }),
     /clean worktree/,
   )
 })
@@ -492,4 +498,268 @@ test('the merged-tree guard resets to the pre-merge main', async () => {
   const { assertMergedTree } = await import('../lib/worktree/land.js')
   assert.throws(() => assertMergedTree(root, 'not-the-current-tree', before), /merged tree differs/)
   assert.equal(run(['rev-parse', 'HEAD']), before)
+})
+
+test('land writes a rebase marker when the worktree is behind main', async () => {
+  const { root, run, fake } = await readyLand()
+  writeFileSync(join(root, 'ahead.txt'), 'ahead\n')
+  run(['add', 'ahead.txt'])
+  run(['commit', '-m', 'main ahead'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /behind main/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(typeof record.rebaseReview?.treeSha, 'string')
+  assert.equal(record.rebaseReview.mainHead, run(['rev-parse', 'HEAD']))
+})
+
+test('land uses a ready extra round tree after a rebase marker', async () => {
+  const { root, run, fake } = await readyLand()
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  record.treeSha = 'b'.repeat(40)
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const opened = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(opened.roundToken, 'E1')
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
+  const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(landed.cleanup.complete, true)
+  const landedRecord = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(landedRecord.rebaseReview, undefined)
+})
+
+test('land retries only cleanup for an archived state with a manifest', async () => {
+  const { root, fake, state } = await readyLand()
+  const { writeApplyState } = await import('../lib/worktree/state.js')
+  const fakeMerge = 'd'.repeat(40)
+  const path = manifestPath(root, fakeMerge)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, mergeCommit: fakeMerge, archiveCommit: 'e'.repeat(40) })}\n`)
+  writeApplyState(root, null, CHANGE, {
+    ...state, status: 'archived', cleanup: { worktreeRemoved: false, branchRemoved: false },
+  })
+  const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(retried.mergeCommit, fakeMerge)
+  assert.equal(retried.cleanup.complete, true)
+  assert.equal(existsSync(state.worktree), false)
+  const after = readApplyState(root, null, CHANGE)
+  assert.equal(after.cleanup.worktreeRemoved, true)
+  assert.equal(after.cleanup.branchRemoved, true)
+  assert.equal(existsSync(path), true)
+})
+
+test('land uses the reviewed tree when the rebased tree is unchanged', async () => {
+  const { root, fake } = await readyLand()
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: record.treeSha,
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(landed.cleanup.complete, true)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).rebaseReview, undefined)
+})
+
+test('a cleanup failure records the error and keeps the archived state', async () => {
+  const { root, run, fake, state } = await readyLand()
+  const { writeApplyState } = await import('../lib/worktree/state.js')
+  const fakeMerge = 'd'.repeat(40)
+  const path = manifestPath(root, fakeMerge)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, mergeCommit: fakeMerge, archiveCommit: 'e'.repeat(40) })}\n`)
+  run(['checkout', '-b', 'unmerged-branch'])
+  writeFileSync(join(root, 'unmerged.txt'), 'x\n')
+  run(['add', 'unmerged.txt'])
+  run(['commit', '-m', 'unmerged'])
+  run(['checkout', 'main'])
+  writeApplyState(root, null, CHANGE, {
+    ...state,
+    status: 'archived',
+    worktree: join(root, '.cache', 'openspec-flow', 'worktrees', 'local#missing-worktree'),
+    branch: 'unmerged-branch',
+    lockToken: null,
+    lockPid: null,
+  })
+  const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(retried.cleanup.complete, false)
+  assert.equal(typeof retried.cleanup.error, 'string')
+  const after = readApplyState(root, null, CHANGE)
+  assert.equal(after.status, 'archived')
+  assert.equal(typeof after.cleanup.error, 'string')
+})
+
+test('a cleanup retry tolerates an already removed branch and checkout', async () => {
+  const { root, fake, state } = await readyLand()
+  const { writeApplyState } = await import('../lib/worktree/state.js')
+  const fakeMerge = 'd'.repeat(40)
+  const path = manifestPath(root, fakeMerge)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, mergeCommit: fakeMerge, archiveCommit: 'e'.repeat(40) })}\n`)
+  writeApplyState(root, null, CHANGE, {
+    ...state,
+    status: 'archived',
+    worktree: join(root, '.cache', 'openspec-flow', 'worktrees', 'local#missing-worktree'),
+    branch: 'missing-branch',
+    lockToken: null,
+    lockPid: null,
+  })
+  const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(retried.cleanup.complete, true)
+  assert.equal(retried.cleanup.worktreeRemoved, true)
+  assert.equal(retried.cleanup.branchRemoved, true)
+})
+
+test('a corrupt manifest and a completed cleanup refuse the retry', async () => {
+  {
+    const { root, fake, state } = await readyLand()
+    const { writeApplyState } = await import('../lib/worktree/state.js')
+    mkdirSync(join(root, '.git', 'openspec-flow', 'landed'), { recursive: true })
+    writeFileSync(join(root, '.git', 'openspec-flow', 'landed', 'bad.json'), '{')
+    writeApplyState(root, null, CHANGE, {
+      ...state, status: 'archived', lockToken: null, lockPid: null,
+    })
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /active or landing state/,
+    )
+  }
+  {
+    const { root, fake, state } = await readyLand()
+    const { writeApplyState } = await import('../lib/worktree/state.js')
+    const fakeMerge = 'f'.repeat(40)
+    const path = manifestPath(root, fakeMerge)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, mergeCommit: fakeMerge, archiveCommit: 'e'.repeat(40) })}\n`)
+    writeApplyState(root, null, CHANGE, {
+      ...state,
+      status: 'archived',
+      lockToken: null,
+      lockPid: null,
+      cleanup: { worktreeRemoved: true, branchRemoved: true },
+    })
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /active or landing state/,
+    )
+  }
+})
+
+test('land writes no marker when apply review is disabled', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false } }, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  writeFileSync(join(root, 'ahead.txt'), 'ahead\n')
+  run(['add', 'ahead.txt'])
+  run(['commit', '-m', 'main ahead'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /behind main/,
+  )
+  assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
+})
+
+test('land writes no marker for a foreign lock owner', async () => {
+  const { root, run, fake } = await readyLand()
+  writeFileSync(join(root, 'ahead.txt'), 'ahead\n')
+  run(['add', 'ahead.txt'])
+  run(['commit', '-m', 'main ahead'])
+  const current = readApplyState(root, null, CHANGE)
+  writeApplyState(root, null, CHANGE, { ...current, lockToken: 'foreign-token' })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /not owned by this session/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.rebaseReview, undefined)
+})
+
+test('land keeps the marker when the archive fails and records the pre-clear hash on success', async () => {
+  {
+    const { root, run, fake } = await readyLand()
+    const file = join(reviewDir(root), 'apply-review.json')
+    const record = JSON.parse(readFileSync(file, 'utf8'))
+    record.rebaseReview = {
+      requiredAt: new Date().toISOString(),
+      mainHead: record.baseCommit,
+      worktreeHead: record.commitSha,
+      treeSha: 'b'.repeat(40),
+    }
+    record.treeSha = 'b'.repeat(40)
+    writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+    await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+    await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
+    const hook = join(root, '.git', 'hooks', 'pre-commit')
+    writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /commit/,
+    )
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).rebaseReview.treeSha, 'b'.repeat(40))
+    rmSync(hook, { force: true })
+  }
+  {
+    const { root, run, fake } = await readyLand()
+    const file = join(reviewDir(root), 'apply-review.json')
+    const record = JSON.parse(readFileSync(file, 'utf8'))
+    record.rebaseReview = {
+      requiredAt: new Date().toISOString(),
+      mainHead: record.baseCommit,
+      worktreeHead: record.commitSha,
+      treeSha: 'b'.repeat(40),
+    }
+    record.treeSha = 'b'.repeat(40)
+    writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+    await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+    await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
+    const before = sha256(readFileSync(file, 'utf8'))
+    const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+    const manifest = JSON.parse(readFileSync(manifestPath(root, landed.mergeCommit), 'utf8'))
+    assert.equal(manifest.reviewRecordHash, before)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).rebaseReview, undefined)
+  }
+})
+
+test('land refuses while the extra round is not ready', async () => {
+  const { root, fake } = await readyLand()
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /rebase marker/,
+  )
+})
+
+test('land writes no marker when the apply review never started', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  writeFileSync(join(root, 'ahead.txt'), 'ahead\n')
+  run(['add', 'ahead.txt'])
+  run(['commit', '-m', 'main ahead'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /has not started/,
+  )
+  assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
 })

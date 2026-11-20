@@ -42,7 +42,7 @@ A git project keeps one state file per change:
 <git common dir>/openspec-flow/apply/<store>#<change>.json
 ```
 
-It carries `schemaVersion`, `change`, `store`, `mainRoot`, `worktree`, `branch`, `baseCommit`, `sealedCommit`, `status`, `createdAt`, `lastUsedAt`, `lockToken` and `lockPid`. `store` is `null` without a store. `baseCommit` is the apply base; `sealedCommit` is the draft seal, or `null` for a standalone PR branch. `lockToken` and `lockPid` are the per-change lock owner, or `null` for a PR state or after release. `status` is `active`, `landing` or `archived`. No dependency-cache, browser, DSH-profile, port or environment field is stored; an unknown field is rejected.
+It carries `schemaVersion`, `change`, `store`, `mainRoot`, `worktree`, `branch`, `baseCommit`, `sealedCommit`, `status`, `createdAt`, `lastUsedAt`, `lockToken` and `lockPid`, and may carry `cleanup` with `worktreeRemoved`, `branchRemoved`, `at` and `error`. `store` is `null` without a store. `baseCommit` is the apply base; `sealedCommit` is the draft seal, or `null` for a standalone PR branch. `lockToken` and `lockPid` are the per-change lock owner, or `null` for a PR state or after release. `status` is `active`, `landing` or `archived`. No dependency-cache, browser, DSH-profile, port or environment field is stored; an unknown field is rejected.
 
 Writes use a temporary file and a rename. A corrupt or incomplete state is reported, not replaced.
 
@@ -68,10 +68,10 @@ status: ready | repair-required | unavailable
 state: { path?, exists, valid, error?, change?, store?, worktree?, branch?, status? }
 locks: [{ scope, path, held, state?, reason?, owner?, alive? }]
 worktree: { path?, exists }
-repair: { action: none | recover | manual, scope?, expectedOwner?, message? }
+repair: { action: none | recover | cleanup | manual, scope?, expectedOwner?, message? }
 ```
 
-The `repair.action` is `none`, `recover` or `manual`. A git project with no state reports `unavailable`. A missing worktree or corrupt state gives `manual`; a lock directory with no usable owner gives `manual` naming the lock; a dead lock gives `recover` with the scope and owner token. The action does not inspect npm, pnpm, Chromium, DSH profiles or ports.
+The `repair.action` is `none`, `recover`, `cleanup` or `manual`. A git project with no state reports `unavailable`. An archived state whose cleanup is incomplete, including a legacy archived state whose worktree still exists, gives `cleanup` and points at a land retry. A missing worktree without a cleanup record or corrupt state gives `manual`; a lock directory with no usable owner gives `manual` naming the lock; a dead lock gives `recover` with the scope and owner token. The action does not inspect npm, pnpm, Chromium, DSH profiles or ports.
 
 ## Land and remove
 
@@ -83,11 +83,11 @@ The `repair.action` is `none`, `recover` or `manual`. A git project with no stat
 { "action": "remove", "change": "add-dark-mode" }
 ```
 
-`land` runs in main under the lifecycle and a fresh change lock. It verifies the state owner, releases the recorded apply change lock, sets `landing`, merges the worktree branch with `--no-ff`, verifies the merged tree equals the required tree, archives and commits in the same section, writes `<common>/openspec-flow/landed/<merge>.json` and marks the state `archived`. It never pushes. A failed archive or commit keeps the merge and worktree for a retry.
+`land` runs in main under the lifecycle and a fresh change lock. When the worktree is behind main and the apply review is ready, it writes `rebaseReview` to the apply record under the review-directory lock after verifying the change-lock owner, then refuses with the rebase, retest and re-review instruction. It releases the recorded apply change lock, sets `landing`, merges the worktree branch with `--no-ff`, verifies the merged tree equals the required tree, archives and commits in the same section, writes `<common>/openspec-flow/landed/<merge>.json`, marks the state `archived`, clears `rebaseReview` under the review lock, then removes the plugin worktree and deletes its local branch while keeping the state and manifest. `cleanup` records the two flags; a cleanup failure keeps `archived`, records `cleanup.error` and returns `cleanup.complete: false`. It never pushes. A failed archive or commit keeps the merge and worktree for a retry. A later land on an archived state with a manifest and incomplete cleanup retries only the cleanup.
 
 `recover` removes the lock only when the observed token matches and the process is dead. It refuses a live owner, a changed owner or a missing owner, and does not delete state, worktrees, branches or review records.
 
-`remove` deletes only an archived plugin-created checkout (or an explicitly abandoned one with user approval and a reason), keeps its branch and deletes the state. A PR worktree is refused.
+`remove` deletes only an archived plugin-created checkout (or an explicitly abandoned one with user approval and a reason), keeps its branch and deletes the state. A PR worktree is refused. After land cleanup, `remove` is idempotent: it succeeds without deleting the state and without failing on the missing checkout or branch.
 
 `openspec_archive` refuses a plugin-created active or landing state and points at `openspec_apply_worktree action=land`.
 

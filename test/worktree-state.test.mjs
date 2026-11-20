@@ -138,3 +138,27 @@ test('a linked worktree reads the state written by the main worktree', () => {
   writeApplyState(root, null, 'demo', state(root))
   assert.deepEqual(readApplyState(linked, null, 'demo'), state(root))
 })
+
+test('cleanup round-trips and a legacy state reads without it', () => {
+  const root = repository()
+  const cleanup = {
+    worktreeRemoved: true,
+    branchRemoved: false,
+    at: '2026-01-01T00:00:00.000Z',
+    error: 'branch locked',
+  }
+  writeApplyState(root, null, 'demo', state(root, { cleanup }))
+  assert.deepEqual(readApplyState(root, null, 'demo').cleanup, cleanup)
+  writeApplyState(root, null, 'demo', state(root))
+  assert.equal(readApplyState(root, null, 'demo').cleanup, undefined)
+})
+
+test('an unknown cleanup field is refused', () => {
+  const root = repository()
+  const path = applyStatePath(root, null, 'demo')
+  mkdirSync(join(path, '..'), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(state(root, {
+    cleanup: { worktreeRemoved: true, branchRemoved: true, bogus: 1 },
+  }))}\n`)
+  assert.throws(() => readApplyState(root, null, 'demo'), /unknown cleanup field 'bogus'/)
+})

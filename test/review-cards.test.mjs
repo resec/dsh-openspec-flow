@@ -382,3 +382,39 @@ test('a report-level verdict supplies a missing round verdict', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('an extra round card uses the sequence and carries the token', () => {
+  const stored = record({
+    review: 'apply',
+    rounds: [{
+      round: 1,
+      seq: 1,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      verdict: 'pass',
+      report: { path: 'apply-round-1/report.json', recordedAt: '2026-01-01T00:01:00.000Z' },
+    }],
+    extraRounds: [{
+      round: 'E1',
+      seq: 2,
+      startedAt: '2026-01-02T00:00:00.000Z',
+      verdict: 'pass',
+      report: { path: 'apply-round-E1/report.json', recordedAt: '2026-01-02T00:01:00.000Z' },
+    }],
+  })
+  const card = buildCard({
+    phase: 'review',
+    kind: 'apply',
+    record: stored,
+    round: 2,
+    roundToken: 'E1',
+    report: { verdict: 'pass' },
+    waiver: null,
+    readiness: { ready: true, nextAction: 'openspec_apply_worktree action=land', reasons: [] },
+    currentHash: 'hash-a',
+  })
+  assert.equal(card.round, 2)
+  assert.equal(card.roundToken, 'E1')
+  assert.equal(card.verdict, 'pass')
+  assert.equal(card.startedAt, '2026-01-02T00:00:00.000Z')
+  assert.equal(card.recordedAt, '2026-01-02T00:01:00.000Z')
+})

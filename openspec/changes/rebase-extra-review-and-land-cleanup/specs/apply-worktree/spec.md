@@ -188,7 +188,7 @@ State file SHALL carry `schemaVersion`, `change`, `store`, `mainRoot`, `worktree
 
 ### Requirement: Land checks the main and worktree trees
 
-`openspec_apply_worktree action=land` SHALL run in the main worktree after the handover under the lifecycle and fresh change locks and require main on `main`, clean main apart from other changes' uncommitted planning files, a clean worktree, a worktree containing the latest main, and an `active` or `landing` state naming that worktree and branch. A worktree behind main SHALL be refused with a rebase, retest and re-review instruction.
+`openspec_apply_worktree action=land` SHALL run in the main worktree after the handover under the lifecycle and fresh change locks and require main on `main`, clean main apart from other changes' uncommitted planning files, a clean worktree, a worktree containing the latest main, and a state naming that worktree and branch. The archived cleanup retry skips these checks. A worktree behind main SHALL be refused with a rebase, retest and re-review instruction.
 
 #### Scenario: Another change's planning file is uncommitted
 
@@ -202,7 +202,7 @@ State file SHALL carry `schemaVersion`, `change`, `store`, `mainRoot`, `worktree
 
 #### Scenario: A missing or foreign state is refused
 
-- **WHEN** the change has no active or landing state or the state names another worktree
+- **WHEN** the change has no applicable state or the state names another worktree
 - **THEN** land refuses before merging
 
 ### Requirement: Land merges and archives in one critical section
