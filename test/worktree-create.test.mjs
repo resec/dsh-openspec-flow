@@ -12,6 +12,8 @@ import {
   createOrReuseApplyWorktree,
 } from '../lib/worktree/create.js'
 import { applyStatePath, readApplyState, writeApplyState } from '../lib/worktree/state.js'
+import { gitCommonDir } from '../lib/review/store.js'
+import { lockPath } from '../lib/worktree/lock.js'
 
 const roots = []
 
@@ -203,4 +205,5 @@ test('a failed session move removes the new checkout', async () => {
   )
   assert.equal(readApplyState(root, null, 'demo'), undefined)
   assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
+  assert.equal(existsSync(lockPath(gitCommonDir(root), 'change', { change: 'demo' })), false)
 })

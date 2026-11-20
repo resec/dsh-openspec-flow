@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
@@ -224,4 +224,57 @@ test('an independent apply reviewer is activated in the worktree', async () => {
     action: 'start', change: CHANGE, review: 'apply',
   })
   assert.equal(activations[0].cwd, state.worktree)
+})
+
+test('a ready PR-state review keeps the existing archive path', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'seal for PR archive'])
+  const pr = join(root, '..', `${root.split('/').pop()}-pr-archive`)
+  run(['worktree', 'add', pr, '-b', 'pr-archive'])
+  try {
+    await call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, review: 'apply', worktree: pr,
+      base: run(['rev-parse', 'HEAD']),
+    })
+    await call(fake, 'openspec_review', {
+      action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+    })
+    const archived = await call(fake, 'openspec_archive', { change: CHANGE })
+    assert.equal(archived.archived, true)
+  } finally {
+    run(['worktree', 'remove', '--force', pr])
+  }
+})
+
+test('two changes apply in independent worktrees', async () => {
+  const { root, run } = gitFixture()
+  const second = 'add-second-mode'
+  cpSync(join(root, 'openspec', 'changes', CHANGE), join(root, 'openspec', 'changes', second), { recursive: true })
+  const firstFake = setup(root, undefined, { worktree: { enabled: true } })
+  const secondFake = setup(root, undefined, { worktree: { enabled: true } })
+  for (const [fake, change] of [[firstFake, CHANGE], [secondFake, second]]) {
+    await call(fake, 'openspec_review', {
+      action: 'start', change, intent: 'Add a mode selector.',
+    })
+    await call(fake, 'openspec_review', {
+      action: 'self-report', change, report: report(),
+    })
+  }
+  run(['add', `openspec/changes/${CHANGE}`, `openspec/changes/${second}`])
+  run(['commit', '-m', 'seal both changes'])
+  await call(firstFake, 'openspec_apply_next', { change: CHANGE })
+  await call(secondFake, 'openspec_apply_next', { change: second })
+  const firstState = readApplyState(root, null, CHANGE)
+  const secondState = readApplyState(root, null, second)
+  assert.notEqual(firstState.worktree, secondState.worktree)
+  assert.equal(existsSync(firstState.worktree), true)
+  assert.equal(existsSync(secondState.worktree), true)
 })
