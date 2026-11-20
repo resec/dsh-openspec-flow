@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 
@@ -66,6 +66,10 @@ test('land works when apply review is disabled', async () => {
   })
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
   assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
+  const manifest = JSON.parse(readFileSync(manifestPath(root, landed.mergeCommit), 'utf8'))
+  assert.equal(manifest.store, null)
+  assert.equal(manifest.applyReviewId, null)
+  assert.equal(manifest.reviewRecordHash, null)
 })
 
 test('remove guards active, dirty and foreign checkouts', async () => {
@@ -176,6 +180,12 @@ test('land keeps a resumable state when the archive commit fails', async () => {
     /commit/,
   )
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  rmSync(hook, { force: true })
+  const retried = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(retried.archiveCommit, run(['rev-parse', 'HEAD']))
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
 })
 
 test('remove supports an approved abandon and refuses a missing state', async () => {
@@ -306,6 +316,10 @@ test('a CLI archive without a result is refused', async () => {
     /no archive result/,
   )
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  fake.ctx.subprocess.spawn = original
+  const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+  assert.equal(typeof retried.archiveCommit, 'string')
 })
 
 test('land refuses an archived state and abandon needs a reason', async () => {
@@ -321,6 +335,12 @@ test('land refuses an archived state and abandon needs a reason', async () => {
   await assert.rejects(
     call(fake, 'openspec_apply_worktree', {
       action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user',
+    }),
+    /abandon requires/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', {
+      action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: '   ',
     }),
     /abandon requires/,
   )
@@ -347,5 +367,56 @@ test('land refuses when apply review never started', async () => {
   await assert.rejects(
     call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
     /apply review has not started/,
+  )
+})
+
+
+
+test('a manifest write failure is retried after the archive commit', async () => {
+  const { root, fake } = await readyLand()
+  const landedDirectory = dirname(manifestPath(root, 'x'))
+  mkdirSync(dirname(landedDirectory), { recursive: true })
+  writeFileSync(landedDirectory, 'blocked')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /EEXIST|ENOTDIR|not a directory/i,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  rmSync(landedDirectory, { force: true })
+  const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+  assert.equal(existsSync(manifestPath(root, retried.mergeCommit)), true)
+})
+
+test('land refuses a dead or mismatched change lock', async () => {
+  {
+    const { root, fake, state } = await readyLand()
+    const { writeApplyState } = await import('../lib/worktree/state.js')
+    writeApplyState(root, null, CHANGE, { ...state, lockPid: 999999 })
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /not owned/,
+    )
+  }
+  {
+    const { root, fake, state } = await readyLand()
+    const path = join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d', 'owner')
+    const owner = JSON.parse(readFileSync(path, 'utf8'))
+    writeFileSync(path, `${JSON.stringify({ ...owner, pid: 999999 })}\n`)
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /dead process|recover/,
+    )
+  }
+})
+
+test('land refuses a missing change lock', async () => {
+  const { root, fake } = await readyLand()
+  const lock = join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d')
+  const fs = await import('node:fs')
+  fs.rmSync(lock, { recursive: true, force: true })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /missing or corrupt|recover/,
   )
 })
