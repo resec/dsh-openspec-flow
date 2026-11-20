@@ -67,6 +67,7 @@ test('review and worktree schemas declare extra round and cleanup fields', () =>
   assert.ok('roundToken' in review.output.schema.properties, 'the result declares roundToken')
   assert.ok('extraRounds' in review.output.schema.properties, 'the result declares extraRounds')
   const worktree = fake.tools.get('openspec_apply_worktree')
+  assert.match(worktree.description, /cleanup/, 'the land description names the cleanup')
   const cleanup = worktree.output.schema.properties.cleanup
   assert.ok(cleanup, 'the land result declares cleanup')
   assert.deepEqual(cleanup.required, ['complete', 'worktreeRemoved', 'branchRemoved'])

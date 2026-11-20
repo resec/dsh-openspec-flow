@@ -10,6 +10,7 @@ import {
   CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
 import { reviewDirectory } from '../lib/review/store.js'
+import { readApplyState } from '../lib/worktree/state.js'
 
 test.after(cleanupFixtures)
 
@@ -1702,4 +1703,83 @@ test('a rebased tree equal to the reviewed tree clears the marker without a roun
   const after = JSON.parse(readFileSync(file, 'utf8'))
   assert.equal(after.rebaseReview, undefined)
   assert.equal(Array.isArray(after.extraRounds) ? after.extraRounds.length : 0, 0)
+})
+
+test('the marker clear returns to normal rounds', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: record.treeSha,
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const cleared = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(cleared.roundToken, undefined)
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'follow-up.txt'), 'follow-up\n')
+  const commit = spawnSync('git', ['-C', state.worktree, 'add', 'follow-up.txt'], { encoding: 'utf8' })
+  assert.equal(commit.status, 0)
+  const made = spawnSync('git', ['-C', state.worktree, 'commit', '-m', 'follow-up'], { encoding: 'utf8' })
+  assert.equal(made.status, 0)
+  const normal = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(normal.round, 2)
+  assert.equal(normal.roundToken, undefined)
+  const after = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(after.rounds.length, 2)
+  assert.equal(Array.isArray(after.extraRounds) ? after.extraRounds.length : 0, 0)
+})
+
+test('an extra round report is stored, read and waived by token', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, review: 'apply', report: report() })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: record.baseCommit,
+    worktreeHead: record.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const opened = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(opened.roundToken, 'E1')
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ findings: [minorFinding({ id: 'E1-01' })] }),
+  })
+  assert.equal(existsSync(join(reviewDir(root), 'apply-round-E1', 'report.json')), true)
+  const read = await call(fake, 'openspec_review', {
+    action: 'report', change: CHANGE, review: 'apply', round: 'E1',
+  })
+  assert.equal(read.report.verdict, 'pass')
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.ok(status.extraRounds.some((entry) => entry.roundToken === 'E1'))
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', change: CHANGE, review: 'apply', round: 'E1',
+    id: 'E1-01', waiver: 'accepted by the user', approvedBy: 'user',
+  })
+  assert.equal(waived.findings.waived, 1)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'report', change: CHANGE, review: 'apply', round: 'E9' }),
+    /has no report/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, review: 'apply', round: 'E9',
+      id: 'E1-01', status: 'fixed', note: 'x',
+    }),
+    /not recorded/,
+  )
 })

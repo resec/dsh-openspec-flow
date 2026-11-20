@@ -987,3 +987,13 @@ test('a batch leaves the watermark of sequential requests and writes it once', a
     rmSync(sequential.root, { recursive: true, force: true })
   }
 })
+
+test('an extra round card keeps the sequence ordering', () => {
+  const first = { payload: { phase: 'review', round: 1 }, writtenAt: '2026-01-01T00:00:00.000Z' }
+  const extra = {
+    payload: { phase: 'review', round: 2, roundToken: 'E1' },
+    writtenAt: '2026-01-01T00:00:00.000Z',
+  }
+  assert.ok(compareCards(first, extra) < 0)
+  assert.ok(compareCards(extra, first) > 0)
+})

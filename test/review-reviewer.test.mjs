@@ -982,6 +982,7 @@ test('an independent reviewer reads and submits an extra round', async () => {
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
   const opened = await call(external.fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
   assert.equal(opened.roundToken, 'E1')
+  assert.match(JSON.stringify(external.messages.at(-1)), /E1/)
   const reviewer = createFakeContext({ cwd: root })
   reviewerApply(reviewer.ctx)
   const brief = await reviewer.tools.get('openspec_reviewer').execute({

@@ -467,3 +467,10 @@ test('the review document and README state the card lookup deduplication and bat
     assert.ok(readme.includes(phrase), `the README states ${phrase}`)
   }
 })
+
+test('the review document names the extra round contract', () => {
+  const doc = readFileSync(DOC_PATH, 'utf8')
+  for (const text of ['rebaseReview', 'extraRounds', 'roundToken', 'E1']) {
+    assert.ok(doc.includes(text), `document names ${text}`)
+  }
+})
