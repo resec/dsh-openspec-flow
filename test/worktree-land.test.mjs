@@ -458,3 +458,40 @@ test('the shared archive operation honors skipSpecs', async () => {
   const archived = await call(fake, 'openspec_archive', { change: CHANGE, skipSpecs: true })
   assert.equal(archived.archived, true)
 })
+
+test('archive from main names land even when the worktree has commits', async () => {
+  const { root, run, fake } = await readyLand()
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'feature.txt'), 'feature\n')
+  run(['-C', state.worktree, 'add', 'feature.txt'])
+  run(['-C', state.worktree, 'commit', '-m', 'feature commit'])
+  fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
+  await assert.rejects(
+    call(fake, 'openspec_archive', { change: CHANGE }),
+    /openspec_apply_worktree action=land/,
+  )
+})
+
+test('archive observes a dead lifecycle lock', async () => {
+  const { root } = gitFixture()
+  const fake = setup(root, { draft: { enabled: false, reviewers: 0 }, apply: { enabled: false } })
+  const path = join(root, '.git', 'openspec-flow', 'lifecycle.lock.d')
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 999999, at: new Date().toISOString() })}\n`)
+  await assert.rejects(
+    call(fake, 'openspec_archive', { change: CHANGE }),
+    /dead process|recover/,
+  )
+})
+
+test('the merged-tree guard resets to the pre-merge main', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const before = run(['rev-parse', 'HEAD'])
+  writeFileSync(join(root, 'extra.txt'), 'extra\n')
+  run(['add', 'extra.txt'])
+  run(['commit', '-m', 'extra'])
+  const { assertMergedTree } = await import('../lib/worktree/land.js')
+  assert.throws(() => assertMergedTree(root, 'not-the-current-tree', before), /merged tree differs/)
+  assert.equal(run(['rev-parse', 'HEAD']), before)
+})
