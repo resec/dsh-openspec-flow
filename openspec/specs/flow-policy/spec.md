@@ -216,7 +216,7 @@ The registered flow rule SHALL state that the seal commit stages the reviewed ch
 
 ### Requirement: The flow rule names the land step
 
-The registered flow rule SHALL state that a maintainer-authored worktree apply finishes with `openspec_apply_worktree action=land`, which merges, archives and commits in one lifecycle section, and that `openspec_archive` is not the terminal step for a change applied in a plugin-created apply worktree; a change merged through a pull request or a non-worktree change still uses `openspec_archive`.
+The registered flow rule SHALL state that a maintainer-authored worktree apply finishes with `openspec_apply_worktree action=land`, which fast-forwards main, archives and commits in one lifecycle section, and that `openspec_archive` is not the terminal step for a change applied in a plugin-created apply worktree; a change merged through a pull request or a non-worktree change still uses `openspec_archive`.
 
 #### Scenario: The rule names land
 

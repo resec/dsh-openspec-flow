@@ -549,15 +549,16 @@ The repository root `.gitignore` SHALL keep ignoring the legacy review root `ope
 - **WHEN** a review record is written under `<git common dir>/openspec-flow/review/`
 - **THEN** it is not a worktree path and needs no `.gitignore` entry
 
-### Requirement: Land sequences the merge and archive commits
+### Requirement: Land sequences the land and archive commits
 
-A maintainer worktree apply SHALL land as a merge commit that carries the implementation and its documentation, followed by an archive commit that carries the archive and merged specs; both SHALL precede the push to `origin/main`.
+A maintainer worktree apply SHALL land as a fast-forward commit that carries the implementation and its documentation, followed by an archive commit that carries the archive and merged specs; both SHALL precede the push to `origin/main`. Land SHALL NOT create a merge commit.
 
 #### Scenario: A worktree change is landed
 
 - **WHEN** `openspec_apply_worktree action=land` completes
-- **THEN** the merge commit carries the implementation and its documentation
+- **THEN** the land commit carries the implementation and its documentation
 - **AND** the archive commit carries the archive and merged specs
+- **AND** the two commits form a linear history
 - **AND** both are pushed together after the archive commit
 
 ### Requirement: Landed main push requires a verified manifest
@@ -581,7 +582,7 @@ The repository SHALL provide `scripts/push-landed.mjs`. It SHALL select a manife
 
 ### Requirement: Landed push validates manifest facts
 
-Before any push, the script SHALL require `approvedBy: "user"`, the current branch `main`, and a worktree clean apart from uncommitted paths under `openspec/changes/` directories other than the landed change's own directory. It SHALL require `mergeCommit` and `archiveCommit` to be commits reachable from `HEAD`.
+Before any push, the script SHALL require `approvedBy: "user"`, the current branch `main`, and a worktree clean apart from uncommitted paths under `openspec/changes/` directories other than the landed change's own directory. It SHALL require the resolved land commit and `archiveCommit` to be commits reachable from `HEAD`.
 
 #### Scenario: Dirty file outside the change tree
 
@@ -610,21 +611,21 @@ Before any push, the script SHALL require `approvedBy: "user"`, the current bran
 
 #### Scenario: Manifest commit is missing
 
-- **WHEN** `mergeCommit` or `archiveCommit` is not a commit in the local repository
+- **WHEN** the land commit or `archiveCommit` is not a commit in the local repository
 - **THEN** the script fails and names the missing value
 
-### Requirement: Landed push verifies the merge and archive commits
+### Requirement: Landed push verifies the land and archive commits
 
-The script SHALL require `HEAD` to equal `archiveCommit`, the commit tree of `mergeCommit` to equal `featureTree`, and the diff from `mergeCommit` to `archiveCommit` to touch only the archived change, its former directory and `openspec/specs/`. A commit after the selected archive, a tree mismatch, or an unexpected path SHALL be refused.
+The script SHALL require `HEAD` to equal `archiveCommit`, the commit tree of the resolved land commit to equal `featureTree`, and the diff from the land commit to `archiveCommit` to touch only the archived change, its former directory and `openspec/specs/`. A commit after the selected archive, a tree mismatch, or an unexpected path SHALL be refused.
 
 #### Scenario: Merge tree does not match the review
 
-- **WHEN** the tree of `mergeCommit` differs from the manifest `featureTree`
+- **WHEN** the tree of the land commit differs from the manifest `featureTree`
 - **THEN** the script fails and names both values
 
 #### Scenario: Archive commit touches implementation
 
-- **WHEN** the diff from `mergeCommit` to `archiveCommit` contains a path outside the archived change, its former directory and `openspec/specs/`
+- **WHEN** the diff from the land commit to `archiveCommit` contains a path outside the archived change, its former directory and `openspec/specs/`
 - **THEN** the script fails and lists the unexpected paths
 
 #### Scenario: Main is ahead of the landed archive
@@ -689,3 +690,31 @@ The repository SHALL document the command, dry-run default, exit codes, checked 
 
 - **WHEN** a validation or remote check fails
 - **THEN** the document names the condition and the command or correction that resolves it
+
+### Requirement: Landed push selects a land commit
+
+`scripts/push-landed.mjs` SHALL accept `--land` to select a manifest by the resolved land commit prefix and SHALL keep `--merge` as a legacy alias. It SHALL resolve the landed commit from `landCommit`, falling back to legacy `mergeCommit`, and SHALL refuse a manifest whose two fields name different commits.
+
+#### Scenario: --land selects a fast-forward manifest
+
+- **WHEN** `--land` names one fast-forward manifest prefix
+- **THEN** the script selects that manifest and reports the resolved land commit
+
+#### Scenario: --merge stays a legacy alias
+
+- **WHEN** an existing command passes `--merge` for a fast-forward or legacy manifest
+- **THEN** the script selects by the same resolved land commit
+
+#### Scenario: Two manifest fields disagree
+
+- **WHEN** a manifest carries `landCommit` and `mergeCommit` with different commits
+- **THEN** the script refuses the manifest instead of choosing one
+
+### Requirement: Landed push documents the land fields
+
+`docs/land-push.md` SHALL document the `--land` selector, the legacy `--merge` alias, the `landCommit` field, the legacy `mergeCommit` fallback and the fast-forward land sequence.
+
+#### Scenario: The land fields are documented
+
+- **WHEN** a maintainer reads the checks and recovery sections
+- **THEN** the document names `--land`, `--merge`, `landCommit`, the legacy fallback and fast-forward

@@ -1484,21 +1484,21 @@ The plugin SHALL copy a legacy review record to the shared root once when neithe
 
 ### Requirement: Land binds a ready apply review to the merged tree
 
-When apply review is enabled and ready, its recorded tree SHALL equal the worktree `HEAD^{tree}` at land start. A ready extra round named by `rebaseReview` SHALL supply that tree while the marker is present. Land SHALL verify the `--no-ff` merged tree still equals that tree before archiving, inside the same lifecycle critical section.
+When apply review is enabled and ready, its recorded tree SHALL equal the worktree `HEAD^{tree}` at land start. A ready extra round named by `rebaseReview` SHALL supply that tree while the marker is present. Land SHALL verify the feature head tree equals that tree before the fast-forward and the main tree equals it after the fast-forward, inside the same lifecycle critical section.
 
 #### Scenario: Land verifies the reviewed tree
 
 - **WHEN** land starts for a ready apply review
-- **THEN** it checks the recorded tree against the worktree head and the merged tree
+- **THEN** it checks the recorded tree against the worktree head and the main tree after the fast-forward
 
 #### Scenario: A stale reviewed tree is refused
 
-- **WHEN** the worktree head or the merged tree differs from the required tree
+- **WHEN** the worktree head or the main tree after the fast-forward differs from the required tree
 - **THEN** land refuses and does not archive
 
 #### Scenario: Archive follows the tree check
 
-- **WHEN** the merged tree matches
+- **WHEN** the main tree after the fast-forward matches
 - **THEN** archive runs before the lifecycle lock is released
 
 #### Scenario: A ready extra round owns the required tree
@@ -1508,7 +1508,7 @@ When apply review is enabled and ready, its recorded tree SHALL equal the worktr
 
 ### Requirement: Land without apply review verifies the worktree head
 
-When the locked policy disables apply review or has no apply section, land SHALL verify the merged tree against the worktree's current `HEAD^{tree}`. An enabled but unready review SHALL refuse before merging.
+When the locked policy disables apply review or has no apply section, land SHALL verify the feature head tree before the fast-forward and the main tree after it against the worktree's current `HEAD^{tree}`. An enabled but unready review SHALL refuse before the fast-forward.
 
 #### Scenario: A disabled review uses the worktree head
 
@@ -1518,7 +1518,7 @@ When the locked policy disables apply review or has no apply section, land SHALL
 #### Scenario: An enabled unready review is refused
 
 - **WHEN** the policy enables apply review and no ready review exists
-- **THEN** land refuses before merging
+- **THEN** land refuses before the fast-forward
 
 ### Requirement: Archive takes the lifecycle lock
 
@@ -1646,14 +1646,14 @@ An extra round SHALL reuse the report, finding, severity, disposition, waiver an
 
 ### Requirement: A ready extra round supplies the required land tree
 
-While the marker is present, land SHALL require a ready extra round and SHALL use its `treeSha` as the required tree. Without a ready extra round, land SHALL refuse before merging and name `openspec_review action=resume review=apply`. The marker SHALL be cleared only after land binds that tree.
+While the marker is present, land SHALL require a ready extra round and SHALL use its `treeSha` as the required tree. Without a ready extra round, land SHALL refuse before the fast-forward and name `openspec_review action=resume review=apply`. The marker SHALL be cleared only after land binds that tree.
 
 #### Scenario: Land uses the ready extra round tree
 
 - **WHEN** the marker is present and the latest extra round is ready
-- **THEN** land verifies the worktree head and merged tree against that extra round's tree
+- **THEN** land verifies the worktree head and main tree against that extra round's tree
 
 #### Scenario: Land waits for an extra round
 
 - **WHEN** the marker is present and no extra round is ready
-- **THEN** land refuses before merging and names the resume step
+- **THEN** land refuses before the fast-forward and names the resume step
