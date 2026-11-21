@@ -21,7 +21,7 @@
 
 - [x] 4.1 Reconcile the main worktree's planning copy with the seal tree, including content and mode: remove matching untracked files under the change directory and the plugin-written root `.gitignore`, and restore a tracked `.gitignore` that is modified or deleted to its `HEAD` version before the clean-main check; verify `test/worktree-land.test.mjs` covers a matching copy, an untracked ignore file, a tracked modified or deleted ignore file, a modified copy refused with its path, and an unchanged tracked file left in place.
 - [x] 4.2 Restore the removed files from the seal commit when land fails before main is updated, and leave an absent or already merged copy alone; verify `test/worktree-land.test.mjs` covers the failure restore, the absent copy and the completed-merge retry.
-- [x] 4.3 Delete the seal ref on land success and on `remove` of an archived or explicitly abandoned checkout, tolerating a missing ref; verify `test/worktree-land.test.mjs` and `test/apply-worktree.test.mjs` cover each path and show no ref afterwards.
+- [x] 4.3 Delete the seal ref on land success and on `remove` of an archived or explicitly abandoned checkout, tolerating a missing ref; verify `test/worktree-land.test.mjs` covers land success and the missing-ref no-op, `test/review-apply.test.mjs` covers the remove path, and `test/apply-worktree.test.mjs` covers a failed creation that keeps a seal-created branch and its ref.
 
 ## 5. Policy, skill and documentation
 
