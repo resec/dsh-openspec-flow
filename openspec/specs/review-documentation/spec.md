@@ -23,7 +23,7 @@ Defines the single user-facing review document and the checks that keep it align
 
 - **WHEN** the reader reaches the gates
 - **THEN** it states that `openspec_apply_next` waits for draft review
-- **AND** it states that a git project seals the draft with a commit that contains the change directory, its OpenSpec ignore file and may contain other `openspec/changes/` paths
+- **AND** it states that a git worktree apply seals the draft at the first apply with a commit the plugin constructs on the apply branch
 - **AND** it states that `openspec_archive` waits for apply review when the review is enabled and the project has git, and proceeds without it otherwise
 
 #### Scenario: The document explains the phase boundary
@@ -472,3 +472,27 @@ The README review section SHALL state that `reviewCards/get` accepts a batch tur
 - **WHEN** the README review section is read
 - **THEN** it states the batch turn request and the unique card answer
 - **AND** it names `docs/review.md` for the rules
+
+### Requirement: The review document states the seal location
+
+`docs/review.md` SHALL state that a git worktree apply seals on the apply branch, that the seal does not enter main until land and a private ref keeps the base reachable, that the change directory and plugin-written `openspec/.gitignore` may stay uncommitted there and are removed or restored before land, that a worktree-disabled git project keeps the committed-`HEAD` seal and commits those paths, and that a rebase leaves the recorded base and the replayed seal as two commits.
+
+#### Scenario: The document names the seal location
+
+- **WHEN** the reader reaches the seal description
+- **THEN** it states that the seal commit is not on main until land and that a private ref keeps it reachable
+
+#### Scenario: The document names the land copy handling
+
+- **WHEN** the reader reaches the seal description
+- **THEN** it states that for a git worktree apply the change directory and the plugin-written ignore file may stay uncommitted in main and are removed or restored before the land fast-forward
+
+#### Scenario: The document names the compatibility seal
+
+- **WHEN** the reader reaches the seal description
+- **THEN** it states that a worktree-disabled git project keeps the committed-`HEAD` seal
+
+#### Scenario: The document names the two seal commits after a rebase
+
+- **WHEN** the reader reaches the seal description
+- **THEN** it states that a rebase rewrites the branch seal while the recorded base stays pinned by the ref

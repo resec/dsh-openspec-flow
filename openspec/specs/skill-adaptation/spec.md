@@ -127,7 +127,7 @@ The shipped propose skill SHALL run the draft review after validating the planni
 
 ### Requirement: Apply finishes with an apply review
 
-Apply skill SHALL seal the change directory and the plugin's ignore file before the first task, commit each round, and run the apply review after the last task. It SHALL start, read the brief, resume later rounds, self-report when `reviewers` is 0, and stop while not ready. A plan change during apply SHALL be user-approved and recorded with `openspec_review` `waive` `scope: "plan-change"` before editing. It SHALL start a review with no locked policy and skip it only without git or when disabled.
+Apply skill SHALL call `openspec_apply_next` once, commit each round, and run the apply review after the last task. It SHALL start, read the brief, resume later rounds, self-report when `reviewers` is 0, and stop while not ready. A plan change during apply SHALL be user-approved and recorded with `openspec_review` `waive` `scope: "plan-change"` before editing. It SHALL start a review with no locked policy and skip it only without git or when disabled.
 
 #### Scenario: Apply reaches the review gate
 
@@ -162,7 +162,8 @@ Apply skill SHALL seal the change directory and the plugin's ignore file before 
 #### Scenario: The skill seals the draft before apply
 
 - **WHEN** the draft review is ready in a git project
-- **THEN** the skill commits `openspec/changes/<name>/` and, when the plugin created or changed it, `openspec/.gitignore`, before the first apply task
+- **THEN** a worktree-disabled project commits `openspec/changes/<name>/` and, when the plugin created or changed it, `openspec/.gitignore` before the first apply task
+- **AND** a git worktree apply calls `openspec_apply_next` without committing, because the plugin seals on the apply branch
 
 #### Scenario: The skill commits each round
 

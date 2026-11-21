@@ -203,7 +203,7 @@ When `openspec_apply_next` proceeds in a git repository, the plugin SHALL record
 
 #### Scenario: Git project records the base
 
-- **WHEN** a ready draft review is followed by `openspec_apply_next` in a git project and the seal commit is present
+- **WHEN** a ready draft review is followed by `openspec_apply_next` in a git project without the apply worktree and the seal commit is present
 - **THEN** the review record gains that commit as the apply base commit
 
 #### Scenario: Non-git project has no base
@@ -555,7 +555,7 @@ The first draft `start` SHALL write `intent.md` and bind its hash into the revie
 
 ### Requirement: Git projects seal the draft before apply
 
-In a git repository, the first `openspec_apply_next` after a ready draft review SHALL require a clean tree, a `HEAD` that changes only the change directory, the root `.gitignore` and other `openspec/changes/**` paths, and matching change artifacts. Other changes' uncommitted planning files are ignored and paths compare worktree-relative. It SHALL record `HEAD` as the apply base. Without git, or for a store-backed change outside the project root, the checks are skipped; the latter adds a warning.
+Without the apply worktree, a git project's first `openspec_apply_next` SHALL require a clean tree, a `HEAD` that changes only the change directory, the root `.gitignore` and other `openspec/changes/**` paths, and matching artifacts. It SHALL record `HEAD` as the apply base. Other changes' uncommitted files are ignored; paths compare worktree-relative. A git worktree apply seals on the branch instead. Without git or an outside-root store change, the checks are skipped; the store change warns.
 
 #### Scenario: Seal commit is accepted
 
@@ -972,7 +972,7 @@ A git worktree apply SHALL use the per-change change lock instead of the impleme
 
 ### Requirement: Another change's uncommitted planning files do not block the lock holder
 
-While a change holds its apply locks, the seal, apply review and archive clean-tree checks SHALL ignore uncommitted paths that fall under any `openspec/changes/` directory other than the reviewed change's own directory, matched on git worktree-relative paths. A path under the reviewed change's directory, or one that does not fall under an `openspec/changes/` directory, SHALL still count as dirty. A seal commit SHALL NOT contain those uncommitted paths unless the user stages them.
+While a change holds its apply locks, the seal, apply review and archive checks SHALL ignore uncommitted paths under other `openspec/changes/` directories, on worktree-relative paths. The git worktree seal SHALL also ignore the reviewed change's own directory and the plugin-written ignore file. Every other path, including the reviewed change's own directory for the worktree-disabled seal, apply review and archive, SHALL count as dirty.
 
 #### Scenario: Another draft's edits do not block the seal
 
@@ -996,8 +996,18 @@ While a change holds its apply locks, the seal, apply review and archive clean-t
 
 #### Scenario: Code changes still block
 
-- **WHEN** the working tree has an uncommitted path that is not under an `openspec/changes/` directory
+- **WHEN** the working tree has an uncommitted code path outside `openspec/changes/` and other than the plugin-written ignore file
 - **THEN** the seal, apply review and archive still refuse
+
+#### Scenario: The git worktree seal accepts its own copy
+
+- **WHEN** a git worktree apply seals with the change directory and the plugin-written ignore file uncommitted
+- **THEN** the clean-tree check passes
+
+#### Scenario: The worktree-disabled seal refuses its own copy
+
+- **WHEN** the worktree is disabled and the change directory is uncommitted before the seal
+- **THEN** the seal refuses and asks for a commit
 
 ### Requirement: Archive completes the serial segment
 
@@ -1541,7 +1551,7 @@ In a git project, `openspec_archive` SHALL acquire the lifecycle lock on the mai
 
 ### Requirement: Land tolerates another change's planning files
 
-The land clean-main check SHALL ignore uncommitted paths under any `openspec/changes/` directory other than the landed change's own directory, matching the existing seal and archive clean-tree rule. It SHALL NOT ignore an uncommitted file outside those directories or inside the landed change.
+The land clean-main check SHALL ignore uncommitted paths under other `openspec/changes/` directories. Before the check it SHALL reconcile the landed change's plugin-owned planning copy: matching untracked files under its directory and the plugin-written root `.gitignore` are removed, and a tracked modified or deleted `.gitignore` is restored to its `HEAD` version. Any other uncommitted file inside the landed change, or a code path, SHALL refuse.
 
 #### Scenario: A parallel draft's planning file is uncommitted
 
@@ -1550,8 +1560,23 @@ The land clean-main check SHALL ignore uncommitted paths under any `openspec/cha
 
 #### Scenario: The landed change is dirty
 
-- **WHEN** main has an uncommitted file inside the landed change's directory
+- **WHEN** main has an uncommitted file inside the landed change's directory that differs from the seal tree or is not in it
 - **THEN** land refuses
+
+#### Scenario: The matching planning copy is reconciled
+
+- **WHEN** the untracked change directory and an untracked plugin-written ignore file match the seal tree
+- **THEN** land removes them and the clean-main check passes
+
+#### Scenario: A tracked modified change-directory file refuses
+
+- **WHEN** main has an uncommitted tracked modification inside the landed change's directory
+- **THEN** land refuses and names the path
+
+#### Scenario: A tracked ignore file is restored
+
+- **WHEN** the plugin-written `.gitignore` is tracked and modified or deleted in main
+- **THEN** land restores its `HEAD` version before the clean-main check
 
 ### Requirement: Rebase extra rounds do not consume normal round numbers
 
@@ -1657,3 +1682,55 @@ While the marker is present, land SHALL require a ready extra round and SHALL us
 
 - **WHEN** the marker is present and no extra round is ready
 - **THEN** land refuses before the fast-forward and names the resume step
+
+### Requirement: A git worktree apply seals on the apply branch
+
+In a git worktree apply, the first `openspec_apply_next` after a ready draft review SHALL construct the seal commit with a temporary index from the change directory and the plugin-written uncommitted root `.gitignore`, attach it to the apply branch and the seal ref, and record it as the apply base, leaving `main`'s `HEAD`, index and working tree unchanged. The working tree SHALL be clean apart from the change directory, other changes' directories and that ignore file.
+
+#### Scenario: The seal is constructed
+
+- **WHEN** a ready draft review is followed by `openspec_apply_next` in a git worktree apply and the working tree matches the draft
+- **THEN** the review record gains the constructed commit as the apply base
+- **AND** the change directory stays uncommitted in main
+- **AND** main's `HEAD`, index and working tree are unchanged
+
+#### Scenario: The constructed commit changes only the planning paths
+
+- **WHEN** the construction stages the change directory and the plugin-written ignore file
+- **THEN** the commit changes at least one file under the change directory
+- **AND** it changes no path outside the change directory and that ignore file
+
+#### Scenario: The constructed artifacts match the draft
+
+- **WHEN** the constructed commit's change artifacts are hashed
+- **THEN** the hash equals the draft record's artifact hash
+
+#### Scenario: The uncommitted ignore file is accepted
+
+- **WHEN** the plugin wrote `openspec/.gitignore` and it is uncommitted
+- **THEN** the clean-tree check accepts it and the construction stages it
+
+#### Scenario: A dirty path outside the allowed set is refused
+
+- **WHEN** a file outside the change directory, other `openspec/changes/**` directories and the plugin-written ignore file has uncommitted changes
+- **THEN** `openspec_apply_next` fails and asks for a clean working tree
+
+#### Scenario: Artifact mismatch leaves no seal
+
+- **WHEN** the constructed commit's artifact hash differs from the draft record
+- **THEN** `openspec_apply_next` fails, records no base and leaves no seal ref or branch
+
+### Requirement: The recorded apply base survives a rebase
+
+A rebase SHALL replay the branch's seal commit and rewrite it. The plugin SHALL keep the recorded apply base reachable through its seal ref so apply review can still diff the base tree against the branch head, and SHALL NOT record a base that no ref keeps reachable.
+
+#### Scenario: Rebase rewrites the branch seal
+
+- **WHEN** the worktree branch is rebased onto a newer main
+- **THEN** the branch's first commit is a rewritten seal commit
+- **AND** the recorded base commit is still reachable from the seal ref
+
+#### Scenario: Apply review diffs the recorded base
+
+- **WHEN** an apply review round runs after the rebase
+- **THEN** its diff starts at the recorded base tree and covers the implementation after it
