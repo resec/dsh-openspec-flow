@@ -32,11 +32,15 @@ export function fixture() {
 export function setup(root, reviews, options = {}) {
   clearCache()
   const fake = createFakeContext({ cwd: root })
-  apply(fake.ctx, {
-    timeoutMs: 30_000,
+  const settings = {
     reviews: reviews ?? { draft: { enabled: true }, apply: { enabled: true } },
     worktree: options.worktree ?? { enabled: false },
+  }
+  apply(fake.ctx, {
+    timeoutMs: 30_000,
+    ...settings,
   })
+  fake.settings = settings
   return fake
 }
 
@@ -128,7 +132,7 @@ export async function passDraft(fake, root, run) {
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, report: report(),
   })
-  if (run !== undefined) {
+  if (run !== undefined && fake?.settings?.worktree?.enabled !== true) {
     const ignore = join(root, 'openspec', '.gitignore')
     if (existsSync(ignore) && run(['status', '--porcelain', '--', 'openspec/.gitignore']) !== '') {
       run(['add', 'openspec/.gitignore'])
@@ -136,6 +140,17 @@ export async function passDraft(fake, root, run) {
     run(['add', `openspec/changes/${CHANGE}`])
     run(['commit', '-m', 'seal the draft'])
   }
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+}
+
+/** Pass the draft and start apply in a git worktree apply without a seal commit. */
+export async function passDraftConstructing(fake, root) {
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
   await call(fake, 'openspec_apply_next', { change: CHANGE })
 }
 
@@ -183,6 +198,7 @@ export function externalSetup(root, reviews = { draft: { enabled: true, reviewer
     return result
   }
   apply(fake.ctx, { timeoutMs: 30_000, reviews })
+  fake.settings = { reviews, worktree: { enabled: true } }
   return { fake, activations, messages, steered, subagents, disposers }
 }
 

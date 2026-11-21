@@ -80,6 +80,7 @@ async function withGitRace(root, mode, run) {
 async function prepareLegacyLanding({ archive = false } = {}) {
   const { root, run, fake, state } = await readyLand({ feature: true })
   const featureHead = run(['-C', state.worktree, 'rev-parse', 'HEAD'])
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
   run(['-C', root, 'merge', '--no-ff', '-m', 'legacy land', state.branch])
   const landCommit = run(['rev-parse', 'HEAD'])
   let archiveCommit
@@ -133,7 +134,8 @@ test('land advances main to a feature commit without a merge commit', async () =
   })
   assert.equal(landed.landCommit, featureHead)
   assert.notEqual(landed.landCommit, before)
-  assert.equal(run(['rev-parse', `${landed.landCommit}^1`]), before)
+  assert.equal(run(['rev-parse', `${landed.landCommit}^1`]), state.sealedCommit)
+  assert.equal(run(['rev-parse', `${state.sealedCommit}^1`]), before)
   assert.equal(run(['log', '-1', '--format=%P', landed.landCommit]).split(' ').length, 1)
   assert.equal(run(['rev-list', '--merges', `${before}..HEAD`]), '')
   assert.equal(run(['show', `${landed.landCommit}:feature.txt`]), 'feature')
@@ -268,7 +270,9 @@ test('land refuses a dirty main, dirty worktree, non-main and a worktree behind 
 })
 
 test('land returns the fast-forward commit for an unchanged feature head', async () => {
-  const { root, run, fake } = await readyLand()
+  const { root, run, fake, state } = await readyLand()
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  run(['merge', '--ff-only', state.branch])
   const head = run(['rev-parse', 'HEAD'])
   const path = manifestPath(root, head)
   mkdirSync(dirname(path), { recursive: true })
@@ -717,8 +721,10 @@ test('land uses a ready extra round tree after a rebase marker', async () => {
 })
 
 test('land retries only cleanup for an archived state with a manifest', async () => {
-  const { root, fake, state } = await readyLand()
+  const { root, run, fake, state } = await readyLand()
   const { writeApplyState } = await import('../lib/worktree/state.js')
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  run(['merge', '--ff-only', state.branch])
   const fakeLand = 'd'.repeat(40)
   const path = manifestPath(root, fakeLand)
   mkdirSync(dirname(path), { recursive: true })

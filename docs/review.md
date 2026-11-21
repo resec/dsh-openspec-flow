@@ -22,7 +22,7 @@ apply review 需要 git 仓库、干净工作区与至少一个提交；worktree
 
 apply review 默认使用 draft 基线：draft 段启用时，`start` 仍要求已完成的 draft review。`openspec_review` 接受可选 `baseline`：`draft`（draft 段启用时的默认）或 `none`。显式 `baseline: "none"` 用于没有 draft 记录的已提交分支：跳过 draft record、intent、plan drift 与 plan-change waiver 检查，必须显式给出非空 `base`，不会回落到 merge-base，且已有 draft 记录时拒绝。draft 段禁用时，省略 baseline 解析为 `none`，沿用原有的 base 解析（显式 base 或 merge-base）；显式 `baseline: "draft"` 会被拒绝，需改用 `none`。apply 记录、status 与 report 报告该 baseline；旧 apply 记录没有该字段时按 `draft` 报告。
 
-git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须提交封存 commit：变更目录连同插件写入的 `openspec/.gitignore`，也可包含其他 `openspec/changes/` 路径。工具要求工作区干净（其他 change 目录的未提交规划文件除外）、`HEAD` 至少改一个变更目录内的文件、目录外只允许该忽略文件和其他 `openspec/changes/` 路径，且工件哈希仍等于 draft 记录；任一不满足即拒绝。封存 commit 记录为 apply 的 base。apply 开始后 draft review 冻结，不能再 `resume`；此时修改 planning 工件须先取得用户书面豁免，用 `openspec_review`（`action: "waive"`、`scope: "plan-change"`、`files`）记录。`files` 以 change 目录为基准记录，也接受项目相对与绝对路径，例如 `files: ["proposal.md","tasks.md"]`；逃逸 change 目录或指向其他 change 的路径会被拒绝；apply review 会拒绝不在豁免清单内的变更文件。
+git worktree apply 中，draft review 就绪后首次 `openspec_apply_next` 由插件构造封存 commit：用临时索引从变更目录与插件写入的 `openspec/.gitignore` 生成提交，挂到 apply 分支与 `refs/openspec-flow/seal/<slug>-<hash>`，main 的 `HEAD`、索引与工作区都不动；提交记录为 apply 的 base。工作区须干净，仅允许本变更目录、其他 `openspec/changes/` 目录与该忽略文件未提交，且树内工件哈希仍等于 draft 记录；任一不满足即拒绝。worktree 关闭的 git 项目仍在 main 上提交 committed-`HEAD` 封存，`HEAD` 记录为 base。apply 开始后 draft review 冻结，不能再 `resume`；此时修改 planning 工件须先取得用户书面豁免，用 `openspec_review`（`action: "waive"`、`scope: "plan-change"`、`files`）记录。`files` 以 change 目录为基准记录，也接受项目相对与绝对路径，例如 `files: ["proposal.md","tasks.md"]`；逃逸 change 目录或指向其他 change 的路径会被拒绝；apply review 会拒绝不在豁免清单内的变更文件。
 
 本仓库以本地 tarball 包安装插件，评审器执行的是 profile 中的已安装副本，不是工作区源码。编辑工作区源码不改变已装副本，也不会触发 HMR 重载，因此评审进行中修改插件源码不会替换评审器，评审按已装版本完整完成。需要新插件逻辑生效时，重新打包、先在 Plugins 页面移除再安装；步骤见 [`installing-bundles.md`](installing-bundles.md)。
 
@@ -30,7 +30,7 @@ git 项目中，draft review 就绪后、首次 `openspec_apply_next` 前必须�
 
 1. `openspec_new_change` 创建变更目录前先为本变更锁定评审策略（`policy.json`），并把已解析的 reviewer 模型写入策略。
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`；`start` 只用于首轮。
-3. draft review 未就绪时 `openspec_review` 需要下一轮：用 `action: "resume"`，不传 `intent`。就绪后，git 项目先把变更目录与 `openspec/.gitignore` 提交为封存 commit（可含其他 `openspec/changes/` 路径），再调用 `openspec_apply_next`；工具校验干净树、提交路径与工件哈希，任一不满足即拒绝并记录该 commit 为 base，同时取得本 change 的 apply 锁。apply 开始后 draft review 冻结，不再接受 `resume`。
+3. draft review 未就绪时 `openspec_review` 需要下一轮：用 `action: "resume"`，不传 `intent`。就绪后，git worktree apply 直接调用 `openspec_apply_next`，由插件构造封存 commit 并挂到 apply 分支与私有引用，main 不动，该 commit 记录为 base；worktree 关闭时仍先提交 committed-`HEAD` 封存。任一校验不满足即拒绝，同时取得本 change 的 apply 锁。apply 开始后 draft review 冻结，不再接受 `resume`。
 4. 在 worktree 中实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`，并传入 worktree 路径）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录，`files` 以 change 目录为基准（也接受项目相对与绝对路径，示例 `files: ["proposal.md","tasks.md"]`，逃逸 change 目录或指向其他 change 的路径会被拒绝）；apply review 拒绝豁免清单之外的变更文件。apply brief 对规划变更按三条轴评审：plan coherence（变更后的 artifacts 彼此一致）、intent fit（仍满足用户目标与验收条件）、scope control（没有为迁就实现而弱化或移除需求）。当 land 因 worktree 落后 main 而拒绝时，它在 apply review 记录上写 `rebaseReview`（原 worktree head、评审 tree、mainHead 与时间）；用户 rebase、retest 后再次 `resume`，插件打开额外轮次 `E1`、`E2`。额外轮次记在独立的 `extraRounds` 数组，按共享 `seq` 排序，不增加 `rounds` 长度，也不占用普通轮次编号；其 finding id 为 `E<n>-NN`。apply review 就绪后仍保留标记，land 使用该额外轮次的 `treeSha`，在写入 manifest 与 archived 状态后于 review 目录锁内清除标记。rebase 后 tree 与已评审 tree 相同时，`resume` 直接清除标记而不开轮。
 5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。plugin-created worktree 的 active/landing 状态不能走 `openspec_archive`，由 `openspec_apply_worktree action=land` 在同一 lifecycle 临界区内 fast-forward main、archive 并提交 archive。
 
@@ -58,7 +58,7 @@ apply 锁按实现域与 store 域区分：
 - 项目级锁位置：git 域为 `<git dir>/openspec-flow/apply.lock.json`；非 git 域为 `<domain>/openspec/.review/apply.lock.json`。锁记录 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt`。
 - change lock 的 owner 记录 `token`/`pid`；同一 pid 可凭 state 的 token 重入，死主的空闲锁可被 apply 重新获取。项目级锁在归档成功后释放本 change 的锁；归档失败保留。`changeRoot` 或 `implementationRoot` 已不存在的锁视为 stale。
 - 暂停的 change 需要用户删除拒绝信息中列出的锁文件才能释放；agent 必须先请求用户，不能自行删除。
-- 封存、apply review 与归档的干净树检查忽略其他 `openspec/changes/` 目录下的未提交规划文件；被评审 change 自身目录或 `openspec/changes/` 之外的未提交路径仍算脏。
+- 封存、apply review 与归档的干净树检查忽略其他 `openspec/changes/` 目录下的未提交规划文件；被评审 change 自身目录或 `openspec/changes/` 之外的未提交路径仍算脏。git worktree 封存例外：允许本变更目录与插件写入的 `openspec/.gitignore` 未提交。
 
 ## reviewer 模式
 
@@ -224,7 +224,7 @@ openspec_review { "action": "self-report", "change": "add-export-api",
                   "report": { "verdict": "pass", "summary": "Artifacts are coherent.",
                               "findings": [], "verifications": [],
                               "outOfScope": [], "residualRisks": [] } }
-# draft 就绪后封存（git 项目）：只提交变更目录与 openspec/.gitignore
+# draft 就绪后直接 apply：worktree 路径由插件封存；worktree 关闭时先提交变更目录与 openspec/.gitignore
 openspec_apply_next { "change": "add-export-api" }
 # 实现、测试、逐轮提交后：
 openspec_review { "action": "start", "review": "apply", "change": "add-export-api" }

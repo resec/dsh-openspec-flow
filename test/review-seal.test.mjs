@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { draftObject } from '../lib/review/object.js'
 import { sealDraft } from '../lib/tools/review.js'
+import { sealRefName } from '../lib/worktree/seal.js'
 import {
   CHANGE, call, cleanupFixtures, gitFixture, report, reviewDir, setup,
 } from './review-fixtures.mjs'
@@ -118,5 +119,124 @@ test('the seal refuses a vanished record', async () => {
   assert.throws(
     () => sealDraft(context, directory, object, CHANGE),
     /disappeared while sealing/,
+  )
+})
+
+/**
+ * Read the construct-mode seal inputs without committing the change directory.
+ * @param root - fixture root.
+ * @returns the context, review directory and current draft object.
+ */
+function constructInputs(root) {
+  const directory = reviewDir(root)
+  const context = { rootPath: root, changeRoot: join(root, 'openspec', 'changes', CHANGE) }
+  const intent = readFileSync(join(directory, 'intent.md'), 'utf8')
+  return { context, directory, object: draftObject(context.changeRoot, intent) }
+}
+
+const CONSTRUCT = { construct: true, store: null }
+
+test('a worktree seal constructs the commit without moving main', async () => {
+  const { root, run } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  const head = run(['rev-parse', 'HEAD'])
+  assert.deepEqual(sealDraft(context, directory, object, CHANGE, CONSTRUCT), [])
+  const sealed = JSON.parse(readFileSync(join(directory, 'review.json'), 'utf8'))
+  assert.match(sealed.applyBaseCommit, /^[0-9a-f]{40}$/)
+  assert.notEqual(sealed.applyBaseCommit, head)
+  assert.equal(run(['rev-parse', 'HEAD']), head)
+  assert.equal(run(['rev-parse', sealRefName(null, CHANGE)]), sealed.applyBaseCommit)
+})
+
+test('a worktree seal refuses a mismatched working artifact before the lock', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  assert.throws(
+    () => sealDraft(context, directory, { ...object, artifactHash: '0'.repeat(64) }, CHANGE, CONSTRUCT),
+    /differ from the reviewed draft/,
+  )
+  assert.equal(JSON.parse(readFileSync(join(directory, 'review.json'), 'utf8')).applyBaseCommit, undefined)
+})
+
+test('a worktree seal refuses a record whose readiness dropped', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  rewriteRecord(directory, (record) => { record.state = 'abandoned' })
+  assert.throws(
+    () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),
+    /draft review is not ready: .*abandoned/,
+  )
+})
+
+test('a worktree seal refuses a vanished record', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  rmSync(join(directory, 'review.json'))
+  assert.throws(
+    () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),
+    /disappeared while sealing/,
+  )
+})
+
+test('a worktree seal leaves an already recorded base alone', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  assert.deepEqual(sealDraft(context, directory, object, CHANGE, CONSTRUCT), [])
+  const sealed = JSON.parse(readFileSync(join(directory, 'review.json'), 'utf8'))
+  assert.deepEqual(sealDraft(context, directory, object, CHANGE, CONSTRUCT), [])
+  const again = JSON.parse(readFileSync(join(directory, 'review.json'), 'utf8'))
+  assert.equal(again.applyBaseCommit, sealed.applyBaseCommit)
+})
+
+test('a worktree seal refuses a record whose hash changed under the lock', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  rewriteRecord(directory, (record) => { record.artifactHash = '0'.repeat(64) })
+  assert.throws(
+    () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),
+    /differ from the reviewed draft/,
+  )
+})
+
+test('a worktree seal refuses a change directory already committed', async () => {
+  const { root, run } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'commit the change directory'])
+  assert.throws(
+    () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),
+    /must change at least one file/,
+  )
+})
+
+test('a worktree seal refuses dirt outside the allowed paths', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { context, directory, object } = constructInputs(root)
+  writeFileSync(join(root, 'outside.txt'), 'outside\n')
+  assert.throws(
+    () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),
+    /working tree is not clean/,
+  )
+})
+
+test('a worktree seal refuses a root whose status cannot be read', async () => {
+  const { root } = gitFixture()
+  await readyDraft(root)
+  const { directory, object } = constructInputs(root)
+  const { mkdtempSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const plain = mkdtempSync(join(tmpdir(), 'seal-plain-'))
+  const context = { rootPath: plain, changeRoot: join(plain, 'openspec', 'changes', CHANGE) }
+  assert.throws(
+    () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),
+    /working tree status could not be read/,
   )
 })

@@ -9,6 +9,7 @@ import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
 import { clearCache } from '../lib/cache.js'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
+import { readApplyState } from '../lib/worktree/state.js'
 import {
   CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
 } from './review-fixtures.mjs'
@@ -949,7 +950,7 @@ test('a passing apply submit wakes the changer toward archive', async () => {
   })
   assert.equal(waited.waitState, 'waiting')
 
-  const reviewer = createFakeContext({ cwd: root, subagents })
+  const reviewer = createFakeContext({ cwd: readApplyState(root, null, CHANGE).worktree, subagents })
   reviewerApply(reviewer.ctx)
   await reviewer.tools.get('openspec_reviewer').execute({
     action: 'submit', change: CHANGE, review: 'apply', report: report(),

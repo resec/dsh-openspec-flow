@@ -8,6 +8,7 @@ import { apply as reviewerApply } from '../reviewer.js'
 import { apply } from '../index.js'
 import { clearReviewDeadlines, pendingDeadline } from '../lib/review/wakeup.js'
 import { createFakeContext } from './fake-context.mjs'
+import { readApplyState } from '../lib/worktree/state.js'
 import {
   CHANGE, fixture, setup, call, reviewDir, report, majorFinding, gitFixture, passDraft, externalSetup, cleanupFixtures,
 } from './review-fixtures.mjs'
@@ -295,7 +296,7 @@ test('a new apply round wakes the same reviewer and resumes do not', async () =>
   assert.equal(first.round, 1)
   assert.equal(activations.length, 1)
 
-  const reviewer = createFakeContext({ cwd: root })
+  const reviewer = createFakeContext({ cwd: readApplyState(root, null, CHANGE).worktree })
   reviewerApply(reviewer.ctx)
   const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
     agent: { id: 'reviewer-1' },
@@ -1035,7 +1036,7 @@ test('an apply not-ready submit wakes with the apply dispose action', async () =
   }, { seedAgents: [changer], deliverSteer: true })
   await passDraft(fake, root, run)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
-  const reviewer = createFakeContext({ cwd: root, subagents })
+  const reviewer = createFakeContext({ cwd: readApplyState(root, null, CHANGE).worktree, subagents })
   reviewerApply(reviewer.ctx)
   await reviewer.tools.get('openspec_reviewer').execute({
     action: 'submit',

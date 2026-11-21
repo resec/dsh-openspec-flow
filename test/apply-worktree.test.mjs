@@ -4,10 +4,11 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import {
-  CHANGE, cleanupFixtures, externalSetup, gitFixture, passDraft, setup, call, report,
+  CHANGE, cleanupFixtures, externalSetup, gitFixture, passDraft, setup, call, report, reviewDir,
 } from './review-fixtures.mjs'
 import { applyWorktreePath } from '../lib/worktree/create.js'
 import { readApplyState } from '../lib/worktree/state.js'
+import { sealBranchName, sealRefName } from '../lib/worktree/seal.js'
 import { lockPath } from '../lib/worktree/lock.js'
 import { gitCommonDir } from '../lib/review/store.js'
 
@@ -131,8 +132,6 @@ test('a creation failure is reported after the draft gate', async () => {
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, report: report(),
   })
-  run(['add', `openspec/changes/${CHANGE}`])
-  run(['commit', '-m', 'seal for failure'])
   const exclude = join(root, '.git', 'info', 'exclude')
   appendFileSync(exclude, '\n.cache\n')
   writeFileSync(join(root, '.cache'), 'blocked')
@@ -142,7 +141,13 @@ test('a creation failure is reported after the draft gate', async () => {
   )
   assert.equal(readApplyState(root, null, CHANGE), undefined)
   assert.equal(existsSync(lockPath(gitCommonDir(root), 'change', { change: CHANGE })), false)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(run(['rev-parse', sealRefName(null, CHANGE)]), record.applyBaseCommit)
+  assert.equal(run(['rev-parse', `refs/heads/${sealBranchName(null, CHANGE)}`]), record.applyBaseCommit)
   rmSync(join(root, '.cache'), { force: true })
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const state = readApplyState(root, null, CHANGE)
+  assert.equal(state.baseCommit, record.applyBaseCommit)
 })
 
 test('a dirty or main-subdirectory worktree is refused', async () => {
@@ -187,8 +192,6 @@ test('a legacy apply lock holder blocks worktree apply', async () => {
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, report: report(),
   })
-  run(['add', `openspec/changes/${CHANGE}`])
-  run(['commit', '-m', 'seal for legacy lock'])
   const directory = join(root, '.git', 'openspec-flow')
   mkdirSync(directory, { recursive: true })
   writeFileSync(join(directory, 'apply.lock.json'), `${JSON.stringify({
@@ -215,9 +218,6 @@ test('an independent apply reviewer is activated in the worktree', async () => {
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, report: report(),
   })
-  if (existsSync(join(root, 'openspec', '.gitignore'))) run(['add', 'openspec/.gitignore'])
-  run(['add', `openspec/changes/${CHANGE}`])
-  run(['commit', '-m', 'seal for reviewer'])
   await call(fake, 'openspec_apply_next', { change: CHANGE })
   const state = readApplyState(root, null, CHANGE)
   await call(fake, 'openspec_review', {
@@ -268,8 +268,6 @@ test('two changes apply in independent worktrees', async () => {
       action: 'self-report', change, report: report(),
     })
   }
-  run(['add', `openspec/changes/${CHANGE}`, `openspec/changes/${second}`])
-  run(['commit', '-m', 'seal both changes'])
   await call(firstFake, 'openspec_apply_next', { change: CHANGE })
   await call(secondFake, 'openspec_apply_next', { change: second })
   const firstState = readApplyState(root, null, CHANGE)
