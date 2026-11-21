@@ -13,7 +13,7 @@ The apply review records the reviewed tree. Land already refuses a feature head 
 - Land advances main with `git merge --ff-only`; a successful land adds no merge commit.
 - A main that moves after the precheck fails before or during the fast-forward, never through a reset that discards the concurrent commit.
 - A partly completed land is recoverable without a second fast-forward or archive.
-- New manifests identify `landCommit`; old manifests that only carry `mergeCommit` keep working for cleanup, remove and push.
+- New manifests identify `landCommit`; old manifests that only carry `mergeCommit` keep working for cleanup and push. `remove` reads apply state only and never reads a landed manifest.
 - Push-landed verifies the same facts for both manifest shapes.
 
 **Non-Goals**
@@ -68,7 +68,7 @@ The legacy branches keep an in-flight state created before this change recoverab
 
 ### New manifest field and legacy fallback
 
-New manifests use `<landCommit>.json` and record `landCommit`, `landMode: "fast-forward"` and no `mergeCommit`. The reader helper resolves `manifest.landCommit ?? manifest.mergeCommit`; cleanup retries and remove use that helper. The tool result carries both `landCommit` and a deprecated `mergeCommit` alias with the same value so existing callers keep working during the transition.
+New manifests use `<landCommit>.json` and record `landCommit`, `landMode` and no `mergeCommit`; a new land writes `landMode: "fast-forward"`, while a retry that completes an in-flight legacy merge writes `landMode: "legacy-merge"`. The cleanup reader resolves `manifest.landCommit ?? manifest.mergeCommit`; `push-landed` has its own resolver and `remove` reads no manifest. The tool result carries both `landCommit` and a deprecated `mergeCommit` alias with the same value so existing callers keep working during the transition.
 
 Alternative considered: keep writing `mergeCommit` as an alias in new manifests. Rejected because it would perpetuate the merge terminology and require two sources of truth. The repository push script is updated in the same change; external users of an older script must upgrade.
 
@@ -78,7 +78,7 @@ Alternative considered: keep writing `mergeCommit` as an alias in new manifests.
 
 ### Policy, skills and review documentation
 
-Land is described in the registered flow rule, the shipped apply and archive skills, and `docs/review.md`, not only in the two land pages. The change updates all of them in the same round as the code so an agent is not told that land merges while the specs say it fast-forwards. The policy test asserts the fast-forward wording, and the documentation tests assert the new documented tokens rather than only the old command names.
+Land is described in the registered flow rule, the shipped apply and archive skills, and `docs/review.md`, not only in the two land pages. The change updates all of them in the same round as the code so an agent is not told that land merges while the specs say it fast-forwards. The `change-review` delta also moves its land tree-binding requirements from the `--no-ff` merged tree to the feature tree and the resulting main tree, so archive does not leave a contradictory main requirement. The policy test asserts the fast-forward wording, and the documentation tests assert the new documented tokens rather than only the old command names.
 
 Modified requirement blocks keep their existing scenario identifiers. OpenSpec's delta validator treats a renamed scenario as a dropped scenario, so renaming "The merged tree differs", "Archive fails after the merge" or "Merge tree does not match the review" would require duplicating the old scenario or moving unrelated requirements. The scenario bodies and requirement descriptions state the fast-forward behavior; untouched merge wording in unrelated main requirements is outside this change until those requirements themselves change.
 

@@ -36,6 +36,7 @@ test('the apply worktree document names the land cleanup and rebase marker', () 
     '--ff-only',
     'landCommit',
     'landMode',
+    'legacy-merge',
     'never resets or rewinds main',
     'linear rebase',
   ]) {

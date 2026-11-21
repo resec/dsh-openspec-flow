@@ -57,7 +57,7 @@ A failed fast-forward, tree check, archive, commit or manifest write SHALL keep 
 
 ### Requirement: The landed manifest records the landed facts
 
-A successful land SHALL write `<common>/openspec-flow/landed/<land>.json` with `change`, `store`, `worktree`, `branch`, `featureHead`, `featureTree`, `landCommit`, `landMode` (`fast-forward`), `mainHead` (the pre-land main commit), `archiveCommit`, `applyReviewId`, `reviewRecordHash` (SHA-256 of `apply-review.json`, both `null` when no review exists), `approvedBy` and `landedAt`. It SHALL NOT write `mergeCommit`.
+A successful land SHALL write `<common>/openspec-flow/landed/<land>.json` with `change`, `store`, `worktree`, `branch`, `featureHead`, `featureTree`, `landCommit`, `landMode` (`fast-forward` for a new land, `legacy-merge` when a retry completes a pre-existing merge), `mainHead` (the pre-land main commit), `archiveCommit`, `applyReviewId`, `reviewRecordHash` (SHA-256 of `apply-review.json`, both `null` when no review exists), `approvedBy` and `landedAt`. It SHALL NOT write `mergeCommit`.
 
 #### Scenario: The manifest is written once
 
