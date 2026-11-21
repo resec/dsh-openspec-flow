@@ -53,6 +53,7 @@ test('the apply worktree document names the seal, the ref and the land copy hand
     'restored to its `HEAD` version',
     'deletes only a branch the call created itself',
     'a seal-created branch and its seal ref remain',
+    'task counters stay at the pre-apply values until land',
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }

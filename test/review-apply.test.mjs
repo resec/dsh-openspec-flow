@@ -1924,3 +1924,32 @@ test('the seal ref is valid for a double dot and a leading dot', () => {
   assert.match(sealRefName('.dot', CHANGE), /seal\/-dot-/)
 })
 
+
+test('remove deletes the seal ref and keeps the branch', async () => {
+  const { root, run } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  assert.equal(run(['rev-parse', sealRefName(null, CHANGE)]), state.baseCommit)
+  await call(fake, 'openspec_apply_worktree', {
+    action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: 'abandoned for a test',
+  })
+  assert.notEqual(spawnSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', sealRefName(null, CHANGE)]).status, 0)
+  assert.equal(run(['rev-parse', `refs/heads/${state.branch}`]), state.baseCommit)
+})
+
+test('a branch that does not point at the seal is refused on re-apply', async () => {
+  const { root, run } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  await call(fake, 'openspec_apply_worktree', {
+    action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: 'restart',
+  })
+  run(['branch', '-f', state.branch, 'HEAD'])
+  const second = sealWorktreeApply(root)
+  await assert.rejects(
+    call(second, 'openspec_apply_next', { change: CHANGE }),
+    /does not point at the seal commit/,
+  )
+})

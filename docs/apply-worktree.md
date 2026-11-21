@@ -26,7 +26,7 @@ worktree: { path relative to root.path, branch, base, mainRoot }
 root.path: the main worktree
 ```
 
-`openspec_mark_task_done` and `openspec_inspect` `action: "validate"` run against the worktree. `openspec_inspect` `list`, `status`, `show`, `instructions` and `context` stay main-worktree reads. Draft review and intent stay in main; the seal commit is built there but referenced only by the apply branch and the seal ref, not by main's history until land.
+`openspec_mark_task_done` and `openspec_inspect` `action: "validate"` run against the worktree. `openspec_inspect` `list`, `status`, `show`, `instructions` and `context` stay main-worktree reads, so during apply they show main's pre-apply planning copy: task counters stay at the pre-apply values until land updates main, even while the worktree copy advances. Draft review and intent stay in main; the seal commit is built there but referenced only by the apply branch and the seal ref, not by main's history until land.
 
 The apply cache keys on `cwd + change + store`. When the state names a different worktree, the old cache entry is not reused.
 

@@ -243,3 +243,23 @@ test('a failed session move deletes a branch the call created itself', async () 
   assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
   assert.equal(readApplyState(root, null, 'demo'), undefined)
 })
+
+test('a retry after a failed creation reuses the same branch commit', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const branch = applyWorktreeBranch(null, 'demo')
+  const fake = context(root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head,
+      agent: undefined, signal: new AbortController().signal,
+    }),
+    /agent session/,
+  )
+  const state = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head,
+    agent: { id: 'retry' }, signal: new AbortController().signal,
+  })
+  assert.equal(state.baseCommit, head)
+  assert.equal(git(root, ['rev-parse', `refs/heads/${branch}`]), head)
+})
