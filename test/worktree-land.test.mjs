@@ -1184,3 +1184,44 @@ test('land names a tracked modified planning file', async () => {
     /clean main worktree/,
   )
 })
+
+test('land refuses a mode change in the planning copy', async () => {
+  const { root, run } = gitFixture()
+  runBranch(root)
+  const fake = await landReady(root)
+  chmodSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), 0o755)
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /mode differs from the seal/,
+  )
+})
+
+test('land restores a tracked deleted ignore file when it fails', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore'])
+  run(['commit', '-m', 'track the ignore file'])
+  const fake = await landReady(root)
+  const state = readApplyState(root, null, CHANGE)
+  rmSync(join(root, 'openspec', '.gitignore'))
+  writeFileSync(join(state.worktree, 'dirty.txt'), 'dirty\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /clean worktree/,
+  )
+  assert.equal(existsSync(join(root, 'openspec', '.gitignore')), false)
+})
+
+test('land refuses a state without a sealed commit', async () => {
+  const { root } = gitFixture()
+  runBranch(root)
+  const fake = await landReady(root)
+  const state = readApplyState(root, null, CHANGE)
+  writeApplyState(root, null, CHANGE, { ...state, sealedCommit: null })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /clean main worktree/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'active')
+})
