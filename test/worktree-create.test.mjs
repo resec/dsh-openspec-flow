@@ -207,3 +207,39 @@ test('a failed session move removes the new checkout', async () => {
   assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
   assert.equal(existsSync(lockPath(gitCommonDir(root), 'change', { change: 'demo' })), false)
 })
+
+test('a failed session move keeps a seal-created branch and its ref', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const branch = applyWorktreeBranch(null, 'demo')
+  git(root, ['branch', branch, head])
+  git(root, ['update-ref', 'refs/openspec-flow/seal/demo', head])
+  const fake = context(root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head,
+      agent: undefined, signal: new AbortController().signal,
+    }),
+    /agent session/,
+  )
+  assert.equal(git(root, ['rev-parse', `refs/heads/${branch}`]), head)
+  assert.equal(git(root, ['rev-parse', 'refs/openspec-flow/seal/demo']), head)
+  assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
+})
+
+test('a failed session move deletes a branch the call created itself', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const branch = applyWorktreeBranch(null, 'demo')
+  const fake = context(root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head,
+      agent: undefined, signal: new AbortController().signal,
+    }),
+    /agent session/,
+  )
+  assert.equal(git(root, ['branch', '--list', branch]), '')
+  assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
+  assert.equal(readApplyState(root, null, 'demo'), undefined)
+})

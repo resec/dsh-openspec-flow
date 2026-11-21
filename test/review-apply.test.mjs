@@ -7,10 +7,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
-  CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, captureSpawn, cleanupFixtures,
+  CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, passDraftConstructing, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
 import { reviewDirectory } from '../lib/review/store.js'
 import { readApplyState } from '../lib/worktree/state.js'
+import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/worktree/seal.js'
 
 test.after(cleanupFixtures)
 
@@ -1810,3 +1811,116 @@ test('an extra round resume refuses while a finding is open', async () => {
     /still open: E1-01/,
   )
 })
+
+
+const sealWorktreeApply = (root) => setup(root, undefined, { worktree: { enabled: true } })
+const sealRef = sealRefName(null, CHANGE)
+test('a worktree apply seals on the branch without moving main', async () => {
+  const { root, run } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  const head = run(['rev-parse', 'HEAD'])
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  assert.equal(run(['rev-parse', 'HEAD']), head)
+  assert.notEqual(state.baseCommit, head)
+  assert.equal(state.sealedCommit, state.baseCommit)
+  assert.equal(run(['rev-parse', sealRef]), state.baseCommit)
+  assert.equal(run(['rev-parse', `refs/heads/${state.branch}`]), state.baseCommit)
+  assert.equal(run(['rev-parse', `${state.baseCommit}^1`]), head)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.applyBaseCommit, state.baseCommit)
+  assert.match(run(['status', '--porcelain']), new RegExp(`openspec/changes/${CHANGE}`))
+})
+
+test('the seal stages the uncommitted ignore file and refuses outside dirt', async () => {
+  const { root, run } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  writeFileSync(join(root, 'outside.txt'), 'outside\n')
+  await assert.rejects(call(fake, 'openspec_apply_next', { change: CHANGE }), /working tree is not clean/)
+  assert.equal(readApplyState(root, null, CHANGE), undefined)
+  rmSync(join(root, 'outside.txt'))
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const state = readApplyState(root, null, CHANGE)
+  assert.equal(run(['show', `${state.baseCommit}:openspec/.gitignore`]), '.review/')
+})
+
+test('a changed plan leaves no seal ref or branch', async () => {
+  const { root, run } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Changed after the draft\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /changed since the review started|differ from the reviewed draft/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE), undefined)
+  assert.notEqual(spawnSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', sealRef]).status, 0)
+  assert.notEqual(spawnSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', `refs/heads/${sealBranchName(null, CHANGE)}`]).status, 0)
+})
+
+test('a resync tolerates a missing main planning copy', async () => {
+  const { root } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  const resync = await call(fake, 'openspec_apply_next', { change: CHANGE })
+  assert.equal(resync.change, CHANGE)
+  assert.equal(typeof resync.state, 'string')
+})
+
+test('a rebase rewrites the branch seal and keeps the recorded base', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'feature.txt'), 'feature\n')
+  run(['-C', state.worktree, 'add', 'feature.txt'])
+  run(['-C', state.worktree, 'commit', '-m', 'feature work'])
+  run(['commit', '--allow-empty', '-m', 'another land'])
+  run(['-C', state.worktree, 'rebase', 'main'])
+  assert.notEqual(run(['-C', state.worktree, 'rev-parse', 'HEAD^']), state.sealedCommit)
+  assert.equal(run(['cat-file', '-t', state.sealedCommit]), 'commit')
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.baseTreeSha, run(['rev-parse', `${state.sealedCommit}^{tree}`]))
+  const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
+  assert.match(diff, /feature\.txt/)
+})
+
+test('the seal resets a stale apply branch and refuses an attached worktree', async () => {
+  const { root, run } = gitFixture()
+  const branch = sealBranchName(null, CHANGE)
+  run(['branch', branch, 'HEAD'])
+  const commit = buildSealCommit({
+    root,
+    changePath: `openspec/changes/${CHANGE}`,
+    change: CHANGE,
+  })
+  pinSeal({ root, store: null, change: CHANGE, commit })
+  assert.equal(run(['rev-parse', `refs/heads/${branch}`]), commit)
+  assert.equal(run(['rev-parse', sealRefName(null, CHANGE)]), commit)
+  const attached = join(root, '..', `${root.split('/').pop()}-attached`)
+  run(['worktree', 'add', attached, branch])
+  try {
+    assert.throws(
+      () => pinSeal({ root, store: null, change: CHANGE, commit }),
+      /checked out by a worktree/,
+    )
+  } finally {
+    run(['worktree', 'remove', '--force', attached])
+  }
+})
+
+test('the seal ref is valid for a double dot and a leading dot', () => {
+  for (const [store, change] of [[null, 'release..1'], ['team-store', CHANGE], ['.dot', CHANGE]]) {
+    const name = sealRefName(store, change)
+    assert.equal(spawnSync('git', ['check-ref-format', name]).status, 0, name)
+  }
+  assert.match(sealRefName(null, 'release..1'), /seal\/local-release--1-/)
+  assert.match(sealRefName('.dot', CHANGE), /seal\/-dot-/)
+})
+

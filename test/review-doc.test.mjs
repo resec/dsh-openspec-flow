@@ -322,6 +322,12 @@ test('the review document states the reviewer catalog and the host strict valida
 test('the review document explains the seal, the freeze and the plan-change waiver', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /封存 commit/)
+  assert.match(text, /refs\/openspec-flow\/seal\/<slug>-<hash>/)
+  assert.match(text, /封存提交在 land 前不进入 main 的历史/)
+  assert.match(text, /私有引用保证 rebase/)
+  assert.match(text, /规划副本/)
+  assert.match(text, /已跟踪的 `\.gitignore` 修改或删除则恢复到 `HEAD` 版本/)
+  assert.match(text, /rebase 后原封存提交与分支上重放的封存提交并存/)
   assert.match(text, /apply 开始后 draft review 冻结/)
   assert.match(text, /scope: "plan-change"/)
   assert.match(text, /plan-change-waiver\.json/)

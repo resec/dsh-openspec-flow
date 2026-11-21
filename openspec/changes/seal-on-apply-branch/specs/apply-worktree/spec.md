@@ -36,6 +36,37 @@ The plugin SHALL create an apply worktree for a git project at `<mainRoot>/.cach
 - **WHEN** the state is active and names a clean worktree on the expected branch
 - **THEN** `openspec_apply_next` reuses it and moves the session to that worktree
 
+### Requirement: Creation holds the change lock and publishes no partial state
+
+Creation SHALL hold only the per-change change lock and inspect but not acquire a legacy project-wide apply lock. It SHALL ensure the worktree root is ignored through `.git/info/exclude`, create the worktree, move the changer session, then write the state with the lock token and pid. A failure SHALL restore the session to main, remove the worktree, delete only a branch this call created, remove any state it wrote and release the lock; a seal-created branch and its seal ref SHALL remain.
+
+#### Scenario: The worktree root is locally ignored
+
+- **WHEN** `.gitignore` does not ignore `.cache`
+- **THEN** the plugin adds a worktree-relative root to `.git/info/exclude` and `git status` stays clean
+
+#### Scenario: Creation moves the session before the state
+
+- **WHEN** the worktree is created
+- **THEN** the session moves first and the state is written with the lock token and pid
+
+#### Scenario: A failed session move restores main
+
+- **WHEN** the session move fails
+- **THEN** the worktree and any state are removed
+- **AND** a branch this call created is deleted while a seal-created branch and its seal ref remain
+- **AND** the changers cwd is unchanged
+
+#### Scenario: A legacy apply lock still blocks
+
+- **WHEN** a legacy project-wide apply lock names another change
+- **THEN** a git worktree apply is refused and names the holder
+
+#### Scenario: Creation failure leaves no partial state
+
+- **WHEN** worktree creation or the state write fails
+- **THEN** the created worktree is removed, a branch this call created is deleted, the locks are released and no state is published
+
 ## ADDED Requirements
 
 ### Requirement: The seal creates the apply branch before the worktree

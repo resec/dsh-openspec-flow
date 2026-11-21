@@ -43,3 +43,17 @@ test('the apply worktree document names the land cleanup and rebase marker', () 
     assert.ok(doc.includes(text), `document names ${text}`)
   }
 })
+
+test('the apply worktree document names the seal, the ref and the land copy handling', () => {
+  const doc = readFileSync(join(ROOT, 'docs', 'apply-worktree.md'), 'utf8')
+  for (const text of [
+    'constructed with a temporary index',
+    'refs/openspec-flow/seal/<slug>-<hash>',
+    'reconciles the main planning copy with the seal tree',
+    'restored to its `HEAD` version',
+    'deletes only a branch the call created itself',
+    'a seal-created branch and its seal ref remain',
+  ]) {
+    assert.ok(doc.includes(text), `document names ${text}`)
+  }
+})

@@ -75,7 +75,8 @@ The seal check may ignore the reviewed change's own uncommitted directory and th
 1. Land this change; the new seal applies to every change whose first apply happens afterwards.
 2. Repack and reinstall the bundle so the installed plugin runs the new logic; the repository sources alone do not change the installed copy.
 3. In-flight changes keep their recorded base; no state migration and no ref backfill.
-4. Rollback: revert the commit; unused seal refs are inert, and no data was moved out of main.
+4. A draft whose change directory is already committed on main (the old seal shape) is refused by the construction: uncommit that seal so the directory is untracked, then run apply again. The refusal names this recovery.
+5. Rollback: revert the commit; unused seal refs are inert, and no data was moved out of main.
 
 ## Open Questions
 

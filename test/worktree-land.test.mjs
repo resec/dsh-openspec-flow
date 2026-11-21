@@ -5,10 +5,11 @@ import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
-import { CHANGE, cleanupFixtures, gitFixture, passDraft, report, reviewDir, setup, call } from './review-fixtures.mjs'
+import { CHANGE, cleanupFixtures, gitFixture, passDraft, passDraftConstructing, report, reviewDir, setup, call } from './review-fixtures.mjs'
 import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { sha256 } from '../lib/review/store.js'
 import { manifestPath } from '../lib/worktree/land.js'
+import { removeSealRef, sealRefName } from '../lib/worktree/seal.js'
 
 test.after(cleanupFixtures)
 
@@ -950,4 +951,236 @@ test('land writes no marker when the apply review never started', async () => {
     /has not started/,
   )
   assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
+})
+
+
+const landWorktreeApply = (root) => setup(root, undefined, { worktree: { enabled: true } })
+const runBranch = (root) => spawnSync('git', ['-C', root, 'branch', '-M', 'main'])
+
+async function landReady(root) {
+  const fake = landWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  return fake
+}
+test('land deletes the seal ref and leaves main clean', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = landWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  assert.equal(run(['rev-parse', '--verify', sealRefName(null, CHANGE)]).length > 0, true)
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.cleanup.complete, true)
+  assert.notEqual(spawnSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', sealRefName(null, CHANGE)]).status, 0)
+  assert.equal(run(['status', '--porcelain']), '')
+})
+
+test('land restores the planning copy when it fails before the merge', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = landWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  writeFileSync(join(state.worktree, 'dirty.txt'), 'dirty\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /clean worktree/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']) !== state.baseCommit, true)
+  assert.equal(readFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), 'utf8').length > 0, true)
+  assert.match(run(['status', '--porcelain']), new RegExp(`openspec/changes/${CHANGE}`))
+})
+
+test('land restores a tracked modified ignore file and the fast-forward updates it', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore'])
+  run(['commit', '-m', 'track the ignore file'])
+  const fake = landWorktreeApply(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n# docs\n')
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  const state = readApplyState(root, null, CHANGE)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(run(['show', 'HEAD:openspec/.gitignore']), '.review/\n# docs')
+  assert.equal(run(['status', '--porcelain']), '')
+  assert.equal(state.baseCommit.length, 40)
+})
+
+test('remove deletes the seal ref and keeps the branch', async () => {
+  const { root, run } = gitFixture()
+  const fake = landWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  assert.equal(run(['rev-parse', sealRefName(null, CHANGE)]), state.baseCommit)
+  await call(fake, 'openspec_apply_worktree', {
+    action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: 'abandoned for a test',
+  })
+  assert.notEqual(spawnSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', sealRefName(null, CHANGE)]).status, 0)
+  assert.equal(run(['rev-parse', `refs/heads/${state.branch}`]), state.baseCommit)
+})
+
+test('land refuses a main copy that differs from the seal', async () => {
+  const { root } = gitFixture()
+  runBranch(root)
+  const fake = await landReady(root)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Changed in main\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /differs from the seal/,
+  )
+})
+
+test('land refuses a main file that is not in the seal', async () => {
+  const { root } = gitFixture()
+  runBranch(root)
+  const fake = await landReady(root)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'extra.md'), 'extra\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /not in the seal/,
+  )
+})
+
+test('land restores a tracked deleted ignore file', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore'])
+  run(['commit', '-m', 'track the ignore file'])
+  const fake = await landReady(root)
+  rmSync(join(root, 'openspec', '.gitignore'))
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.cleanup.complete, true)
+  assert.equal(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), '.review/\n')
+})
+
+test('land refuses a tracked ignore file that differs from the seal', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore'])
+  run(['commit', '-m', 'track the ignore file'])
+  const fake = await landReady(root)
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n# later edit\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /differs from the seal/,
+  )
+})
+
+test('a branch that does not point at the seal is refused on re-apply', async () => {
+  const { root, run } = gitFixture()
+  const fake = landWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  await call(fake, 'openspec_apply_worktree', {
+    action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: 'restart',
+  })
+  run(['branch', '-f', state.branch, 'HEAD'])
+  const second = landWorktreeApply(root)
+  await assert.rejects(
+    call(second, 'openspec_apply_next', { change: CHANGE }),
+    /does not point at the seal commit/,
+  )
+})
+
+test('land removes an untracked ignore file staged by the seal', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  const fake = await landReady(root)
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.cleanup.complete, true)
+  assert.equal(run(['status', '--porcelain']), '')
+  assert.equal(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), '.review/\n')
+})
+
+test('land restores a tracked modified ignore file when it fails', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore'])
+  run(['commit', '-m', 'track the ignore file'])
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n# docs\n')
+  const fake = await landReady(root)
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'dirty.txt'), 'dirty\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /clean worktree/,
+  )
+  assert.equal(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), '.review/\n# docs\n')
+  assert.match(run(['status', '--porcelain']), /M openspec\/\.gitignore/)
+})
+
+test('removing a missing seal ref is a no-op', async () => {
+  const { root } = gitFixture()
+  removeSealRef(root, null, CHANGE)
+  removeSealRef(root, null, CHANGE)
+})
+
+test('a refused abandon keeps the seal ref and the active state', async () => {
+  const { root, fake, state } = await readyLand()
+  writeFileSync(join(state.worktree, 'dirty.txt'), 'dirty\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', {
+      action: 'remove', change: CHANGE, abandon: true, approvedBy: 'user', reason: 'cleaning',
+    }),
+    /clean worktree/,
+  )
+  assert.equal(spawnSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', sealRefName(null, CHANGE)]).status, 0)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'active')
+})
+
+test('land lists every mismatching path in one refusal', async () => {
+  const { root, run } = gitFixture()
+  runBranch(root)
+  const fake = await landReady(root)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Changed in main\n')
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'extra.md'), 'extra\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    (error) => /proposal\.md: content differs from the seal/.test(error.message)
+      && /extra\.md: not in the seal/.test(error.message),
+  )
+})
+
+test('land names a tracked modified planning file', async () => {
+  const { root, run } = gitFixture()
+  runBranch(root)
+  const fake = await landReady(root)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# tracked change\n')
+  run(['add', `openspec/changes/${CHANGE}/proposal.md`])
+  run(['commit', '-m', 'track the planning file'])
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# modified again\n')
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /clean main worktree/,
+  )
 })
