@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-21
+goal: A sealed draft never becomes an ancestor of main until its own land, so
+  another change's landing and push cannot publish it and cannot force an
+  in-flight apply to rebase.
