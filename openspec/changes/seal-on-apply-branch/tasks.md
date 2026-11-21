@@ -31,7 +31,7 @@
 ## 6. Verification
 
 - [x] 6.1 Run `npm run test:affected -- lib/tools/review.js lib/worktree/create.js lib/worktree/land.js lib/tools/apply.js lib/tools/worktree.js`; verify the selected tests pass.
-- [ ] 6.2 Run `npm run verify` on Node 24 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass.
+- [x] 6.2 Run `npm run verify` on Node 24 and `openspec_inspect` with `action: "validate"` and `strict: true`; verify both pass.
 
 ## Workflow follow-up
 
