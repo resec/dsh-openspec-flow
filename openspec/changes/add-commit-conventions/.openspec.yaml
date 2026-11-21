@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-21
+goal: The repository states and follows finding-scoped apply commits, and git
+  history carries no review-local round or finding identifiers.
