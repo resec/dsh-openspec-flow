@@ -8,7 +8,7 @@
 ## 2. Validation and verification
 
 - [x] 2.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` for this change; verify it reports no finding.
-- [ ] 2.2 Run `npm run verify` with a Node 24 runtime on `PATH` that satisfies `engines.node` (activate one as `docs/upgrading-openspec-cli.md` describes); verify it exits zero and reports both the test summary and the coverage verdict.
+- [x] 2.2 Run `npm run verify` with a Node 24 runtime on `PATH` that satisfies `engines.node` (activate one as `docs/upgrading-openspec-cli.md` describes); verify it exits zero and reports both the test summary and the coverage verdict.
 
 ## Workflow follow-up
 
