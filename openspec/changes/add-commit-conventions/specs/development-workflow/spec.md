@@ -4,7 +4,7 @@
 
 ### Requirement: Apply review commits address one finding
 
-Every commit made during apply review SHALL address at most one finding: it carries that finding's fix, or the rework a later review demands, with the regression test when behaviour changes, and no other finding's changes. A finding MAY take more than one commit. A finding that changes no committed file SHALL leave no commit. The findings of a round SHALL be committed before the next round opens.
+Every commit made during apply review SHALL address at most one finding: it carries that finding's fix, or the rework a later review demands, with the regression test when behavior changes, and no other finding's changes. A finding MAY take more than one commit. A finding that changes no committed file SHALL leave no commit. The findings of a round SHALL be committed before the next round opens.
 
 #### Scenario: A round reports several findings
 
