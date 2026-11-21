@@ -25,6 +25,7 @@ test('the landed push document names the command, checks and recovery', () => {
     '--land',
     '--merge',
     'fast-forward',
+    'legacy-merge',
     'npm run hooks:install',
     'Exit codes',
     'dry run',

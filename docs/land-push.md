@@ -44,7 +44,7 @@ The script reads only the landed manifest and git. It does not read apply state 
 
 A dry run prints the selected manifest and the `origin/main..HEAD` range. The range can include earlier unpushed land commits; inspect it before `--push`.
 
-New manifests use `landCommit` and `landMode: "fast-forward"`. Manifests written before fast-forward land carry `mergeCommit`; the script resolves the commit from `landCommit`, falling back to `mergeCommit`, and reports it as `land`.
+New manifests use `landCommit` and `landMode` (`fast-forward`, or `legacy-merge` when a retry completes a pre-existing merge). Manifests written before fast-forward land carry `mergeCommit`; the script resolves the commit from `landCommit`, falling back to `mergeCommit`, and reports it as `land`.
 
 ## Remote states
 
