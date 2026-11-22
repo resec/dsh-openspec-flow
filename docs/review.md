@@ -150,7 +150,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 - 评审汇报：`self-report`（自评审，changer 会话）与 reviewer `submit`（reviewer 会话）各写一张；独立评审的 changer `wait` 与 `report` 不写评审卡，`report` 仍返回完整报告。
 - 处理汇报：`resume` 新开一轮且关闭轮已有报告与处置时；或处置后已就绪、下一步为 apply/archive 时最后一次 `dispose`/`waive`。
-- 同一会话、同一轮、同一 phase 只写一次，由 review 记录的 `cards` 标记去重。
+- 同一会话、同一种类、同一轮、同一 phase 只写一次，由 review 记录的 `cards` 标记去重。
 
 卡片形态：
 
