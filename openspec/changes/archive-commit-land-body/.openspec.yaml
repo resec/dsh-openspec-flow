@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-22
+goal: Land writes a clean archive commit subject and records the land commit in
+  the body, with the spec and regression test updated.
