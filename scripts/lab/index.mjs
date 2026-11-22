@@ -27,6 +27,7 @@ import {
   waitForShell,
 } from './drivers/web.mjs'
 import { findSessionLog, readSessionEvents } from './inspect/sessions.mjs'
+import { redactState, redactText } from './core/redact.mjs'
 
 /** Arguments that make the isolated Web profile bind an OS-assigned port. */
 export const WEB_START_ARGS = ['--profile', 'verify-web', '--port', '0', '--no-open']
@@ -139,14 +140,15 @@ export async function createLab({
       ok: false,
       model,
       version,
-      error: String(error?.stack ?? error),
+      error: redactText(String(error?.stack ?? error)),
       runDir: run.dir,
       artifacts: run.artifacts,
-      checks: [{ name: 'provisioning', status: 'fail', detail: String(error?.message ?? error) }],
+      checks: [{ name: 'provisioning', status: 'fail', detail: redactText(String(error?.message ?? error)) }],
     })
     throw error
   }
   const labEnv = labEnvironmentForRun({ root, run, env })
+  let webRuntime
   const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false }
   const output = { run, dsh, mock, env: labEnv, version, plugin: pluginTarball, results: [] }
   writeJson(join(run.artifacts, 'manifest.json'), {
@@ -189,7 +191,7 @@ export async function createLab({
   }
 
   async function ensureWeb() {
-    if (state.web !== undefined) return state.web
+    if (webRuntime !== undefined) return webRuntime
     await ensureProfile('web')
     const logPath = join(run.artifacts, 'web.log')
     let processHandle
@@ -233,7 +235,8 @@ export async function createLab({
         await processHandle.stop().catch(() => {})
       },
     }
-    state.web = web
+    webRuntime = web
+    state.web = redactState({ web }).web
     state.checks.push({ name: 'web', status: 'ok', evidence: logPath })
     return web
   }
@@ -347,7 +350,7 @@ export async function createLab({
     async close({ passed = true, error } = {}) {
       if (state.closed) return { runDir: run.dir, kept: true }
       state.closed = true
-      if (state.web !== undefined) await state.web.close().catch(() => {})
+      if (webRuntime !== undefined) await webRuntime.close().catch(() => {})
       if (mock !== undefined) await mock.close().catch(() => {})
       let verdict = passed
       let failure = error
@@ -372,7 +375,7 @@ export async function createLab({
           dirty: pluginTarball.dirty,
           head: pluginTarball.head,
         },
-        error: failure === undefined ? undefined : String(failure?.stack ?? failure),
+        error: failure === undefined ? undefined : redactText(String(failure?.stack ?? failure)),
         packageStore: state.store,
         checks: [
           ...state.checks,
