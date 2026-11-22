@@ -147,11 +147,34 @@ test('globs, placeholders, absolute paths and dot segments are skipped', () => {
     '- [ ] 1.8 Verify `test/<name>.test.mjs` passes.',
     '- [ ] 1.9 Verify `/tmp/absolute.test.mjs` passes.',
     '- [ ] 1.10 Verify `test/../escape.test.mjs` passes.',
-    '- [ ] 1.11 Verify `lib/review/preflight.js` exists.',
+    '- [ ] 1.11 Verify `test/back\\slash.test.mjs` passes.',
+    '- [ ] 1.12 Verify `lib/review/preflight.js` exists.',
   )
   const report = classifyExecutionPreflight({ tasksText: text, pathExists: () => false })
   assert.equal(report.blocking, false)
   assert.deepEqual(report.issues, [])
+})
+
+test('a path:line span is checked without the line suffix', () => {
+  const report = classifyExecutionPreflight({
+    tasksText: tasks('- [ ] 1.13 Verify `test/missing.test.mjs:12` passes.'),
+    pathExists: () => false,
+  })
+  assert.equal(report.blocking, true)
+  assert.equal(report.issues[0].path, 'test/missing.test.mjs')
+  assert.equal(report.issues[0].task, '1.13')
+})
+
+test('a test or script outside the former extension list is checked', () => {
+  const report = classifyExecutionPreflight({
+    tasksText: tasks(
+      '- [ ] 1.14 Verify `test/missing.test.ts` passes.',
+      '- [ ] 1.15 Verify `scripts/check.py` passes.',
+    ),
+    pathExists: () => false,
+  })
+  assert.equal(report.blocking, true)
+  assert.deepEqual(report.issues.map((issue) => issue.path), ['test/missing.test.ts', 'scripts/check.py'])
 })
 
 test('an ASCII period splits clauses so a creation verb does not leak', () => {
@@ -168,14 +191,20 @@ test('verbs match on word boundaries', () => {
   assert.equal(report.issues[0].path, 'test/missing.test.mjs')
 })
 
-test('a path declared on another line is allowed', () => {
+test('a declaration in another task does not cover a verification line', () => {
   const text = tasks(
-    '- [ ] 1.14 Add `test/new.test.mjs`.',
-    '- [ ] 1.15 Verify `test/new.test.mjs` passes.',
+    '- [ ] 1.16 Add `test/new.test.mjs`.',
+    '- [ ] 1.17 Verify `test/new.test.mjs` passes.',
   )
   const report = classifyExecutionPreflight({ tasksText: text, pathExists: () => false })
-  assert.equal(report.blocking, false)
-  assert.deepEqual(report.issues, [])
+  assert.equal(report.blocking, true)
+  assert.deepEqual(report.issues, [{
+    kind: 'path',
+    reason: 'missing-path',
+    path: 'test/new.test.mjs',
+    line: 2,
+    task: '1.17',
+  }])
 })
 
 test('the brief section is empty without issues and names both routes with issues', () => {
