@@ -281,7 +281,7 @@ The repository SHALL document one procedure for moving `engines.dsh` to a new ex
 
 ### Requirement: Repository changes pass the review gates
 
-The repository SHALL run draft review before implementation for maintainer-authored changes, and before merge for an external contribution whose change artifacts and implementation arrive in one pull request. It SHALL run apply review after implementation is committed and before archive, and SHALL not archive a change whose apply review is not ready.
+The repository SHALL run draft review before implementation for maintainer-authored changes, and before merge for an external contribution whose change artifacts and implementation arrive in one pull request. It SHALL run apply review after implementation is committed and before archive, and SHALL not archive a change whose final apply review is not ready. For an external contribution under the PR review watch, it SHALL also run an apply review on the PR head before merge.
 
 #### Scenario: A change starts implementation
 
@@ -302,7 +302,14 @@ The repository SHALL run draft review before implementation for maintainer-autho
 
 - **WHEN** a pull request carries an active change and its implementation together
 - **THEN** the maintainer runs the draft review before merge
+- **AND** runs the apply review on the pull request head before merge when the PR review watch is enabled
 - **AND** runs the apply review before archive
+
+#### Scenario: The merged tree differs
+
+- **WHEN** the merged tree differs from the reviewed pull request head
+- **THEN** the PR checkout and its apply state are removed first
+- **AND** the maintainer runs another apply review on the merged tree before archive
 
 ### Requirement: Plain test runs reuse a Node compile cache
 
