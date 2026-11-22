@@ -296,8 +296,8 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
     if (status === undefined || status !== '') throw new Error(`the PR worktree ${worktree} is not clean`)
     git(worktree, ['checkout', '--detach', head])
   } else {
-    const added = capture('git', ['-C', root, 'worktree', 'add', '--detach', worktree, head], { allowFailure: true })
-    if (added.status !== 0) throw new Error(`cannot create ${worktree}: ${String(added.stderr).trim()}`)
+    const added = git(root, ['worktree', 'add', '--detach', worktree, head], true)
+    if (added === undefined) throw new Error(`cannot create ${worktree}`)
   }
 
   const top = git(worktree, ['rev-parse', '--show-toplevel'])

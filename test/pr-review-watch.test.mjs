@@ -136,8 +136,14 @@ test('prepare creates a detached worktree, reports the merge base and is idempot
     git(remote, ['update-ref', 'refs/pull/12/head', head])
     git(root, ['checkout', '-q', 'main'])
     const { gh } = fakeGh(() => prJson({ headRefOid: head }))
-    const facts = preparePullRequest({ root, number: 12, gh })
+    const gitCalls = []
+    const wrappedGit = (cwd, args, allowFailure) => {
+      gitCalls.push(args)
+      return git(cwd, args, allowFailure)
+    }
+    const facts = preparePullRequest({ root, number: 12, gh, git: wrappedGit })
     assert.equal(facts.head, head)
+    assert.equal(gitCalls.some((args) => args[0] === 'worktree' && args[1] === 'add'), true)
     assert.equal(facts.change, 'widget')
     assert.equal(facts.base, git(root, ['rev-parse', 'main']))
     assert.equal(existsSync(join(facts.worktree, 'openspec', 'changes', 'widget', 'design.md')), true)
