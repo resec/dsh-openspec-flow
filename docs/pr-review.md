@@ -60,6 +60,7 @@ The scheduled session processes candidates one at a time:
    - An existing policy must report `available: true`, `enabled: true` and independent reviewer mode; otherwise publish nothing.
 5. First round: `openspec_review action=start review=apply` with the change, the PR worktree, `baseline: "none"`, and `base` set to the prepared merge base.
 6. Later round: the author pushed a new head. Dispose every open finding from the previous round as `fixed` with a note that the new head awaits verification, then `openspec_review action=resume review=apply` with the same worktree and base. Do not waive a finding.
+6a. Re-emitted unchanged head: a candidate with `resume: true` and the same head is a retry, not a new round. Read apply status and report. If a report already exists for the current round, skip start/resume, write that report to the handoff file and publish it. If no report exists, record the failure with `state --fail <n> --error <text>` and stop. Do not dispose findings or resume an unchanged head.
 7. Read `openspec_review action=report` and write the report object to:
 
    ```text

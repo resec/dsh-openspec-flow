@@ -44,6 +44,7 @@ function makeRepository() {
   mkdirSync(change, { recursive: true })
   writeFileSync(join(change, '.openspec.yaml'), 'schema: spec-driven\n')
   writeFileSync(join(change, 'proposal.md'), '# Widget\n')
+  writeFileSync(join(directory, '.gitignore'), '.cache/\n')
   git(directory, ['add', '.'])
   git(directory, ['commit', '-qm', 'initial'])
   return directory
@@ -145,6 +146,7 @@ test('prepare creates a detached worktree, reports the merge base and is idempot
     assert.equal(again.worktree, facts.worktree)
     const status = spawnSync('git', ['-C', facts.worktree, 'status', '--porcelain'], { encoding: 'utf8' })
     assert.equal(status.stdout.trim(), '')
+    assert.equal(git(root, ['status', '--porcelain']), '')
   } finally {
     cleanup(root, remote)
   }
@@ -492,6 +494,45 @@ test('a failed review is recorded and re-emitted by the poll', () => {
     assert.equal(parseArgs(['state', '--fail', '12', '--error', 'x']).fail, '12')
   } finally {
     cleanup(root)
+  }
+})
+
+test('prepare refuses a PR head without the change and a checkout outside the worktree', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['rm', '-rq', 'openspec/changes/widget'])
+    git(root, ['commit', '-qm', 'drop the change'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /does not contain the change/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('prepare refuses a worktree whose top level is not the expected checkout', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    const fakeGit = (cwd, args) => {
+      if (args[0] === 'rev-parse' && args[1] === '--show-toplevel' && String(cwd).includes('pr-12')) return '/tmp/not-the-pr-worktree'
+      return git(cwd, args)
+    }
+    assert.throws(() => preparePullRequest({ root, number: 12, gh, git: fakeGit }), /does not resolve to itself/)
+  } finally {
+    cleanup(root, remote)
   }
 })
 

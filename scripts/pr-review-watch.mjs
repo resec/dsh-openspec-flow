@@ -209,7 +209,7 @@ export function filterCandidates(prs, state) {
     if (head === '') continue
     const recorded = state?.prs?.[String(number)]
     if (recorded !== undefined && recorded.head === head) {
-      if (recorded.status === 'commented' || recorded.status === 'reviewing') continue
+      if (recorded.status === 'commented') continue
       candidates.push({
         number,
         head,
@@ -262,7 +262,7 @@ function ghJson(gh, args) {
  * @param options - root, PR number, gh runner and git runner.
  * @returns prepared facts.
  */
-export function preparePullRequest({ root = process.cwd(), number, gh = ghText } = {}) {
+export function preparePullRequest({ root = process.cwd(), number, gh = ghText, git = gitText } = {}) {
   if (!Number.isInteger(Number(number)) || Number(number) < 1) throw new UsageError('prepare needs a positive PR number')
   const n = Number(number)
   const pr = ghJson(gh, [
@@ -281,27 +281,27 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText }
 
   const paths = resolvePaths(root)
   if (paths.commonDir === undefined) throw new Error(`${root} is not a git repository`)
-  gitText(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
-  gitText(root, ['fetch', 'origin', `+refs/heads/${baseRefName}:refs/pr-review/base-${n}`])
-  const fetchedHead = gitText(root, ['rev-parse', `refs/pr-review/pr-${n}`])
-  const baseTip = gitText(root, ['rev-parse', `refs/pr-review/base-${n}`])
-  const mergeBase = gitText(root, ['merge-base', baseTip, fetchedHead])
+  git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
+  git(root, ['fetch', 'origin', `+refs/heads/${baseRefName}:refs/pr-review/base-${n}`])
+  const fetchedHead = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
+  const baseTip = git(root, ['rev-parse', `refs/pr-review/base-${n}`])
+  const mergeBase = git(root, ['merge-base', baseTip, fetchedHead])
   if (fetchedHead !== head) throw new Error(`PR #${n} moved from ${head} to ${fetchedHead}; retry on the next poll`)
   if (mergeBase === undefined) throw new Error(`PR #${n} has no merge base`)
 
   const worktree = join(paths.worktrees, `pr-${n}`)
   mkdirSync(paths.worktrees, { recursive: true })
   if (existsSync(worktree)) {
-    const status = gitText(worktree, ['status', '--porcelain'])
+    const status = git(worktree, ['status', '--porcelain'])
     if (status === undefined || status !== '') throw new Error(`the PR worktree ${worktree} is not clean`)
-    gitText(worktree, ['checkout', '--detach', head])
+    git(worktree, ['checkout', '--detach', head])
   } else {
     const added = capture('git', ['-C', root, 'worktree', 'add', '--detach', worktree, head], { allowFailure: true })
     if (added.status !== 0) throw new Error(`cannot create ${worktree}: ${String(added.stderr).trim()}`)
   }
 
-  const top = gitText(worktree, ['rev-parse', '--show-toplevel'])
-  const common = gitText(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  const top = git(worktree, ['rev-parse', '--show-toplevel'])
+  const common = git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
   if (top === undefined || resolve(top) !== resolve(worktree)) throw new Error(`the PR worktree ${worktree} does not resolve to itself`)
   if (common === undefined || resolve(common) !== resolve(paths.commonDir)) {
     throw new Error(`the PR worktree ${worktree} does not share the repository git directory`)
@@ -687,7 +687,9 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
         return 0
       }
       if (options.command === 'comment') {
-        write(`published PR #${options.number}\n`)
+        write(result.already
+          ? `PR #${options.number} already has a comment for this head\n`
+          : `published PR #${options.number}\n`)
         return 0
       }
     }
