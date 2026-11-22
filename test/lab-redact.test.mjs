@@ -14,6 +14,26 @@ test('redactText keeps the location and replaces the credential', () => {
   assert.equal(redactText(undefined), undefined)
 })
 
+test('redactText reads the serialized and header forms of a credential', () => {
+  assert.equal(redactText('{"cookie":"session=abc","other":1}'), `{"cookie":"${REDACTED}","other":1}`)
+  assert.equal(redactText('{"api_key":"sk-live-123"}'), `{"api_key":"${REDACTED}"}`)
+  assert.equal(redactText('{"access_token": "t0k"}'), `{"access_token": "${REDACTED}"}`)
+  assert.equal(redactText("{'cookie': 'session=abc'}"), `{'cookie': '${REDACTED}'}`)
+  assert.equal(redactText('Authorization: Bearer abc.def'), `Authorization: Bearer ${REDACTED}`)
+  assert.equal(redactText('authorization=plain'), `authorization=${REDACTED}`)
+  assert.equal(redactText('{"authorization":"Bearer abc"}'), `{"authorization":"${REDACTED}"}`)
+  assert.equal(redactText('refresh_token=xyz'), `refresh_token=${REDACTED}`)
+  assert.equal(redactText('client_secret: s3cr3t'), `client_secret: ${REDACTED}`)
+  assert.equal(redactText('http://h/?code=abc&key=k1'), `http://h/?code=${REDACTED}&key=${REDACTED}`)
+})
+
+test('redactText leaves a redacted value and an unrelated key alone', () => {
+  assert.equal(redactText(`token=${REDACTED}`), `token=${REDACTED}`)
+  assert.equal(redactText(`Authorization: Bearer ${REDACTED}`), `Authorization: Bearer ${REDACTED}`)
+  assert.equal(redactText('LAB_MOCK_KEY=lab-mock-key'), 'LAB_MOCK_KEY=lab-mock-key')
+  assert.equal(redactText('exit code: 1'), 'exit code: 1')
+})
+
 test('redactState drops the credential fields and keeps the diagnosis', () => {
   const state = redactState({
     runDir: '/runs/1',
