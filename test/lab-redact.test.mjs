@@ -37,3 +37,36 @@ test('redactState leaves a state without a web entry alone', () => {
   const state = redactState({ runDir: '/runs/2', checks: [] })
   assert.deepEqual(state, { runDir: '/runs/2', checks: [] })
 })
+
+test('redactState terminates on the cyclic handles of a live web session', () => {
+  class Page {}
+  const context = { pages: [] }
+  const page = new Page()
+  page.context = context
+  context.pages.push(page)
+  const state = redactState({
+    checks: [{ name: 'web', status: 'ok', detail: 'listening' }],
+    web: {
+      page,
+      context,
+      browser: { contexts: () => [context] },
+      url: 'http://127.0.0.1:3210/?token=abc',
+      base: 'http://127.0.0.1:3210',
+      cookie: 'session=abc',
+      logPath: '/runs/1/web.log',
+      process: { pid: 42, stop() {} },
+    },
+  })
+  assert.deepEqual(Object.keys(state.web).sort(), ['base', 'logPath'])
+  assert.equal(state.web.base, 'http://127.0.0.1:3210')
+  assert.equal(state.web.logPath, '/runs/1/web.log')
+  assert.equal(JSON.stringify(state).includes('session=abc'), false)
+})
+
+test('redactState stays finite on a self-referencing record', () => {
+  const record = { name: 'loop' }
+  record.self = record
+  const state = redactState({ checks: [record] })
+  assert.equal(state.checks[0].name, 'loop')
+  assert.equal(state.checks[0].self, REDACTED)
+})
