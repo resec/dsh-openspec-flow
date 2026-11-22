@@ -113,6 +113,8 @@ test('the propose skill runs the draft review before presenting', () => {
   assert.match(propose, /self-report/)
   assert.match(propose, /reviewers: 0/)
   assert.match(propose, /requirement-length gate/)
+  assert.match(propose, /execution preflight/)
+  assert.match(propose, /another unarchived change/)
   assert.match(propose, /do not call `dispose`/)
   assert.match(propose, /Do not present the proposal while a blocker is open/)
 })

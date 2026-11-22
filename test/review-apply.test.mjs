@@ -248,6 +248,69 @@ test('apply review accepts a plan change and records the drift', async () => {
   assert.equal(record.draftDrift.files[0].status, 'modified')
 })
 
+test('apply review refuses a missing requirement anchor after the main spec changes', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  const mainSpec = join(root, 'openspec', 'specs', 'theme', 'spec.md')
+  mkdirSync(join(root, 'openspec', 'specs', 'theme'), { recursive: true })
+  writeFileSync(mainSpec, `# Theme Specification
+
+## Purpose
+
+Lets users choose a visual theme and keeps that choice across sessions.
+
+## Requirements
+
+### Requirement: Theme selection
+
+The app SHALL let users switch between light and dark themes, defaulting to the system preference.
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme', 'spec.md'), `## MODIFIED Requirements
+
+### Requirement: Theme selection
+
+The app SHALL let users switch between light and dark themes, defaulting to the system preference and keeping the choice.
+
+#### Scenario: User toggles dark mode
+
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+`)
+  run(['add', 'openspec/specs/theme/spec.md'])
+  run(['commit', '-m', 'add the theme baseline'])
+  await passDraft(fake, root, run)
+
+  writeFileSync(mainSpec, `# Theme Specification
+
+## Purpose
+
+Lets users choose a visual theme and keeps that choice across sessions.
+
+## Requirements
+
+### Requirement: Other theme note
+
+A different requirement.
+
+#### Scenario: The other note is read
+
+- **WHEN** the theme note is read
+- **THEN** it is accepted
+`)
+  run(['add', 'openspec/specs/theme/spec.md'])
+  run(['commit', '-m', 'remove the theme baseline'])
+
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /apply review refuses change 'add-dark-mode' because the draft execution preflight failed:.*specs\/theme\/spec\.md.*openspec_review action=start review=apply/s,
+  )
+})
+
 test('archive proceeds in a no-git project with a legacy enabled apply policy', async () => {
   const root = fixture()
   const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })

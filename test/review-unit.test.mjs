@@ -394,6 +394,73 @@ test('the draft brief renders the requirement length section', () => {
   assert.match(brief, /Do not compress/)
 })
 
+test('a blocking execution result gates readiness and names resume', () => {
+  const execution = {
+    blocking: true,
+    issues: [{
+      kind: 'path',
+      reason: 'missing-path',
+      path: 'test/missing.test.mjs',
+      line: 3,
+      task: '1.3',
+    }],
+  }
+  const reported = {
+    review: 'draft',
+    state: 'in-review',
+    objectHash: 'hash',
+    mode: 'reviewer',
+    rounds: [{ round: 1, verdict: 'pass', report: { path: 'report.json' } }],
+    findings: [],
+    execution,
+  }
+  const blocked = draftReadiness(reported, 'hash', 'draft')
+  assert.equal(blocked.ready, false)
+  assert.match(blocked.reasons.join(' '), /draft execution preflight/)
+  assert.equal(blocked.nextAction, 'openspec_review action=resume review=draft')
+
+  const unreported = draftReadiness({ ...reported, rounds: [] }, 'hash', 'draft')
+  assert.equal(unreported.nextAction, 'openspec_review action=wait')
+  const self = draftReadiness({ ...reported, rounds: [], mode: 'self' }, 'hash', 'draft')
+  assert.equal(self.nextAction, 'openspec_review action=self-report')
+
+  const open = draftReadiness({
+    ...reported,
+    findings: [finding({ status: 'open' })],
+  }, 'hash', 'draft')
+  assert.equal(open.nextAction, 'openspec_review action=dispose review=draft')
+
+  const started = draftReadiness(reported, 'hash', 'draft', { applyStarted: true })
+  assert.equal(started.ready, true)
+  assert.doesNotMatch(started.reasons.join(' '), /draft execution preflight/)
+})
+
+test('the draft brief renders the execution preflight section', () => {
+  const { root, changeRoot } = changeFixture()
+  const object = draftObject(changeRoot, 'goal')
+  const brief = buildDraftBrief({
+    change: 'demo',
+    objectHash: object.objectHash,
+    intentHash: object.intentHash,
+    files: object.files,
+    projectRoot: root,
+    round: 1,
+    execution: {
+      blocking: true,
+      issues: [{
+        kind: 'path',
+        reason: 'missing-path',
+        path: 'test/missing.test.mjs',
+        line: 3,
+        task: '1.3',
+      }],
+    },
+  })
+  assert.match(brief, /## Execution preflight/)
+  assert.match(brief, /test\/missing\.test\.mjs/)
+  assert.match(brief, /openspec_review action=resume review=draft/)
+})
+
 test('finding summaries count statuses and blockers', () => {
   const summary = summarizeFindings([
     finding({ status: 'open' }),

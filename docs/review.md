@@ -130,6 +130,12 @@ draft review 还会检查 requirement description（`### Requirement:` 到第一
 - MODIFIED 增长时，保留原 requirement 的行为，把新增行为作为独立的 ADDED requirement。确实要拆分既有长 requirement 时，只在用户明确要求的专门 change 中做：保留 header 和全部 scenario，把 description 收敛到一个行为且不改变含义，再把移除的行为分别作为 ADDED requirement 补回。
 - 历史既有的超长 requirement 不在本次普通 change 中处理，另开专门 change 拆分。
 
+## 执行性预检
+
+draft review 还会执行一次执行性预检，检查计划中的执行引用能否落到当前仓库。requirement 锚点检查每个 MODIFIED、REMOVED 需求名与每个 RENAMED 的 FROM 是否在当前主规格中解析；同一 change 内的 RENAMED 链会被跟随，主规格文件缺失也会阻塞。任务路径检查 `tasks.md` 中反引号包裹的 `test/` 或 `scripts/` 相对路径是否存在；不存在时，只有同一任务分句声明创建、删除、重命名或移动才放行。glob、占位符、绝对路径与含 `..` 的路径跳过。
+
+预检结果记录在 draft 记录的 `execution` 字段，并写入 draft brief 的 `## Execution preflight` 段。阻塞时有报告、没有 open finding 的下一步是 `openspec_review action=resume review=draft`，不是 `dispose`；首次 `openspec_apply_next` 与 apply review 的 `start`/`resume` 会重查并拒绝。若缺失的 requirement 锚点由另一个尚未归档的 change 提供，等那个 change 归档后再 resume；否则修正工件后 resume。apply 启动后 draft 不再用该结果拦截，由 apply review 重查。apply review 被禁用或不可用时，没有 apply 启动后的执行性复查。
+
 ## 轮次汇报与信息卡
 
 每轮结束由插件写一张信息卡文件，模型不再复述报告。额外轮次卡片的文件元数据 `round` 使用该轮的 `seq`，payload 携带 `roundToken`；客户端摘要与展开信息显示 token（`E1`）而不是序号。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。

@@ -173,6 +173,52 @@ The app SHALL keep a long theme note.${' detail'.repeat(100)}
   )
 })
 
+test('an execution preflight path block is recorded, shown and cleared', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const tasksPath = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  const original = readFileSync(tasksPath, 'utf8')
+  writeFileSync(tasksPath, `${original}\n## 9. Preflight\n\n- [ ] 9.1 Verify \`test/missing-preflight.test.mjs\` passes.\n`)
+  const started = await call(fake, 'openspec_review', {
+    action: 'start',
+    change: CHANGE,
+    intent: 'Add a theme selector and persist it.',
+  })
+  assert.match(started.brief, /## Execution preflight/)
+  assert.match(started.brief, /test\/missing-preflight\.test\.mjs/)
+  assert.match(started.brief, /If another unarchived change supplies a missing requirement/)
+
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.execution.blocking, true)
+  assert.equal(record.execution.issues[0].kind, 'path')
+  assert.equal(record.execution.issues[0].task, '9.1')
+
+  const submitted = await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    report: report(),
+  })
+  assert.equal(submitted.ready, false)
+  assert.match(submitted.reasons.join(' '), /execution preflight/)
+  assert.equal(submitted.nextAction, 'openspec_review action=resume review=draft')
+
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /draft execution preflight failed.*openspec_review action=resume review=draft/s,
+  )
+
+  writeFileSync(tasksPath, `${original}\n## 9. Preflight\n\n- [ ] 9.1 Add \`test/missing-preflight.test.mjs\` and verify it passes.\n`)
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const cleared = await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    report: report(),
+  })
+  assert.equal(cleared.ready, true)
+  const clearedRecord = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(clearedRecord.execution.blocking, false)
+})
+
 test('a changed main-spec baseline is rechecked at the first apply entry', async () => {
   const { root } = gitFixture()
   const fake = setup(root)

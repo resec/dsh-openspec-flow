@@ -232,6 +232,28 @@ test('the review document and README state the requirement length gate', () => {
   }
 })
 
+test('the review document and README state the execution preflight', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    '执行性预检',
+    'requirement 锚点',
+    'tasks.md',
+    '`test/`',
+    '`scripts/`',
+    '`execution`',
+    'openspec_review action=resume review=draft',
+    '另一个尚未归档的 change',
+    'openspec_apply_next',
+    'apply review',
+  ]) {
+    assert.ok(text.includes(phrase), `the document names ${phrase}`)
+  }
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  for (const phrase of ['执行性预检', 'requirement 锚点', 'tasks.md', '`test/`', '`scripts/`', 'draft `resume`', 'docs/review.md']) {
+    assert.ok(readme.includes(phrase), `the README names ${phrase}`)
+  }
+})
+
 test('the README carries no round-cap policy wording', () => {
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
   assert.doesNotMatch(readme, /与轮次、等待上限|轮次上限.*策略|maxRounds/)
