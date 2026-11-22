@@ -536,6 +536,27 @@ test('prepare refuses a worktree whose top level is not the expected checkout', 
   }
 })
 
+test('prepare refuses a worktree with a foreign git common directory', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    const fakeGit = (cwd, args) => {
+      if (args[0] === 'rev-parse' && args[1] === '--path-format=absolute' && args[2] === '--git-common-dir' && String(cwd).includes('pr-12')) return '/tmp/foreign-git'
+      return git(cwd, args)
+    }
+    assert.throws(() => preparePullRequest({ root, number: 12, gh, git: fakeGit }), /does not share/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
 test('the CLI help and usage errors use the documented exit codes', () => {
   let output = ''
   assert.equal(main(['--help'], (text) => { output += text }), 0)
