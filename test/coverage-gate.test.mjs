@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -523,7 +523,24 @@ test('report mode does not pass without a usable baseline', async () => {
       node: { version: 'v26.0.0', range: '>=24.9.0' },
       scopes: {},
     })
-    await assert.rejects(runGate({ root, mode: 'report', base: 'main' }), /baseline/u, 'an unusable baseline fails the report mode')
+    await assert.rejects(
+      runGate({ root, mode: 'report', base: 'main' }),
+      /does not match primary major 24/u,
+      'an unusable baseline fails the report mode',
+    )
+
+    // Updating the baseline is the one path that tolerates both failures.
+    rmSync(join(root, 'coverage.baseline.json'))
+    assert.equal(await runGate({ root, mode: 'report', base: 'main', updateBaseline: true }), 0)
+    assert.equal(existsSync(join(root, 'coverage.baseline.json')), true, 'the missing baseline is regenerated')
+    writeJson(join(root, 'coverage.baseline.json'), {
+      version: 1,
+      node: { version: 'v26.0.0', range: '>=24.9.0' },
+      scopes: {},
+    })
+    assert.equal(await runGate({ root, mode: 'report', base: 'main', updateBaseline: true }), 0)
+    const rewritten = JSON.parse(readFileSync(join(root, 'coverage.baseline.json'), 'utf8'))
+    assert.equal(rewritten.node.version, process.version, 'the unusable baseline is rewritten')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
