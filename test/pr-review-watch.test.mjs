@@ -14,6 +14,7 @@ import {
   hasTrustedMarker,
   loadState,
   main,
+  markFailed,
   parseArgs,
   pollPullRequests,
   preparePullRequest,
@@ -94,11 +95,12 @@ test('active change extraction and CI filtering are strict', () => {
   )
   assert.equal(checksGreen([{ conclusion: 'SUCCESS' }, { state: 'SUCCESS' }]), true)
   assert.equal(checksGreen([{ conclusion: 'SUCCESS' }, { conclusion: null }]), false)
+  assert.equal(checksGreen([{ conclusion: 'FAILURE' }]), false)
   assert.equal(checksGreen([]), false)
 })
 
 test('filterCandidates keeps only eligible PRs and skips processed heads', () => {
-  const state = { schemaVersion: 1, prs: { 13: { head: HEAD } } }
+  const state = { schemaVersion: 1, prs: { 13: { head: HEAD, status: 'commented' } } }
   const candidates = filterCandidates([
     { number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
     { number: 13, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
@@ -112,7 +114,7 @@ test('filterCandidates keeps only eligible PRs and skips processed heads', () =>
 
 test('parseArgs validates commands and the comment report flag', () => {
   assert.equal(parseArgs(['--help']).command, 'help')
-  assert.deepEqual(parseArgs(['poll', '--json']), { command: 'poll', json: true, apply: false, cleanup: false, report: undefined, change: undefined, number: undefined })
+  assert.deepEqual(parseArgs(['poll', '--json']), { command: 'poll', json: true, apply: false, cleanup: false, report: undefined, change: undefined, fail: undefined, error: undefined, number: undefined })
   assert.equal(parseArgs(['prepare', '12']).number, 12)
   assert.equal(parseArgs(['comment', '12', '--report', 'r.json', '--apply']).apply, true)
   assert.throws(() => parseArgs(['nope']), /unknown command/)
@@ -350,6 +352,146 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
     assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 2)
   } finally {
     cleanup(root, remote)
+  }
+})
+
+test('prepared and failed heads are re-emitted while commented heads are skipped', () => {
+  const state = {
+    schemaVersion: 1,
+    prs: {
+      12: { head: HEAD, status: 'prepared', change: 'widget', base: BASE, worktree: '/tmp/widget' },
+      13: { head: HEAD, status: 'commented', change: 'widget' },
+      14: { head: HEAD, status: 'failed', change: 'widget', base: BASE, worktree: '/tmp/widget-14' },
+    },
+  }
+  const candidates = filterCandidates([
+    { number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
+    { number: 13, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
+    { number: 14, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
+  ], state)
+  assert.deepEqual(candidates.map((candidate) => candidate.number), [12, 14])
+  assert.equal(candidates[0].resume, true)
+  assert.equal(candidates[0].worktree, '/tmp/widget')
+})
+
+test('state loading, missing reports and empty polls fail or return explicitly', () => {
+  const root = makeRepository()
+  try {
+    const stateFile = join(root, '.cache', 'pr-review', 'state.json')
+    mkdirSync(dirname(stateFile), { recursive: true })
+    writeFileSync(stateFile, '{not json')
+    assert.throws(() => loadState(root), /not JSON|corrupt/)
+    rmSync(stateFile)
+    const { gh } = fakeGh(() => '[]')
+    assert.deepEqual(pollPullRequests({ root, gh }), [])
+    assert.throws(() => readReport(join(root, 'missing.json'), 12, HEAD), /does not exist/)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('prepare refuses a dirty worktree and a head that moved before the fetch', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+    let head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    const facts = preparePullRequest({ root, number: 12, gh })
+    writeFileSync(join(facts.worktree, 'dirty.txt'), 'dirty')
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /not clean/)
+    rmSync(join(facts.worktree, 'dirty.txt'))
+    git(root, ['checkout', '-q', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'moved'])
+    const moved = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', moved])
+    git(root, ['checkout', '-q', 'main'])
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /moved/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('prepare uses the fork point after the base branch advances', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const fork = git(root, ['rev-parse', 'main'])
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    git(root, ['commit', '--allow-empty', '-qm', 'base advances'])
+    const advanced = git(root, ['rev-parse', 'main'])
+    git(root, ['push', '-q', 'origin', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    const facts = preparePullRequest({ root, number: 12, gh })
+    assert.equal(facts.base, fork)
+    assert.notEqual(facts.base, advanced)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a failed publish records the failure and keeps the head eligible', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', round: 0, status: 'prepared' } } })
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [] }))
+    const { gh } = fakeGh((args) => {
+      if (args[0] === 'api') return 'maintainer'
+      if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify({ comments: [] })
+      if (args[0] === 'pr' && args[1] === 'comment') return undefined
+      return undefined
+    })
+    assert.throws(() => publishComment({ root, number: 12, reportPath: report, apply: true, gh }), /pr comment/)
+    assert.equal(loadState(root).prs['12'].status, 'failed')
+    const candidates = filterCandidates([{ number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] }], loadState(root))
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].resume, true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('forget refuses an apply state that names a different worktree', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', worktree: '/tmp/pr-12', round: 0, status: 'prepared' } } })
+    const common = git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    const applyDir = join(common, 'openspec-flow', 'apply')
+    mkdirSync(applyDir, { recursive: true })
+    const applyFile = join(applyDir, 'local#widget.json')
+    writeFileSync(applyFile, JSON.stringify({ change: 'widget', worktree: '/tmp/other' }))
+    assert.throws(() => forgetPullRequest({ root, number: 12, change: 'widget', worktree: '/tmp/pr-12' }), /names/)
+    assert.equal(existsSync(applyFile), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a failed review is recorded and re-emitted by the poll', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', worktree: '/tmp/pr-12', round: 0, status: 'prepared' } } })
+    const failed = markFailed({ root, number: 12, error: 'reviewer timed out' })
+    assert.equal(failed.status, 'failed')
+    assert.equal(failed.error, 'reviewer timed out')
+    const candidates = filterCandidates([{ number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] }], loadState(root))
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].resume, true)
+    assert.equal(parseArgs(['state', '--fail', '12', '--error', 'x']).fail, '12')
+  } finally {
+    cleanup(root)
   }
 })
 

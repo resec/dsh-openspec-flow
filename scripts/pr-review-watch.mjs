@@ -118,7 +118,12 @@ export function writeJsonAtomic(file, value) {
  */
 export function loadState(root) {
   const paths = resolvePaths(root)
-  const value = readJson(paths.state)
+  let value
+  try {
+    value = readJson(paths.state)
+  } catch (error) {
+    throw new Error(`the PR review state at ${paths.state} is corrupt: ${error instanceof Error ? error.message : String(error)}`)
+  }
   if (value === undefined) return { schemaVersion: 1, prs: {} }
   if (value === null || typeof value !== 'object' || Array.isArray(value)
     || value.schemaVersion !== 1 || value.prs === null || typeof value.prs !== 'object' || Array.isArray(value.prs)) {
@@ -203,13 +208,29 @@ export function filterCandidates(prs, state) {
     const head = String(pr.headRefOid ?? '')
     if (head === '') continue
     const recorded = state?.prs?.[String(number)]
-    if (recorded !== undefined && recorded.head === head) continue
+    if (recorded !== undefined && recorded.head === head) {
+      if (recorded.status === 'commented' || recorded.status === 'reviewing') continue
+      candidates.push({
+        number,
+        head,
+        baseRefOid: String(pr.baseRefOid ?? ''),
+        baseRefName: String(pr.baseRefName ?? ''),
+        change: recorded.change ?? changes[0],
+        worktree: recorded.worktree ?? null,
+        status: recorded.status,
+        resume: true,
+      })
+      continue
+    }
     candidates.push({
       number,
       head,
-      base: String(pr.baseRefOid ?? ''),
+      baseRefOid: String(pr.baseRefOid ?? ''),
       baseRefName: String(pr.baseRefName ?? ''),
       change: changes[0],
+      worktree: null,
+      status: 'new',
+      resume: false,
     })
   }
   return candidates
@@ -300,6 +321,7 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText }
     worktree,
     round: previous.round ?? 0,
     status: 'prepared',
+    error: null,
     commentId: previous.commentId ?? null,
     updatedAt: new Date().toISOString(),
   }
@@ -418,29 +440,61 @@ export function publishComment({ root = process.cwd(), number, reportPath, apply
   const state = loadState(root)
   const entry = state.prs[String(number)]
   if (entry === undefined) throw new Error(`PR #${number} has no watch state; run prepare first`)
-  if (entry.status === 'reviewing') throw new Error(`PR #${number} is still reviewing`)
   const report = readReport(reportPath, Number(number), entry.head)
   const round = Number.isInteger(report.round) ? report.round : Number(entry.round ?? 0) + 1
   const text = renderReport(report, { number: Number(number), head: entry.head, round })
   if (!apply) return { published: false, marker: marker(Number(number), entry.head, round), dryRun: true, text }
 
-  const login = gh(['api', 'user', '--jq', '.login'])
-  if (login === undefined || login === '') throw new Error('gh is not authenticated; cannot verify comment authors')
-  const comments = ghJson(gh, ['pr', 'view', String(number), '--json', 'comments']).comments
-  if (hasTrustedMarker(comments, login, Number(number), entry.head)) {
-    return { published: false, marker: marker(Number(number), entry.head, round), dryRun: false, already: true }
-  }
-  const temp = join(resolvePaths(root).cache, `.comment-${number}-${process.pid}.md`)
-  writeFileSync(temp, text)
   try {
-    const result = gh(['pr', 'comment', String(number), '--body-file', temp])
-    if (result === undefined) throw new Error(`gh pr comment on #${number} failed`)
-    state.prs[String(number)] = { ...entry, round, status: 'commented', commentId: result, updatedAt: new Date().toISOString() }
+    const login = gh(['api', 'user', '--jq', '.login'])
+    if (login === undefined || login === '') throw new Error('gh is not authenticated; cannot verify comment authors')
+    const comments = ghJson(gh, ['pr', 'view', String(number), '--json', 'comments']).comments
+    if (hasTrustedMarker(comments, login, Number(number), entry.head)) {
+      state.prs[String(number)] = { ...entry, round, status: 'commented', error: null, updatedAt: new Date().toISOString() }
+      saveState(root, state)
+      return { published: false, marker: marker(Number(number), entry.head, round), dryRun: false, already: true }
+    }
+    const temp = join(resolvePaths(root).cache, `.comment-${number}-${process.pid}.md`)
+    writeFileSync(temp, text)
+    try {
+      const result = gh(['pr', 'comment', String(number), '--body-file', temp])
+      if (result === undefined) throw new Error(`gh pr comment on #${number} failed`)
+      state.prs[String(number)] = { ...entry, round, status: 'commented', error: null, commentId: result, updatedAt: new Date().toISOString() }
+      saveState(root, state)
+      return { published: true, marker: marker(Number(number), entry.head, round), dryRun: false, comment: result }
+    } finally {
+      rmSync(temp, { force: true })
+    }
+  } catch (error) {
+    state.prs[String(number)] = {
+      ...entry,
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      updatedAt: new Date().toISOString(),
+    }
     saveState(root, state)
-    return { published: true, marker: marker(Number(number), entry.head, round), dryRun: false, comment: result }
-  } finally {
-    rmSync(temp, { force: true })
+    throw error
   }
+}
+
+/**
+ * Record a failed review attempt without marking the head as published.
+ * @param options - root, PR number and error text.
+ * @returns the updated state entry.
+ */
+export function markFailed({ root = process.cwd(), number, error }) {
+  const state = loadState(root)
+  const key = String(number)
+  const entry = state.prs[key]
+  if (entry === undefined) throw new Error(`PR #${number} has no watch state; run prepare first`)
+  state.prs[key] = {
+    ...entry,
+    status: 'failed',
+    error: typeof error === 'string' && error !== '' ? error : 'the review step failed',
+    updatedAt: new Date().toISOString(),
+  }
+  saveState(root, state)
+  return state.prs[key]
 }
 
 /** Remove one apply state entry that names a worktree. */
@@ -538,7 +592,7 @@ export function usage() {
     '  poll [--json]                       list review candidates',
     '  prepare <n> [--json]                prepare a PR worktree',
     '  comment <n> --report <path> [--apply]  render or publish a report',
-    '  state [--json] [--cleanup] [--forget <change>]  inspect or clean state',
+    '  state [--json] [--cleanup] [--forget <change>] [--fail <n> --error <text>]',
     '',
     'The default comment command is a dry run; --apply publishes to GitHub.',
   ].join('\n')
@@ -550,18 +604,20 @@ export function parseArgs(argv) {
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
   if (!['poll', 'prepare', 'comment', 'state'].includes(command)) throw new UsageError(`unknown command '${command}'`)
-  const options = { command, json: false, apply: false, cleanup: false, report: undefined, change: undefined }
+  const options = { command, json: false, apply: false, cleanup: false, report: undefined, change: undefined, fail: undefined, error: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]
     if (value === '--json') options.json = true
     else if (value === '--apply') options.apply = true
     else if (value === '--cleanup') options.cleanup = true
-    else if (value === '--report' || value === '--forget') {
+    else if (value === '--report' || value === '--forget' || value === '--fail' || value === '--error') {
       const next = args[index + 1]
       if (next === undefined || next === '' || next.startsWith('--')) throw new UsageError(`${value} needs a value`)
       if (value === '--report') options.report = next
-      else options.change = next
+      else if (value === '--forget') options.change = next
+      else if (value === '--fail') options.fail = next
+      else options.error = next
       index += 1
     } else if (value.startsWith('--')) throw new UsageError(`unknown argument '${value}'`)
     else positional.push(value)
@@ -587,10 +643,17 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
     }
     const root = mainWorktree()
     if (options.command === 'state') {
-      if (options.cleanup || options.change !== undefined) {
-        const result = withRunLock(root, () => (options.cleanup
-          ? cleanupClosedPullRequests({ root })
-          : stateCommand({ root, change: options.change, forget: true })))
+      if (options.cleanup || options.change !== undefined || options.fail !== undefined) {
+        const result = withRunLock(root, () => {
+          if (options.fail !== undefined) {
+            const number = Number(options.fail)
+            if (!Number.isInteger(number) || number < 1) throw new UsageError('--fail needs a positive PR number')
+            return markFailed({ root, number, error: options.error })
+          }
+          return options.cleanup
+            ? cleanupClosedPullRequests({ root })
+            : stateCommand({ root, change: options.change, forget: true })
+        })
         write(`${JSON.stringify(result, null, 2)}\n`)
         return 0
       }
@@ -611,7 +674,24 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       write(result.text)
       return 0
     }
-    write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${JSON.stringify(result, null, 2)}\n`)
+    if (!options.json) {
+      if (options.command === 'poll') {
+        const candidates = result.candidates
+        write(candidates.length === 0
+          ? 'no review candidates\n'
+          : `${candidates.map((candidate) => `PR #${candidate.number} ${candidate.head.slice(0, 12)} ${candidate.change}${candidate.resume ? ' (resume)' : ''}`).join('\n')}\n`)
+        return 0
+      }
+      if (options.command === 'prepare') {
+        write(`prepared PR #${result.number} at ${result.worktree}\n`)
+        return 0
+      }
+      if (options.command === 'comment') {
+        write(`published PR #${options.number}\n`)
+        return 0
+      }
+    }
+    write(`${JSON.stringify(result, null, 2)}\n`)
     return 0
   } catch (error) {
     write(`${error instanceof Error ? error.message : String(error)}\n`)

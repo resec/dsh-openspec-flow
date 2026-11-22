@@ -41,6 +41,9 @@ node scripts/pr-review-watch.mjs state --json
 # Remove a merged or closed PR's checkout/state, or forget one change when the schedule is stopped.
 node scripts/pr-review-watch.mjs state --cleanup
 node scripts/pr-review-watch.mjs state --forget add-pr-review-watch
+
+# Record a failed review attempt so the next poll retries the head.
+node scripts/pr-review-watch.mjs state --fail 12 --error "the reviewer did not finish"
 ```
 
 `npm run pr-review:poll -- --json` is the same as the `poll` command. The watch defaults to dry-run; only `comment --apply` writes to GitHub.
@@ -64,7 +67,7 @@ The scheduled session processes candidates one at a time:
    ```
 
    The file name must match the prepared PR and head; the report may carry its own `head` and `round` fields.
-8. Publish with `comment <n> --report <path> --apply`. The comment carries a hidden marker for the PR, head and round; a trusted marker from the authenticated `gh` login suppresses a duplicate. A failed publish leaves the head retryable and does not reopen the review.
+8. Publish with `comment <n> --report <path> --apply`. The comment carries a hidden marker for the PR, head and round; a trusted marker from the authenticated `gh` login suppresses a duplicate. A failed publish records `status: failed` and the error, and the next poll re-emits the prepared head. A failed `openspec_review` call is recorded the same way with `state --fail <n> --error <text>`. Only `status: commented` stops a head from being re-emitted; a prepared or failed head stays retryable.
 
 Candidates must be non-draft, have at least one CI check with every rollup entry successful, and change exactly one active change. Pending or absent checks are not candidates.
 
