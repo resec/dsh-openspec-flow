@@ -311,6 +311,37 @@ A different requirement.
   )
 })
 
+test('apply review resume refuses and then clears an execution preflight block', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.round, 1)
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+
+  const tasksPath = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'The user approved the task list change.', files: ['tasks.md'],
+  })
+  writeFileSync(tasksPath, '\n## 9. Missing\n\n- [ ] 9.1 Verify `test/missing-resume.test.mjs` passes.\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'name a missing test'])
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    /apply review refuses change 'add-dark-mode' because the draft execution preflight failed:.*test\/missing-resume\.test\.mjs.*openspec_review action=resume review=apply/s,
+  )
+
+  writeFileSync(tasksPath, '\n## 9. Missing\n\n- [ ] 9.1 Add `test/missing-resume.test.mjs` and verify it passes.\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'declare the new test'])
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(resumed.round, 2)
+  assert.equal(resumed.state, 'in-review')
+})
+
 test('archive proceeds in a no-git project with a legacy enabled apply policy', async () => {
   const root = fixture()
   const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
