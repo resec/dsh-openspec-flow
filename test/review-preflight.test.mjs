@@ -177,6 +177,19 @@ test('a test or script outside the former extension list is checked', () => {
   assert.deepEqual(report.issues.map((issue) => issue.path), ['test/missing.test.ts', 'scripts/check.py'])
 })
 
+test('a span with arguments or a line anchor uses the leading path', () => {
+  const report = classifyExecutionPreflight({
+    tasksText: tasks(
+      '- [ ] 1.18 Run `scripts/check.sh --strict`.',
+      '- [ ] 1.19 Fix `test/x.test.mjs (line 12)`.',
+      '- [ ] 1.20 Verify `test/missing.test.mjs#L12` passes.',
+    ),
+    pathExists: exists('scripts/check.sh', 'test/x.test.mjs'),
+  })
+  assert.equal(report.blocking, true)
+  assert.deepEqual(report.issues.map((issue) => issue.path), ['test/missing.test.mjs'])
+})
+
 test('an ASCII period splits clauses so a creation verb does not leak', () => {
   const text = tasks('- [ ] 1.12 Add `test/new.test.mjs`. Verify `test/missing.test.mjs` passes.')
   const report = classifyExecutionPreflight({ tasksText: text, pathExists: () => false })
