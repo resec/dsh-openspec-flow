@@ -87,3 +87,17 @@ test('the review action description names every accepted action', () => {
     'the action description names every value and nothing the parameter does not accept',
   )
 })
+
+test('no tool description names an OpenSpec command', () => {
+  const fake = createFakeContext({ cwd: process.cwd() })
+  apply(fake.ctx, { timeoutMs: 30_000 })
+
+  for (const [name, tool] of fake.tools) {
+    const entries = [{ path: name, text: tool.description }]
+    entries.push(...collect(tool.parameters, `${name}.parameters`))
+    entries.push(...collect(tool.output, `${name}.output`))
+    for (const entry of entries) {
+      assert.doesNotMatch(entry.text, /\bopenspec (?:validate|list|show|new|archive|init|update|diff|view|status|schemas|store)\b/u, `${entry.path} must not name an OpenSpec command`)
+    }
+  }
+})
