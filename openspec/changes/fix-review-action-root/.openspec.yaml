@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-22
+skip_specs: true
+goal: Resolve the review record from the change root in retry, replace and
+  waive-reviewer so a subdirectory session hits the same record.

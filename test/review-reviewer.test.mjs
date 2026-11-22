@@ -1349,3 +1349,34 @@ test('apply retry and replace name the apply wait next action', async () => {
   })
   assert.equal(replaced.nextAction, 'openspec_review action=wait review=apply')
 })
+
+test('retry, replace and waive-reviewer read the record from the change root', async () => {
+  const root = fixture()
+  const { fake, activations, messages } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const nested = join(root, 'packages', 'demo')
+  mkdirSync(nested, { recursive: true })
+  await fake.ctx.workingDirectory.set({ id: 'review-test' }, nested)
+
+  await call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' })
+  assert.equal(messages.length, 1)
+  await call(fake, 'openspec_review', {
+    action: 'replace', change: CHANGE, review: 'draft', reason: 'stuck',
+  })
+  assert.equal(activations.length, 2)
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive-reviewer',
+    change: CHANGE,
+    review: 'draft',
+    waiver: 'accepted by the user',
+    approvedBy: 'user',
+  })
+  assert.equal(waived.coverageGap, true)
+
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.reviewers.slots[0].retries, 1)
+  assert.equal(record.reviewers.slots[0].replacements.length, 1)
+  assert.equal(record.reviewerWaived.waiver, 'accepted by the user')
+})
