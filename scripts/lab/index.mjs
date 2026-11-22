@@ -27,7 +27,7 @@ import {
   waitForShell,
 } from './drivers/web.mjs'
 import { findSessionLog, readSessionEvents } from './inspect/sessions.mjs'
-import { redactState, redactText } from './core/redact.mjs'
+import { redactText } from './core/redact.mjs'
 
 /** Arguments that make the isolated Web profile bind an OS-assigned port. */
 export const WEB_START_ARGS = ['--profile', 'verify-web', '--port', '0', '--no-open']
@@ -236,7 +236,9 @@ export async function createLab({
       },
     }
     webRuntime = web
-    state.web = redactState({ web }).web
+    // The state keeps a printable view only: the page, the browser and the
+    // child handle must not travel with it.
+    state.web = { base, logPath }
     state.checks.push({ name: 'web', status: 'ok', evidence: logPath })
     return web
   }
