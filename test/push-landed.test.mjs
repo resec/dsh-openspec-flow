@@ -34,6 +34,10 @@ function makeRepository() {
   const initial = git(root, ['rev-parse', 'HEAD'])
   const origin = join(root, '..', `${root.split('/').pop()}-origin.git`)
   git(root, ['init', '--bare', '-q', origin])
+  // A bare repository inherits `init.defaultBranch` for HEAD, so deleting `main`
+  // would be refused on a host that defaults to it. Point HEAD at a branch that
+  // is never pushed so the missing-main scenario does not depend on host config.
+  git(origin, ['symbolic-ref', 'HEAD', 'refs/heads/trunk'])
   git(root, ['remote', 'add', 'origin', origin])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return { root, origin, initial }
