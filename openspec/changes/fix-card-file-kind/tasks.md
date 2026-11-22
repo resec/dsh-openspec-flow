@@ -18,7 +18,7 @@
 
 - [x] 4.1 State the new layout and the readable earlier name in `docs/review.md`.
 - [x] 4.2 Run `openspec validate fix-card-file-kind --strict`, `npm test`, `npm run openspec:check` and `npm run layout:check`.
-- [x] 4.3 Run `npm run verify` on Node 24: suite 1205/1206 with the one pre-existing `push-landed` fixture failure (git 2.50 refuses to delete the current branch of the bare fixture; fixed by a separate change), coverage 98.59% lines / 93.61% branches / 99.19% functions, and the `verify` check on the branch is green in CI.
+- [x] 4.3 Run `npm run verify` on Node 24.22.2: the `verify` job on `dad5853` passed with suite 1207/1207 and coverage 98.59% lines / 93.59% branches / 99.19% functions, so the gate reported no violation. A local run of the same command on the same commit stops at the one pre-existing `push-landed` fixture failure (git 2.50 refuses to delete the current branch of the bare fixture; fixed by a separate change) and never reaches the gate, so it carries no coverage verdict.
 
 ## 5. Apply review follow-up
 
