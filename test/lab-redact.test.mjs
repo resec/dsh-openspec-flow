@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { REDACTED, redactState, redactText } from '../scripts/lab/core/redact.mjs'
+import { REDACTED, redactMessage, redactState, redactText } from '../scripts/lab/core/redact.mjs'
 
 test('redactText keeps the location and replaces the credential', () => {
   assert.equal(
@@ -36,6 +36,13 @@ test('redactState drops the credential fields and keeps the diagnosis', () => {
 test('redactState leaves a state without a web entry alone', () => {
   const state = redactState({ runDir: '/runs/2', checks: [] })
   assert.deepEqual(state, { runDir: '/runs/2', checks: [] })
+})
+
+test('redactMessage cleans the text a report field carries', () => {
+  assert.equal(redactMessage(new Error('dsh web: http://h/?token=abc timed out')), `dsh web: http://h/?token=${REDACTED} timed out`)
+  assert.equal(redactMessage('GET /?token=abc'), `GET /?token=${REDACTED}`)
+  assert.equal(redactMessage(undefined), undefined)
+  assert.equal(redactMessage(null), undefined)
 })
 
 test('redactState terminates on the cyclic handles of a live web session', () => {
