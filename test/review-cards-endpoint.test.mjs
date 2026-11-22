@@ -38,13 +38,18 @@ function cardFile(directory, options = {}) {
   const {
     sessionId = 'changer',
     review = 'draft',
+    kind = review,
+    legacyName = false,
     phase = 'review',
     round = 1,
     turn = null,
     writtenAt = '2026-01-01T00:01:00.000Z',
     payload,
   } = options
-  const name = `${sessionKeyOf(sessionId)}-${phase}-${String(round)}.json`
+  const base = legacyName
+    ? `${sessionKeyOf(sessionId)}-${phase}-${String(round)}`
+    : `${sessionKeyOf(sessionId)}-${kind}-${phase}-${String(round)}`
+  const name = `${base}.json`
   const file = {
     schemaVersion: 1,
     sessionId,
@@ -996,4 +1001,33 @@ test('an extra round card keeps the sequence ordering', () => {
   }
   assert.ok(compareCards(first, extra) < 0)
   assert.ok(compareCards(extra, first) > 0)
+})
+
+test('draft and apply cards coexist for one session and round', async () => {
+  const { directory, channel } = fixture()
+  try {
+    cardFile(directory, { kind: 'draft', writtenAt: '2026-01-01T00:01:00.000Z' })
+    cardFile(directory, { kind: 'apply', review: 'apply', writtenAt: '2026-01-01T00:02:00.000Z' })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 2)
+    assert.deepEqual(result.value.cards.map((card) => card.review), ['draft', 'apply'])
+    assert.deepEqual(readdirSync(join(directory, 'cards')).sort(), [
+      `${sessionKeyOf('changer')}-apply-review-1.json`,
+      `${sessionKeyOf('changer')}-draft-review-1.json`,
+    ])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a legacy card name without a kind is still delivered', async () => {
+  const { directory, channel } = fixture()
+  try {
+    cardFile(directory, { legacyName: true })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(result.value.cards[0].phase, 'review')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

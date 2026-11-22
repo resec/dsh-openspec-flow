@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-22
+goal: Name card files with their review kind so draft and apply cards for one
+  session and round do not overwrite each other, keeping the old name readable.
