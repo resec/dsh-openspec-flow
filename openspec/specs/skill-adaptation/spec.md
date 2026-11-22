@@ -274,7 +274,7 @@ The propose and apply skills SHALL tell the agent to pass every remaining findin
 
 ### Requirement: Review skills dispose before resuming
 
-The shipped propose and apply skills SHALL tell the agent to fix findings and dispose every finding that needs a disposition in one `openspec_review` call with `action: "dispose"` or a finding `action: "waive"` (a `dispositions` batch or a single `id`), and only then call `action: "resume"`. They SHALL state that `start` and `resume` reject `dispositions`. When no finding needs a disposition, they SHALL NOT require a dispose call.
+The shipped propose and apply skills SHALL tell the agent to fix findings and dispose every finding that needs a disposition in one `openspec_review` call with `action: "dispose"` or a finding `action: "waive"` (a `dispositions` batch or a single `id`), and only then call `action: "resume"`. They SHALL state that `start` and `resume` reject `dispositions`. When no finding needs a disposition, they SHALL NOT require a dispose call; a preflight block with no finding is cleared by `resume` alone.
 
 #### Scenario: Propose skill orders the calls
 
@@ -300,6 +300,12 @@ The shipped propose and apply skills SHALL tell the agent to fix findings and di
 #### Scenario: A length-only block resumes without a disposition
 
 - **WHEN** the propose skill reaches a draft round whose only outstanding reason is a blocking requirement-length result and no finding needs a disposition
+- **THEN** it edits the artifacts and calls `action: "resume"` with `review: "draft"`
+- **AND** it does not call `dispose`
+
+#### Scenario: A preflight-only block resumes without a disposition
+
+- **WHEN** the propose skill reaches a draft round whose only outstanding reason is a blocking execution-preflight result and no finding needs a disposition
 - **THEN** it edits the artifacts and calls `action: "resume"` with `review: "draft"`
 - **AND** it does not call `dispose`
 
