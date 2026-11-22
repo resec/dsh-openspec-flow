@@ -24,4 +24,5 @@ None.
 
 - `openspec/specs/tool-surface/spec.md`: through the delta.
 - `test/admin.test.mjs`: one test.
+- `test/review-draft.test.mjs`: the absence test, narrowed to the both-disabled case.
 - No code change: `index.js:34` already registers the tool for either review; no dependency, workflow, hook, coverage-baseline or `dist/` change.
