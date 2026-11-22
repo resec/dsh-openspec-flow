@@ -722,6 +722,7 @@ window.__ModuleLoader__.load({
       return [
         ['问题', finding.problem],
         ['证据', finding.evidence],
+        recordedRow('类别', finding.axis),
         ['影响', finding.impact],
         recordedRow('规则', finding.rule),
         recordedRow('失败路径', finding.failure),

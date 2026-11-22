@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-22
+skip_specs: true
+goal: Show a finding axis in the expanded review card, as the card spec
+  requires every recorded finding field.
