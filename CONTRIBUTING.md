@@ -205,8 +205,10 @@ CI green is necessary but not sufficient. The maintainer also reviews the change
 
 - The maintainer reviews every external pull request.
 - The draft review runs before merge. Because the change and its implementation arrive together, the draft review reviews the committed change artifacts and the pull request intent; it is not a pre-implementation gate for an external contributor.
+- When the PR review watch is enabled, the maintainer runs an apply review on the pull request head before merge and posts its result as a pull request comment. The watch and its recovery steps are documented in [docs/pr-review.md](docs/pr-review.md); a contributor does not need the plugin to respond to a review.
+- After merge, the change is archived only after an apply review of the merged tree is ready. The PR review is reused when its reviewed tree equals the merged tree; otherwise the maintainer runs another apply review on the merged tree. The archive commit follows.
 - If you have the plugin, you may run a draft review locally and paste its report into the pull request. The review record stays outside the worktree in a git project (under the git common directory) or under `openspec/.review/` without git, and is not committed. It is optional; the maintainer still records the review.
-- The merge commit may carry the active change. After merge, the maintainer runs the apply review and archives the change. Do not archive it in the pull request.
+- The merge commit may carry the active change. Do not archive it in the pull request.
 - Local review records, profile state and plugin installation are never required in the pull request.
 
 ## Security

@@ -56,7 +56,8 @@
     "bundle:pack": "node scripts/bundle-pack.mjs",
     "layout:check": "node scripts/check-generated-skills.mjs --workspace",
     "check:pr": "node scripts/check-pr-change.mjs",
-    "push:landed": "node scripts/push-landed.mjs"
+    "push:landed": "node scripts/push-landed.mjs",
+    "pr-review:poll": "node scripts/pr-review-watch.mjs poll"
   },
   "dependencies": {
     "@fission-ai/openspec": "2.0.0"
