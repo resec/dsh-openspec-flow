@@ -12,37 +12,74 @@
 /** The replacement written over a credential value. */
 export const REDACTED = '<redacted>'
 
+/** Whole field names that hold a credential without a marked segment. */
+const CREDENTIAL_WHOLE = /^(?:cookie|set_cookie|apikey|api_key)$/u
+
+/** A trailing name segment that marks a credential. */
+const CREDENTIAL_SEGMENT = /(?:^|_)(?:token|secret|authorization|password|passwd)$/u
+
+/** A `*_key` name; a bare `key` does not count, so a plain dict key stays readable. */
+const KEY_SEGMENT = /[a-z0-9]_key$/u
+
 /**
- * Whole field names that hold a credential.
+ * The name whose value is a fixture the lab itself needs.
  *
- * Any `*_token` and `*_secret` name counts, as do the header and key spellings
- * below. A bare `*_key` suffix does not: the persisted instance environment
- * carries the mock fixture key `LAB_MOCK_KEY`, whose value `lab exec` still
- * needs, and a suffix rule cannot tell that constant from a signing key.
+ * `lab exec` reads `LAB_MOCK_KEY` from the persisted instance environment, so
+ * that value must survive the walk. A `*_key` rule cannot tell the fixture
+ * constant from a signing key, so the exception is spelled out.
  */
-const SECRET_NAME = /^(?:authorization|(?:[A-Za-z][A-Za-z0-9]*_)*(?:token|secret)|password|cookie|api[_-]?key|apikey|(?:access|private|secret|signing)_key)$/iu
+const FIXTURE_NAME = 'lab_mock_key'
 
 /** Query parameters that carry a one-time credential under a plain name. */
 const QUERY_NAME = /^(?:code|key)$/iu
 
-/** A scheme word that introduces a credential rather than being one. */
-const SCHEME = /^(?:bearer|basic)$/iu
+/**
+ * A scheme word that introduces a credential rather than being one.
+ *
+ * The list mirrors the schemes `SECRET_AUTH` accepts; a name/value pair whose
+ * value is one of them keeps the word, because the following field walk would
+ * otherwise replace the scheme and leave the credential beside it.
+ */
+const SCHEME = /^(?:bearer|basic|token|digest|negotiate)$/iu
 
 /** A `?name=value` pair in a URL. */
 const QUERY_PAIR = /([?&])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s"'`]+)/gu
 
-/** A `Bearer`/`Basic` credential, with or without its `Authorization` header. */
-const SECRET_AUTH = /\b((?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+|[A-Za-z-]*authorization\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
+/** A credential after a scheme word, with or without its `Authorization` header. */
+const SECRET_AUTH = /\b((?:(?:[A-Za-z-]*authorization)\s*[:=]\s*)?(?:bearer|basic|token|digest|negotiate)\s+|[A-Za-z-]*authorization\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
 
-/** A `Cookie`/`Set-Cookie` header, whose value runs to the end of the line. */
-const SECRET_HEADER = /((?:set-)?cookie\s*[:=]\s*)[^\n"']+/giu
+/** A `Cookie`/`Set-Cookie` header, whose value may be quoted. */
+const SECRET_HEADER = /((?:set-)?cookie\s*[:=]\s*)("[^"\n]*"|'[^'\n]*'|[^\n"']+)/giu
 
 /** A `name: value` or `name=value` field, quoted or bare. */
 const FIELD_PAIR = /(['"]?)([A-Za-z][A-Za-z0-9_-]*)(['"]?)(\s*[:=]\s*)("[^"\n]*"|'[^'\n]*'|[^\s,;&]+)/gu
 
-/** Tell a credential-bearing name apart from an ordinary one. */
-function isSecretName(name) {
-  return SECRET_NAME.test(name) || QUERY_NAME.test(name)
+/**
+ * Fold a field name to one spelling.
+ *
+ * The same credential is written `apiKey` in a settings object, `X-API-Key` in
+ * a header and `OPENAI_API_KEY` in an environment dump, so the name is compared
+ * in one spelling rather than three.
+ *
+ * @param name - the name as written.
+ * @returns the folded name.
+ */
+function normalizeName(name) {
+  return name
+    .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
+    .replace(/-/gu, '_')
+    .toLowerCase()
+}
+
+/**
+ * Tell a credential-bearing field name apart from an ordinary one.
+ * @param name - the name as written.
+ * @returns whether the field holds a credential.
+ */
+function isCredentialName(name) {
+  const folded = normalizeName(name)
+  if (folded === FIXTURE_NAME) return false
+  return CREDENTIAL_WHOLE.test(folded) || CREDENTIAL_SEGMENT.test(folded) || KEY_SEGMENT.test(folded)
 }
 
 /**
@@ -71,11 +108,13 @@ function redactFieldValue(raw) {
 export function redactText(value) {
   if (typeof value !== 'string' || value === '') return value
   return value
-    .replace(QUERY_PAIR, (match, separator, name) => (isSecretName(name) ? `${separator}${name}=${REDACTED}` : match))
+    .replace(QUERY_PAIR, (match, separator, name) => (
+      isCredentialName(name) || QUERY_NAME.test(name) ? `${separator}${name}=${REDACTED}` : match
+    ))
     .replace(SECRET_AUTH, (_match, prefix) => `${prefix}${REDACTED}`)
-    .replace(SECRET_HEADER, `$1${REDACTED}`)
+    .replace(SECRET_HEADER, (_match, prefix, raw) => `${prefix}${redactFieldValue(raw)}`)
     .replace(FIELD_PAIR, (match, leading, name, trailing, separator, raw) => (
-      SECRET_NAME.test(name)
+      isCredentialName(name)
         ? `${leading}${name}${trailing}${separator}${redactFieldValue(raw)}`
         : match
     ))

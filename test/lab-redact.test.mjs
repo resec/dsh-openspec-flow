@@ -27,6 +27,16 @@ test('redactText reads the serialized and header forms of a credential', () => {
   assert.equal(redactText('http://h/?code=abc&key=k1'), `http://h/?code=${REDACTED}&key=${REDACTED}`)
 })
 
+test('redactText covers the header and key spellings of a credential', () => {
+  assert.equal(redactText('OPENAI_API_KEY=sk-live'), `OPENAI_API_KEY=${REDACTED}`)
+  assert.equal(redactText('X-API-Key: sk-live'), `X-API-Key: ${REDACTED}`)
+  assert.equal(redactText('{"apiKey":"sk-live-123"}'), `{"apiKey":"${REDACTED}"}`)
+  assert.equal(redactText('signing_key: abc123'), `signing_key: ${REDACTED}`)
+  assert.equal(redactText('Set-Cookie: "session=abc"'), `Set-Cookie: "${REDACTED}"`)
+  assert.equal(redactText('Authorization: Token sk-live'), `Authorization: Token ${REDACTED}`)
+  assert.equal(redactText('authorization: digest abc123'), `authorization: digest ${REDACTED}`)
+})
+
 test('redactText leaves a redacted value and an unrelated key alone', () => {
   assert.equal(redactText(`token=${REDACTED}`), `token=${REDACTED}`)
   assert.equal(redactText(`Authorization: Bearer ${REDACTED}`), `Authorization: Bearer ${REDACTED}`)
