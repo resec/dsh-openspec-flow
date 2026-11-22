@@ -171,6 +171,7 @@ test('the review tool follows the enabled reviews', () => {
   resetAdminState()
   const neither = createFakeContext({ cwd: process.cwd(), commands: true })
   apply(neither.ctx, { reviews: { draft: { enabled: false }, apply: { enabled: false } } })
-  assert.equal(neither.tools.has('openspec_review'), false, 'no enabled review hides the tool')
+  const neitherAgent = neither.createAgent().agent
+  assert.equal(visibleTools(neither, neitherAgent).includes('openspec_review'), false, 'no enabled review hides the tool')
   resetAdminState()
 })
