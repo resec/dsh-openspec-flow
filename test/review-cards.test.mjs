@@ -164,7 +164,7 @@ test('a missing report leaves the recorded fields intact', () => {
       readiness: readiness(),
       currentHash: 'hash-a',
     })
-    assert.equal(card.report, null)
+    assert.equal('report' in card, false, 'a missing report leaves the body absent')
     assert.equal(card.findings.length, 1)
   } finally {
     rmSync(root, { recursive: true, force: true })
