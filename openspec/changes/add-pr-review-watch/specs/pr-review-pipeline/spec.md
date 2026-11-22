@@ -8,12 +8,12 @@ Defines the repository-side loop that polls open pull requests, prepares a local
 
 ### Requirement: Open pull-request polling
 
-`scripts/pr-review-watch.mjs poll` SHALL report a PR as a candidate only when it is not a draft, has at least one CI check with every rollup entry successful, changes exactly one active change, and its head SHA has not been processed. A PR with pending checks or no checks SHALL NOT be a candidate.
+`scripts/pr-review-watch.mjs poll` SHALL report a PR as a candidate only when it is not a draft, has at least one CI check with every rollup entry successful, changes exactly one active change, and its head SHA has no published review. A prepared or failed head SHALL be re-emitted for retry. A PR with pending checks or no checks SHALL NOT be a candidate.
 
 #### Scenario: Mixed pull-request list
 
-- **WHEN** the open list contains a draft PR, a PR with a failed check, a PR with pending checks, a PR with no checks, a PR with two active changes, an already-processed head and one eligible PR
-- **THEN** only the eligible PR is reported as a candidate, with its number, head, base and change
+- **WHEN** the open list contains a draft PR, a PR with a failed check, a PR with pending checks, a PR with no checks, a PR with two active changes, an already-commented head and one eligible PR
+- **THEN** only the eligible PR is reported as a candidate, with its number, head, baseRefOid, baseRefName, change, worktree, status and resume
 
 #### Scenario: No eligible pull request
 
@@ -121,16 +121,21 @@ The session SHALL write the report returned by `openspec_review action=report` t
 
 ### Requirement: Same-head idempotency and new-head rounds
 
-The watch SHALL record each processed head and SHALL NOT start another review for an unchanged head. A changed head SHALL start a new round after the previous findings are disposed. A passed review SHALL start no further round until the head changes.
+The watch SHALL NOT start another review for a head whose report is published. A prepared or failed head SHALL be re-emitted for retry without opening a new round. A changed head SHALL start a new round after the previous findings are disposed, and a passed review SHALL start no further round until the head changes.
 
-#### Scenario: Unchanged head
+#### Scenario: Commented head
 
-- **WHEN** the poll sees a PR whose head equals the last processed head
+- **WHEN** the poll sees a PR whose head equals the last processed head and its status is `commented`
 - **THEN** it skips the PR and starts no reviewer
+
+#### Scenario: Unpublished head
+
+- **WHEN** the poll sees a recorded head whose status is `prepared` or `failed`
+- **THEN** it re-emits the candidate with `resume: true` and its worktree, without starting a new round
 
 #### Scenario: Passed review
 
-- **WHEN** the latest report is `pass`
+- **WHEN** the latest report is `pass` and its publish succeeded
 - **THEN** the watch stops reviewing that head and waits for a new head or the PR to close
 
 ### Requirement: State, lock and failure recovery
