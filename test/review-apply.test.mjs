@@ -2049,7 +2049,6 @@ test('a branch that does not point at the seal is refused on re-apply', async ()
   )
 })
 
-
 test('the apply preparation runs the worktree bootstrap and fails when it cannot', () => {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-prepare-'))
   try {
@@ -2064,4 +2063,32 @@ test('the apply preparation runs the worktree bootstrap and fails when it cannot
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('an apply resume reports the base source it actually used', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const seal = run(['rev-parse', 'HEAD'])
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', base: seal,
+  })
+  assert.match(started.brief, /The base is the explicit base passed to this review\./)
+  await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    review: 'apply',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply', id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  const resumed = await call(fake, 'openspec_review', {
+    action: 'resume', change: CHANGE, review: 'apply',
+  })
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseCommit, seal)
+  assert.equal(record.baseSource, 'seal', JSON.stringify({ baseline: record.baseline, base: record.baseCommit, seal }))
+  assert.match(resumed.brief, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
+  assert.doesNotMatch(resumed.brief, /The base is the explicit base passed to this review\./)
 })
