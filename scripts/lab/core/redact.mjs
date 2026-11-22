@@ -31,6 +31,20 @@ export function redactText(value) {
 }
 
 /**
+ * Redact one optional message field.
+ *
+ * Reports carry the same text from errors and from thrown values, so every
+ * field goes through here rather than through a bare `String`.
+ *
+ * @param value - message, error or undefined.
+ * @returns the cleaned message, or undefined when there is none.
+ */
+export function redactMessage(value) {
+  if (value === undefined || value === null) return undefined
+  return redactText(value instanceof Error ? value.message : String(value))
+}
+
+/**
  * Tell a data record apart from a live handle.
  *
  * Only plain objects and null-prototype records carry printable state; anything

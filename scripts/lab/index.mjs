@@ -27,7 +27,7 @@ import {
   waitForShell,
 } from './drivers/web.mjs'
 import { findSessionLog, readSessionEvents } from './inspect/sessions.mjs'
-import { redactText } from './core/redact.mjs'
+import { redactMessage, redactText } from './core/redact.mjs'
 
 /** Arguments that make the isolated Web profile bind an OS-assigned port. */
 export const WEB_START_ARGS = ['--profile', 'verify-web', '--port', '0', '--no-open']
@@ -143,7 +143,7 @@ export async function createLab({
       error: redactText(String(error?.stack ?? error)),
       runDir: run.dir,
       artifacts: run.artifacts,
-      checks: [{ name: 'provisioning', status: 'fail', detail: redactText(String(error?.message ?? error)) }],
+      checks: [{ name: 'provisioning', status: 'fail', detail: redactMessage(error?.message ?? error) }],
     })
     throw error
   }
@@ -381,8 +381,8 @@ export async function createLab({
         packageStore: state.store,
         checks: [
           ...state.checks,
-          { name: 'host-guard', status: hostOk ? 'ok' : 'fail', detail: hostOk ? 'host unchanged' : String(failure?.message ?? failure) },
-          { name: 'scenario', status: verdict ? 'ok' : 'fail', detail: verdict ? 'scenario completed' : String(failure?.message ?? failure) },
+          { name: 'host-guard', status: hostOk ? 'ok' : 'fail', detail: hostOk ? 'host unchanged' : redactMessage(failure?.message ?? failure) },
+          { name: 'scenario', status: verdict ? 'ok' : 'fail', detail: verdict ? 'scenario completed' : redactMessage(failure?.message ?? failure) },
         ],
       }
       return finalizeRun(run, { passed: verdict, report, keep, cleanup })
