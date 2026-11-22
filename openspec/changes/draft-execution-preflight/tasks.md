@@ -24,7 +24,7 @@
 ## 4. Verification
 
 - [x] 4.1 Run `npm run test:affected -- lib/review/preflight.js lib/review/requirements.js lib/tools/review.js lib/review/readiness.js lib/review/brief.js` on Node 24 and verify the selected tests pass.
-- [ ] 4.2 Run `npm run verify` on Node 24, `openspec_inspect` with `action: "validate"` and `strict: true`, and verify both pass.
+- [x] 4.2 Run `npm run verify` on Node 24, `openspec_inspect` with `action: "validate"` and `strict: true`, and verify both pass.
 
 ## Workflow follow-up
 
