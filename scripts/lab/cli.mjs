@@ -135,21 +135,17 @@ function cacheCommand(positional, flags) {
   throw new Error(`unknown cache command ${sub}`)
 }
 
-async function upCommand(flags) {
-  const name = String(flags.name ?? 'default')
-  const mode = String(flags.mode ?? 'web')
-  if (!['web', 'headless'].includes(mode)) throw new Error('--mode must be web or headless')
-  const tarball = await packOrUse(flags)
-  const keep = flags.keep === true || mode === 'headless'
-  const lab = await createLab({
-    pluginTarball: tarball,
-    model: 'mock',
-    keep,
-    offline: flags.offline === true,
-    fresh: flags['fresh-dsh'] === true,
-  })
-  const directory = join(INSTANCES, name)
-  mkdirSync(directory, { recursive: true })
+/**
+ * Build the state one instance persists.
+ *
+ * The startup URL carries the one-time token, so the state keeps only the
+ * origin and the web log path that `inspect` reads. The pid stays top level
+ * because `down` signals it and it is not a credential.
+ *
+ * @param options - instance name, mode, lab context, tarball and open web.
+ * @returns the printable state.
+ */
+export function instanceState({ name, mode, lab, tarball, web }) {
   const state = {
     name,
     mode,
@@ -165,11 +161,30 @@ async function upCommand(flags) {
     },
     plugin: tarball,
   }
+  if (web === undefined) return state
+  state.pid = web.process.child.pid
+  state.web = { base: web.base, logPath: web.logPath }
+  return state
+}
+
+async function upCommand(flags) {
+  const name = String(flags.name ?? 'default')
+  const mode = String(flags.mode ?? 'web')
+  if (!['web', 'headless'].includes(mode)) throw new Error('--mode must be web or headless')
+  const tarball = await packOrUse(flags)
+  const keep = flags.keep === true || mode === 'headless'
+  const lab = await createLab({
+    pluginTarball: tarball,
+    model: 'mock',
+    keep,
+    offline: flags.offline === true,
+    fresh: flags['fresh-dsh'] === true,
+  })
+  const directory = join(INSTANCES, name)
+  mkdirSync(directory, { recursive: true })
   if (mode === 'web') {
     const web = await lab.web.open()
-    state.url = web.url
-    state.pid = web.process.child.pid
-    writeFileSync(statePath(name), `${JSON.stringify(redactState(state), null, 2)}\n`)
+    writeFileSync(statePath(name), `${JSON.stringify(redactState(instanceState({ name, mode, lab, tarball, web })), null, 2)}\n`)
     console.log(`lab ${name} web listening at ${web.url}`)
     console.log(`run directory: ${lab.run.dir}`)
     return await new Promise((resolvePromise) => {
@@ -182,7 +197,7 @@ async function upCommand(flags) {
       process.once('SIGTERM', stop)
     })
   }
-  writeFileSync(statePath(name), `${JSON.stringify(redactState(state), null, 2)}\n`)
+  writeFileSync(statePath(name), `${JSON.stringify(redactState(instanceState({ name, mode, lab, tarball })), null, 2)}\n`)
   await lab.close({ passed: true, keep: true })
   console.log(`lab ${name} headless prepared at ${lab.run.dir}`)
   return 0
