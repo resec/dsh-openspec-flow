@@ -503,6 +503,27 @@ test('a failed review is recorded and re-emitted by the poll', () => {
   }
 })
 
+test('prepare reports the git failure when worktree creation fails', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    const failingGit = (cwd, args) => {
+      if (args[0] === 'worktree' && args[1] === 'add') throw new Error('fatal: already registered')
+      return git(cwd, args)
+    }
+    assert.throws(() => preparePullRequest({ root, number: 12, gh, git: failingGit }), /cannot create.*already registered/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
 test('prepare refuses a PR head without the change and a checkout outside the worktree', () => {
   const root = makeRepository()
   const remote = makeOrigin(root)
