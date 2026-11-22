@@ -44,6 +44,14 @@ test('redactText leaves a redacted value and an unrelated key alone', () => {
   assert.equal(redactText('exit code: 1'), 'exit code: 1')
 })
 
+test('redactText leaves a bare scheme word in ordinary prose alone', () => {
+  assert.equal(redactText('basic initialization failed'), 'basic initialization failed')
+  assert.equal(redactText('basic authentication is disabled'), 'basic authentication is disabled')
+  assert.equal(redactText('the bearer token was rejected'), 'the bearer token was rejected')
+  assert.equal(redactText('Bearer abc.def'), `Bearer ${REDACTED}`)
+  assert.equal(redactText('Basic dXNlcjpwYXNz'), `Basic ${REDACTED}`)
+})
+
 test('redactState drops the credential fields and keeps the diagnosis', () => {
   const state = redactState({
     runDir: '/runs/1',

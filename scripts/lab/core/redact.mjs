@@ -36,17 +36,28 @@ const QUERY_NAME = /^(?:code|key)$/iu
 /**
  * A scheme word that introduces a credential rather than being one.
  *
- * The list mirrors the schemes `SECRET_AUTH` accepts; a name/value pair whose
- * value is one of them keeps the word, because the following field walk would
- * otherwise replace the scheme and leave the credential beside it.
+ * The list mirrors the schemes `SECRET_AUTH_HEADER` accepts; a name/value pair
+ * whose value is one of them keeps the word, because the following field walk
+ * would otherwise replace the scheme and leave the credential beside it.
  */
 const SCHEME = /^(?:bearer|basic|token|digest|negotiate)$/iu
 
 /** A `?name=value` pair in a URL. */
 const QUERY_PAIR = /([?&])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s"'`]+)/gu
 
-/** A credential after a scheme word, with or without its `Authorization` header. */
-const SECRET_AUTH = /\b((?:(?:[A-Za-z-]*authorization)\s*[:=]\s*)?(?:bearer|basic|token|digest|negotiate)\s+|[A-Za-z-]*authorization\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
+/**
+ * An `Authorization` header, whose value is a credential whatever its shape.
+ *
+ * The header names the value, so anything after it is replaced; the scheme word
+ * stays because it carries no secret and reads better in a report.
+ */
+const SECRET_AUTH_HEADER = /\b((?:[A-Za-z-]*authorization)\s*[:=]\s*)((?:(?:bearer|basic|token|digest|negotiate)\s+)?)("[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
+
+/**
+ * A scheme word with no header, which only counts with a credential-shaped
+ * value: `basic initialization failed` is prose, not a header.
+ */
+const SECRET_AUTH_SCHEME = /\b((?:bearer|basic)\s+)("[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
 
 /** A `Cookie`/`Set-Cookie` header, whose value may be quoted. */
 const SECRET_HEADER = /((?:set-)?cookie\s*[:=]\s*)("[^"\n]*"|'[^'\n]*'|[^\n"']+)/giu
@@ -82,6 +93,12 @@ function isCredentialName(name) {
   return CREDENTIAL_WHOLE.test(folded) || CREDENTIAL_SEGMENT.test(folded) || KEY_SEGMENT.test(folded)
 }
 
+/** Split a quoted value into its quote and its body. */
+function splitQuoted(raw) {
+  const quote = raw[0] === '"' || raw[0] === "'" ? raw[0] : ''
+  return { quote, bare: quote === '' ? raw : raw.slice(1, -1) }
+}
+
 /**
  * Replace one field value, keeping the quoting and skipping what is already
  * redacted or a scheme word.
@@ -89,10 +106,36 @@ function isCredentialName(name) {
  * @returns the replacement.
  */
 function redactFieldValue(raw) {
-  const quote = raw[0] === '"' || raw[0] === "'" ? raw[0] : ''
-  const bare = quote === '' ? raw : raw.slice(1, -1)
+  const { quote, bare } = splitQuoted(raw)
   if (bare === REDACTED || SCHEME.test(bare)) return raw
   return `${quote}${REDACTED}${quote}`
+}
+
+/**
+ * Replace one credential value, keeping the quoting.
+ * @param raw - the value as written.
+ * @returns the replacement, or the value when it is already redacted.
+ */
+function replaceCredential(raw) {
+  const { quote, bare } = splitQuoted(raw)
+  return bare === REDACTED ? raw : `${quote}${REDACTED}${quote}`
+}
+
+/**
+ * Tell a value that follows a bare scheme word apart from an ordinary word.
+ *
+ * A token carries a digit, a separator or mixed case; a sentence word such as
+ * `initialization` carries none of them, so a prose line keeps its wording.
+ *
+ * @param raw - the value as written.
+ * @returns whether the value looks like a credential.
+ */
+function looksLikeCredential(raw) {
+  const { bare } = splitQuoted(raw)
+  if (bare === '' || bare === REDACTED) return false
+  if (/[0-9._~+/=-]/u.test(bare)) return true
+  if (/[a-z]/u.test(bare) && /[A-Z]/u.test(bare)) return true
+  return bare.length >= 32
 }
 
 /**
@@ -111,7 +154,8 @@ export function redactText(value) {
     .replace(QUERY_PAIR, (match, separator, name) => (
       isCredentialName(name) || QUERY_NAME.test(name) ? `${separator}${name}=${REDACTED}` : match
     ))
-    .replace(SECRET_AUTH, (_match, prefix) => `${prefix}${REDACTED}`)
+    .replace(SECRET_AUTH_HEADER, (_match, prefix, scheme, raw) => `${prefix}${scheme}${replaceCredential(raw)}`)
+    .replace(SECRET_AUTH_SCHEME, (match, prefix, raw) => (looksLikeCredential(raw) ? `${prefix}${replaceCredential(raw)}` : match))
     .replace(SECRET_HEADER, (_match, prefix, raw) => `${prefix}${redactFieldValue(raw)}`)
     .replace(FIELD_PAIR, (match, leading, name, trailing, separator, raw) => (
       isCredentialName(name)
