@@ -405,7 +405,13 @@ export async function loadScenario(file) {
 
 /**
  * Run scenario files.
- * @param options - files, model flags, plugin, cleanup and environment.
+ *
+ * The invocation summary is a second report next to each run's
+ * `artifacts/report.json`, so both the stored and the printed failure text go
+ * through the same redaction as the run report.
+ *
+ * @param options - files, model flags, plugin, cleanup, environment and an
+ * optional sandbox factory for tests.
  * @returns `{ passed, results }`.
  */
 export async function runScenarios({
@@ -420,6 +426,7 @@ export async function runScenarios({
   root = ROOT,
   env = process.env,
   log = console,
+  createLab: createLabImpl = createLab,
 } = {}) {
   if (includeReal && (env.CI === '1' || env.GIT_PUSH === '1' || !process.stdin.isTTY)) {
     throw new Error('--include-real-model is only allowed in an interactive local run')
@@ -439,10 +446,10 @@ export async function runScenarios({
     }
     let lab
     try {
-      lab = await createLab({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
+      lab = await createLabImpl({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
     } catch (error) {
-      results.push({ name: scenario.name, file, status: 'failed', error: String(error), reason: 'provisioning failed' })
-      log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
+      results.push({ name: scenario.name, file, status: 'failed', error: redactMessage(error), reason: 'provisioning failed' })
+      log.error(`FAIL ${scenario.name}: ${redactMessage(error)}`)
       continue
     }
     try {
@@ -452,8 +459,8 @@ export async function runScenarios({
       log.log(`PASS ${scenario.name}`)
     } catch (error) {
       const closed = await lab.close({ passed: false, error })
-      results.push({ name: scenario.name, file, status: 'failed', error: String(error), runDir: closed.runDir })
-      log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
+      results.push({ name: scenario.name, file, status: 'failed', error: redactMessage(error), runDir: closed.runDir })
+      log.error(`FAIL ${scenario.name}: ${redactMessage(error)}`)
     }
   }
   const passed = results.every((result) => result.status !== 'failed')
