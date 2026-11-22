@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-11-22
+goal: Draft review blocks a plan whose MODIFIED/REMOVED/RENAMED requirement
+  anchors do not resolve in the main specs, or whose tasks.md names test/script
+  paths that neither exist nor are declared created/deleted/renamed in the same
+  task; the result is recorded, shown in the brief, gates draft readiness, and
+  is rechecked at the first apply entry and at apply review start/resume.
