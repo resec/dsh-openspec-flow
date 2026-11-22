@@ -9,7 +9,7 @@
 
 ## 2. Full gate
 
-- [ ] 2.1 Run `npm run verify` on Node 24 and verify the test summary and coverage verdict pass.
+- [x] 2.1 Run `npm run verify` on Node 24 and verify the test summary and coverage verdict pass.
 
 ## Workflow follow-up
 
