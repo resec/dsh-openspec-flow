@@ -22,6 +22,7 @@ import { formatDoctor, runDoctor } from './core/doctor.mjs'
 import { packPlugin } from './core/install.mjs'
 import { createLab, discoverScenarios, runScenarios, selectScenarioFiles } from './index.mjs'
 import { run as execute } from './core/process.mjs'
+import { redactState } from './core/redact.mjs'
 
 const COMMANDS = ['doctor', 'cache', 'up', 'run', 'exec', 'inspect', 'down', 'test']
 
@@ -168,7 +169,7 @@ async function upCommand(flags) {
     const web = await lab.web.open()
     state.url = web.url
     state.pid = web.process.child.pid
-    writeFileSync(statePath(name), `${JSON.stringify(state, null, 2)}\n`)
+    writeFileSync(statePath(name), `${JSON.stringify(redactState(state), null, 2)}\n`)
     console.log(`lab ${name} web listening at ${web.url}`)
     console.log(`run directory: ${lab.run.dir}`)
     return await new Promise((resolvePromise) => {
@@ -181,7 +182,7 @@ async function upCommand(flags) {
       process.once('SIGTERM', stop)
     })
   }
-  writeFileSync(statePath(name), `${JSON.stringify(state, null, 2)}\n`)
+  writeFileSync(statePath(name), `${JSON.stringify(redactState(state), null, 2)}\n`)
   await lab.close({ passed: true, keep: true })
   console.log(`lab ${name} headless prepared at ${lab.run.dir}`)
   return 0
@@ -226,7 +227,7 @@ function inspectCommand(flags) {
   const state = readState(String(flags.name ?? 'default'))
   const report = join(state.runDir, 'artifacts', 'report.json')
   if (existsSync(report)) console.log(readFileSync(report, 'utf8'))
-  else console.log(JSON.stringify(state, null, 2))
+  else console.log(JSON.stringify(redactState(state), null, 2))
   if (flags.all === true) {
     for (const file of filesUnder(state.runDir)) console.log(file)
   }
