@@ -4,7 +4,7 @@
 
 - [x] 1.1 Create `scripts/pr-review-watch.mjs` with `poll`, `prepare`, `comment` and `state` entrypoints (including `state --forget <change>`), `--json` output and a usage message; verify `node scripts/pr-review-watch.mjs --help` exits 0 and lists the subcommands.
 - [x] 1.2 Create `test/pr-review-watch.test.mjs` with fake `gh` and `git` runners, then implement `poll` with `gh pr list` fields for number, head, base, draft state, checks and files; filter draft PRs, pending or missing checks, failed checks, processed heads and PRs without exactly one active change; verify the eligible PR and each filter case.
-- [x] 1.3 Emit one candidate record per PR with number, head, merge-base base, change and state; verify the JSON shape and empty-list case in the test file created in 1.2.
+- [x] 1.3 Emit one candidate record per PR with number, head, baseRefOid, baseRefName, change, worktree, status and resume; the merge-base base is reported by prepare, not by poll. Verify the JSON shape and empty-list case in the test file created in 1.2.
 
 ## 2. Pull-request worktree preparation
 

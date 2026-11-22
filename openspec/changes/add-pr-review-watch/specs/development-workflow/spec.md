@@ -26,6 +26,7 @@ The repository SHALL run draft review before implementation for maintainer-autho
 - **WHEN** a pull request carries an active change and its implementation together
 - **THEN** the maintainer runs the draft review before merge
 - **AND** runs the apply review on the pull request head before merge when the PR review watch is enabled
+- **AND** runs the apply review before archive
 
 #### Scenario: The merged tree differs
 
