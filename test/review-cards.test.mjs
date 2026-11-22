@@ -447,6 +447,19 @@ test('a card without a known review kind is neither named nor written', () => {
       () => cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 }),
       /needs a kind of draft or apply/,
     )
+    const stored = record()
+    assert.equal(writeCard({
+      directory: root,
+      record: stored,
+      phase: 'review',
+      round: 1,
+      readiness: readiness(),
+      currentHash: 'hash-a',
+      session: { id: 'card-session' },
+      logger: { warn: (message) => warnings.push(message) },
+    }), false)
+    assert.match(warnings[1], /unknown kind/)
+    assert.equal(stored.cards, undefined, 'a skipped write records no marker')
     assert.equal(existsSync(join(root, CARD_DIR)), false, 'no card directory is created')
   } finally {
     rmSync(root, { recursive: true, force: true })
