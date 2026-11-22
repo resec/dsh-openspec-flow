@@ -56,7 +56,7 @@ npm run test:lab -- [scenario paths...] [--mock-only] [--include-real-model] [--
 
 ## Reusable scenarios
 
-Put reusable scenarios under `test/lab/**/*.scenario.mjs`:
+Put reusable scenarios under `test/lab/**/*.scenario.mjs`. The sample below is `test/lab/my-scenario.scenario.mjs`; a scenario in a deeper folder needs one `../` per extra level:
 
 ```js
 import { defineScenario, expectCompleted } from '../../scripts/lab/index.mjs'
