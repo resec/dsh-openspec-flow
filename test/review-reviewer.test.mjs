@@ -12,7 +12,7 @@ import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import { readApplyState } from '../lib/worktree/state.js'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -1305,4 +1305,47 @@ test('retry, replace and waive-reviewer act on the apply review record', async (
   assert.equal(record.reviewers.slots[0].retries, 1)
   assert.equal(record.reviewers.slots[0].replacements.length, 1)
   assert.equal(record.reviewers.slots[0].agentId, 'reviewer-2')
+})
+
+test('apply retry and replace name the apply wait next action', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, waitMinutes: 15 },
+    apply: {
+      enabled: true,
+      reviewers: 1,
+      waitMinutes: 15,
+      reviewerModel: {
+        source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
+      },
+    },
+  })
+  const directory = reviewDir(root)
+  writeFileSync(join(directory, 'apply-review.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    id: 'apply-1',
+    change: CHANGE,
+    review: 'apply',
+    state: 'in-review',
+    mode: 'reviewer',
+    independent: true,
+    objectHash: 'hash',
+    commitSha: 'missing',
+    rounds: [{ round: 1, objectHash: 'hash', startedAt: new Date().toISOString() }],
+    findings: [],
+    reviewers: { count: 1, slots: [{ slot: 1, agentId: 'reviewer-1' }] },
+  }, null, 2)}\n`)
+
+  const retried = await call(fake, 'openspec_review', {
+    action: 'retry', change: CHANGE, review: 'apply',
+  })
+  assert.equal(retried.nextAction, 'openspec_review action=wait review=apply')
+  const replaced = await call(fake, 'openspec_review', {
+    action: 'replace', change: CHANGE, review: 'apply', reason: 'stuck',
+  })
+  assert.equal(replaced.nextAction, 'openspec_review action=wait review=apply')
 })
