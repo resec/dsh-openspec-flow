@@ -12,22 +12,73 @@
 /** The replacement written over a credential value. */
 export const REDACTED = '<redacted>'
 
-/** Substrings that mark a value as a credential. */
-const SECRET_QUERY = /([?&](?:token|access_token|code|key|secret)=)[^&\s"'`]+/giu
+/**
+ * Whole field names that hold a credential.
+ *
+ * Any `*_token` and `*_secret` name counts, as do the header and key spellings
+ * below. A bare `*_key` suffix does not: the persisted instance environment
+ * carries the mock fixture key `LAB_MOCK_KEY`, whose value `lab exec` still
+ * needs, and a suffix rule cannot tell that constant from a signing key.
+ */
+const SECRET_NAME = /^(?:authorization|(?:[A-Za-z][A-Za-z0-9]*_)*(?:token|secret)|password|cookie|api[_-]?key|apikey|(?:access|private|secret|signing)_key)$/iu
+
+/** Query parameters that carry a one-time credential under a plain name. */
+const QUERY_NAME = /^(?:code|key)$/iu
+
+/** A scheme word that introduces a credential rather than being one. */
+const SCHEME = /^(?:bearer|basic)$/iu
+
+/** A `?name=value` pair in a URL. */
+const QUERY_PAIR = /([?&])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s"'`]+)/gu
+
+/** A `Bearer`/`Basic` credential, with or without its `Authorization` header. */
+const SECRET_AUTH = /\b((?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+|[A-Za-z-]*authorization\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
+
+/** A `Cookie`/`Set-Cookie` header, whose value runs to the end of the line. */
 const SECRET_HEADER = /((?:set-)?cookie\s*[:=]\s*)[^\n"']+/giu
-const SECRET_ASSIGN = /\b(token|access_token|cookie|api[_-]?key|secret)\b(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu
+
+/** A `name: value` or `name=value` field, quoted or bare. */
+const FIELD_PAIR = /(['"]?)([A-Za-z][A-Za-z0-9_-]*)(['"]?)(\s*[:=]\s*)("[^"\n]*"|'[^'\n]*'|[^\s,;&]+)/gu
+
+/** Tell a credential-bearing name apart from an ordinary one. */
+function isSecretName(name) {
+  return SECRET_NAME.test(name) || QUERY_NAME.test(name)
+}
+
+/**
+ * Replace one field value, keeping the quoting and skipping what is already
+ * redacted or a scheme word.
+ * @param raw - the value as written.
+ * @returns the replacement.
+ */
+function redactFieldValue(raw) {
+  const quote = raw[0] === '"' || raw[0] === "'" ? raw[0] : ''
+  const bare = quote === '' ? raw : raw.slice(1, -1)
+  if (bare === REDACTED || SCHEME.test(bare)) return raw
+  return `${quote}${REDACTED}${quote}`
+}
 
 /**
  * Replace credential values in one text.
+ *
+ * Serialized errors carry credentials in the JSON form `{"api_key":"..."}` and
+ * in header form `Authorization: Bearer ...`, so the field walk reads quoted
+ * names and values rather than only bare `name=value` tokens.
+ *
  * @param value - text to clean.
  * @returns the cleaned text.
  */
 export function redactText(value) {
   if (typeof value !== 'string' || value === '') return value
   return value
-    .replace(SECRET_QUERY, `$1${REDACTED}`)
+    .replace(QUERY_PAIR, (match, separator, name) => (isSecretName(name) ? `${separator}${name}=${REDACTED}` : match))
+    .replace(SECRET_AUTH, (_match, prefix) => `${prefix}${REDACTED}`)
     .replace(SECRET_HEADER, `$1${REDACTED}`)
-    .replace(SECRET_ASSIGN, `$1$2${REDACTED}`)
+    .replace(FIELD_PAIR, (match, leading, name, trailing, separator, raw) => (
+      SECRET_NAME.test(name)
+        ? `${leading}${name}${trailing}${separator}${redactFieldValue(raw)}`
+        : match
+    ))
 }
 
 /**
