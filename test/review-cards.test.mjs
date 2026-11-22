@@ -197,7 +197,7 @@ test('a card file is written once under a hashed session key', () => {
     }
     assert.equal(writeCard(options), true)
     assert.equal(stored.cards.length, 1)
-    const path = cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 })
+    const path = cardFilePath(root, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1 })
     const file = JSON.parse(readFileSync(path, 'utf8'))
     assert.equal(file.schemaVersion, 1)
     assert.equal(file.sessionId, 'card-session')
@@ -205,7 +205,7 @@ test('a card file is written once under a hashed session key', () => {
     assert.equal(file.turn, null)
     assert.equal(file.payload.phase, 'review')
     assert.equal(file.payload.report.summary, 'One blocker.')
-    assert.equal(hasCardMarker(stored, { sessionId: 'card-session', phase: 'review', round: 1 }), true)
+    assert.equal(hasCardMarker(stored, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1 }), true)
 
     assert.equal(writeCard(options), false, 'a second write for the same session, phase and round is skipped')
     assert.equal(stored.cards.length, 1)
