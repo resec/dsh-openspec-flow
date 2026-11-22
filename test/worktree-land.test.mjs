@@ -108,7 +108,8 @@ test('land fast-forwards, archives, writes the manifest and marks archived', asy
   assert.equal(landed.mergeCommit, landed.landCommit)
   assert.equal(run(['log', '-1', '--format=%P', landed.landCommit]).split(' ').length, 1)
   assert.equal(run(['rev-list', '--merges', `${state.baseCommit}..HEAD`]), '')
-  assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE} via land ${landed.landCommit.slice(0, 8)}`)
+  assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
+  assert.equal(run(['log', '-1', '--format=%b']), `Landed from ${landed.landCommit}`)
   assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
   assert.equal(existsSync(manifestPath(root, landed.landCommit)), true)
   const manifest = JSON.parse(readFileSync(manifestPath(root, landed.landCommit), 'utf8'))
@@ -151,6 +152,8 @@ test('land resumes a legacy merge and records the legacy mode', async () => {
   assert.equal(landed.landCommit, landCommit)
   assert.equal(landed.mergeCommit, landCommit)
   assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
+  assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
+  assert.equal(run(['log', '-1', '--format=%b']), `Landed from ${landCommit}`)
   const manifest = JSON.parse(readFileSync(manifestPath(root, landCommit), 'utf8'))
   assert.equal(manifest.landMode, 'legacy-merge')
   assert.equal(manifest.landCommit, landCommit)
@@ -377,6 +380,8 @@ test('land keeps a resumable state when the archive commit fails', async () => {
     action: 'land', change: CHANGE, approvedBy: 'user',
   })
   assert.equal(retried.archiveCommit, run(['rev-parse', 'HEAD']))
+  assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
+  assert.equal(run(['log', '-1', '--format=%b']), `Landed from ${retried.landCommit}`)
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
 })
 
