@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import test from 'node:test'
 import {
   buildCard,
+  CARD_DIR,
   cardFilePath,
   hasCardMarker,
   normalizeJson,
@@ -427,4 +428,27 @@ test('a marker written before the kind existed still skips the write', () => {
   }
   assert.equal(hasCardMarker(record, marker), true, 'a kind-less marker still matches')
   assert.equal(hasCardMarker({ cards: [] }, marker), false)
+})
+
+test('a card without a known review kind is neither named nor written', () => {
+  const root = directory()
+  const warnings = []
+  try {
+    assert.equal(writeCardFile({
+      directory: root,
+      session: { id: 'card-session' },
+      phase: 'review',
+      round: 1,
+      payload: {},
+      logger: { warn: (message) => warnings.push(message) },
+    }), false)
+    assert.match(warnings[0], /unknown kind/)
+    assert.throws(
+      () => cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 }),
+      /needs a kind of draft or apply/,
+    )
+    assert.equal(existsSync(join(root, CARD_DIR)), false, 'no card directory is created')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
