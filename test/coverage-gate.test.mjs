@@ -491,3 +491,40 @@ test('a preflight or argument failure leaves the recorded stamp untouched', asyn
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('report mode does not pass without a usable baseline', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'coverage-report-baseline-'))
+  try {
+    git(root, ['init', '-b', 'main'])
+    git(root, ['config', 'user.email', 'test@example.com'])
+    git(root, ['config', 'user.name', 'Test'])
+    mkdirSync(join(root, 'lib'), { recursive: true })
+    writeFileSync(join(root, 'index.js'), 'export const a = 1\n')
+    writeFileSync(join(root, 'lib', 'a.js'), 'export const b = 2\n')
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ engines: { node: '>=24.9.0' } }, null, 2))
+    writeFileSync(join(root, 'coverage.config.json'), JSON.stringify({
+      primaryNodeMajor: 24,
+      mode: 'report',
+      thresholds: {
+        absolute: { line: 90, branch: 85, function: 95 },
+        deltaMaxDrop: 1,
+        newCode: { line: 95, branch: 90, function: 100 },
+      },
+    }, null, 2))
+    mkdirSync(join(root, '.coverage'), { recursive: true })
+    writeFileSync(join(root, '.coverage', 'plugin.info'), lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]))
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'base'])
+
+    await assert.rejects(runGate({ root, mode: 'report', base: 'main' }), /coverage\.baseline\.json is missing/u, 'a missing baseline fails the report mode')
+
+    writeJson(join(root, 'coverage.baseline.json'), {
+      version: 1,
+      node: { version: 'v26.0.0', range: '>=24.9.0' },
+      scopes: {},
+    })
+    await assert.rejects(runGate({ root, mode: 'report', base: 'main' }), /baseline/u, 'an unusable baseline fails the report mode')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
