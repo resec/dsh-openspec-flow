@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-22
+goal: Automate the smallest PR review loop without issue automation,
+  deduplication, labels, closing, merging or archive automation.
