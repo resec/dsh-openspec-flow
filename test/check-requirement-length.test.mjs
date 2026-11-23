@@ -210,6 +210,7 @@ test('reports a blocking run with annotations, the same report in the log and th
     const printed = out.join('')
     assert.match(printed, /::error file=.*widget.*specs\/cap\/spec\.md,line=3,title=Requirement length::/u)
     assert.match(printed, /An archive merge would exceed the 500-character requirement description limit/u)
+    assert.match(printed, /keeps one behavior per requirement/u)
     assert.match(printed, /## Requirement length gate/u)
     assert.match(printed, /Official handling:/u)
     assert.match(printed, /add the new behavior as an ADDED requirement/u)

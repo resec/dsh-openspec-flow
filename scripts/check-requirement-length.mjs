@@ -158,7 +158,7 @@ export function renderReport(rows, locations, limit) {
   return [
     '## Requirement length gate',
     '',
-    `An archive merge would exceed the ${String(limit)}-character requirement description limit. This check applies the same rule as the apply review, before any review starts.`,
+    `An archive merge would exceed the ${String(limit)}-character requirement description limit. The main spec rejects a longer description at archive, and the limit keeps one behavior per requirement. This check applies the same rule as the apply review, before any review starts.`,
     '',
     '| change | path | operation | requirement | length | baseline |',
     '| --- | --- | --- | --- | --- | --- |',
