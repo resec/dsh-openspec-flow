@@ -1254,3 +1254,17 @@ test('a stale draft round wakes the reviewer for the next round', async () => {
   assert.equal(record.reviewers.slots[0].round, 2)
   assert.equal(record.reviewers.slots[0].agentId, 'reviewer-1')
 })
+
+test('a mismatched round leaves the stale round unclosed', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  editTasks(root)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 3 }),
+    /next draft review round is 2, not 3/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds.length, 1)
+  assert.equal(record.rounds[0].report, undefined)
+})
