@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-23
+goal: "A draft round never silently rebinds to changed artifacts: the stale
+  round is recorded as blocked, the next round wakes the reviewer, and the
+  changer is told not to edit the draft during a round."
