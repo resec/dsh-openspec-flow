@@ -21,15 +21,6 @@ const CREDENTIAL_SEGMENT = /(?:^|_)(?:token|secret|authorization|password|passwd
 /** A `*_key` name; a bare `key` does not count, so a plain dict key stays readable. */
 const KEY_SEGMENT = /[a-z0-9]_key$/u
 
-/**
- * The name whose value is a fixture the lab itself needs.
- *
- * `lab exec` reads `LAB_MOCK_KEY` from the persisted instance environment, so
- * that value must survive the walk. A `*_key` rule cannot tell the fixture
- * constant from a signing key, so the exception is spelled out.
- */
-const FIXTURE_NAME = 'lab_mock_key'
-
 /** Query parameters that carry a one-time credential under a plain name. */
 const QUERY_NAME = /^(?:code|key)$/iu
 
@@ -84,12 +75,18 @@ function normalizeName(name) {
 
 /**
  * Tell a credential-bearing field name apart from an ordinary one.
+ *
+ * The mock fixture key counts as one here: `lab exec` reads it from the
+ * instance environment, which is a record, and a record field is copied under
+ * its own name by {@link redactValue}. Only text that spells the pair out, such
+ * as a check detail echoing the environment, reaches this rule, and there the
+ * fixture must be replaced like any other key.
+ *
  * @param name - the name as written.
  * @returns whether the field holds a credential.
  */
 function isCredentialName(name) {
   const folded = normalizeName(name)
-  if (folded === FIXTURE_NAME) return false
   return CREDENTIAL_WHOLE.test(folded) || CREDENTIAL_SEGMENT.test(folded) || KEY_SEGMENT.test(folded)
 }
 
