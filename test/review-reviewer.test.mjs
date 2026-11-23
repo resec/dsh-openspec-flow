@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import {
-  mkdirSync, readFileSync, rmSync, writeFileSync,
+  mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -1366,6 +1366,7 @@ test('retry, replace and waive-reviewer read the record from the change root', a
     action: 'replace', change: CHANGE, review: 'draft', reason: 'stuck',
   })
   assert.equal(activations.length, 2)
+  assert.equal(realpathSync(activations[1].cwd), realpathSync(root))
   const waived = await call(fake, 'openspec_review', {
     action: 'waive-reviewer',
     change: CHANGE,
