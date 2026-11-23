@@ -27,7 +27,7 @@ None.
 
 ## Impact
 
-- `lib/tools/review.js`: the draft round advance, the watch arm and disarm, and the stale notice projection.
+- `lib/tools/review.js`: the draft round advance, the watch arm and disarm, and the stale notice write.
 - `lib/review/submit.js`: the stale-round close and optional report metadata.
 - `lib/review/reviewer-tool.js`: the stale blocked submit path.
 - `lib/review/watch.js`: new file watch module.
