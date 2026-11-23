@@ -48,6 +48,10 @@ node scripts/pr-review-watch.mjs state --fail 12 --error "the reviewer did not f
 
 `npm run pr-review:poll -- --json` is the same as the `poll` command. The watch defaults to dry-run; only `comment --apply` writes to GitHub.
 
+## Requirement length gate
+
+Pull-request CI runs the same requirement-description length check the apply preflight uses: `npm run check:requirement-length` runs after `npm run openspec:check` and fails the verify job when an archive merge would exceed the limit. Because the watch only selects pull requests whose checks all succeed, a pull request blocked by the gate leaves the candidate list until the author fixes its delta, and the watch records no review attempt or failure for it. The apply preflight stays as the last check before an apply round, and its message remains the authoritative one for a review that cannot start.
+
 ## Session flow
 
 The scheduled session processes candidates one at a time:

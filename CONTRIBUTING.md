@@ -117,6 +117,7 @@ Run at least:
 ```sh
 npm test
 npm run openspec:check
+npm run check:requirement-length
 ```
 
 Run `npm run verify` before opening the pull request; `npm run coverage -- --report-only` prints the same verdict without enforcing. Run the lab when your change touches the plugin surface, the Web GUI, the review channel, installation or anything the lab scenario exercises:
@@ -194,7 +195,7 @@ Keep the reproduction, acceptance commands and evidence in the issue and pull re
 
 CI runs on Ubuntu for every pull request and on `main`:
 
-- `verify` checks out the full history, installs the Node version from `coverage.baseline.json`, runs `npm ci`, the change and generated-skill checks, `npm run openspec:check` and `npm run verify`.
+- `verify` checks out the full history, installs the Node version from `coverage.baseline.json`, runs `npm ci`, the change and generated-skill checks, `npm run openspec:check`, `npm run check:requirement-length` and `npm run verify`.
 - `lab` installs pnpm 12.6.0 and Chromium under `.cache/lab/pw-browsers` with its system dependencies, installs the CJK font, restores the DSH and browser caches, runs `npm run lab -- doctor` and `npm run test:lab -- --mock-only`.
 
 A fork pull request may wait for maintainer approval before CI starts. Once it runs, a red check must be fixed in the pull request. Do not weaken a check or add an approval input; the restricted-path check is deliberately absolute.

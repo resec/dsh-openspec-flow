@@ -38,6 +38,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/check-generated-skills.mjs --base "${{ github.event.pull_request.base.sha }}"
       - run: npm run openspec:check
+      - run: npm run check:requirement-length
       - run: npm run verify
 
   lab:

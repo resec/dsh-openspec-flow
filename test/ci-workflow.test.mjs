@@ -25,10 +25,20 @@ test('the verify job runs the change, skill and verification gates', () => {
     'check-pr-change.mjs --base',
     'check-generated-skills.mjs --base',
     'npm run openspec:check',
+    'npm run check:requirement-length',
     'npm run verify',
   ]) {
     assert.ok(WORKFLOW.includes(command), command)
   }
+})
+
+test('the requirement length gate runs after strict validation and before verification', () => {
+  const validation = WORKFLOW.indexOf('npm run openspec:check')
+  const gate = WORKFLOW.indexOf('npm run check:requirement-length')
+  const verification = WORKFLOW.indexOf('npm run verify')
+  assert.ok(validation >= 0, 'the workflow does not run openspec:check')
+  assert.ok(gate > validation, 'the length gate must run after openspec:check')
+  assert.ok(verification > gate, 'the length gate must run before npm run verify')
 })
 
 test('the lab job installs the browser where the doctor looks', () => {
