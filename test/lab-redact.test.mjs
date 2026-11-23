@@ -40,8 +40,12 @@ test('redactText covers the header and key spellings of a credential', () => {
 test('redactText leaves a redacted value and an unrelated key alone', () => {
   assert.equal(redactText(`token=${REDACTED}`), `token=${REDACTED}`)
   assert.equal(redactText(`Authorization: Bearer ${REDACTED}`), `Authorization: Bearer ${REDACTED}`)
-  assert.equal(redactText('LAB_MOCK_KEY=lab-mock-key'), 'LAB_MOCK_KEY=lab-mock-key')
   assert.equal(redactText('exit code: 1'), 'exit code: 1')
+})
+
+test('redactText replaces the mock fixture key in report text', () => {
+  assert.equal(redactText('LAB_MOCK_KEY=lab-mock-key'), `LAB_MOCK_KEY=${REDACTED}`)
+  assert.equal(redactText('the run needs LAB_MOCK_KEY=lab-mock-key'), `the run needs LAB_MOCK_KEY=${REDACTED}`)
 })
 
 test('redactText leaves a bare scheme word in ordinary prose alone', () => {
@@ -74,6 +78,12 @@ test('redactState drops the credential fields and keeps the diagnosis', () => {
 test('redactState leaves a state without a web entry alone', () => {
   const state = redactState({ runDir: '/runs/2', checks: [] })
   assert.deepEqual(state, { runDir: '/runs/2', checks: [] })
+})
+
+test('redactState keeps the mock fixture the instance environment needs', () => {
+  const state = redactState({ env: { LAB_MOCK_KEY: 'lab-mock-key', DSH_HOME: '/runs/1/home' } })
+  assert.equal(state.env.LAB_MOCK_KEY, 'lab-mock-key', 'lab exec still reads the fixture')
+  assert.equal(state.env.DSH_HOME, '/runs/1/home')
 })
 
 test('redactMessage cleans the text a report field carries', () => {
