@@ -6,10 +6,11 @@
 - [x] 1.2 Name the four reviewer actions in a new "Apply review accepts the reviewer actions" requirement, leaving the apply requirement's text unchanged.
 - [x] 1.3 Update the `action` description in `lib/tools/review.js`.
 
-## 2. Guard the description
+## 2. Guard the description and the reviewer actions
 
 - [x] 2.1 Add a test that reads the registered `action.enum` and asserts the description is exactly the rendered enum, so a substring such as `waive` inside `waive-reviewer` cannot satisfy it.
 - [x] 2.2 Confirm the test fails against the previous description.
+- [x] 2.3 Add a test that drives `retry`, `replace` and `waive-reviewer` on an apply record, asserting the message, the second activation, the replace action and the refusal without `approvedBy`.
 
 ## 3. Verify
 
