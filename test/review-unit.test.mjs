@@ -24,7 +24,7 @@ import {
   writeJsonAtomic,
 } from '../lib/review/store.js'
 import { normalizeReviews, draftSettings } from '../lib/review/config.js'
-import { buildDraftBrief, renderReportContract } from '../lib/review/brief.js'
+import { buildApplyBrief, buildDraftBrief, renderReportContract } from '../lib/review/brief.js'
 import { diffArtifactFiles, draftObject } from '../lib/review/object.js'
 import {
   applyVerificationsTo,
@@ -44,6 +44,7 @@ import {
   roundEntries,
 } from '../lib/review/record.js'
 import { closeStaleRound, submitReport } from '../lib/review/submit.js'
+import { anotherChangeInLocation } from '../lib/review/scope.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
 
@@ -217,6 +218,26 @@ test('the brief names the axes and the report contract', () => {
   assert.match(brief, /Intent fit/)
   assert.match(brief, /"verdict"/)
   assert.doesNotMatch(brief, /\bCLI\b/i)
+  assert.match(brief, /Another change's directory under `openspec\/changes\/` is outside this review/)
+  assert.match(brief, /Record such a concern in `outOfScope`/)
+})
+
+test('the apply brief states the cross-change boundary', () => {
+  const brief = buildApplyBrief({
+    change: 'demo',
+    round: 1,
+    findings: [],
+    commitSha: 'a'.repeat(40),
+    treeSha: 'b'.repeat(40),
+    baseCommit: 'd'.repeat(40),
+    baseSource: 'seal',
+    baseTreeSha: 'c'.repeat(40),
+    diffPath: 'apply-round-1/diff.patch',
+    changedPaths: [],
+  })
+  assert.match(brief, /Another change's directory under `openspec\/changes\/` is outside this review/)
+  assert.match(brief, /Record such a concern in `outOfScope`/)
+  assert.match(brief, /whole committed tree \(the tree named in the brief\) is the review object/)
 })
 
 test('the report contract follows the round and the recorded findings', () => {
@@ -244,6 +265,98 @@ test('the report contract follows the round and the recorded findings', () => {
     /location hint/,
   )
   assert.throws(() => renderReportContract({ round: 1 }), /location hint/)
+})
+
+test('another change is detected in a finding location', () => {
+  const own = 'demo'
+  for (const location of [
+    'proposal.md',
+    'specs/theme/spec.md:12',
+    'openspec/specs/change-review/spec.md:12',
+    'lib/review/scope.js:1',
+    '## Requirement: Scope',
+    'openspec/changes/demo/proposal.md:12',
+    'apps/web/openspec/changes/demo/specs/theme/spec.md:3',
+    'openspec/changes',
+    'openspec/changes/',
+    '../../outside.md',
+  ]) {
+    assert.equal(anotherChangeInLocation(location, own), undefined, location)
+  }
+  assert.equal(anotherChangeInLocation('openspec/changes/other/tasks.md:12', own), 'other')
+  assert.equal(anotherChangeInLocation('openspec/changes/other', own), 'other')
+  assert.equal(anotherChangeInLocation('openspec/changes/archive/2026-01-01-other/tasks.md', own), 'archive/2026-01-01-other')
+  assert.equal(anotherChangeInLocation('../other/tasks.md:12', own), 'other')
+  assert.equal(anotherChangeInLocation('./../other/tasks.md', own), 'other')
+  assert.equal(anotherChangeInLocation('specs/../../other/tasks.md', own), 'other')
+  assert.equal(anotherChangeInLocation('openspec/changes/demo/../other/tasks.md', own), 'other')
+  assert.equal(anotherChangeInLocation('apps/web/openspec/changes/other/tasks.md:12', own), 'other')
+  assert.equal(anotherChangeInLocation('/repo/apps/web/openspec/changes/other/tasks.md:12', own), 'other')
+  assert.equal(anotherChangeInLocation('test/fixtures/probe/openspec/changes/add-dark-mode/tasks.md:12', own), 'add-dark-mode')
+  assert.equal(anotherChangeInLocation('openspec\\changes\\other\\tasks.md:12', own), 'other')
+  assert.equal(anotherChangeInLocation('openspec/changes/other/tasks.md', ''), undefined)
+  assert.equal(anotherChangeInLocation('', own), undefined)
+})
+
+test('report validation refuses a finding located in another change', () => {
+  const scope = { change: 'demo' }
+  const ownChange = finding({ location: 'openspec/changes/demo/proposal.md:12' })
+  assert.doesNotThrow(() => assertReport(
+    { verdict: 'changes-requested', summary: 'ok', findings: [ownChange] },
+    { round: 1, findings: [], scope },
+  ))
+  const other = finding({ location: 'openspec/changes/other/tasks.md:12' })
+  assert.throws(() => assertReport(
+    { verdict: 'changes-requested', summary: 'ok', findings: [other] },
+    { round: 1, findings: [], scope },
+  ), /another change.*outOfScope/)
+  assert.throws(() => assertReport(
+    { verdict: 'changes-requested', summary: 'ok', findings: [other] },
+    { round: 1, findings: [], kind: 'apply', scope },
+  ), /another change.*outOfScope/)
+  assert.doesNotThrow(() => assertReport(
+    { verdict: 'pass', summary: 'ok', findings: [], outOfScope: ['openspec/changes/other/tasks.md:12'] },
+    { round: 1, findings: [], scope },
+  ))
+  assert.doesNotThrow(() => assertReport(
+    { verdict: 'changes-requested', summary: 'ok', findings: [other] },
+    { round: 1, findings: [] },
+  ))
+})
+
+test('submitReport refuses a cross-change finding before it stores a report', () => {
+  const root = temp()
+  const directory = join(root, 'review')
+  mkdirSync(join(directory, 'round-1'), { recursive: true })
+  const record = {
+    change: 'demo',
+    objectHash: 'hash',
+    findings: [],
+    rounds: [{ round: 1, objectHash: 'hash', startedAt: new Date().toISOString() }],
+  }
+  assert.throws(() => submitReport({
+    directory,
+    kind: 'draft',
+    record,
+    report: {
+      verdict: 'changes-requested',
+      summary: 'ok',
+      findings: [finding({ location: 'openspec/changes/other/tasks.md:12' })],
+    },
+    currentHash: 'hash',
+  }), /another change.*outOfScope/)
+  assert.throws(() => submitReport({
+    directory,
+    kind: 'apply',
+    record,
+    report: {
+      verdict: 'changes-requested',
+      summary: 'ok',
+      findings: [finding({ location: 'openspec/changes/other/tasks.md:12' })],
+    },
+    currentHash: 'hash',
+  }), /another change.*outOfScope/)
+  assert.equal(existsSync(join(directory, 'round-1', 'report.json')), false)
 })
 
 test('report validation rejects malformed findings and contradictory verdicts', () => {

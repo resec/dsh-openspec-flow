@@ -101,7 +101,9 @@ draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：
 - `axis`：`intent`、`coherence`、`spec-conflict`、`standards`、`feasibility`、`quality`。
 - `verifications`：后续轮次逐条声明本轮开始前已记录 finding 的状态：`verified-fixed`、`still-open`、`regressed`。
 
-字段只校验类型与非空：`summary`、finding 的文本字段、`verification.evidence` 以及 `outOfScope`/`residualRisks` 的条目都不设字符上限，后两个数组也不设条数上限。报告在写入前整体校验，任一结构错误都会拒绝整份报告。
+字段只校验类型与非空：`summary`、finding 的文本字段、`verification.evidence` 以及 `outOfScope`/`residualRisks` 的条目都不设字符上限，后两个数组也不设条数上限。finding 的 `location` 另有范围校验：指向另一个 change 目录的路径会被拒绝；报告在写入前整体校验，任一结构错误或范围违规都会拒绝整份报告。
+
+finding 的 `location` 不得指向另一个 change 的规划工件。路径在 `openspec/changes/<other>/` 下（含 `archive/`，也含 `apps/web/openspec/changes/<other>/` 这类嵌套根，或含 `..` 的等价写法）的 finding 会被拒绝，报告不会写入；错误会点名该 finding，并要求把意见改记到 `outOfScope`。评审范围只是本 change 的产物（draft）或已提交树（apply）；另一个 change 的规划工件即使在树或工作区可见，也不属于本次评审，对它的意见用 `outOfScope` 记录，不要要求对方修改。`outOfScope` 条目不受此校验，也不阻塞就绪度。
 
 finding 的处置：
 
@@ -199,7 +201,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 ### 轮内修改与 blocked 轮次
 
-draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告期间监视变更目录：产物哈希一旦变化，就为这一轮记录一次 `staleNotice`，并给 slot reviewer 发一条带轮次号的消息，要求它以该轮次提交 `blocked`；通知只写 `staleNotice`，不写报告或 finding。
+draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告期间监视变更目录：产物哈希一旦变化，就为这一轮记录一次 `staleNotice`，并给 slot reviewer 发一条带轮次号的消息，要求它以该轮次提交 `blocked`；通知只写 `staleNotice`，不写报告或 finding。评审者也不得在轮次无报告期间要求该 change 修改产物；对另一个 change 的意见记入 `outOfScope`，不要形成要求修改的 finding。
 
 恢复只有一条：`resume`。对象已变时它先把这一轮记为 `blocked`：报告无 findings，轮次记录 `blockedReason: "stale-object"`、`staleFrom` 与 `staleTo`，已记录的 finding 及其状态不变；随后开下一轮并唤醒同一 reviewer。对象未变的未报告轮次仍按原样复用，不重复唤醒。reviewer 也可在对象已变时直接提交 `blocked`（无 findings，带轮次号）结束该轮；其他 verdict 会被拒绝并提示 `blocked`。监视是尽力而为的：无法启动或取锁失败只记 warning，`resume` 仍是恢复路径。
 

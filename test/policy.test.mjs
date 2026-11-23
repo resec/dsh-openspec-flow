@@ -72,6 +72,11 @@ test('the policy text states the stage gates', () => {
   assert.match(POLICY_TEXT, /reported by the plugin card/)
   assert.match(POLICY_TEXT, /do not restate findings, evidence, impact, rules, failure paths, suggestions, residual risks, scope or notes/)
   assert.match(POLICY_TEXT, /one short note only for information the report cannot express/)
+  assert.match(POLICY_TEXT, /Do not edit the change artifacts while a draft round is open/)
+  assert.match(POLICY_TEXT, /must not require an edit to another change's artifacts/)
+  assert.match(POLICY_TEXT, /must not require changes to another change's artifacts/)
+  assert.match(POLICY_TEXT, /draft round has no report/)
+  assert.match(POLICY_TEXT, /record such a concern in `outOfScope`/)
 })
 
 test('the policy text names no CLI', () => {

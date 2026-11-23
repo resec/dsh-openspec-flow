@@ -510,3 +510,17 @@ test('the review document states the stale-round block and the qualified reuse r
   assert.match(text, /`blockedReason: "stale-object"`/)
   assert.match(text, /监视是尽力而为/)
 })
+
+test('the review document states the cross-change finding boundary', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    '另一个 change 的规划工件',
+    'openspec/changes/<other>/',
+    '改记到 `outOfScope`',
+    '不得在轮次无报告期间要求该 change 修改产物',
+    '任一结构错误或范围违规都会拒绝整份报告',
+  ]) {
+    assert.ok(text.includes(phrase), `the document states ${phrase}`)
+  }
+  assert.doesNotMatch(text, /任一结构错误都会拒绝整份报告/)
+})

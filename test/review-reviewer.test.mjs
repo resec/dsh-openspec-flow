@@ -111,6 +111,42 @@ test('an independent reviewer reads the brief, submits and unblocks apply', asyn
   await call(fake, 'openspec_apply_next', { change: CHANGE })
 })
 
+test('an independent reviewer cross-change finding is refused for draft and apply', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  const cross = (location) => report({
+    verdict: 'changes-requested',
+    findings: [{ ...majorFinding(), location }],
+  })
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', report: cross('openspec/changes/other-change/tasks.md:12') }),
+    /another change.*outOfScope/,
+  )
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', report: cross('apps/web/openspec/changes/other/tasks.md:12') }),
+    /another change.*outOfScope/,
+  )
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', report: cross('openspec/changes/add-dark-mode/../other/tasks.md:12') }),
+    /another change.*outOfScope/,
+  )
+  const accepted = await execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    report: report({ outOfScope: ['openspec/changes/other-change/tasks.md:12'] }),
+  })
+  assert.equal(accepted.ready, true)
+})
+
 test('a reviewer report from another agent is refused', async () => {
   const root = fixture()
   const { fake } = externalSetup(root)
@@ -364,6 +400,16 @@ test('an independent apply reviewer submits a tree report', async () => {
   assert.equal(external.activations.length, 1)
   const reviewer = createFakeContext({ cwd: root })
   reviewerApply(reviewer.ctx)
+  await assert.rejects(
+    reviewer.tools.get('openspec_reviewer').execute({
+      action: 'submit', change: CHANGE, review: 'apply',
+      report: report({
+        verdict: 'changes-requested',
+        findings: [{ ...majorFinding(), location: 'openspec/changes/other-change/tasks.md:12' }],
+      }),
+    }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal }),
+    /another change.*outOfScope/,
+  )
   const submitted = await reviewer.tools.get('openspec_reviewer').execute({
     action: 'submit', change: CHANGE, review: 'apply', report: report(),
   }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })

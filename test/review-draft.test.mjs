@@ -54,6 +54,32 @@ test('self review passes the apply gate', async () => {
   assert.ok(record.applyBaseCommit === undefined || typeof record.applyBaseCommit === 'string')
 })
 
+test('a self-review finding located in another change is refused and moves to outOfScope', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start',
+    change: CHANGE,
+    intent: 'Add a theme selector and persist it.',
+  })
+  const cross = report({
+    verdict: 'changes-requested',
+    findings: [{ ...majorFinding(), location: 'openspec/changes/other-change/tasks.md:12' }],
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: cross }),
+    /another change.*outOfScope/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[0].report, undefined)
+  const submitted = await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    report: report({ outOfScope: ['openspec/changes/other-change/tasks.md:12'] }),
+  })
+  assert.equal(submitted.ready, true)
+})
+
 test('a MODIFIED growth blocks draft readiness and carries the official handling', async () => {
   const root = fixture()
   const fake = setup(root)
