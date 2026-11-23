@@ -28,6 +28,7 @@ import { registerSkillProvider } from './lib/skill.js'
 import { registerTools } from './lib/tools/index.js'
 import { normalizeReviews } from './lib/review/config.js'
 import { clearReviewDeadlines } from './lib/review/wakeup.js'
+import { clearRoundWatches } from './lib/review/watch.js'
 
 /** The row config schema, kept in `lib/config.js` so the channel validates with it too. */
 export { Config }
@@ -55,5 +56,8 @@ export function apply(ctx, config) {
   registerSkillProvider(ctx)
   registerPolicy(ctx)
   registerReviewChannel(ctx, settings)
-  ctx.effect(() => () => clearReviewDeadlines())
+  ctx.effect(() => () => {
+    clearReviewDeadlines()
+    clearRoundWatches()
+  })
 }

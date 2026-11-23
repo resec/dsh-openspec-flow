@@ -8,7 +8,7 @@ import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, captureSpawn, gitFixture, passDraft, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, captureSpawn, gitFixture, passDraft, externalSetup, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -1183,4 +1183,74 @@ test('draft review refuses an extra round token', async () => {
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 'x' }),
     /positive integer or an E<n> token/,
   )
+})
+
+function editTasks(root) {
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. Edited\n\n- [ ] 1.1 Edited task\n')
+}
+
+test('an unchanged unreported round is reused without a new round', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, started.round)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds.length, 1)
+  assert.equal(record.rounds[0].report, undefined)
+})
+
+test('resume closes a stale draft round as blocked and opens the next round', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const before = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  editTasks(root)
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 2)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  const stale = record.rounds[0]
+  assert.equal(stale.verdict, 'blocked')
+  assert.equal(stale.report.verdict, 'blocked')
+  assert.equal(stale.blockedReason, 'stale-object')
+  assert.equal(stale.staleFrom, before.objectHash)
+  assert.equal(stale.staleTo, resumed.objectHash)
+  assert.deepEqual(record.findings, [])
+  assert.equal(record.rounds[1].report, undefined)
+})
+
+test('a stale close leaves a fixed finding awaiting verification untouched', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  editTasks(root)
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 3)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[1].verdict, 'blocked')
+  assert.equal(record.findings[0].status, 'fixed')
+  assert.equal(record.findings[0].verifiedInRound, undefined)
+})
+
+test('a stale draft round wakes the reviewer for the next round', async () => {
+  const root = fixture()
+  const { fake, messages } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const wakes = messages.length
+  editTasks(root)
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 2)
+  assert.equal(messages.length, wakes + 1)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[0].verdict, 'blocked')
+  assert.equal(record.reviewers.slots[0].round, 2)
+  assert.equal(record.reviewers.slots[0].agentId, 'reviewer-1')
 })

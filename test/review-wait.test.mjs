@@ -1076,3 +1076,21 @@ test('a not-ready draft wait points at dispose', async () => {
   assert.equal(waited.ready, false)
   assert.equal(waited.nextAction, 'openspec_review action=dispose review=draft')
 })
+
+test('a stale unreported draft round points the next action at resume', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. Edited\n\n- [ ] 1.1 Edited task\n')
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.match(status.reasons.join(' '), /artifacts changed/)
+  assert.equal(status.nextAction, 'openspec_review action=resume review=draft')
+})
+
+test('an unreported draft round with an unchanged object points at wait', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.nextAction, 'openspec_review action=wait')
+})

@@ -1017,3 +1017,108 @@ test('the reviewer tool declares extra round fields', () => {
   assert.ok('roundToken' in tool.output.schema.properties)
   assert.ok('roundToken' in tool.output.schema.properties.rounds.items.properties)
 })
+
+function editStaleTasks(root) {
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. Edited\n\n- [ ] 1.1 Edited task\n')
+}
+
+function reviewerRunner(root, subagents) {
+  const reviewer = createFakeContext({ cwd: root, subagents })
+  reviewerApply(reviewer.ctx)
+  return (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+}
+
+test('a stale draft blocked submit is accepted and wakes the changer', async () => {
+  const root = fixture()
+  const { fake, messages, subagents } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  editStaleTasks(root)
+  const execute = reviewerRunner(root, subagents)
+  const before = messages.length
+  const result = await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1,
+    report: report({ verdict: 'blocked', summary: 'The artifacts changed during the round.', findings: [], verifications: [] }),
+  })
+  assert.equal(result.state, 'in-review')
+  assert.equal(messages.length, before + 1)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  const round = record.rounds[0]
+  assert.equal(round.verdict, 'blocked')
+  assert.equal(round.report.verdict, 'blocked')
+  assert.equal(round.blockedReason, 'stale-object')
+  assert.notEqual(round.staleFrom, round.staleTo)
+  assert.deepEqual(record.findings, [])
+})
+
+test('a stale draft pass submit is refused and names blocked', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  editStaleTasks(root)
+  const execute = reviewerRunner(root)
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', round: 1, report: report() }),
+    /blocked/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[0].report, undefined)
+})
+
+test('a stale draft blocked submit with findings is refused', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  editStaleTasks(root)
+  const execute = reviewerRunner(root)
+  await assert.rejects(
+    execute({
+      action: 'submit', change: CHANGE, review: 'draft', round: 1,
+      report: report({ verdict: 'blocked', findings: [majorFinding()], verifications: [] }),
+    }),
+    /no findings/,
+  )
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[0].report, undefined)
+})
+
+test('a fixed finding does not refuse a stale draft blocked submit', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const execute = reviewerRunner(root)
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  editStaleTasks(root)
+  const accepted = await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 2,
+    report: report({ verdict: 'blocked', summary: 'The artifacts changed during the round.' }),
+  })
+  assert.equal(accepted.state, 'in-review')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[1].verdict, 'blocked')
+  assert.equal(record.findings[0].status, 'fixed')
+})
+
+test('a late stale submission names its round and is refused', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  editStaleTasks(root)
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const execute = reviewerRunner(root)
+  await assert.rejects(
+    execute({
+      action: 'submit', change: CHANGE, review: 'draft', round: 1,
+      report: report({ verdict: 'blocked', summary: 'The artifacts changed during the round.' }),
+    }),
+    /current draft round is 2, not 1/,
+  )
+})

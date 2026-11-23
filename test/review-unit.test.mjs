@@ -43,7 +43,7 @@ import {
   resolveRoundEntry,
   roundEntries,
 } from '../lib/review/record.js'
-import { submitReport } from '../lib/review/submit.js'
+import { closeStaleRound, submitReport } from '../lib/review/submit.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
 
@@ -886,6 +886,29 @@ test('submitReport covers missing rounds, duplicate reports and empty findings',
   })
   assert.equal(result.record.findings.length, 0)
   assert.equal(result.record.state, 'passed')
+})
+
+test('closeStaleRound records a blocked report and leaves findings alone', () => {
+  const root = temp()
+  const directory = join(root, 'review')
+  mkdirSync(join(directory, 'round-1'), { recursive: true })
+  const record = {
+    state: 'in-review',
+    findings: [{ id: 'R1-01', severity: 'major', status: 'fixed', firstRound: 1, firstRoundSeq: 1, title: 'Fixed finding' }],
+    rounds: [{ round: 1, seq: 1, objectHash: 'from-hash', startedAt: new Date().toISOString() }],
+  }
+  const result = closeStaleRound({ directory, record, currentHash: 'to-hash' })
+  const round = result.record.rounds.at(-1)
+  assert.equal(round.report.verdict, 'blocked')
+  assert.equal(round.verdict, 'blocked')
+  assert.equal(round.blockedReason, 'stale-object')
+  assert.equal(round.staleFrom, 'from-hash')
+  assert.equal(round.staleTo, 'to-hash')
+  assert.equal(result.record.findings.length, 1)
+  assert.equal(result.record.findings[0].status, 'fixed')
+  assert.equal(result.readiness.ready, false)
+  assert.match(result.readiness.reasons.join(' '), /verdict is blocked/)
+  assert.equal(closeStaleRound({ directory, record: result.record, currentHash: 'to-hash' }), undefined)
 })
 
 function git(root, args) {
