@@ -212,3 +212,16 @@ test('a value-less --head exits 2 and an unknown head exits 1', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('the head package.json excludes a dependency change from the advanced base', () => {
+  const { root, base, head } = makeMergeCheckout({
+    mainFiles: { 'package.json': '{"name":"widget","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}\n' },
+  })
+  try {
+    const result = spawnCheck(root, ['--base', base, '--head', head])
+    assert.equal(result.status, 0, result.stderr)
+    assert.doesNotMatch(result.stderr, /dependency/u)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
