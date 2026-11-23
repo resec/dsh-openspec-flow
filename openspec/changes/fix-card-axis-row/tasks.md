@@ -16,4 +16,5 @@
 ## 4. Verify
 
 - [x] 4.1 Run `node --test test/review-client.test.mjs`.
-- [x] 4.2 Run `openspec validate fix-card-axis-row --strict`, `npm run openspec:check` and `npm run layout:check`.
+- [x] 4.2 Run `npm run test:affected -- client.js` and `npm run verify` on Node 24 after the implementation commit, and record the test summary and the coverage verdict.
+- [x] 4.3 Run `openspec validate fix-card-axis-row --strict`, `npm run openspec:check` and `npm run layout:check`.
