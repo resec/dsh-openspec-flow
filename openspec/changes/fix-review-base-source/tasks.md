@@ -3,7 +3,7 @@
 ## 1. Derive and persist the base source
 
 - [x] 1.1 Compute `baseSource` from the branch that selected the base; a no-draft resume reuses the source recorded with the inherited base.
-- [x] 1.2 Write the computed source when a resume opens a round.
+- [x] 1.2 Recompute the source recorded when a resume opens a round; the write already existed, only its value was wrong.
 
 ## 2. Guard the behaviour
 

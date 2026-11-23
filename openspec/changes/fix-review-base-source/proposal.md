@@ -7,7 +7,7 @@ An apply round chooses its base from an explicit `base`, the draft seal commit, 
 ## What Changes
 
 - Derive `baseSource` from the branch that actually selected the base; for a no-draft resume keep the source recorded with the inherited base.
-- Persist that source when a resume opens a round, so the record and the brief agree.
+- Recompute the source recorded on every resume, so the record and the brief agree. The write already existed on resume; only the value it carried was inherited.
 - Add a test that starts with an explicit base, disposes a finding and resumes without `base`.
 
 ## Capabilities
@@ -22,6 +22,6 @@ None. The brief contract already requires the source to match the base; only the
 
 ## Impact
 
-- `lib/tools/review.js`: the source computation and the resume write.
+- `lib/tools/review.js`: the source computation and the value the existing resume write records.
 - `test/review-apply.test.mjs`: one new test.
 - No schema, record shape, dependency, workflow, hook, coverage-baseline or `dist/` change.
