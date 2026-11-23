@@ -8,7 +8,7 @@
 
 ## 2. Guard the description
 
-- [x] 2.1 Add a test that reads the registered `action.enum` and asserts each value appears in the description.
+- [x] 2.1 Add a test that reads the registered `action.enum` and asserts the description is exactly the rendered enum, so a substring such as `waive` inside `waive-reviewer` cannot satisfy it.
 - [x] 2.2 Confirm the test fails against the previous description.
 
 ## 3. Verify
