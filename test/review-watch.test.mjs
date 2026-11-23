@@ -304,3 +304,28 @@ test('the notice logs when the review lock is held', async () => {
   }
   assert.match(fake.warnings.join(' '), /another write holds/)
 })
+
+test('a watcher error is logged and disarms the watch', () => {
+  const f = directFixture()
+  const warnings = []
+  const emitters = []
+  const factory = () => {
+    const watcher = {
+      handlers: {},
+      closed: false,
+      close() { this.closed = true },
+      on(event, handler) { this.handlers[event] = handler },
+    }
+    emitters.push(watcher)
+    return watcher
+  }
+  const armed = armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent: 'intent', round: 1, hash: 'x',
+    watchFactory: factory, debounceMs: 1, logger: { warn: (message) => warnings.push(message) },
+  })
+  assert.equal(armed.round, 1)
+  emitters[0].handlers.error(new Error('watch broke'))
+  assert.match(warnings.join(' '), /draft watch stopped/)
+  assert.equal(emitters[0].closed, true)
+  assert.doesNotThrow(() => disarmRoundWatch(f.directory))
+})
