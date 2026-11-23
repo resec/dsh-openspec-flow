@@ -37,6 +37,33 @@ test('redactText covers the header and key spellings of a credential', () => {
   assert.equal(redactText('authorization: digest abc123'), `authorization: digest ${REDACTED}`)
 })
 
+test('redactText replaces a multi-parameter authorization value whole', () => {
+  assert.equal(
+    redactText('Authorization: Digest username="mufasa", realm="test", nonce="abc", uri="/"'),
+    `Authorization: Digest ${REDACTED}`,
+  )
+  assert.equal(
+    redactText('Authorization: AWS4-HMAC-SHA256 Credential=AKIA/20260101, SignedHeaders=host, Signature=deadbeef'),
+    `Authorization: AWS4-HMAC-SHA256 ${REDACTED}`,
+  )
+  assert.equal(
+    redactText('Authorization: OAuth oauth_consumer_key="ck", oauth_token="tok"'),
+    `Authorization: OAuth ${REDACTED}`,
+  )
+  assert.equal(redactText('Proxy-Authorization: Bearer abc.def'), `Proxy-Authorization: Bearer ${REDACTED}`)
+})
+
+test('redactText redacts a short bare token and a whole cookie line', () => {
+  assert.equal(redactText('Bearer abc'), `Bearer ${REDACTED}`)
+  assert.equal(redactText('request used Basic dXNlcjpwYXNz'), `request used Basic ${REDACTED}`)
+  assert.equal(redactText('the client sent Bearer abc.'), `the client sent Bearer ${REDACTED}.`)
+  assert.equal(redactText('auth: Bearer abc'), `auth: Bearer ${REDACTED}`)
+  assert.equal(redactText('Cookie: "a=1"; "b=2"'), `Cookie: "${REDACTED}"`)
+  assert.equal(redactText('Cookie: "a=1"; theme=dark'), `Cookie: "${REDACTED}"`)
+  assert.equal(redactText('Cookie: a=1; theme=dark'), `Cookie: ${REDACTED}`)
+  assert.equal(redactText('Set-Cookie: "a=1"; "b=2"; Path=/'), `Set-Cookie: "${REDACTED}"`)
+})
+
 test('redactText leaves a redacted value and an unrelated key alone', () => {
   assert.equal(redactText(`token=${REDACTED}`), `token=${REDACTED}`)
   assert.equal(redactText(`Authorization: Bearer ${REDACTED}`), `Authorization: Bearer ${REDACTED}`)
@@ -52,6 +79,8 @@ test('redactText leaves a bare scheme word in ordinary prose alone', () => {
   assert.equal(redactText('basic initialization failed'), 'basic initialization failed')
   assert.equal(redactText('basic authentication is disabled'), 'basic authentication is disabled')
   assert.equal(redactText('the bearer token was rejected'), 'the bearer token was rejected')
+  assert.equal(redactText('Basic auth.'), 'Basic auth.')
+  assert.equal(redactText('uses bearer token.'), 'uses bearer token.')
   assert.equal(redactText('Bearer abc.def'), `Bearer ${REDACTED}`)
   assert.equal(redactText('Basic dXNlcjpwYXNz'), `Basic ${REDACTED}`)
 })
