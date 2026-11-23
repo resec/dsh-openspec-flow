@@ -38,6 +38,11 @@ function makeRepository() {
   // would be refused on a host that defaults to it. Point HEAD at a branch that
   // is never pushed so the missing-main scenario does not depend on host config.
   git(origin, ['symbolic-ref', 'HEAD', 'refs/heads/trunk'])
+  // Pin the property the fixture depends on: a bare repository whose HEAD is
+  // `main` refuses the deletion whatever `init.defaultBranch` was on the host,
+  // so on such a host dropping the line above would keep every test green while
+  // the missing-main scenario silently stopped exercising the refusal it names.
+  assert.notEqual(git(origin, ['symbolic-ref', 'HEAD']), 'refs/heads/main')
   git(root, ['remote', 'add', 'origin', origin])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return { root, origin, initial }
