@@ -234,9 +234,10 @@ export function reportBlockers(root, blockers, env = process.env, write = (text)
  * @param env - environment, for `GITHUB_STEP_SUMMARY`.
  * @param write - stdout sink.
  * @param error - stderr sink.
+ * @param deps - optional `{ cli }` override for tests.
  * @returns exit code: 0 pass, 1 blocking entry, 2 usage or CLI failure.
  */
-export function main(argv = process.argv.slice(2), env = process.env, write = (text) => process.stdout.write(text), error = (text) => process.stderr.write(text)) {
+export function main(argv = process.argv.slice(2), env = process.env, write = (text) => process.stdout.write(text), error = (text) => process.stderr.write(text), deps = {}) {
   let options
   try {
     options = parseArgs(argv)
@@ -251,7 +252,7 @@ export function main(argv = process.argv.slice(2), env = process.env, write = (t
   try {
     const root = options.root === undefined ? ROOT : resolve(options.root)
     const names = listActiveChanges(root, options.change)
-    const cli = resolveBundledCli()
+    const cli = typeof deps.cli === 'string' && deps.cli !== '' ? deps.cli : resolveBundledCli()
     const blockers = []
     for (const name of names) {
       const report = checkChange(cli, root, name)

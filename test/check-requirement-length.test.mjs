@@ -179,6 +179,20 @@ test('refuses a CLI failure and a malformed projection', () => {
   }
 })
 
+test('fails closed when the bundled CLI cannot run', () => {
+  const root = makeProject()
+  const out = []
+  const err = []
+  try {
+    const missing = join(root, 'missing-cli.mjs')
+    assert.throws(() => checkChange(missing, root, 'widget'), /failed/u)
+    assert.equal(main(['--root', root], {}, (text) => out.push(text), (text) => err.push(text), { cli: missing }), 2)
+    assert.match(err.join(''), /requirement length gate: openspec show widget --type change --json failed/u)
+  } finally {
+    remove(root)
+  }
+})
+
 test('reports a blocking run with annotations, a summary file and exit code 1', () => {
   const root = makeProject({ delta: addedDelta(LONG) })
   const summary = join(root, 'summary.md')
