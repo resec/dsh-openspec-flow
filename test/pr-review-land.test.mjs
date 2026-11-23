@@ -345,6 +345,60 @@ test('archive and push failures keep retryable phases', () => {
   pushLanding({ root, number: 12, apply: true })
 })
 
+
+test('a diverged local main keeps the merged landing retryable without a second merge', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  writeFileSync(join(root, 'README.md'), 'local main diverged\n')
+  git(root, ['add', 'README.md'])
+  git(root, ['commit', '-qm', 'local main diverged'])
+  let merges = 0
+  const onMerge = () => {
+    merges += 1
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  assert.throws(() => mergeLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }),
+  }), /fast-forward|not possible/)
+  const entry = loadLandings(root).lands['12']
+  assert.equal(entry.phase, 'archive-pending')
+  assert.ok(entry.error)
+  assert.throws(() => mergeLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: () => { throw new Error('gh must not be called') },
+  }), /fast-forward|not possible/)
+  assert.equal(merges, 1)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-pending')
+})
+
+test('a tree-mismatch landing rethrows without a second merge', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /tree|differs/)
+  assert.throws(() => mergeLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: () => { throw new Error('gh must not be called') },
+  }), /tree|differs/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'tree-mismatch')
+})
+
 test('merge verifies the merged tree and archive/push/finish complete the landing', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)

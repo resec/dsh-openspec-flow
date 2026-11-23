@@ -379,6 +379,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
+  if (!apply) return { dryRun: true, entry }
   if (entry.merged === true) {
     if (['archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
     if (entry.phase === 'tree-mismatch') throw new Error(entry.error)
@@ -386,7 +387,6 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   }
   if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'reviewed') throw new Error(`PR #${n} landing phase is ${entry.phase}, not reviewed`)
-  if (!apply) return { dryRun: true, entry }
   assertReviewRecord(root, entry)
   const plan = planLanding({ root, number: n, gh: ghRunner })
   if (plan.head !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
