@@ -18,7 +18,7 @@ None.
 
 ### Modified Capabilities
 
-None. The rule text is corrected to match the tool's documented default; no requirement changes, so this change sets `skip_specs: true`.
+None. The rule text is corrected to name each review kind instead of relying on the tool's default; no requirement changes, so this change sets `skip_specs: true`.
 
 ## Impact
 
