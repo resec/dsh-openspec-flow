@@ -4,7 +4,7 @@
 
 ### Requirement: Each review round wakes the reviewer
 
-For a change with `reviewers: 1`, resuming into a new draft or apply round SHALL wake the review's existing reviewer to read the new brief; it SHALL NOT start another reviewer. Resuming a round whose reviewer has not submitted SHALL NOT wake it again. The slot SHALL keep the same agent and record the round it was woken for. `replace` remains the only way to start a new reviewer.
+For a change with `reviewers: 1`, resuming into a new draft or apply round SHALL wake the review's existing reviewer to read the new brief; it SHALL NOT start another reviewer. Resuming an unreported round SHALL NOT wake it again while its object is unchanged; closing a stale draft round SHALL wake the reviewer for the next round. The slot SHALL keep the same agent and record the round it was woken for. `replace` remains the only way to start a new reviewer.
 
 #### Scenario: A new draft round wakes the same reviewer
 
