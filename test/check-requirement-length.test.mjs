@@ -8,7 +8,7 @@ import { resolveBundledCli } from '../lib/openspec.js'
 import { classifyRequirementLength } from '../lib/review/length.js'
 import {
   checkChange,
-  entryLine,
+  entryRow,
   listActiveChanges,
   main,
   parseArgs,
@@ -190,6 +190,7 @@ test('reports a blocking run with annotations, a summary file and exit code 1', 
     assert.match(out.join(''), /::error file=.*widget.*specs\/cap\/spec\.md,line=3,title=Requirement length::/u)
     const written = readFileSync(summary, 'utf8')
     assert.match(written, /## Requirement length gate/u)
+    assert.match(written, /\| change \| path \| operation \| requirement \| length \| baseline \|/u)
     assert.match(written, /Big/u)
     assert.match(written, /Official handling:/u)
     assert.match(written, /add the new behavior as an ADDED requirement/u)
@@ -233,8 +234,9 @@ test('renders entries and locates the requirement heading', () => {
   const root = makeProject({ delta: addedDelta(LONG) })
   try {
     const issue = { path: 'specs/cap/spec.md', operation: 'ADDED', requirement: 'Big', length: LONG.length }
-    assert.equal(entryLine('widget', issue), '- widget: specs/cap/spec.md: ADDED "Big" is 510 characters (baseline n/a)')
-    assert.match(renderSummary([entryLine('widget', issue)]), /An archive merge would exceed/u)
+    const row = entryRow('widget', issue)
+    assert.deepEqual(row, { change: 'widget', path: 'specs/cap/spec.md', operation: 'ADDED', requirement: 'Big', length: '510', baseline: 'n/a' })
+    assert.match(renderSummary([row]), /^\| widget \| specs\/cap\/spec\.md \| ADDED \| Big \| 510 \| n\/a \|$/mu)
     const location = requirementLocation(root, 'widget', issue)
     assert.equal(location.line, 3)
     assert.equal(requirementLocation(root, 'widget', { ...issue, requirement: 'Missing' }).line, undefined)

@@ -131,28 +131,36 @@ export function checkChange(cli, root, change) {
 }
 
 /**
- * Render one blocking issue as a list line.
+ * One blocking entry as a summary table row.
  * @param change - change name.
  * @param issue - classifier issue.
- * @returns Markdown list line.
+ * @returns row fields, all strings.
  */
-export function entryLine(change, issue) {
-  const baseline = issue.baseline === undefined ? 'n/a' : String(issue.baseline)
-  return `- ${change}: ${issue.path}: ${issue.operation} "${issue.requirement}" is ${String(issue.length)} characters (baseline ${baseline})`
+export function entryRow(change, issue) {
+  return {
+    change,
+    path: issue.path,
+    operation: issue.operation,
+    requirement: issue.requirement,
+    length: String(issue.length),
+    baseline: issue.baseline === undefined ? 'n/a' : String(issue.baseline),
+  }
 }
 
 /**
  * Render the job summary for the blocking entries.
- * @param entries - rendered list lines.
+ * @param rows - rendered table rows.
  * @returns Markdown block.
  */
-export function renderSummary(entries) {
+export function renderSummary(rows) {
   return [
     '## Requirement length gate',
     '',
     'An archive merge would exceed the requirement description limit:',
     '',
-    ...entries,
+    '| change | path | operation | requirement | length | baseline |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...rows.map((row) => `| ${row.change} | ${row.path} | ${row.operation} | ${row.requirement} | ${row.length} | ${row.baseline} |`),
     '',
     'Official handling:',
     '',
@@ -197,10 +205,10 @@ export function requirementLocation(root, change, issue) {
  * @returns 0 when there is nothing to report, otherwise 1.
  */
 export function reportBlockers(root, blockers, env = process.env, write = (text) => process.stdout.write(text), error = (text) => process.stderr.write(text)) {
-  const entries = []
+  const rows = []
   for (const blocker of Array.isArray(blockers) ? blockers : []) {
     for (const issue of Array.isArray(blocker?.issues) ? blocker.issues : []) {
-      entries.push(entryLine(blocker.change, issue))
+      rows.push(entryRow(blocker.change, issue))
       const { file, line } = requirementLocation(root, blocker.change, issue)
       const baseline = issue.baseline === undefined ? 'n/a' : String(issue.baseline)
       const message = `${issue.path}: ${issue.operation} "${issue.requirement}" is ${String(issue.length)} characters (baseline ${baseline})`
@@ -208,8 +216,8 @@ export function reportBlockers(root, blockers, env = process.env, write = (text)
       write(`::error ${location},title=Requirement length::${escapeCommandValue(message)}\n`)
     }
   }
-  if (entries.length === 0) return 0
-  const summary = renderSummary(entries)
+  if (rows.length === 0) return 0
+  const summary = renderSummary(rows)
   const summaryPath = env.GITHUB_STEP_SUMMARY
   if (typeof summaryPath === 'string' && summaryPath !== '') {
     appendFileSync(summaryPath, `${summary}\n`)
