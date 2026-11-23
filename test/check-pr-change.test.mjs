@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
   activeChangeNames,
+  changedPaths,
   evaluateChange,
   hasDependencyChange,
   isActiveChangePath,
   isRestrictedPath,
+  parseHead,
   uncheckedTasks,
 } from '../scripts/check-pr-change.mjs'
 
@@ -95,4 +102,113 @@ test('detects a dependency change but allows a scripts-only edit', () => {
     hasDependencyChange(base, { ...base, engines: { node: '>=26.0.0' } }),
     true,
   )
+})
+
+const CHECK_SCRIPT = fileURLToPath(new URL('../scripts/check-pr-change.mjs', import.meta.url))
+
+function gitRun(cwd, args) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim()
+}
+
+function writeFileAt(root, path, text) {
+  mkdirSync(dirname(join(root, path)), { recursive: true })
+  writeFileSync(join(root, path), text)
+}
+
+/**
+ * Build a repository whose HEAD is a merge of an advanced main and a pull-request branch.
+ * @param options - `{ prFiles, mainFiles, prDelete }` texts and paths.
+ * @returns `{ root, base, head }`, with the script copied under the fixture.
+ */
+function makeMergeCheckout({ prFiles = {}, mainFiles = {}, prDelete = [] } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-change-'))
+  gitRun(root, ['init', '-q', '-b', 'main'])
+  gitRun(root, ['config', 'user.email', 'test@example.test'])
+  gitRun(root, ['config', 'user.name', 'Test'])
+  writeFileAt(root, 'package.json', '{"name":"widget","version":"1.0.0"}\n')
+  writeFileAt(root, 'openspec/changes/widget/proposal.md', '# Widget\n')
+  writeFileAt(root, 'openspec/changes/widget/tasks.md', '# Tasks\n\n- [x] 1.1 Done\n')
+  gitRun(root, ['add', '-A'])
+  gitRun(root, ['commit', '-qm', 'base'])
+  const base = gitRun(root, ['rev-parse', 'HEAD'])
+  gitRun(root, ['checkout', '-q', '-b', 'pr'])
+  writeFileAt(root, 'openspec/changes/widget/proposal.md', '# Widget\n\n## Why\n\nA thing.\n')
+  for (const [path, text] of Object.entries(prFiles)) writeFileAt(root, path, text)
+  for (const path of prDelete) rmSync(join(root, path))
+  gitRun(root, ['add', '-A'])
+  gitRun(root, ['commit', '-qm', 'pull request'])
+  const head = gitRun(root, ['rev-parse', 'HEAD'])
+  gitRun(root, ['checkout', '-q', 'main'])
+  writeFileAt(root, '.github/workflows/ci.yml', 'name: ci\n')
+  for (const [path, text] of Object.entries(mainFiles)) writeFileAt(root, path, text)
+  gitRun(root, ['add', '-A'])
+  gitRun(root, ['commit', '-qm', 'main advance'])
+  gitRun(root, ['merge', '--no-ff', '--no-edit', '-q', 'pr'])
+  mkdirSync(join(root, 'scripts'), { recursive: true })
+  copyFileSync(CHECK_SCRIPT, join(root, 'scripts', 'check-pr-change.mjs'))
+  return { root, base, head }
+}
+
+function spawnCheck(root, args) {
+  return spawnSync(process.execPath, [join(root, 'scripts', 'check-pr-change.mjs'), ...args], { cwd: root, encoding: 'utf8' })
+}
+
+test('the merge checkout counts advanced main commits without --head', () => {
+  const { root, base } = makeMergeCheckout()
+  try {
+    assert.equal(changedPaths(base, 'HEAD', root).includes('.github/workflows/ci.yml'), true)
+    const result = spawnCheck(root, ['--base', base])
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /restricted path changed: \.github\/workflows\/ci\.yml/u)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the pull-request head excludes advanced main commits', () => {
+  const { root, base, head } = makeMergeCheckout()
+  try {
+    assert.deepEqual(changedPaths(base, head, root), ['openspec/changes/widget/proposal.md'])
+    const result = spawnCheck(root, ['--base', base, '--head', head])
+    assert.equal(result.status, 0, result.stderr)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a pull request that changes a restricted path still fails', () => {
+  const { root, base, head } = makeMergeCheckout({ prFiles: { 'coverage.baseline.json': '{}\n' } })
+  try {
+    const result = spawnCheck(root, ['--base', base, '--head', head])
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /restricted path changed: coverage\.baseline\.json/u)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a head without package.json fails the step', () => {
+  const { root, base, head } = makeMergeCheckout({ prDelete: ['package.json'] })
+  try {
+    const result = spawnCheck(root, ['--base', base, '--head', head])
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /package\.json/u)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a value-less --head exits 2 and an unknown head exits 1', () => {
+  const { root, base } = makeMergeCheckout()
+  try {
+    const missing = spawnCheck(root, ['--base', base, '--head'])
+    assert.equal(missing.status, 2, missing.stderr)
+    assert.match(missing.stderr, /usage:/u)
+    const unknown = spawnCheck(root, ['--base', base, '--head', 'nosuchrev'])
+    assert.equal(unknown.status, 1, unknown.stderr)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

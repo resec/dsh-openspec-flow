@@ -146,24 +146,71 @@ export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, hea
   return errors
 }
 
-function git(args) {
-  const result = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+/**
+ * Run git in a repository root.
+ * @param args - git arguments.
+ * @param root - repository root.
+ * @returns stdout.
+ */
+function git(args, root = ROOT) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${(result.stderr || '').trim()}`)
   return result.stdout
 }
 
-function changedPaths(base) {
-  const output = git(['diff', '--name-only', `${base}...HEAD`])
+/**
+ * The files a pull request changes, comparing the head with the recorded base.
+ * @param base - recorded pull-request base commit.
+ * @param head - pull-request head commit, or `HEAD` for a local run.
+ * @param root - repository root.
+ * @returns repository-relative paths.
+ */
+export function changedPaths(base, head = 'HEAD', root = ROOT) {
+  const output = git(['diff', '--name-only', `${base}...${head}`], root)
   return output.split('\n').map((line) => line.trim()).filter(Boolean)
 }
 
-function packageJsonAt(revision) {
+/**
+ * Read one revision's package.json, tolerating a missing file.
+ * @param revision - commit.
+ * @returns parsed object, or undefined.
+ */
+export function packageJsonAt(revision) {
   try {
     return JSON.parse(git(['show', `${revision}:package.json`]))
   } catch {
     return undefined
   }
+}
+
+/**
+ * Read the pull-request head's package.json, failing when it cannot be read.
+ * @param revision - commit.
+ * @returns parsed object.
+ */
+export function headPackageJsonAt(revision) {
+  return JSON.parse(git(['show', `${revision}:package.json`]))
+}
+
+/**
+ * Parse `--head`, defaulting to `HEAD`.
+ * @param argv - arguments after the script.
+ * @returns the revision, or null when the flag has no value.
+ */
+export function parseHead(argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]
+    if (arg === '--head') {
+      const next = argv[index + 1]
+      return next === undefined || next === '' || next.startsWith('--') ? null : next
+    }
+    if (arg.startsWith('--head=')) {
+      const value = arg.slice('--head='.length)
+      return value === '' ? null : value
+    }
+  }
+  return 'HEAD'
 }
 
 function parseBase(argv) {
@@ -177,13 +224,20 @@ function parseBase(argv) {
 }
 
 function main() {
-  const base = parseBase(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  const base = parseBase(argv)
   if (base === undefined) {
-    console.error('usage: node scripts/check-pr-change.mjs --base <commit>')
+    console.error('usage: node scripts/check-pr-change.mjs --base <commit> [--head <commit>]')
     process.exitCode = 2
     return
   }
-  const paths = changedPaths(base)
+  const head = parseHead(argv)
+  if (head === null) {
+    console.error('usage: node scripts/check-pr-change.mjs --base <commit> [--head <commit>]')
+    process.exitCode = 2
+    return
+  }
+  const paths = changedPaths(base, head)
   const tasksByChange = {}
   for (const name of activeChangeNames(paths)) {
     try {
@@ -196,7 +250,7 @@ function main() {
     paths,
     tasksByChange,
     basePackageJson: packageJsonAt(base),
-    headPackageJson: JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')),
+    headPackageJson: headPackageJsonAt(head),
   })
   if (errors.length > 0) {
     for (const error of errors) console.error(`change check: ${error}`)

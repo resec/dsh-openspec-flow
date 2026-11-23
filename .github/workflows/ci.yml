@@ -33,7 +33,7 @@ jobs:
       - run: npm ci
       - name: change check
         if: github.event_name == 'pull_request'
-        run: node scripts/check-pr-change.mjs --base "${{ github.event.pull_request.base.sha }}"
+        run: node scripts/check-pr-change.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
       - name: generated skill check
         if: github.event_name == 'pull_request'
         run: node scripts/check-generated-skills.mjs --base "${{ github.event.pull_request.base.sha }}"

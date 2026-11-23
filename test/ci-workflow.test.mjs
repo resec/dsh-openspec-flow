@@ -41,6 +41,11 @@ test('the requirement length gate runs after strict validation and before verifi
   assert.ok(verification > gate, 'the length gate must run before npm run verify')
 })
 
+test('the change check compares the base with the pull-request head', () => {
+  assert.match(WORKFLOW, /check-pr-change\.mjs --base "\$\{\{ github\.event\.pull_request\.base\.sha \}\}" --head "\$\{\{ github\.event\.pull_request\.head\.sha \}\}"/u)
+  assert.match(WORKFLOW, /fetch-depth: 0/u)
+})
+
 test('the lab job installs the browser where the doctor looks', () => {
   for (const command of [
     'PLAYWRIGHT_BROWSERS_PATH: .cache/lab/pw-browsers',
