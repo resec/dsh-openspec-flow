@@ -220,6 +220,7 @@ test('the brief names the axes and the report contract', () => {
   assert.doesNotMatch(brief, /\bCLI\b/i)
   assert.match(brief, /Another change's directory under `openspec\/changes\/` is outside this review/)
   assert.match(brief, /Record such a concern in `outOfScope`/)
+  assert.match(brief, /A finding that requires it to change is refused/)
 })
 
 test('the apply brief states the cross-change boundary', () => {
@@ -237,6 +238,7 @@ test('the apply brief states the cross-change boundary', () => {
   })
   assert.match(brief, /Another change's directory under `openspec\/changes\/` is outside this review/)
   assert.match(brief, /Record such a concern in `outOfScope`/)
+  assert.match(brief, /A finding that requires it to change is refused/)
   assert.match(brief, /whole committed tree \(the tree named in the brief\) is the review object/)
 })
 
