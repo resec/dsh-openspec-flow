@@ -175,6 +175,15 @@ function escapeCommandValue(text) {
 }
 
 /**
+ * Escape one workflow-command property value.
+ * @param text - property text.
+ * @returns text safe for a `key=value` annotation property.
+ */
+export function escapeCommandProperty(text) {
+  return escapeCommandValue(text).replace(/:/gu, '%3A').replace(/,/gu, '%2C')
+}
+
+/**
  * Locate the delta file and requirement heading for one issue.
  * @param root - project root.
  * @param change - change name.
@@ -212,7 +221,7 @@ export function reportBlockers(root, blockers, env = process.env, write = (text)
       const { file, line } = requirementLocation(root, blocker.change, issue)
       const baseline = issue.baseline === undefined ? 'n/a' : String(issue.baseline)
       const message = `${issue.path}: ${issue.operation} "${issue.requirement}" is ${String(issue.length)} characters (baseline ${baseline})`
-      const location = line === undefined ? `file=${escapeCommandValue(file)}` : `file=${escapeCommandValue(file)},line=${String(line)}`
+      const location = line === undefined ? `file=${escapeCommandProperty(file)}` : `file=${escapeCommandProperty(file)},line=${String(line)}`
       write(`::error ${location},title=Requirement length::${escapeCommandValue(message)}\n`)
     }
   }

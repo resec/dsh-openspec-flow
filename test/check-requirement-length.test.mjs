@@ -9,6 +9,7 @@ import { classifyRequirementLength } from '../lib/review/length.js'
 import {
   checkChange,
   entryRow,
+  escapeCommandProperty,
   listActiveChanges,
   main,
   parseArgs,
@@ -191,6 +192,11 @@ test('fails closed when the bundled CLI cannot run', () => {
   } finally {
     remove(root)
   }
+})
+
+test('escapes annotation properties so a path cannot end the property early', () => {
+  assert.equal(escapeCommandProperty('a,b:c%d'), 'a%2Cb%3Ac%25d')
+  assert.equal(escapeCommandProperty('plain/path.md'), 'plain/path.md')
 })
 
 test('reports a blocking run with annotations, a summary file and exit code 1', () => {
