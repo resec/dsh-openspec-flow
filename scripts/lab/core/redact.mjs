@@ -25,13 +25,37 @@ const KEY_SEGMENT = /[a-z0-9]_key$/u
 const QUERY_NAME = /^(?:code|key)$/iu
 
 /**
- * A scheme word that introduces a credential rather than being one.
+ * The scheme words that introduce an `Authorization` value.
  *
- * The list mirrors the schemes `SECRET_AUTH_HEADER` accepts; a name/value pair
- * whose value is one of them keeps the word, because the following field walk
- * would otherwise replace the scheme and leave the credential beside it.
+ * A word from this list carries no secret of its own and reads better in a
+ * report, so it stays in front of the replacement. The list is closed on
+ * purpose: `Digest`, `AWS4-HMAC-SHA256` and `OAuth` values hold several
+ * `name=value` parameters, and an unknown word may be part of the credential
+ * rather than a scheme.
  */
-const SCHEME = /^(?:bearer|basic|token|digest|negotiate)$/iu
+const SCHEME_WORDS = ['bearer', 'basic', 'token', 'digest', 'negotiate', 'oauth', 'aws4-hmac-sha256']
+
+/** A scheme word standing alone as a value. */
+const SCHEME = new RegExp(`^(?:${SCHEME_WORDS.join('|')})$`, 'iu')
+
+/** A scheme word in front of the value it introduces. */
+const SCHEME_PREFIX = new RegExp(`^(?:${SCHEME_WORDS.join('|')})\\s+`, 'iu')
+
+/** Sentence punctuation that closes a value rather than belonging to it. */
+const SENTENCE_MARK = /[.,;:!?]+$/u
+
+/**
+ * Words that name the scheme or the credential instead of carrying one.
+ *
+ * Position alone cannot separate `Bearer abc` from `Basic auth.`: both are a
+ * scheme word followed by one ordinary word that ends the line. The word itself
+ * is what tells a header value from prose, so the names that describe the
+ * scheme stay readable while the rest of the line is replaced.
+ */
+const SCHEME_PROSE = new Set([
+  'auth', 'authentication', 'authorization', 'token', 'tokens', 'scheme', 'schemes',
+  'header', 'headers', 'credential', 'credentials', 'flow', 'mode', 'type',
+])
 
 /** A `?name=value` pair in a URL. */
 const QUERY_PAIR = /([?&])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s"'`]+)/gu
@@ -39,19 +63,31 @@ const QUERY_PAIR = /([?&])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s"'`]+)/gu
 /**
  * An `Authorization` header, whose value is a credential whatever its shape.
  *
- * The header names the value, so anything after it is replaced; the scheme word
- * stays because it carries no secret and reads better in a report.
+ * The whole value is replaced, because a `Digest`, `AWS4-HMAC-SHA256` or
+ * `OAuth` value carries several `name=value` parameters and a single-token
+ * rule would keep all but the first. A quoted value is one serialized field, so
+ * it is matched whole; an unquoted value runs to the end of the line.
  */
-const SECRET_AUTH_HEADER = /\b((?:[A-Za-z-]*authorization)\s*[:=]\s*)((?:(?:bearer|basic|token|digest|negotiate)\s+)?)("[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
+const SECRET_AUTH_HEADER = /\b((?:[A-Za-z-]*authorization)[ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|[^\n]+)/giu
 
 /**
- * A scheme word with no header, which only counts with a credential-shaped
- * value: `basic initialization failed` is prose, not a header.
+ * A scheme word with no header.
+ *
+ * A value here may be a credential or an ordinary word: `basic initialization
+ * failed` is prose, while `Bearer abc` is the header value without its name.
+ * {@link redactBareScheme} decides between them.
  */
 const SECRET_AUTH_SCHEME = /\b((?:bearer|basic)\s+)("[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/giu
 
-/** A `Cookie`/`Set-Cookie` header, whose value may be quoted. */
-const SECRET_HEADER = /((?:set-)?cookie\s*[:=]\s*)("[^"\n]*"|'[^'\n]*'|[^\n"']+)/giu
+/**
+ * A `Cookie`/`Set-Cookie` header, whose value may be quoted.
+ *
+ * A quoted value is one serialized field and keeps its place; anything after it
+ * from the first `;` on belongs to the same header line, because a cookie list
+ * can carry several quoted values and stopping at the first would keep the
+ * rest.
+ */
+const SECRET_HEADER = /((?:set-)?cookie[ \t]*[:=][ \t]*)((?:"[^"\n]*"|'[^'\n]*')(?:[ \t]*;[^\n]*)?|[^\n]+)/giu
 
 /** A `name: value` or `name=value` field, quoted or bare. */
 const FIELD_PAIR = /(['"]?)([A-Za-z][A-Za-z0-9_-]*)(['"]?)(\s*[:=]\s*)("[^"\n]*"|'[^'\n]*'|[^\s,;&]+)/gu
@@ -109,13 +145,21 @@ function redactFieldValue(raw) {
 }
 
 /**
- * Replace one credential value, keeping the quoting.
+ * Replace one `Authorization` value, keeping a quoted form and a scheme word.
+ *
+ * A quoted value is one serialized field, so the whole field goes. A bare value
+ * keeps a known scheme prefix only; any other prefix stays inside the
+ * replacement, because a word the list does not name may be the credential.
+ *
  * @param raw - the value as written.
  * @returns the replacement, or the value when it is already redacted.
  */
-function replaceCredential(raw) {
+function redactAuthValue(raw) {
   const { quote, bare } = splitQuoted(raw)
-  return bare === REDACTED ? raw : `${quote}${REDACTED}${quote}`
+  if (bare === '' || bare === REDACTED) return raw
+  if (quote !== '') return `${quote}${REDACTED}${quote}`
+  const prefix = SCHEME_PREFIX.exec(bare)
+  return prefix === null ? REDACTED : `${prefix[0]}${REDACTED}`
 }
 
 /**
@@ -136,6 +180,35 @@ function looksLikeCredential(raw) {
 }
 
 /**
+ * Redact one bare scheme value, or keep it when it reads as prose.
+ *
+ * A short token carries no digit and no separator, so its shape alone cannot
+ * separate `Bearer abc` from `Basic auth`. What separates them is position and
+ * wording: a header value closes the line or follows the `:`/`=` that names it,
+ * while prose keeps going after the word. The two cases still meet at a single
+ * ordinary word that ends the sentence, so the names that describe the scheme
+ * are listed, and a closing mark stays outside the replacement.
+ *
+ * @param raw - the value as written.
+ * @param rest - the text that follows the value.
+ * @param lead - the text in front of the scheme word.
+ * @returns the replacement, or null when the value is prose.
+ */
+function redactBareScheme(raw, rest, lead) {
+  const { quote, bare } = splitQuoted(raw)
+  if (bare === '' || bare === REDACTED) return null
+  const body = bare.replace(SENTENCE_MARK, '')
+  const mark = bare.slice(body.length)
+  if (body === '' || body === REDACTED) return null
+  if (looksLikeCredential(body)) return `${quote}${REDACTED}${mark}${quote}`
+  if (SCHEME_PROSE.has(body.toLowerCase())) return null
+  const line = rest.split('\n')[0]
+  const endsLine = /^[ \t'"]*[,;:.)\]}]*[ \t'"]*$/u.test(line)
+  if (!endsLine && !/[:=][ \t]*$/u.test(lead)) return null
+  return `${quote}${REDACTED}${mark}${quote}`
+}
+
+/**
  * Replace credential values in one text.
  *
  * Serialized errors carry credentials in the JSON form `{"api_key":"..."}` and
@@ -151,8 +224,11 @@ export function redactText(value) {
     .replace(QUERY_PAIR, (match, separator, name) => (
       isCredentialName(name) || QUERY_NAME.test(name) ? `${separator}${name}=${REDACTED}` : match
     ))
-    .replace(SECRET_AUTH_HEADER, (_match, prefix, scheme, raw) => `${prefix}${scheme}${replaceCredential(raw)}`)
-    .replace(SECRET_AUTH_SCHEME, (match, prefix, raw) => (looksLikeCredential(raw) ? `${prefix}${replaceCredential(raw)}` : match))
+    .replace(SECRET_AUTH_HEADER, (_match, prefix, raw) => `${prefix}${redactAuthValue(raw)}`)
+    .replace(SECRET_AUTH_SCHEME, (match, prefix, raw, offset, text) => {
+      const cleaned = redactBareScheme(raw, text.slice(offset + match.length), text.slice(0, offset))
+      return cleaned === null ? match : `${prefix}${cleaned}`
+    })
     .replace(SECRET_HEADER, (_match, prefix, raw) => `${prefix}${redactFieldValue(raw)}`)
     .replace(FIELD_PAIR, (match, leading, name, trailing, separator, raw) => (
       isCredentialName(name)
