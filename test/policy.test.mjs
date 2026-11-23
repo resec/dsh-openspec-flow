@@ -160,3 +160,9 @@ test('the policy text states the apply review gate', () => {
     assert.ok(POLICY_TEXT.includes(phrase), `the policy text states: ${phrase}`)
   }
 })
+
+test('the flow rule states the no-edit rule and the blocked recovery', () => {
+  assert.match(POLICY_TEXT, /Do not edit the change artifacts while a draft round is open/)
+  assert.match(POLICY_TEXT, /closes the round as blocked/)
+  assert.match(POLICY_TEXT, /`resume` then opens the next round and wakes the reviewer/)
+})
