@@ -15,4 +15,4 @@
 
 - [x] 3.1 Run `openspec validate fix-review-action-enumeration --strict`.
 - [x] 3.2 Run `npm run verify` on Node 24 and verify the test summary and the coverage verdict pass.
-- [x] 3.3 Run `openspec validate fix-review-action-enumeration --strict`, `npm run openspec:check` and `npm run layout:check`.
+- [x] 3.3 Run `npm run openspec:check` and `npm run layout:check`.
