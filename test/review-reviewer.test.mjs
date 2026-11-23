@@ -1147,3 +1147,22 @@ test('an apply submit on a moved tree keeps the stale refusal', async () => {
     /apply object changed since this round started/,
   )
 })
+
+test('an un-tokened draft submit after a stale notice is refused', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.staleNotice = { round: 1, from: 'a', to: 'b', at: new Date().toISOString() }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const execute = reviewerRunner(root)
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', report: report() }),
+    /recorded a stale notice/,
+  )
+  const accepted = await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1, report: report(),
+  })
+  assert.equal(accepted.state, 'passed')
+})
