@@ -274,7 +274,7 @@ test('renders entries and locates the requirement heading', () => {
     const location = requirementLocation(root, 'widget', issue)
     assert.equal(location.line, 3)
     assert.equal(requirementLocation(root, 'widget', { ...issue, requirement: 'Missing' }).line, undefined)
-    assert.equal(reportBlockers(root, [], 500, {}, () => {}, () => {}), 0)
+    assert.equal(reportBlockers(root, [], 500, {}, () => {}), 0)
   } finally {
     remove(root)
   }
@@ -285,7 +285,7 @@ test('names the file without a line when the requirement heading cannot be locat
   const out = []
   try {
     const issue = { path: 'specs/cap/spec.md', operation: 'MODIFIED', requirement: 'Other', length: LONG.length, baseline: 16 }
-    assert.equal(reportBlockers(root, [{ change: 'widget', issues: [issue] }], 500, {}, (text) => out.push(text), () => {}), 1)
+    assert.equal(reportBlockers(root, [{ change: 'widget', issues: [issue] }], 500, {}, (text) => out.push(text)), 1)
     assert.match(out.join(''), /Edit:\n\n- openspec\/changes\/widget\/specs\/cap\/spec\.md\n/u)
     assert.doesNotMatch(out.join(''), /specs\/cap\/spec\.md:3/u)
   } finally {

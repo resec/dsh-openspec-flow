@@ -221,10 +221,9 @@ export function requirementLocation(root, change, issue) {
  * @param limit - the classifier's requirement description limit.
  * @param env - environment, for `GITHUB_STEP_SUMMARY`.
  * @param write - stdout sink.
- * @param error - stderr sink.
  * @returns 0 when there is nothing to report, otherwise 1.
  */
-export function reportBlockers(root, blockers, limit, env = process.env, write = (text) => process.stdout.write(text), error = (text) => process.stderr.write(text)) {
+export function reportBlockers(root, blockers, limit, env = process.env, write = (text) => process.stdout.write(text)) {
   const rows = []
   const locations = []
   for (const blocker of Array.isArray(blockers) ? blockers : []) {
@@ -284,7 +283,7 @@ export function main(argv = process.argv.slice(2), env = process.env, write = (t
       write('requirement length gate: ok\n')
       return 0
     }
-    return reportBlockers(root, blockers, limit, env, write, error)
+    return reportBlockers(root, blockers, limit, env, write)
   } catch (cause) {
     error(`requirement length gate: ${cause instanceof Error ? cause.message : String(cause)}\n`)
     return 2
