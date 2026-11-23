@@ -13,4 +13,5 @@
 ## 3. Verify
 
 - [x] 3.1 Run `node --test test/review-apply.test.mjs` with a canonical `TMPDIR`.
-- [x] 3.2 Run `openspec validate fix-review-base-source --strict`, `npm run openspec:check` and `npm run layout:check`.
+- [x] 3.2 Run `npm run verify` on Node 24 and verify the test summary and the coverage verdict pass.
+- [x] 3.3 Run `openspec validate fix-review-base-source --strict`, `npm run openspec:check` and `npm run layout:check`.
