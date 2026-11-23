@@ -329,3 +329,33 @@ test('a watcher error is logged and disarms the watch', () => {
   assert.equal(emitters[0].closed, true)
   assert.doesNotThrow(() => disarmRoundWatch(f.directory))
 })
+
+test('an error from a replaced watcher leaves the live entry registered', () => {
+  const f = directFixture()
+  const emitters = []
+  const factory = () => {
+    const watcher = {
+      handlers: {},
+      closed: false,
+      close() { this.closed = true },
+      on(event, handler) { this.handlers[event] = handler },
+    }
+    emitters.push(watcher)
+    return watcher
+  }
+  const options = {
+    directory: f.directory,
+    changeRoot: f.changeRoot,
+    intent: 'intent',
+    watchFactory: factory,
+    debounceMs: 1,
+    logger: { warn() {} },
+  }
+  armRoundWatch({ ...options, round: 1, hash: 'a' })
+  armRoundWatch({ ...options, round: 2, hash: 'b' })
+  assert.equal(emitters[0].closed, true)
+  emitters[0].handlers.error(new Error('late error'))
+  assert.equal(emitters[1].closed, false)
+  disarmRoundWatch(f.directory)
+  assert.equal(emitters[1].closed, true)
+})
