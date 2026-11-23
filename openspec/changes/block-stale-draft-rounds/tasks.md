@@ -23,9 +23,9 @@
 
 ## 5. Integration
 
-- [ ] 5.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` on the change and report the result.
-- [ ] 5.2 Run `npm run test:affected -- lib/tools/review.js lib/review/submit.js lib/review/reviewer-tool.js lib/review/watch.js lib/policy.js` and report the result.
-- [ ] 5.3 Run `npm run verify` on Node 24 and report the test summary and coverage verdict.
+- [x] 5.1 Run `openspec_inspect` with `action: "validate"` and `strict: true` on the change and report the result.
+- [x] 5.2 Run `npm run test:affected -- lib/tools/review.js lib/review/submit.js lib/review/reviewer-tool.js lib/review/watch.js lib/policy.js` and report the result.
+- [x] 5.3 Run `npm run verify` on Node 24 and report the test summary and coverage verdict.
 
 ## Workflow follow-up
 
