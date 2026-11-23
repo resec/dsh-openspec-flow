@@ -909,6 +909,10 @@ test('closeStaleRound records a blocked report and leaves findings alone', () =>
   assert.equal(result.readiness.ready, false)
   assert.match(result.readiness.reasons.join(' '), /verdict is blocked/)
   assert.equal(closeStaleRound({ directory, record: result.record, currentHash: 'to-hash' }), undefined)
+  assert.throws(
+    () => closeStaleRound({ directory, record: { rounds: [] }, currentHash: 'to-hash' }),
+    /has no round/,
+  )
 })
 
 function git(root, args) {

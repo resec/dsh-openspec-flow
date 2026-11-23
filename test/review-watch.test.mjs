@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { apply as reviewerApply } from '../reviewer.js'
 import { createFakeContext } from './fake-context.mjs'
-import { clearRoundWatches, resetRoundWatchTestHooks, setRoundWatchTestHooks } from '../lib/review/watch.js'
+import { draftObject } from '../lib/review/object.js'
+import {
+  armRoundWatch, clearRoundWatches, disarmRoundWatch, resetRoundWatchTestHooks, setRoundWatchTestHooks,
+} from '../lib/review/watch.js'
 import {
   CHANGE, fixture, setup, call, reviewDir, report, externalSetup, cleanupFixtures,
 } from './review-fixtures.mjs'
@@ -140,4 +144,163 @@ test('a self review arms no watch', async () => {
   setRoundWatchTestHooks({ watch: factory, debounceMs: 1 })
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
   assert.equal(watchers.length, 0)
+})
+
+function directFixture(closeThrows = false) {
+  const root = fixture()
+  const changeRoot = join(root, 'openspec', 'changes', CHANGE)
+  const directory = join(root, 'watch-review')
+  const listeners = []
+  const watchers = []
+  const factory = (dir, options, listener) => {
+    listeners.push(listener)
+    const watcher = {
+      closed: false,
+      close() {
+        this.closed = true
+        if (closeThrows) throw new Error('close failed')
+      },
+    }
+    watchers.push(watcher)
+    return watcher
+  }
+  return {
+    root, changeRoot, directory, listeners, watchers, factory,
+    dispose() { rmSync(root, { recursive: true, force: true }) },
+  }
+}
+
+test('the watch module reports a hash failure, an unchanged object and a notice failure', async () => {
+  const f = directFixture()
+  const warnings = []
+  const logger = { warn: (message) => warnings.push(message) }
+  const seen = []
+  const intent = 'intent'
+  const hash = draftObject(f.changeRoot, intent).objectHash
+  const unchanged = armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent, round: 1, hash,
+    watchFactory: f.factory, debounceMs: 1, logger, onStale: () => seen.push('unchanged'),
+  })
+  assert.equal(unchanged.round, 1)
+  f.listeners[0]()
+  await settle()
+  assert.equal(seen.length, 0)
+  disarmRoundWatch(f.directory)
+
+  const broken = armRoundWatch({
+    directory: f.directory, changeRoot: join(f.root, 'missing'), intent, round: 2, hash: 'x',
+    watchFactory: f.factory, debounceMs: 1, logger, onStale: () => seen.push('broken'),
+  })
+  assert.equal(broken.round, 2)
+  f.listeners.at(-1)()
+  await settle()
+  assert.match(warnings.join(' '), /could not hash the artifacts/)
+
+  armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent, round: 3, hash: 'old',
+    watchFactory: f.factory, debounceMs: 1, logger,
+    onStale: async () => { throw new Error('handler failed') },
+  })
+  f.listeners.at(-1)()
+  await settle()
+  assert.match(warnings.join(' '), /draft watch notice failed/)
+  disarmRoundWatch(f.directory)
+  f.dispose()
+})
+
+test('the watch module tolerates a close failure and clears every entry', () => {
+  const f = directFixture(true)
+  armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent: 'intent', round: 1, hash: 'x',
+    watchFactory: f.factory, logger: { warn() {} },
+  })
+  assert.doesNotThrow(() => disarmRoundWatch(f.directory))
+  assert.equal(f.watchers[0].closed, true)
+  assert.doesNotThrow(() => disarmRoundWatch(join(f.root, 'never-armed')))
+
+  armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent: 'intent', round: 2, hash: 'x',
+    watchFactory: f.factory, logger: { warn() {} },
+  })
+  setRoundWatchTestHooks()
+  resetRoundWatchTestHooks()
+  clearRoundWatches()
+  assert.equal(f.watchers.at(-1).closed, true)
+  f.dispose()
+})
+
+test('the watch module falls back to fs.watch and the default debounce', () => {
+  const f = directFixture()
+  const armed = armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent: 'intent', round: 1, hash: 'x',
+    logger: { warn() {} },
+  })
+  assert.equal(armed.round, 1)
+  clearRoundWatches()
+  f.dispose()
+})
+
+function rewriteRecord(root, mutate) {
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  mutate(record)
+  writeFileSync(file, `${JSON.stringify(record)}\n`)
+}
+
+async function fireStaleNotice(root, options = {}) {
+  const { messages = [], warnings } = options
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), `# Proposal edited ${Date.now()}\n`)
+  const watchers = options.watchers
+  watchers.at(-1).listener()
+  await settle()
+  return { messages, warnings }
+}
+
+test('the notice is skipped for a passed, abandoned, reported or moved-round record', async () => {
+  for (const mutate of [
+    (record) => { record.state = 'passed' },
+    (record) => { record.state = 'abandoned' },
+    (record) => { record.rounds.at(-1).report = { path: 'x' } },
+    (record) => { record.rounds.at(-1).round = 5 },
+    (record) => { record.staleNotice = { round: 1 } },
+  ]) {
+    const root = fixture()
+    const { fake, messages } = externalSetup(root, undefined, { seedAgents: [{ id: 'review-test' }] })
+    const { factory, watchers } = fakeWatchFactory()
+    setRoundWatchTestHooks({ watch: factory, debounceMs: 1 })
+    await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+    rewriteRecord(root, mutate)
+    const before = messages.length
+    await fireStaleNotice(root, { watchers })
+    assert.equal(messages.length, before)
+  }
+})
+
+test('the notice is written but skipped without a reviewer slot', async () => {
+  const root = fixture()
+  const { fake, messages } = externalSetup(root, undefined, { seedAgents: [{ id: 'review-test' }] })
+  const { factory, watchers } = fakeWatchFactory()
+  setRoundWatchTestHooks({ watch: factory, debounceMs: 1 })
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  rewriteRecord(root, (record) => { record.reviewers = { count: 1, slots: [] } })
+  const before = messages.length
+  await fireStaleNotice(root, { watchers })
+  assert.equal(messages.length, before)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.staleNotice.round, 1)
+})
+
+test('the notice logs when the review lock is held', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root, undefined, { seedAgents: [{ id: 'review-test' }] })
+  const { factory, watchers } = fakeWatchFactory()
+  setRoundWatchTestHooks({ watch: factory, debounceMs: 1 })
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  mkdirSync(join(reviewDir(root), '.lock'))
+  try {
+    await fireStaleNotice(root, { watchers })
+  } finally {
+    rmSync(join(reviewDir(root), '.lock'), { recursive: true, force: true })
+  }
+  assert.match(fake.warnings.join(' '), /another write holds/)
 })

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import {
   mkdirSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs'
@@ -1120,5 +1121,29 @@ test('a late stale submission names its round and is refused', async () => {
       report: report({ verdict: 'blocked', summary: 'The artifacts changed during the round.' }),
     }),
     /current draft round is 2, not 1/,
+  )
+})
+
+test('an apply submit on a moved tree keeps the stale refusal', async () => {
+  const { root, run } = gitFixture()
+  const { fake } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'moved.txt'), 'x\n')
+  const added = spawnSync('git', ['-C', state.worktree, 'add', 'moved.txt'], { encoding: 'utf8' })
+  assert.equal(added.status, 0, added.stderr)
+  const commit = spawnSync('git', ['-C', state.worktree, 'commit', '-m', 'move the tree'], { encoding: 'utf8' })
+  assert.equal(commit.status, 0, commit.stderr)
+  const reviewer = createFakeContext({ cwd: state.worktree })
+  reviewerApply(reviewer.ctx)
+  await assert.rejects(
+    reviewer.tools.get('openspec_reviewer').execute({
+      action: 'submit', change: CHANGE, review: 'apply', report: report(),
+    }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal }),
+    /apply object changed since this round started/,
   )
 })
