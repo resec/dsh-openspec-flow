@@ -24,6 +24,7 @@ import { APPLY_REVIEW_FILE, DRAFT_REVIEW_FILE } from '../lib/review/record.js'
 import { LOCK_DIRECTORY_NAME, LOCK_FIELDS, LOCK_FILE_NAME } from '../lib/review/apply-lock.js'
 import { REVIEW_DIRECTORY, REVIEW_IGNORE_LINE } from '../lib/review/store.js'
 import { createFakeContext } from './fake-context.mjs'
+import { CLI_COMMAND } from './cli-command.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const DOC_PATH = join(ROOT, 'docs', 'review.md')
@@ -34,8 +35,6 @@ const REQUIRED_TOOLS = ['openspec_review', 'openspec_reviewer', 'openspec_apply_
 /** Review actions the document must show, because every phase names one. */
 const REQUIRED_ACTIONS = ['start', 'resume', 'wait', 'status', 'self-report', 'report', 'dispose', 'extend', 'abandon']
 
-/** OpenSpec CLI verbs a document must not present as an instruction. */
-const CLI_COMMAND = /\bopenspec (?:validate|archive|list|status|show|new|init|update|view|diff|schemas|instructions|config|store|completion)\b/
 
 /**
  * Read the live names the document is checked against.
