@@ -342,12 +342,48 @@ export function reviewedLanding({ root = mainWorktree(), number, apply = false }
   return entry
 }
 
+
+/** Resume the post-merge steps after a successful gh merge. */
+function completeMergedLanding(root, lands, entry) {
+  try {
+    git(root, ['fetch', 'origin', 'main'])
+    git(root, ['merge', '--ff-only', 'origin/main'])
+    const mergedHead = git(root, ['rev-parse', 'HEAD'])
+    const mergedTree = git(root, ['rev-parse', 'HEAD^{tree}'])
+    entry.mergedHead = mergedHead
+    entry.updatedAt = new Date().toISOString()
+    if (mergedTree !== entry.reviewedTree) {
+      entry.phase = 'tree-mismatch'
+      entry.error = `merged tree ${mergedTree} differs from reviewed tree ${entry.reviewedTree}`
+      saveLandings(root, lands)
+      throw new Error(entry.error)
+    }
+    entry.phase = 'archive-pending'
+    entry.error = null
+    saveLandings(root, lands)
+    return entry
+  } catch (error) {
+    if (entry.phase !== 'tree-mismatch') {
+      entry.phase = 'archive-pending'
+      entry.error = error instanceof Error ? error.message : String(error)
+      entry.updatedAt = new Date().toISOString()
+      saveLandings(root, lands)
+    }
+    throw error instanceof Error ? error : new Error(String(error))
+  }
+}
+
 /** Merge the reviewed pull request with gh rebase. */
 export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false } = {}) {
   const n = requireNumber(number)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
+  if (entry.merged === true) {
+    if (['archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
+    if (entry.phase === 'tree-mismatch') throw new Error(entry.error)
+    return completeMergedLanding(root, lands, entry)
+  }
   if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'reviewed') throw new Error(`PR #${n} landing phase is ${entry.phase}, not reviewed`)
   if (!apply) return { dryRun: true, entry }
@@ -371,29 +407,10 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
     throw new Error(entry.error)
   }
   entry.merged = true
-  saveLandings(root, lands)
-  git(root, ['fetch', 'origin', 'main'])
-  try {
-    git(root, ['merge', '--ff-only', 'origin/main'])
-  } catch (error) {
-    entry.phase = 'failed'
-    entry.error = `main fast-forward failed: ${error instanceof Error ? error.message : String(error)}`
-    saveLandings(root, lands)
-    throw new Error(entry.error)
-  }
-  const mergedHead = git(root, ['rev-parse', 'HEAD'])
-  const mergedTree = git(root, ['rev-parse', 'HEAD^{tree}'])
-  entry.mergedHead = mergedHead
   entry.phase = 'archive-pending'
   entry.error = null
-  entry.updatedAt = new Date().toISOString()
-  if (mergedTree !== entry.reviewedTree) {
-    entry.phase = 'tree-mismatch'
-    entry.error = `merged tree ${mergedTree} differs from reviewed tree ${entry.reviewedTree}`
-  }
   saveLandings(root, lands)
-  if (entry.phase === 'tree-mismatch') throw new Error(entry.error)
-  return entry
+  return completeMergedLanding(root, lands, entry)
 }
 
 /** Record the archive commit after the session archived on main. */
