@@ -93,7 +93,7 @@ After a matching merged tree, the session SHALL run `openspec_archive` on main, 
 
 ### Requirement: Landing state and recovery
 
-The landing command SHALL keep a landing state keyed by pull request with the head, pre-merge main, landing branch, reviewed tree, merged main head, archive commit and phase. It SHALL process one pull request at a time, reuse a completed phase on retry, never merge twice and never force main.
+The landing command SHALL keep a landing state keyed by pull request with the head, pre-merge main, landing branch, reviewed tree, merged main head, archive commit and phase. It SHALL process one pull request at a time, reuse a completed phase on retry, never merge twice and never force main. A pre-merge landing SHALL be abandonable without changing the watch entry; a post-merge landing SHALL NOT be abandoned.
 
 #### Scenario: Retry after a partial landing
 
@@ -109,6 +109,16 @@ The landing command SHALL keep a landing state keyed by pull request with the he
 
 - **WHEN** `origin/main` differs from the recorded pre-merge main
 - **THEN** the command refuses and requires a fresh prepare and review
+
+#### Scenario: A pre-merge landing is abandoned
+
+- **WHEN** a landing is prepared or reviewed and cannot proceed
+- **THEN** `abandon <n> --apply` removes its local checkout and branch without changing the watch entry
+
+#### Scenario: A post-merge landing is not abandoned
+
+- **WHEN** the pull request is already merged
+- **THEN** abandon refuses and the landing must continue through archive and push
 
 ## MODIFIED Requirements
 

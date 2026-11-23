@@ -2,7 +2,7 @@
 
 ## 1. Landing command and state
 
-- [x] 1.1 Add `scripts/pr-review-land.mjs` with `plan`, `prepare`, `reviewed`, `merge`, `archive`, `push`, `finish` and `state` commands, a `.cache/pr-review/landings.json` state file, argument parsing and usage text. Create `test/pr-review-land.test.mjs` with help and command validation cases; verify `node --test test/pr-review-land.test.mjs` passes.
+- [x] 1.1 Add `scripts/pr-review-land.mjs` with `plan`, `prepare`, `reviewed`, `merge`, `archive`, `push`, `finish`, `abandon` and `state` commands, a `.cache/pr-review/landings.json` state file, argument parsing and usage text. Create `test/pr-review-land.test.mjs` with help and command validation cases; verify `node --test test/pr-review-land.test.mjs` passes.
 - [x] 1.2 Implement the preflight gates: PR open, non-draft, base branch main, exactly one active change, `mergeable` label present, trusted pass comment for the current head, green CI, `MERGEABLE` and not `DIRTY`/`CONFLICTING`/`BLOCKED`, and a clean main worktree; verify with a gate matrix in the landing test suite via `npm run test:affected -- scripts/pr-review-land.mjs`.
 
 ## 2. Prepare and final review handoff
@@ -14,7 +14,7 @@
 
 - [x] 3.1 Implement `merge`: require the reviewed phase, re-check head, base, label, CI, mergeability and the reviewed record, require `origin/main` to equal the recorded pre-merge main, run `gh pr merge --rebase`, fetch and fast-forward local main, record `mergedHead`, and require `HEAD^{tree}` to equal `reviewedTree`; verify merge success, main moved, review mismatch, `gh` failure and tree mismatch cases.
 - [x] 3.2 Implement `archive`, `push` and `finish`: `archive` records the archive commit and phase, `push` verifies local main equals `origin/main` and records the pushed head, and `finish` requires the pushed phase, verifies the change is archived and the pushed head, writes the manifest, removes the PR worktree first, deletes the landing branch after it, and clears the watch entry through the watch forget helper. Verify archive-not-done, push-not-done, archived-change verification and branch-removal order.
-- [x] 3.3 Add idempotent retry behavior: a merged landing never runs `gh pr merge` again, archive and push failures keep their phase, and a second unfinished landing is refused; verify with state-machine cases in the landing test suite via `npm run test:affected -- scripts/pr-review-land.mjs`.
+- [x] 3.3 Add idempotent retry behavior: a merged landing never runs `gh pr merge` again, archive and push failures keep their phase, a second unfinished landing is refused, and a pre-merge landing can be abandoned; verify with state-machine cases in the landing test suite via `npm run test:affected -- scripts/pr-review-land.mjs`.
 
 ## 4. Documentation and entrypoint
 

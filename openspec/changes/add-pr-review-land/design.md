@@ -59,6 +59,8 @@ If archive, commit or push fails, the PR remains merged and the change active. T
 
 Store landing records in `.cache/pr-review/landings.json`, keyed by PR number. Watch `state --cleanup` may remove a merged PR's review entry; landing state must survive that cleanup until finish. `finish` verifies the archive and the pushed head, writes a small manifest, removes the PR worktree first, deletes the landing branch after the worktree is gone, and clears the watch entry.
 
+Before merge, a landing that cannot proceed can be abandoned with `abandon <n> --apply`; it removes the local checkout and branch without touching the watch entry. Post-merge phases cannot be abandoned, because the pull request is already merged; they must finish archive and push or be handled by the operator.
+
 Only one landing may be in a non-terminal phase at a time. Commands acquire the existing run lock for their own duration and reject a second unfinished landing.
 
 ## Risks / Trade-offs
