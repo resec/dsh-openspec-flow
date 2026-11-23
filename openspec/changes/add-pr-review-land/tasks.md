@@ -25,7 +25,7 @@
 
 - [x] 5.1 Run `openspec_inspect` with `action: "validate"` and `strict: true`; verify no warnings.
 - [x] 5.2 Run `npm run test:affected -- scripts/pr-review-land.mjs scripts/pr-review-watch.mjs` and `npm run verify` with Node 24 from `.cache/toolchain/node/bin`; verify the suite and coverage pass.
-- [ ] 5.3 Commit the implementation and complete the apply review before archive.
+- [x] 5.3 Commit the implementation and complete the apply review before archive.
 
 ## Workflow follow-up
 
