@@ -9,7 +9,7 @@
 ## 2. Clean the description and guard it
 
 - [x] 2.1 Describe `strict` in the per-action definition without naming a command, and register that description instead of a second copy.
-- [x] 2.2 Add a description test that rejects an `openspec <verb>` command name.
+- [x] 2.2 Add a description test that rejects an `openspec <verb>` command name, sharing the document guard's command list and scanning the review tool with both review modes enabled.
 - [x] 2.3 Confirm the test fails when the per-action `strict` description names `openspec validate` again, so the registered copy cannot drift from it.
 
 ## 3. Verify
