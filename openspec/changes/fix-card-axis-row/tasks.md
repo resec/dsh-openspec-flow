@@ -9,7 +9,11 @@
 - [x] 2.1 Assert the row order and the axis value in `test/review-client.test.mjs`.
 - [x] 2.2 Confirm the assertion fails against the previous row list.
 
-## 3. Verify
+## 3. Document the card
 
-- [x] 3.1 Run `node --test test/review-client.test.mjs`.
-- [x] 3.2 Run `openspec validate fix-card-axis-row --strict`, `npm run openspec:check` and `npm run layout:check`.
+- [x] 3.1 Name `类别` in the card shape of `docs/review.md`, including the rows omitted when unrecorded, and guard the row order in `test/review-doc.test.mjs`.
+
+## 4. Verify
+
+- [x] 4.1 Run `node --test test/review-client.test.mjs`.
+- [x] 4.2 Run `openspec validate fix-card-axis-row --strict`, `npm run openspec:check` and `npm run layout:check`.
