@@ -15,4 +15,4 @@
 ## 3. Verify
 
 - [x] 3.1 Run `openspec validate fix-tool-name-cleanup --strict`.
-- [x] 3.2 Run `node --test test/descriptions.test.mjs`, `npm run openspec:check` and `npm run layout:check`.
+- [x] 3.2 Run `node --test test/descriptions.test.mjs test/review-doc.test.mjs`, `npm run openspec:check` and `npm run layout:check`.
