@@ -8,7 +8,7 @@ The plugin SHALL accept a change only when the change's resolved schema is the C
 
 #### Scenario: Built-in schema is accepted
 
-- **WHEN** `openspec_inspect` with `action: "status"`, `action: "validate"` or `openspec_apply_next` is called for a change whose schema name is `spec-driven` and no project or user schema shadows the built-in
+- **WHEN** `openspec_inspect` with `action: "status"` or `action: "validate"`, or `openspec_apply_next`, is called for a change whose schema name is `spec-driven` and no project or user schema shadows the built-in
 - **THEN** the call proceeds with its normal result
 
 #### Scenario: Custom schema is rejected
