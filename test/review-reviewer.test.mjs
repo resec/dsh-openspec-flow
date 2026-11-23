@@ -1212,3 +1212,45 @@ test('an un-tokened draft submit after a stale notice is refused', async () => {
   })
   assert.equal(accepted.state, 'passed')
 })
+
+test('retry, replace and waive-reviewer act on the apply review record', async () => {
+  const { root, run } = gitFixture()
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'seal the draft'])
+  const base = run(['rev-parse', 'HEAD'])
+  const { fake, activations, messages } = externalSetup(root, {
+    draft: { enabled: false },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', base,
+  })
+  assert.equal(started.review, 'apply')
+  assert.equal(started.mode, 'reviewer')
+  assert.equal(activations.length, 1)
+
+  const retried = await call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'apply' })
+  assert.equal(messages.length, 1)
+  assert.match(retried.nextAction, /^openspec_review action=wait/)
+
+  const replaced = await call(fake, 'openspec_review', {
+    action: 'replace', change: CHANGE, review: 'apply', reason: 'stuck',
+  })
+  assert.equal(activations.length, 2)
+  assert.equal(replaced.ready, false)
+
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive-reviewer',
+    change: CHANGE,
+    review: 'apply',
+    waiver: 'accepted by the user',
+    approvedBy: 'user',
+  })
+  assert.equal(waived.ready, true)
+  assert.equal(waived.coverageGap, true)
+
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.reviewers.slots[0].retries, 1)
+  assert.equal(record.reviewers.slots[0].replacements.length, 1)
+  assert.equal(record.reviewers.slots[0].agentId, 'reviewer-2')
+})
