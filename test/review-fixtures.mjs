@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { apply } from '../index.js'
 import { clearCache } from '../lib/cache.js'
 import { reviewDirectory } from '../lib/review/store.js'
+import { clearRoundWatches } from '../lib/review/watch.js'
 import { createFakeContext } from './fake-context.mjs'
 
 export const PROBE_ROOT = fileURLToPath(new URL('./fixtures/probe/openspec', import.meta.url))
@@ -249,6 +250,7 @@ export function reviewerPresetToolNames(plugins) {
  * `.cache/` stays inspectable when it fails.
  */
 export function cleanupFixtures() {
+  clearRoundWatches()
   const leaked = CREATED.filter((root) => {
     const cache = join(root, '.cache')
     if (!existsSync(cache)) return false
