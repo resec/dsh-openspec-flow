@@ -58,7 +58,8 @@
     "layout:check": "node scripts/check-generated-skills.mjs --workspace",
     "check:pr": "node scripts/check-pr-change.mjs",
     "push:landed": "node scripts/push-landed.mjs",
-    "pr-review:poll": "node scripts/pr-review-watch.mjs poll"
+    "pr-review:poll": "node scripts/pr-review-watch.mjs poll",
+    "pr-review:land": "node scripts/pr-review-land.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": "2.0.0"

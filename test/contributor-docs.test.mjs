@@ -85,6 +85,12 @@ test('CONTRIBUTING.md requires exactly one active change', () => {
   assert.doesNotMatch(CONTRIBUTING, /at least one active change/i)
 })
 
+test('CONTRIBUTING.md describes the labeled rebase landing', () => {
+  assert.match(CONTRIBUTING, /`mergeable`/)
+  assert.match(CONTRIBUTING, /gh pr merge --rebase/)
+  assert.match(CONTRIBUTING, /merged tree equals the reviewed tree/)
+})
+
 test('AGENTS.md scopes the push step to the maintainer', () => {
   const pushLine = AGENTS.split('\n').find((line) => line.includes('origin/main') && line.includes('push'))
   assert.ok(pushLine, 'AGENTS.md has no push step naming origin/main')

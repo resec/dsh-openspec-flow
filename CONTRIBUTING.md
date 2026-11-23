@@ -206,10 +206,12 @@ CI green is necessary but not sufficient. The maintainer also reviews the change
 
 - The maintainer reviews every external pull request.
 - The draft review runs before merge. Because the change and its implementation arrive together, the draft review reviews the committed change artifacts and the pull request intent; it is not a pre-implementation gate for an external contributor.
-- When the PR review watch is enabled, the maintainer runs an apply review on the pull request head before merge and posts its result as a pull request comment. The watch and its recovery steps are documented in [docs/pr-review.md](docs/pr-review.md); a contributor does not need the plugin to respond to a review.
-- After merge, the change is archived only after an apply review of the merged tree is ready. The PR review is reused when its reviewed tree equals the merged tree; otherwise the maintainer runs another apply review on the merged tree. The archive commit follows.
+- When the PR review watch is enabled, the maintainer runs an apply review on the pull request head, or on the rebased landing branch when the head is behind main, before merge and posts the result as a pull request comment. The watch and its recovery steps are documented in [docs/pr-review.md](docs/pr-review.md); a contributor does not need the plugin to respond to a review.
+- A pull request with the `mergeable` label is merged with `gh pr merge --rebase`; the label is added only by a maintainer and the automation never adds or removes it.
+- The final apply review runs on the landing branch before the rebase merge. After the merge, the maintainer archives on main only when the merged tree equals the reviewed tree. If the merged tree differs, archive waits for another review.
+- The archive commit follows the merge. Archive, commit or push failure leaves the change active on main and is retried without re-merging.
 - If you have the plugin, you may run a draft review locally and paste its report into the pull request. The review record stays outside the worktree in a git project (under the git common directory) or under `openspec/.review/` without git, and is not committed. It is optional; the maintainer still records the review.
-- The merge commit may carry the active change. Do not archive it in the pull request.
+- The pull request remains unarchived; the rebase merge lands the active change and the archive commit follows on `main`. Do not archive it in the pull request.
 - Local review records, profile state and plugin installation are never required in the pull request.
 
 ## Security
