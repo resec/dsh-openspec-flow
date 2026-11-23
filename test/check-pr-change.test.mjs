@@ -225,3 +225,10 @@ test('the head package.json excludes a dependency change from the advanced base'
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('parses the head revision', () => {
+  assert.equal(parseHead([]), 'HEAD')
+  assert.equal(parseHead(['--head', 'abc']), 'abc')
+  assert.equal(parseHead(['--head=abc']), 'abc')
+  assert.equal(parseHead(['--head']), null)
+})
