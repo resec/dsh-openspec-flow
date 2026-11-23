@@ -33,10 +33,12 @@ export const LANDINGS_FILE = 'landings.json'
 export const MANIFEST_DIRECTORY = 'landings'
 /** Local landing branch prefix. */
 export const LANDING_BRANCH_PREFIX = 'pr-land/'
-/** Phases that keep a landing open. */
-const OPEN_PHASES = new Set(['prepared', 'reviewed', 'merged', 'archived', 'pushed'])
-/** Terminal phases that may be retried or forgotten. */
+/** Phases that keep a landing open or awaiting a retry. */
+const OPEN_PHASES = new Set(['prepared', 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
+/** Phases that may be forgotten by the operator. */
 const TERMINAL_PHASES = new Set(['pushed', 'failed', 'blocked', 'tree-mismatch'])
+/** Pre-merge phases that may be abandoned without losing merged work. */
+const ABANDONABLE_PHASES = new Set(['prepared', 'reviewed', 'blocked', 'failed', 'tree-mismatch'])
 
 /** A usage error, mapped to exit code 2. */
 export class LandUsageError extends UsageError {
@@ -197,6 +199,14 @@ export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh }
   return { number: n, change: change[0], head: pr.headRefOid, baseRefName: pr.baseRefName }
 }
 
+/** Remove a landing checkout and branch after the PR is not merged. */
+function removeLandingCheckout(root, entry) {
+  if (existsSync(entry.worktree)) {
+    spawnSync('git', ['-C', root, 'worktree', 'remove', '--force', entry.worktree], { encoding: 'utf8' })
+  }
+  spawnSync('git', ['-C', root, 'branch', '-D', entry.landingBranch], { encoding: 'utf8' })
+}
+
 /** Reject a second unfinished landing. */
 export function assertSingleLanding(lands, number) {
   const n = String(number)
@@ -214,7 +224,17 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
   const lands = loadLandings(root)
   assertSingleLanding(lands, n)
   const existing = lands.lands[String(n)]
-  if (existing !== undefined && OPEN_PHASES.has(existing.phase)) return existing
+  if (existing !== undefined) {
+    if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(existing.phase)) {
+      throw new Error(`PR #${n} is already past the merge phase (${existing.phase}); finish or inspect it`)
+    }
+    if (existing.prHead === plan.head && (existing.phase === 'prepared' || existing.phase === 'reviewed')) {
+      return existing
+    }
+    removeLandingCheckout(root, existing)
+    delete lands.lands[String(n)]
+    saveLandings(root, lands)
+  }
   const paths = landPaths(root)
   const worktree = join(paths.worktrees, `pr-${n}`)
   git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
@@ -256,6 +276,7 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
     mergedHead: null,
     archiveCommit: null,
     pushedHead: null,
+    merged: false,
     phase,
     error,
     attempts: 0,
@@ -303,9 +324,13 @@ export function reviewedLanding({ root = mainWorktree(), number, apply = false }
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state; run prepare first`)
-  if (entry.phase === 'reviewed' || entry.phase === 'merged') return entry
+  if (['reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'prepared') throw new Error(`PR #${n} landing phase is ${entry.phase}, not prepared`)
   if (!apply) return { dryRun: true, entry }
+  const watch = loadState(root)
+  if (watch.prs?.[String(n)]?.head !== entry.prHead) {
+    throw new Error(`PR #${n} head moved; run prepare again before reviewed`)
+  }
   const head = git(entry.worktree, ['rev-parse', 'HEAD'])
   if (head !== entry.landingHead) throw new Error(`the landing head moved from ${entry.landingHead} to ${head}`)
   const tree = assertReviewRecord(root, entry)
@@ -323,11 +348,12 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
-  if (entry.phase === 'merged' || entry.phase === 'archived' || entry.phase === 'pushed') return entry
+  if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'reviewed') throw new Error(`PR #${n} landing phase is ${entry.phase}, not reviewed`)
   if (!apply) return { dryRun: true, entry }
   assertReviewRecord(root, entry)
   const plan = planLanding({ root, number: n, gh: ghRunner })
+  if (plan.head !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
   if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
   const originMain = git(root, ['rev-parse', 'origin/main'])
   if (originMain !== entry.preMergeMain) {
@@ -344,6 +370,8 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
     saveLandings(root, lands)
     throw new Error(entry.error)
   }
+  entry.merged = true
+  saveLandings(root, lands)
   git(root, ['fetch', 'origin', 'main'])
   try {
     git(root, ['merge', '--ff-only', 'origin/main'])
@@ -356,7 +384,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   const mergedHead = git(root, ['rev-parse', 'HEAD'])
   const mergedTree = git(root, ['rev-parse', 'HEAD^{tree}'])
   entry.mergedHead = mergedHead
-  entry.phase = 'merged'
+  entry.phase = 'archive-pending'
   entry.error = null
   entry.updatedAt = new Date().toISOString()
   if (mergedTree !== entry.reviewedTree) {
@@ -375,22 +403,32 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
   if (entry.phase === 'archived' || entry.phase === 'pushed') return entry
-  if (entry.phase !== 'merged') throw new Error(`PR #${n} landing phase is ${entry.phase}, not merged`)
-  if (!apply) return { dryRun: true, entry }
-  if (existsSync(join(root, 'openspec', 'changes', entry.change))) {
-    throw new Error(`the change ${entry.change} is still active; archive it first`)
+  if (!['archive-pending', 'archive-failed'].includes(entry.phase)) {
+    throw new Error(`PR #${n} landing phase is ${entry.phase}, not archive-pending`)
   }
-  const archived = readdirSync(join(root, 'openspec', 'changes', 'archive')).some((name) => name.endsWith(`-${entry.change}`))
-  if (!archived) throw new Error(`the change ${entry.change} has no archive directory`)
-  const head = commit ?? git(root, ['rev-parse', 'HEAD'])
-  if (head !== git(root, ['rev-parse', 'HEAD'])) throw new Error(`the archive commit ${head} is not HEAD`)
-  if (git(root, ['status', '--porcelain']) !== '') throw new Error('landing needs a clean main worktree before archive')
-  entry.archiveCommit = head
-  entry.phase = 'archived'
-  entry.error = null
-  entry.updatedAt = new Date().toISOString()
-  saveLandings(root, lands)
-  return entry
+  if (!apply) return { dryRun: true, entry }
+  try {
+    if (existsSync(join(root, 'openspec', 'changes', entry.change))) {
+      throw new Error(`the change ${entry.change} is still active; archive it first`)
+    }
+    const archived = readdirSync(join(root, 'openspec', 'changes', 'archive')).some((name) => name.endsWith(`-${entry.change}`))
+    if (!archived) throw new Error(`the change ${entry.change} has no archive directory`)
+    const head = commit ?? git(root, ['rev-parse', 'HEAD'])
+    if (head !== git(root, ['rev-parse', 'HEAD'])) throw new Error(`the archive commit ${head} is not HEAD`)
+    if (git(root, ['status', '--porcelain']) !== '') throw new Error('landing needs a clean main worktree before archive')
+    entry.archiveCommit = head
+    entry.phase = 'archived'
+    entry.error = null
+    entry.updatedAt = new Date().toISOString()
+    saveLandings(root, lands)
+    return entry
+  } catch (error) {
+    entry.phase = 'archive-failed'
+    entry.error = error instanceof Error ? error.message : String(error)
+    entry.updatedAt = new Date().toISOString()
+    saveLandings(root, lands)
+    throw new Error(`archive failed: ${entry.error}`)
+  }
 }
 
 /** Record the pushed head after the session pushes main. */
@@ -400,18 +438,28 @@ export function pushLanding({ root = mainWorktree(), number, apply = false } = {
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
   if (entry.phase === 'pushed') return entry
-  if (entry.phase !== 'archived') throw new Error(`PR #${n} landing phase is ${entry.phase}, not archived`)
+  if (!['archived', 'push-pending'].includes(entry.phase)) {
+    throw new Error(`PR #${n} landing phase is ${entry.phase}, not archived`)
+  }
   if (!apply) return { dryRun: true, entry }
-  git(root, ['fetch', 'origin', 'main'])
-  const head = git(root, ['rev-parse', 'HEAD'])
-  const origin = git(root, ['rev-parse', 'origin/main'])
-  if (head !== origin) throw new Error(`main ${head} is not pushed; origin/main is ${origin}`)
-  entry.pushedHead = head
-  entry.phase = 'pushed'
-  entry.error = null
-  entry.updatedAt = new Date().toISOString()
-  saveLandings(root, lands)
-  return entry
+  try {
+    git(root, ['fetch', 'origin', 'main'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    const origin = git(root, ['rev-parse', 'origin/main'])
+    if (head !== origin) throw new Error(`main ${head} is not pushed; origin/main is ${origin}`)
+    entry.pushedHead = head
+    entry.phase = 'pushed'
+    entry.error = null
+    entry.updatedAt = new Date().toISOString()
+    saveLandings(root, lands)
+    return entry
+  } catch (error) {
+    entry.phase = 'push-pending'
+    entry.error = error instanceof Error ? error.message : String(error)
+    entry.updatedAt = new Date().toISOString()
+    saveLandings(root, lands)
+    throw new Error(`push failed: ${entry.error}`)
+  }
 }
 
 /** Finish a pushed landing and clean its checkout. */
@@ -445,6 +493,23 @@ export function finishLanding({ root = mainWorktree(), number, apply = false } =
   return manifest
 }
 
+/** Abandon a pre-merge landing and remove its checkout. */
+export function abandonLanding({ root = mainWorktree(), number, apply = false } = {}) {
+  const n = requireNumber(number)
+  const lands = loadLandings(root)
+  const entry = lands.lands[String(n)]
+  if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
+  if (!ABANDONABLE_PHASES.has(entry.phase)) {
+    throw new Error(`PR #${n} is ${entry.phase}; only a pre-merge landing can be abandoned`)
+  }
+  if (entry.merged === true || entry.mergedHead !== null) throw new Error(`PR #${n} is already merged; archive it instead of abandoning`)
+  if (!apply) return { dryRun: true, entry }
+  removeLandingCheckout(root, entry)
+  delete lands.lands[String(n)]
+  saveLandings(root, lands)
+  return { abandoned: n }
+}
+
 /** Read or forget landing state. */
 export function stateLanding({ root = mainWorktree(), number, forget = false, apply = false } = {}) {
   const lands = loadLandings(root)
@@ -453,7 +518,7 @@ export function stateLanding({ root = mainWorktree(), number, forget = false, ap
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
   if (!apply) return { dryRun: true, entry }
-  if (!TERMINAL_PHASES.has(entry.phase)) throw new Error(`PR #${n} is still ${entry.phase}; finish or fail it first`)
+  if (!TERMINAL_PHASES.has(entry.phase)) throw new Error(`PR #${n} is still ${entry.phase}; finish or abandon it first`)
   if (existsSync(entry.worktree)) spawnSync('git', ['-C', root, 'worktree', 'remove', '--force', entry.worktree], { encoding: 'utf8' })
   spawnSync('git', ['-C', root, 'branch', '-D', entry.landingBranch], { encoding: 'utf8' })
   delete lands.lands[String(n)]
@@ -467,14 +532,15 @@ export function usage() {
     'usage: node scripts/pr-review-land.mjs <command> <pr> [options]',
     '',
     'commands:',
-    '  plan <n> [--json]                     check landing gates without writing',
-    '  prepare <n> [--json] --apply          create the rebased landing branch',
-    '  reviewed <n> [--json] --apply         record the passed review tree',
-    '  merge <n> [--json] --apply            merge with gh pr merge --rebase',
+    '  plan <n>                              check landing gates without writing',
+    '  prepare <n> --apply                   create the rebased landing branch',
+    '  reviewed <n> --apply                  record the passed review tree',
+    '  merge <n> --apply                     merge with gh pr merge --rebase',
     '  archive <n> [--commit <sha>] --apply  record the archive commit',
-    '  push <n> [--json] --apply             record the pushed main head',
-    '  finish <n> [--json] --apply           write the manifest and clean up',
-    '  state [--json] [--forget <n>] --apply',
+    '  push <n> --apply                      record the pushed main head',
+    '  finish <n> --apply                    write the manifest and clean up',
+    '  abandon <n> --apply                   remove a pre-merge landing',
+    '  state [--forget <n>] --apply',
     '',
     'The landing command never pushes, archives or merges without --apply.',
   ].join('\n')
@@ -485,15 +551,14 @@ export function parseArgs(argv) {
   const args = [...argv]
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
-  if (!['plan', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'state'].includes(command)) {
+  if (!['plan', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
     throw new LandUsageError(`unknown command '${command}'`)
   }
-  const options = { command, json: false, apply: false, commit: undefined, forget: undefined }
+  const options = { command, apply: false, commit: undefined, forget: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]
-    if (value === '--json') options.json = true
-    else if (value === '--apply') options.apply = true
+    if (value === '--apply') options.apply = true
     else if (value === '--commit' || value === '--forget') {
       const next = args[index + 1]
       if (next === undefined || next === '' || next.startsWith('--')) throw new LandUsageError(`${value} needs a value`)
@@ -540,9 +605,10 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
         return archiveLanding({ root, number: options.number, commit: options.commit, apply: options.apply })
       }
       if (options.command === 'push') return pushLanding({ root, number: options.number, apply: options.apply })
+      if (options.command === 'abandon') return abandonLanding({ root, number: options.number, apply: options.apply })
       return finishLanding({ root, number: options.number, apply: options.apply })
     })
-    write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${JSON.stringify(result, null, 2)}\n`)
+    write(`${JSON.stringify(result, null, 2)}\n`)
     return 0
   } catch (error) {
     write(`${error instanceof Error ? error.message : String(error)}\n`)

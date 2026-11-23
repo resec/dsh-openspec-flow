@@ -35,7 +35,7 @@ node scripts/pr-review-watch.mjs comment 12 --report .cache/pr-review/reports/pr
 node scripts/pr-review-watch.mjs comment 12 --report .cache/pr-review/reports/pr-12-<head>.json --apply
 
 # Land a reviewed PR after a maintainer adds the mergeable label. The default is a dry run.
-node scripts/pr-review-land.mjs plan 12 --json
+node scripts/pr-review-land.mjs plan 12
 node scripts/pr-review-land.mjs prepare 12 --apply
 node scripts/pr-review-land.mjs reviewed 12 --apply
 node scripts/pr-review-land.mjs merge 12 --apply
@@ -43,8 +43,9 @@ node scripts/pr-review-land.mjs archive 12 --commit <archive-sha> --apply
 node scripts/pr-review-land.mjs push 12 --apply
 node scripts/pr-review-land.mjs finish 12 --apply
 
-# Inspect or forget landing state.
-node scripts/pr-review-land.mjs state --json
+# Inspect or abandon landing state.
+node scripts/pr-review-land.mjs state
+node scripts/pr-review-land.mjs abandon 12 --apply
 node scripts/pr-review-land.mjs state --forget 12 --apply
 
 # Inspect state.
@@ -146,7 +147,7 @@ The script's `run.lock` makes a second overlapping run exit; inspect `.cache/pr-
   reports/pr-<n>-<head>.json report handoff written by the session
 ```
 
-Landing phases are `prepared`, `reviewed`, `merged`, `archived`, `pushed`, plus the terminal failure phases `failed`, `blocked` and `tree-mismatch`. A retry resumes at the recorded phase; a merge is never repeated.
+Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `failed`, `blocked` and `tree-mismatch`. A retry resumes at the recorded phase; a merge is never repeated. Use `abandon <n> --apply` to clear a pre-merge landing whose review cannot pass or whose label was removed.
 
 The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at the PR checkout while the review is active. `state --cleanup` and `state --forget` remove that matching entry with the checkout; a foreign entry is refused and reported. Remove the checkout and state before a merged-tree apply review.
 
