@@ -25,5 +25,5 @@ None.
 ## Impact
 
 - `openspec/specs/tool-surface/spec.md`: through the delta.
-- `lib/tools/review.js`: one description string; `test/descriptions.test.mjs`: one test comparing the description with the rendered enum; `test/review-reviewer.test.mjs`: one test driving the four reviewer actions on an apply record.
+- `lib/tools/review.js`: one description string; `test/descriptions.test.mjs`: one test comparing the description with the rendered enum; `test/review-reviewer.test.mjs`: one test driving `retry`, `replace` and `waive-reviewer` on an apply record.
 - No behavior, schema, dependency, workflow, hook, coverage-baseline or `dist/` change.
