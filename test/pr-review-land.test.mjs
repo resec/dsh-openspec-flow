@@ -322,6 +322,24 @@ test('abandon clears a pre-merge landing without touching the watch entry', () =
   assert.ok(JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8')).prs['12'])
 })
 
+
+test('abandon refuses a post-merge landing and keeps its checkout', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  const onMerge = () => {
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  assert.throws(() => abandonLanding({ root, number: 12, apply: true }), /already merged|pre-merge|archive-pending/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-pending')
+  assert.equal(existsSync(prepared.worktree), true)
+})
+
 test('archive and push failures keep retryable phases', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
