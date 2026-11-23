@@ -39,7 +39,7 @@ The plugin SHALL expose `openspec_review` for the draft review. Its `action` par
 
 ### Requirement: Apply review is exposed through openspec_review
 
-`openspec_review` SHALL accept `review: "apply"` for `start`, `resume`, `wait`, `status`, `self-report`, `report`, `dispose`, `waive`, `retry`, `replace`, `waive-reviewer`, `extend` and `abandon`. The result SHALL name the commit, tree, base tree and readiness. The tool SHALL refuse an apply `start` outside a git repository; `status` is governed by the status requirement below. With `action: "waive"` and `scope: "plan-change"`, the tool SHALL accept `waiver` and `files` and record the plan-change waiver in the review directory.
+`openspec_review` SHALL accept `review: "apply"` for `start`, `resume`, `status`, `self-report`, `report`, `dispose`, `waive`, `extend` and `abandon`. The result SHALL name the commit, tree, base tree and readiness. The tool SHALL refuse an apply `start` outside a git repository; `status` is governed by the status requirement below. With `action: "waive"` and `scope: "plan-change"`, the tool SHALL accept `waiver` and `files` and record the plan-change waiver in the review directory.
 
 #### Scenario: Apply review starts
 
@@ -76,3 +76,25 @@ The plugin SHALL expose `openspec_review` for the draft review. Its `action` par
 - **WHEN** a waiver is recorded while the apply review record exists and a drift file stays outside its normalized file set
 - **THEN** the result names that file
 - **AND** the result does not report the waiver as covering it
+
+## ADDED Requirements
+
+### Requirement: Apply review accepts the reviewer actions
+
+`openspec_review` SHALL accept `review: "apply"` with `action: "wait"`, `"retry"`, `"replace"` or `"waive-reviewer"`. `wait` reads the reviewer state once and arms the round deadline; `retry` messages the same reviewer to submit again; `replace` activates a substitute reviewer for a reason; `waive-reviewer` records a user-approved coverage gap in place of a report.
+
+#### Scenario: Apply review waits for the reviewer
+
+- **WHEN** an agent calls `openspec_review` with `action: "wait"` and `review: "apply"` while the reviewer round is open
+- **THEN** the result reports the wait state and the next action
+
+#### Scenario: Apply review replaces the reviewer
+
+- **WHEN** an agent calls `openspec_review` with `action: "replace"`, `review: "apply"` and a reason
+- **THEN** a substitute reviewer is activated and the next action is `wait`
+
+#### Scenario: Reviewer coverage is waived with user approval
+
+- **WHEN** `waive-reviewer` runs with `review: "apply"`, a waiver and `approvedBy: "user"` before the reviewer reports
+- **THEN** the review records the coverage gap
+- **AND** the same call without `approvedBy: "user"` is refused

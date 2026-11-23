@@ -3,7 +3,7 @@
 ## 1. Enumerate the actions
 
 - [x] 1.1 List the thirteen actions in the "Draft review is exposed as one tool" requirement and drop the stale reviewer sentence.
-- [x] 1.2 List the same thirteen in the "Apply review is exposed through openspec_review" requirement.
+- [x] 1.2 Name the four reviewer actions in a new "Apply review accepts the reviewer actions" requirement, leaving the apply requirement's text unchanged.
 - [x] 1.3 Update the `action` description in `lib/tools/review.js`.
 
 ## 2. Guard the description
