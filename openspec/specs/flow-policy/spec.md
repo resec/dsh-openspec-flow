@@ -244,3 +244,17 @@ The registered flow rule SHALL state that a maintainer-authored worktree apply f
 
 - **WHEN** the flow rule describes an external pull request
 - **THEN** it states that the change is archived after merge with `openspec_archive`
+
+### Requirement: The flow rule states the no-edit rule
+
+The registered flow rule SHALL state that the change artifacts must not be edited while a draft round is open, that an edit closes the round as blocked with no findings, and that `resume` then opens the next round and wakes the reviewer.
+
+#### Scenario: The rule states the no-edit rule
+
+- **WHEN** the flow rule describes the draft gate
+- **THEN** it states that the change artifacts must not be edited while a draft round is open
+
+#### Scenario: The rule states the blocked recovery
+
+- **WHEN** the flow rule describes an edit during a round
+- **THEN** it states that the round closes as blocked and that `resume` opens the next round
