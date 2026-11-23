@@ -13,7 +13,7 @@ import {
   listActiveChanges,
   main,
   parseArgs,
-  renderSummary,
+  renderReport,
   reportBlockers,
   requirementLocation,
   usage,
@@ -199,7 +199,7 @@ test('escapes annotation properties so a path cannot end the property early', ()
   assert.equal(escapeCommandProperty('plain/path.md'), 'plain/path.md')
 })
 
-test('reports a blocking run with annotations, a summary file and exit code 1', () => {
+test('reports a blocking run with annotations, the same report in the log and the summary, and exit code 1', () => {
   const root = makeProject({ delta: addedDelta(LONG) })
   const summary = join(root, 'summary.md')
   const out = []
@@ -207,20 +207,26 @@ test('reports a blocking run with annotations, a summary file and exit code 1', 
   try {
     const code = main(['--root', root], { GITHUB_STEP_SUMMARY: summary }, (text) => out.push(text), (text) => err.push(text))
     assert.equal(code, 1)
-    assert.match(out.join(''), /::error file=.*widget.*specs\/cap\/spec\.md,line=3,title=Requirement length::/u)
+    const printed = out.join('')
+    assert.match(printed, /::error file=.*widget.*specs\/cap\/spec\.md,line=3,title=Requirement length::/u)
+    assert.match(printed, /An archive merge would exceed the 500-character requirement description limit/u)
+    assert.match(printed, /## Requirement length gate/u)
+    assert.match(printed, /Official handling:/u)
+    assert.match(printed, /add the new behavior as an ADDED requirement/u)
+    assert.match(printed, /Edit:/u)
+    assert.match(printed, /openspec\/changes\/widget\/specs\/cap\/spec\.md:3/u)
+    assert.match(printed, /Verify:/u)
+    assert.match(printed, /npm run check:requirement-length/u)
     const written = readFileSync(summary, 'utf8')
-    assert.match(written, /## Requirement length gate/u)
-    assert.match(written, /\| change \| path \| operation \| requirement \| length \| baseline \|/u)
-    assert.match(written, /Big/u)
-    assert.match(written, /Official handling:/u)
-    assert.match(written, /add the new behavior as an ADDED requirement/u)
+    assert.ok(written.endsWith('\n'))
+    assert.ok(printed.includes(written.trimEnd()), 'the log does not carry the summary report')
     assert.equal(err.join(''), '')
   } finally {
     remove(root)
   }
 })
 
-test('prints the summary on stderr when no summary file is configured', () => {
+test('prints the report on stdout when no summary file is configured', () => {
   const root = makeProject({ delta: addedDelta(LONG) })
   const out = []
   const err = []
@@ -228,8 +234,10 @@ test('prints the summary on stderr when no summary file is configured', () => {
     const code = main(['--root', root], {}, (text) => out.push(text), (text) => err.push(text))
     assert.equal(code, 1)
     assert.match(out.join(''), /::error /u)
-    assert.match(err.join(''), /## Requirement length gate/u)
-    assert.match(err.join(''), /Official handling:/u)
+    assert.match(out.join(''), /## Requirement length gate/u)
+    assert.match(out.join(''), /Official handling:/u)
+    assert.match(out.join(''), /Verify:/u)
+    assert.equal(err.join(''), '')
   } finally {
     remove(root)
   }
@@ -242,6 +250,7 @@ test('returns zero for a passing gate and two for a bad change name', () => {
   try {
     assert.equal(main(['--root', root], {}, (text) => out.push(text), (text) => err.push(text)), 0)
     assert.match(out.join(''), /requirement length gate: ok/u)
+    assert.doesNotMatch(out.join(''), /## Requirement length gate/u)
     out.length = 0
     assert.equal(main(['--root', root, '--change', 'nope'], {}, (text) => out.push(text), (text) => err.push(text)), 2)
     assert.match(err.join(''), /not an active change/u)
@@ -256,11 +265,29 @@ test('renders entries and locates the requirement heading', () => {
     const issue = { path: 'specs/cap/spec.md', operation: 'ADDED', requirement: 'Big', length: LONG.length }
     const row = entryRow('widget', issue)
     assert.deepEqual(row, { change: 'widget', path: 'specs/cap/spec.md', operation: 'ADDED', requirement: 'Big', length: '510', baseline: 'n/a' })
-    assert.match(renderSummary([row]), /^\| widget \| specs\/cap\/spec\.md \| ADDED \| Big \| 510 \| n\/a \|$/mu)
+    const report = renderReport([row], [{ path: 'openspec/changes/widget/specs/cap/spec.md', line: 3 }], 500)
+    assert.match(report, /^\| widget \| specs\/cap\/spec\.md \| ADDED \| Big \| 510 \| n\/a \|$/mu)
+    assert.match(report, /500-character requirement description limit/u)
+    assert.match(report, /Official handling:/u)
+    assert.match(report, /Edit:\n\n- openspec\/changes\/widget\/specs\/cap\/spec\.md:3\n/u)
+    assert.match(report, /Verify:\n\n`npm run check:requirement-length`/u)
     const location = requirementLocation(root, 'widget', issue)
     assert.equal(location.line, 3)
     assert.equal(requirementLocation(root, 'widget', { ...issue, requirement: 'Missing' }).line, undefined)
-    assert.equal(reportBlockers(root, [], {}, () => {}, () => {}), 0)
+    assert.equal(reportBlockers(root, [], 500, {}, () => {}, () => {}), 0)
+  } finally {
+    remove(root)
+  }
+})
+
+test('names the file without a line when the requirement heading cannot be located', () => {
+  const root = makeProject({ delta: modifiedDelta(LONG), mainSpec: mainSpec('Short behavior.') })
+  const out = []
+  try {
+    const issue = { path: 'specs/cap/spec.md', operation: 'MODIFIED', requirement: 'Other', length: LONG.length, baseline: 16 }
+    assert.equal(reportBlockers(root, [{ change: 'widget', issues: [issue] }], 500, {}, (text) => out.push(text), () => {}), 1)
+    assert.match(out.join(''), /Edit:\n\n- openspec\/changes\/widget\/specs\/cap\/spec\.md\n/u)
+    assert.doesNotMatch(out.join(''), /specs\/cap\/spec\.md:3/u)
   } finally {
     remove(root)
   }

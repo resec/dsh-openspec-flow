@@ -10,7 +10,7 @@
  */
 
 import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { resolveBundledCli } from '../lib/openspec.js'
@@ -148,15 +148,17 @@ export function entryRow(change, issue) {
 }
 
 /**
- * Render the job summary for the blocking entries.
+ * Render the actionable report for the blocking entries.
  * @param rows - rendered table rows.
+ * @param locations - `{ path, line }` edit locations, with `line` possibly undefined.
+ * @param limit - the requirement description limit.
  * @returns Markdown block.
  */
-export function renderSummary(rows) {
+export function renderReport(rows, locations, limit) {
   return [
     '## Requirement length gate',
     '',
-    'An archive merge would exceed the requirement description limit:',
+    `An archive merge would exceed the ${String(limit)}-character requirement description limit. This check applies the same rule as the apply review, before any review starts.`,
     '',
     '| change | path | operation | requirement | length | baseline |',
     '| --- | --- | --- | --- | --- | --- |',
@@ -165,6 +167,14 @@ export function renderSummary(rows) {
     'Official handling:',
     '',
     ...OFFICIAL_LENGTH_HANDLING.map((line) => `- ${line}`),
+    '',
+    'Edit:',
+    '',
+    ...locations.map((location) => `- ${location.path}${location.line === undefined ? '' : `:${String(location.line)}`}`),
+    '',
+    'Verify:',
+    '',
+    '`npm run check:requirement-length`; pushing the fix reruns CI.',
     '',
   ].join('\n')
 }
@@ -205,20 +215,23 @@ export function requirementLocation(root, change, issue) {
 }
 
 /**
- * Report blocking entries as annotations and a job summary.
+ * Report blocking entries as annotations and one actionable report.
  * @param root - project root.
  * @param blockers - `{ change, issues }` entries.
+ * @param limit - the classifier's requirement description limit.
  * @param env - environment, for `GITHUB_STEP_SUMMARY`.
  * @param write - stdout sink.
  * @param error - stderr sink.
  * @returns 0 when there is nothing to report, otherwise 1.
  */
-export function reportBlockers(root, blockers, env = process.env, write = (text) => process.stdout.write(text), error = (text) => process.stderr.write(text)) {
+export function reportBlockers(root, blockers, limit, env = process.env, write = (text) => process.stdout.write(text), error = (text) => process.stderr.write(text)) {
   const rows = []
+  const locations = []
   for (const blocker of Array.isArray(blockers) ? blockers : []) {
     for (const issue of Array.isArray(blocker?.issues) ? blocker.issues : []) {
       rows.push(entryRow(blocker.change, issue))
       const { file, line } = requirementLocation(root, blocker.change, issue)
+      locations.push({ path: relative(root, file), line })
       const baseline = issue.baseline === undefined ? 'n/a' : String(issue.baseline)
       const message = `${issue.path}: ${issue.operation} "${issue.requirement}" is ${String(issue.length)} characters (baseline ${baseline})`
       const location = line === undefined ? `file=${escapeCommandProperty(file)}` : `file=${escapeCommandProperty(file)},line=${String(line)}`
@@ -226,14 +239,11 @@ export function reportBlockers(root, blockers, env = process.env, write = (text)
     }
   }
   if (rows.length === 0) return 0
-  const summary = renderSummary(rows)
+  const report = renderReport(rows, locations, limit)
+  write(`${report}\n`)
   const summaryPath = env.GITHUB_STEP_SUMMARY
-  if (typeof summaryPath === 'string' && summaryPath !== '') {
-    appendFileSync(summaryPath, `${summary}\n`)
-    write('requirement length gate: failed\n')
-  } else {
-    error(`${summary}\n`)
-  }
+  if (typeof summaryPath === 'string' && summaryPath !== '') appendFileSync(summaryPath, `${report}\n`)
+  write('requirement length gate: failed\n')
   return 1
 }
 
@@ -263,15 +273,18 @@ export function main(argv = process.argv.slice(2), env = process.env, write = (t
     const names = listActiveChanges(root, options.change)
     const cli = typeof deps.cli === 'string' && deps.cli !== '' ? deps.cli : resolveBundledCli()
     const blockers = []
+    let limit = 0
     for (const name of names) {
       const report = checkChange(cli, root, name)
-      if (report.blocking) blockers.push({ change: name, issues: report.issues })
+      if (!report.blocking) continue
+      blockers.push({ change: name, issues: report.issues })
+      limit = report.limit
     }
     if (blockers.length === 0) {
       write('requirement length gate: ok\n')
       return 0
     }
-    return reportBlockers(root, blockers, env, write, error)
+    return reportBlockers(root, blockers, limit, env, write, error)
   } catch (cause) {
     error(`requirement length gate: ${cause instanceof Error ? cause.message : String(cause)}\n`)
     return 2
