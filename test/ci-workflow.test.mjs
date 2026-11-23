@@ -43,7 +43,8 @@ test('the requirement length gate runs after strict validation and before verifi
 
 test('the change check compares the base with the pull-request head', () => {
   assert.match(WORKFLOW, /check-pr-change\.mjs --base "\$\{\{ github\.event\.pull_request\.base\.sha \}\}" --head "\$\{\{ github\.event\.pull_request\.head\.sha \}\}"/u)
-  assert.match(WORKFLOW, /fetch-depth: 0/u)
+  const verify = WORKFLOW.slice(WORKFLOW.indexOf('\n  verify:\n'), WORKFLOW.indexOf('\n  lab:\n'))
+  assert.match(verify, /fetch-depth: 0/u)
 })
 
 test('the lab job installs the browser where the doctor looks', () => {
