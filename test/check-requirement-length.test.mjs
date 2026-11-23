@@ -249,8 +249,7 @@ test('returns zero for a passing gate and two for a bad change name', () => {
   const err = []
   try {
     assert.equal(main(['--root', root], {}, (text) => out.push(text), (text) => err.push(text)), 0)
-    assert.match(out.join(''), /requirement length gate: ok/u)
-    assert.doesNotMatch(out.join(''), /## Requirement length gate/u)
+    assert.equal(out.join(''), 'requirement length gate: ok\n')
     out.length = 0
     assert.equal(main(['--root', root, '--change', 'nope'], {}, (text) => out.push(text), (text) => err.push(text)), 2)
     assert.match(err.join(''), /not an active change/u)
