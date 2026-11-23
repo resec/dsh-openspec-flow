@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-23
+goal: 在 PR 的 CI 阶段阻断 archive 合并会超限的 MODIFIED requirement 增长，与插件 apply preflight
+  共用同一判定实现。
