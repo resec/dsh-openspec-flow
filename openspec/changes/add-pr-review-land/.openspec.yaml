@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-23
+goal: "Automate the post-review merge and archive for external pull requests:
+  rebase the PR branch onto current main, run the final apply review on that
+  branch, merge with gh pr merge --rebase, verify the merged tree, archive on
+  main, commit and push."
