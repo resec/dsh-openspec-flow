@@ -24,5 +24,5 @@ None.
 
 ## Impact
 
-- `openspec/specs/*` through the deltas above; `lib/tools/query.js` (one description); `test/descriptions.test.mjs` (one test).
+- `openspec/specs/*` through the deltas above; `lib/tools/query.js` (one description); `test/cli-command.mjs` (the shared command list); `test/descriptions.test.mjs` (one test) and `test/review-doc.test.mjs` (imports the shared list).
 - No behavior change, no dependency, workflow, hook, coverage-baseline or `dist/` change.
