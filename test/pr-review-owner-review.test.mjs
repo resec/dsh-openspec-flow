@@ -280,6 +280,24 @@ test('syncPullRequest removes then adds for a new qualifying head', () => {
   }
 })
 
+test('syncPullRequest removes a stale label and does not re-add it when mergeable is present', () => {
+  const root = makeRoot()
+  try {
+    writeState(root, makeEntry(), { head: OLD, at: 'old' })
+    const { gh, calls } = fakeGh(prHandler({
+      12: makePr({ labels: [{ name: OWNER_REVIEW_LABEL }, { name: 'mergeable' }] }),
+    }))
+    const result = syncPullRequest({ root, number: 12, apply: true, gh })
+    assert.equal(result.action, 'remove')
+    const edits = calls.filter((args) => args[1] === 'edit')
+    assert.equal(edits.length, 1)
+    assert.equal(edits[0][3], '--remove-label')
+    assert.equal(loadState(root).prs['12'].ownerReview, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('syncPullRequest removes an orphan label even when mergeable is unknown', () => {
   const root = makeRoot()
   try {

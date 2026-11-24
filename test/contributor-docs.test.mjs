@@ -89,6 +89,15 @@ test('CONTRIBUTING.md describes the labeled rebase landing', () => {
   assert.match(CONTRIBUTING, /`mergeable`/)
   assert.match(CONTRIBUTING, /gh pr merge --rebase/)
   assert.match(CONTRIBUTING, /merged tree equals the reviewed tree/)
+  assert.match(CONTRIBUTING, /same-repository branch that is behind/)
+  assert.match(CONTRIBUTING, /current pull request head/)
+})
+
+test('AGENTS.md permits the labeled same-repository sync', () => {
+  assert.match(AGENTS, /update-branch/)
+  assert.match(AGENTS, /never modifies PR code or a fork branch/)
+  assert.match(AGENTS, /creates a merge commit on `main`/)
+  assert.match(AGENTS, /recorded and merged in the same run/)
 })
 
 test('CONTRIBUTING.md and AGENTS.md separate owner-review from mergeable', () => {
