@@ -108,6 +108,21 @@ export function selectScenarioFiles({ positional = [], discovered = discoverScen
 }
 
 /**
+ * Build the report check for one headless run.
+ * @param options - the headless result and its events path.
+ * @returns the check, carrying the exit status and final reason.
+ */
+export function headlessCheck({ result, evidence }) {
+  return {
+    name: 'headless',
+    status: result.completed ? 'ok' : 'fail',
+    exitStatus: result.status,
+    finalReason: result.final?.reason?.kind ?? null,
+    evidence,
+  }
+}
+
+/**
  * Create one isolated lab.
  * @param options - plugin tarball, model, run flags and environment.
  * @returns the lab context.
@@ -144,6 +159,8 @@ export async function createLab({
       artifacts: run.artifacts,
       checks: [{ name: 'provisioning', status: 'fail', detail: String(error?.message ?? error) }],
     })
+    // The summary needs the kept directory; the run report already names it.
+    error.runDir = run.dir
     throw error
   }
   const labEnv = labEnvironmentForRun({ root, run, env })
@@ -261,7 +278,7 @@ export async function createLab({
       const eventsPath = join(run.artifacts, 'headless.ndjson')
       writeFileSync(eventsPath, result.stdout)
       writeFileSync(join(run.artifacts, 'headless.stderr.log'), result.stderr)
-      state.checks.push({ name: 'headless', status: result.completed ? 'ok' : 'fail', evidence: eventsPath })
+      state.checks.push(headlessCheck({ result, evidence: eventsPath }))
       return result
     },
   }
@@ -436,7 +453,7 @@ export async function runScenarios({
     try {
       lab = await createLab({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
     } catch (error) {
-      results.push({ name: scenario.name, file, status: 'failed', error: String(error), reason: 'provisioning failed' })
+      results.push({ name: scenario.name, file, status: 'failed', error: String(error), reason: 'provisioning failed', runDir: error.runDir })
       log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
       continue
     }
