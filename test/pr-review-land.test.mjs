@@ -532,7 +532,7 @@ test('candidates skips an unlabeled pull request and refuses a mismatched watch 
     gh: fakeGh({ pr, list: [{ number: 12, labels: [{ name: 'other' }] }] }),
   })
   assert.deepEqual(unlabeled.candidates, [])
-  assert.deepEqual(unlabeled.refused, [])
+  assert.match(unlabeled.refused[0].reason, /no mergeable label/)
 
   const state = JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8'))
   state.prs['12'].status = 'prepared'
