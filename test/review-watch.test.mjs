@@ -109,6 +109,27 @@ test('a later stale round gets its own notice', async () => {
   assert.match(noticeText(messages.at(-1)), /round 2/)
 })
 
+test('a round opened after a waiver arms its own watch', async () => {
+  const root = fixture()
+  const { fake, messages } = externalSetup(root, undefined, { seedAgents: [{ id: 'review-test' }] })
+  const { factory, watchers } = fakeWatchFactory()
+  setRoundWatchTestHooks({ watch: factory, debounceMs: 1 })
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', {
+    action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'accepted', approvedBy: 'user',
+  })
+  editTasks(root)
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(watchers.length, 2)
+  assert.equal(watchers[0].closed, true)
+  editTasks(root, '\n## 1. Edited again\n\n- [ ] 1.2 Another task\n')
+  watchers[1].listener()
+  await settle()
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.staleNotice.round, 2)
+  assert.match(noticeText(messages.at(-1)), /round 2/)
+})
+
 test('a watch without a live changer logs and skips the message', async () => {
   const root = fixture()
   const { fake, messages } = externalSetup(root)

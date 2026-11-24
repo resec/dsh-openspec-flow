@@ -181,6 +181,17 @@ test('the review document states the shared brief report contract', () => {
   assert.match(text, /本轮开始前已记录/)
 })
 
+test('the review document scopes a reviewer waiver to the round it was approved for', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  const row = text.split('\n').find((line) => line.includes('**reviewer 不可用**'))
+  assert.ok(row, 'the document keeps the unavailable-reviewer row')
+  assert.match(row, /豁免只覆盖批准时的那一轮与那时的工件哈希/)
+  assert.match(row, /仍要求自己的通过结论/)
+  assert.match(row, /`waiting` 或 `overdue`/)
+  assert.match(row, /再次批准 `waive-reviewer`/)
+  assert.match(row, /仍须结论为 `pass`/)
+})
+
 test('the review document and README state the apply brief base scope', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /base tree/)

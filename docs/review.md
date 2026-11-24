@@ -188,7 +188,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 - **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
-- **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
+- **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。豁免只覆盖批准时的那一轮与那时的工件哈希：之后的轮次（或 apply 轮次改绑到新的树）仍要求自己的通过结论，`wait` 照常返回 `waiting` 或 `overdue`，reviewer 照常被唤醒；需要时由用户对新一轮再次批准 `waive-reviewer`。豁免轮次上迟到交来的报告仍须结论为 `pass`。
 - **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。rebase 额外轮次不占普通轮次号，也不受轮次上限影响。
 - **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"` 与该 review 的 `review`；先处置再 `resume`。
 - **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`，两者缺少 `review` 同样拒绝。
