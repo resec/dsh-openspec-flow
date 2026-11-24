@@ -307,12 +307,12 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
   }
   const branch = `${LANDING_BRANCH_PREFIX}${n}`
   git(worktree, ['switch', '-C', branch, plan.head])
-  const preMergeMain = git(root, ['rev-parse', 'origin/main'])
+  const preMergeMain = git(root, ['rev-parse', 'refs/remotes/origin/main'])
   let phase = 'prepared'
   let error = null
-  const ancestor = spawnSync('git', ['-C', worktree, 'merge-base', '--is-ancestor', 'origin/main', 'HEAD'], { encoding: 'utf8' })
+  const ancestor = spawnSync('git', ['-C', worktree, 'merge-base', '--is-ancestor', 'refs/remotes/origin/main', 'HEAD'], { encoding: 'utf8' })
   if (ancestor.status !== 0) {
-    const rebase = spawnSync('git', ['-C', worktree, 'rebase', 'origin/main'], { encoding: 'utf8' })
+    const rebase = spawnSync('git', ['-C', worktree, 'rebase', 'refs/remotes/origin/main'], { encoding: 'utf8' })
     if (rebase.status !== 0) {
       spawnSync('git', ['-C', worktree, 'rebase', '--abort'], { encoding: 'utf8' })
       phase = 'blocked'
@@ -404,7 +404,7 @@ export function reviewedLanding({ root = mainWorktree(), number, apply = false }
 function completeMergedLanding(root, lands, entry) {
   try {
     git(root, ['fetch', 'origin', 'main'])
-    git(root, ['merge', '--ff-only', 'origin/main'])
+    git(root, ['merge', '--ff-only', 'refs/remotes/origin/main'])
     const mergedHead = git(root, ['rev-parse', 'HEAD'])
     const mergedTree = git(root, ['rev-parse', 'HEAD^{tree}'])
     entry.mergedHead = mergedHead
@@ -448,7 +448,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   const plan = planLanding({ root, number: n, gh: ghRunner })
   if (plan.head !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
   if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
-  const originMain = git(root, ['rev-parse', 'origin/main'])
+  const originMain = git(root, ['rev-parse', 'refs/remotes/origin/main'])
   if (originMain !== entry.preMergeMain) {
     entry.phase = 'failed'
     entry.error = 'origin/main moved; prepare and review again'
@@ -519,7 +519,7 @@ export function pushLanding({ root = mainWorktree(), number, apply = false } = {
   try {
     git(root, ['fetch', 'origin', 'main'])
     const head = git(root, ['rev-parse', 'HEAD'])
-    const origin = git(root, ['rev-parse', 'origin/main'])
+    const origin = git(root, ['rev-parse', 'refs/remotes/origin/main'])
     if (head !== origin) throw new Error(`main ${head} is not pushed; origin/main is ${origin}`)
     entry.pushedHead = head
     entry.phase = 'pushed'

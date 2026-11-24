@@ -53,9 +53,9 @@ function makeRepo() {
   }
   git(root, ['add', '-A'])
   git(root, ['commit', '-m', 'initial'])
-  // A local `origin/main` mirrors the real repository: later commits advance
-  // `HEAD` without moving the comparison base, which is what the stamp relies on.
-  git(root, ['branch', 'origin/main'])
+  // The remote-tracking ref stands in for the real repository: later commits
+  // advance `HEAD` without moving the comparison base, which the stamp relies on.
+  git(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD'])
   return root
 }
 
@@ -237,6 +237,20 @@ test('a different Node version refuses reuse', () => {
   const result = checkStamp({ root, node: 'v22.0.0' })
   assert.equal(result.ok, false)
   assert.match(result.reason, /written on/)
+})
+
+test('a local branch named origin/main does not shadow the tracking ref', () => {
+  const root = makeRepo()
+  const remote = git(root, ['rev-parse', 'refs/remotes/origin/main'])
+  mkdirSync(join(root, 'openspec', 'changes', 'x'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'x', 'proposal.md'), '# Proposal\n')
+  commitAll(root, 'chore(openspec): propose x')
+  // git resolves the short name to this branch before the tracking ref.
+  git(root, ['branch', 'origin/main', 'HEAD'])
+  writeStamp({ root, base: remote })
+  const result = checkStamp({ root })
+  assert.equal(result.ok, true, result.reason)
+  assert.equal(result.record.base, remote)
 })
 
 test('a moved merge base refuses reuse', () => {

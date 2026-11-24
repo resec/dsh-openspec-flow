@@ -138,7 +138,7 @@ The pull request template asks for the exact commands, their pass or fail result
 | Absolute floor | 90% | 85% | 95% |
 | New-code | 95% | 90% | 100% |
 
-No scope or metric may drop more than 1.00 percentage point below `coverage.baseline.json`. New code means the lines added or modified since `git merge-base origin/main HEAD`.
+No scope or metric may drop more than 1.00 percentage point below `coverage.baseline.json`. New code means the lines added or modified since `git merge-base refs/remotes/origin/main HEAD`.
 
 `npm run coverage -- --report-only` prints the same verdict without failing the run, which makes it the faster pre-check; `npm run verify` is still required before opening the pull request.
 

@@ -271,7 +271,7 @@ function listSourceFiles(root, isSource) {
 }
 
 export function resolveBase(root, base) {
-  for (const candidate of [base, 'origin/main', 'main']) {
+  for (const candidate of [base, 'refs/remotes/origin/main', 'main']) {
     if (!candidate) continue
     const verify = runGit(root, ['rev-parse', '--verify', '--quiet', candidate], { allowFailure: true })
     if (verify.status !== 0) continue
@@ -481,7 +481,7 @@ function formatReport({ mode, current, requirements, baseline, baselineNode, sco
 export async function runGate({
   root = ROOT,
   mode,
-  base = 'origin/main',
+  base = 'refs/remotes/origin/main',
   updateBaseline = false,
   allowLower = false,
   reason = null,
@@ -620,7 +620,7 @@ export function shouldRecordStamp({ mode, updateBaseline, code, violations }) {
 }
 
 function parseArgs(argv) {
-  const options = { mode: undefined, base: 'origin/main', updateBaseline: false, allowLower: false, reason: null }
+  const options = { mode: undefined, base: 'refs/remotes/origin/main', updateBaseline: false, allowLower: false, reason: null }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--check') options.mode = 'enforce'

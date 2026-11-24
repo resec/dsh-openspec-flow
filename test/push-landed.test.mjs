@@ -148,6 +148,39 @@ test('--push advances origin and a second run is idempotent', () => {
   }
 })
 
+// A leaked fixture branch shares the remote-tracking ref's short name. git
+// resolves that short name to the local branch first, so the decision must
+// read `refs/remotes/origin/main` directly.
+test('a local branch named origin/main does not hide unpushed commits', () => {
+  const repository = makeLanded()
+  try {
+    const local = git(repository.root, ['rev-parse', 'HEAD'])
+    git(repository.root, ['branch', 'origin/main', 'HEAD'])
+    const pushed = run(repository.root, ['--push'])
+    assert.equal(pushed.status, 0, pushed.stderr)
+    assert.match(pushed.stdout, /action: pushed 2 commit\(s\)/)
+    assert.equal(remoteMain(repository), local)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('a local branch named origin/main does not report pushed commits as pending', () => {
+  const repository = makeLanded()
+  try {
+    const local = git(repository.root, ['rev-parse', 'HEAD'])
+    git(repository.root, ['push', '-q', 'origin', 'main'])
+    git(repository.root, ['branch', 'origin/main', repository.initial])
+    const result = run(repository.root)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, new RegExp(`remote: origin/main ${local}`))
+    assert.match(result.stdout, /action: already pushed; nothing to do/)
+    assert.equal(remoteMain(repository), local)
+  } finally {
+    cleanup(repository)
+  }
+})
+
 test('a dirty file outside the change tree is refused', () => {
   const repository = makeLanded()
   try {

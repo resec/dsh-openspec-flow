@@ -353,6 +353,25 @@ test('merge refuses when origin/main moved after prepare', () => {
   assert.equal(loadLandings(root).lands['12'].phase, 'failed')
 })
 
+test('merge refuses a moved origin/main even with a stale local branch of that name', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  // git resolves the short name to this branch before the tracking ref.
+  git(root, ['branch', 'origin/main', 'HEAD'])
+  writeFileSync(join(root, 'README.md'), 'main moved after prepare\n')
+  git(root, ['add', 'README.md'])
+  git(root, ['commit', '-qm', 'main moved after prepare'])
+  git(root, ['push', '-q', 'origin', 'main'])
+  git(root, ['fetch', 'origin', 'main'])
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /origin\/main moved/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
 test('abandon clears a pre-merge landing without touching the watch entry', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
