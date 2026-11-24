@@ -544,9 +544,10 @@ export function filterCandidates(prs, state, localNumbers = new Set()) {
 
 /**
  * List review candidates from open PRs and report owner-managed local PRs.
- * @param options - root, gh runner and state.
- * @returns `{ candidates, ownerManaged }`, where ownerManaged lists the open
- *          pull-request numbers recorded as local owner entries.
+ * @param options - root, gh runner, state, local numbers and the retry delay.
+ * @returns `{ candidates, ownerManaged, fallback }`, where ownerManaged lists
+ *          the open pull-request numbers recorded as local owner entries and
+ *          fallback marks a result served by the scalar-list fallback read.
  */
 export function pollPullRequests({
   root = process.cwd(),
