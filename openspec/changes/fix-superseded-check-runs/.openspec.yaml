@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Make checksGreen, shared by the review watch and the landing command,
+  treat a pull-request rollup as green only when the newest entry of every check
+  identity is successful, so a superseded failed run on the same head no longer
+  blocks polling or landing.
