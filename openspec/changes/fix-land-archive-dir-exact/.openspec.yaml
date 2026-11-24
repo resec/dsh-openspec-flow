@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Recognise the archive directory of the landed change itself when a land
+  retry decides the change is already archived.
