@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -366,7 +366,8 @@ test('land refuses an unready apply review and a tree mismatch', async () => {
   }
 })
 
-test('land keeps a resumable state when the archive commit fails', async () => {
+/** Land, let the archive commit fail, and return the written archive directory. */
+async function failedArchiveLanding() {
   const { root, run, fake } = await readyLand()
   const hook = join(root, '.git', 'hooks', 'pre-commit')
   writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
@@ -376,6 +377,22 @@ test('land keeps a resumable state when the archive commit fails', async () => {
   )
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
   rmSync(hook, { force: true })
+  const archiveRoot = join(root, 'openspec', 'changes', 'archive')
+  const archived = readdirSync(archiveRoot).filter((name) => !name.startsWith('.'))
+  assert.equal(archived.length, 1, archived.join(','))
+  return { root, run, fake, archiveRoot, archived: archived[0] }
+}
+
+/** Create archive directories that look like changes but are not this change. */
+function addArchiveDecoys(archiveRoot, names) {
+  for (const name of names) {
+    mkdirSync(join(archiveRoot, name), { recursive: true })
+    writeFileSync(join(archiveRoot, name, 'proposal.md'), '# Another change\n')
+  }
+}
+
+test('land keeps a resumable state when the archive commit fails', async () => {
+  const { root, run, fake } = await failedArchiveLanding()
   const retried = await call(fake, 'openspec_apply_worktree', {
     action: 'land', change: CHANGE, approvedBy: 'user',
   })
@@ -383,6 +400,36 @@ test('land keeps a resumable state when the archive commit fails', async () => {
   assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
   assert.equal(run(['log', '-1', '--format=%b']), `Landed from ${retried.landCommit}`)
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+})
+
+test('land retry commits only the archive directory that holds this change', async () => {
+  const { root, run, fake, archiveRoot, archived } = await failedArchiveLanding()
+  const decoys = [`2026-01-01-${CHANGE}-extra`, `2026-01-01-extra-${CHANGE}`, `${CHANGE}-extra`]
+  addArchiveDecoys(archiveRoot, decoys)
+  const retried = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(retried.archiveCommit, run(['rev-parse', 'HEAD']))
+  const committed = run(['show', '--name-only', '--format=', 'HEAD']).split('\n').filter(Boolean)
+  assert.equal(committed.includes(`openspec/changes/archive/${archived}/proposal.md`), true)
+  for (const name of decoys) {
+    assert.equal(committed.some((path) => path.startsWith(`openspec/changes/archive/${name}/`)), false)
+    assert.equal(existsSync(join(archiveRoot, name)), true)
+  }
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+})
+
+test('land retry refuses a suffix-matching archive directory as this change', async () => {
+  const { root, run, fake, archiveRoot, archived } = await failedArchiveLanding()
+  rmSync(join(archiveRoot, archived), { recursive: true, force: true })
+  const decoys = [`2026-01-01-${CHANGE}-extra`, `2026-01-01-extra-${CHANGE}`]
+  addArchiveDecoys(archiveRoot, decoys)
+  const head = run(['rev-parse', 'HEAD'])
+  await assert.rejects(call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  }))
+  assert.equal(run(['rev-parse', 'HEAD']), head)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
 })
 
 test('remove supports an approved abandon and refuses a missing state', async () => {
