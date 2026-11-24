@@ -48,8 +48,8 @@ node scripts/pr-review-owner-review.mjs --reconcile --apply
 # List landing candidates. Reads every open pull request (GitHub CLI ceiling 1000) and writes nothing.
 node scripts/pr-review-land.mjs candidates
 
-# Batch-sync every eligible labeled same-repository behind branch. The default is a dry run.
-# At most 20 updates per run; the remainder stays for the next run.
+# Batch-sync every labeled non-draft main-based one-change pull request. The default is a dry run.
+# Forks and conflicts are refused, up-to-date branches are skipped; at most 20 updates per run.
 node scripts/pr-review-land.mjs sync-batch
 node scripts/pr-review-land.mjs sync-batch --apply
 
@@ -153,7 +153,7 @@ The `mergeable` label is the only contributor landing authorization. Only a main
 
 Every contributor landing command refuses while a local owner holds `landing.lock`, and a new landing also refuses while local `main` leads `origin/main` (run `node scripts/push-landed.mjs --push` first). `plan`, `sync`, `sync-batch` and `prepare` are read or prepare steps; `merge`, `archive`, `push` and `finish` mutate main. Reviews stay available while the lock is held.
 
-`sync-batch` applies the same per-pull-request eligibility to every labeled same-repository branch that is behind `main` in one run. It is a dry run by default, updates at most 20 branches per run, waits at most 10 seconds per updated head and leaves the remainder to the next run. It creates no landing entry and consumes no landing phase. It stops the run only when it changed a head; a lock-refused batch continues to review, while an empty or all-refused batch falls through to the landing or review step. Reviews stay available while a lock is held.
+`sync-batch` evaluates every labeled non-draft pull request based on `main` with exactly one active change in one run. It updates each eligible same-repository branch that is behind `main`, refuses a fork or conflicting branch with a reason, skips an up-to-date branch, updates at most 20 branches per run, waits at most 10 seconds per updated head and leaves the remainder to the next run. It creates no landing entry and consumes no landing phase. It stops the run only when it changed a head; a lock-refused batch continues to review, while an empty or all-refused batch falls through to the landing or review step. Reviews stay available while a lock is held.
 
 The landing sequence is:
 
