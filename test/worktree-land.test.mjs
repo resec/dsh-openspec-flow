@@ -329,10 +329,15 @@ test('land refuses a worktree head ahead of its branch before updating main', as
   run(['-C', state.worktree, 'checkout', '--detach'])
   run(['-C', state.worktree, 'commit', '--allow-empty', '-m', 'detached work'])
   const before = run(['rev-parse', 'HEAD'])
-  await assert.rejects(
-    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
-    /not the tip of its branch/,
-  )
+  const worktreeHead = run(['-C', state.worktree, 'rev-parse', 'HEAD'])
+  const branchTip = run(['rev-parse', state.branch])
+  const error = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+    .then(() => null, (thrown) => thrown)
+  // The refusal reads the same either way, so it names both heads and lets the
+  // message work for a head behind the branch as well as one ahead of it.
+  assert.match(error.message, /not the tip of its branch/)
+  assert.ok(error.message.includes(worktreeHead), 'the refusal does not name the worktree head')
+  assert.ok(error.message.includes(branchTip), 'the refusal does not name the branch tip')
   assert.equal(run(['rev-parse', 'HEAD']), before)
   assert.equal(readApplyState(root, null, CHANGE).status, 'active')
   assert.equal(existsSync(state.worktree), true)
