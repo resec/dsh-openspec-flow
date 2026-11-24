@@ -14,4 +14,4 @@
 
 - [x] 3.1 Run `node --test test/worktree-land.test.mjs test/apply-worktree-doc.test.mjs`.
 - [x] 3.2 With `lib/worktree/land.js` stashed, run both new cases and confirm they fail.
-- [x] 3.3 Run `/tmp/b3/gates.sh fix-land-verify-before-ff` from the clone root.
+- [x] 3.3 From the clone root, run `npm run verify`, `npm run openspec:check` and `npm run check:requirement-length`.
