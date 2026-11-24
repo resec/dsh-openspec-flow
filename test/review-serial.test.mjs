@@ -1,19 +1,68 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import {
-  cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { applyLockLocation } from '../lib/review/apply-lock.js'
 import { reviewDirectory } from '../lib/review/store.js'
 import {
-  CHANGE, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
+  CHANGE, PROBE_ROOT, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
 
 const SECOND = 'second-change'
+
+/**
+ * Build a registered git-backed store with the probe change committed, plus the
+ * user data directory that holds its registry. The store is resolved through
+ * `--store team`, so the review record and the store lock live in its git dir.
+ * @returns the store root, its git runner and the user data directory.
+ */
+function storeFixture() {
+  const home = mkdtempSync(join(tmpdir(), 'openspec-flow-store-home-'))
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-store-'))
+  cpSync(PROBE_ROOT, join(root, 'openspec'), { recursive: true })
+  mkdirSync(join(root, '.openspec-store'), { recursive: true })
+  writeFileSync(join(root, '.openspec-store', 'store.yaml'), 'version: 1\nid: team\n')
+  mkdirSync(join(home, 'openspec', 'stores'), { recursive: true })
+  writeFileSync(
+    join(home, 'openspec', 'stores', 'registry.yaml'),
+    `version: 1\nstores:\n  team:\n    backend:\n      type: git\n      local_path: ${realpathSync(root)}\n`,
+  )
+  const run = (args) => {
+    const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  run(['init'])
+  run(['config', 'user.email', 'test@example.com'])
+  run(['config', 'user.name', 'Test'])
+  run(['add', '-A'])
+  run(['commit', '-m', 'store root'])
+  run(['commit', '--allow-empty', '-m', 'base bump'])
+  return { home, root, run }
+}
+
+/** Run one test body with the store registry redirected to a temporary home. */
+async function withStoreHome(home, body) {
+  const previous = process.env.XDG_DATA_HOME
+  process.env.XDG_DATA_HOME = home
+  try {
+    return await body()
+  } finally {
+    if (previous === undefined) delete process.env.XDG_DATA_HOME
+    else process.env.XDG_DATA_HOME = previous
+  }
+}
+
+/** The lock file a git domain keeps, never visible in `git status`. */
+function gitLockPath(root, run) {
+  return join(root, run(['rev-parse', '--git-dir']), 'openspec-flow', 'apply.lock.json')
+}
 
 function copySecond(root) {
   cpSync(
@@ -337,4 +386,68 @@ test("archive ignores another change's uncommitted planning files", async () => 
   const archived = await call(fake, 'openspec_archive', { change: CHANGE })
   assert.equal(archived.archived, true)
   assert.equal(existsSync(applyLockLocation(root).file), false)
+})
+
+test('a store change takes the store lock through the apply entry', async () => {
+  const store = storeFixture()
+  const first = gitFixture()
+  const second = gitFixture()
+  try {
+    await withStoreHome(store.home, async () => {
+      const settings = { draft: { enabled: false }, apply: { enabled: true, reviewers: 0 } }
+      const fake = setup(first.root, settings)
+      const base = store.run(['rev-parse', 'HEAD~1'])
+      const started = await call(fake, 'openspec_review', {
+        action: 'start', change: CHANGE, review: 'apply', store: 'team', base,
+      })
+      assert.equal(started.state, 'in-review')
+      assert.equal(started.mode, 'self')
+
+      // The implementation lock stays in the project's git dir; the store lock
+      // stays in the store's git dir and records the implementation root.
+      const implementationLock = gitLockPath(first.root, first.run)
+      const storeLock = gitLockPath(store.root, store.run)
+      assert.equal(implementationLock, join(first.root, '.git', 'openspec-flow', 'apply.lock.json'))
+      assert.equal(storeLock, join(store.root, '.git', 'openspec-flow', 'apply.lock.json'))
+      assert.equal(existsSync(implementationLock), true)
+      assert.equal(existsSync(storeLock), true)
+      const record = JSON.parse(readFileSync(storeLock, 'utf8'))
+      assert.equal(record.change, CHANGE)
+      assert.equal(record.store, 'team')
+      assert.equal(realpathSync(record.implementationRoot), realpathSync(first.root))
+
+      // A second project is refused by the store lock and releases only the
+      // implementation lock it created itself.
+      const otherFake = setup(second.root, settings)
+      await assert.rejects(
+        () => call(otherFake, 'openspec_apply_next', { change: CHANGE, store: 'team' }),
+        /team#add-dark-mode/,
+      )
+      assert.equal(existsSync(gitLockPath(second.root, second.run)), false)
+      assert.equal(existsSync(implementationLock), true)
+      assert.equal(existsSync(storeLock), true)
+
+      // The second project cannot archive the store change either.
+      await assert.rejects(
+        () => call(otherFake, 'openspec_archive', { change: CHANGE, store: 'team' }),
+        /team#add-dark-mode/,
+      )
+      assert.equal(existsSync(join(store.root, 'openspec', 'changes', CHANGE)), true)
+      assert.equal(existsSync(join(store.root, 'openspec', 'changes', 'archive', CHANGE)), false)
+
+      // The owning project archives the change and releases its own locks.
+      await call(fake, 'openspec_review', {
+        action: 'self-report', change: CHANGE, review: 'apply', store: 'team', report: report(),
+      })
+      const archived = await call(fake, 'openspec_archive', { change: CHANGE, store: 'team' })
+      assert.equal(archived.archived, true)
+      assert.equal(existsSync(implementationLock), false)
+      assert.equal(existsSync(storeLock), false)
+    })
+  } finally {
+    rmSync(first.root, { recursive: true, force: true })
+    rmSync(second.root, { recursive: true, force: true })
+    rmSync(store.root, { recursive: true, force: true })
+    rmSync(store.home, { recursive: true, force: true })
+  }
 })

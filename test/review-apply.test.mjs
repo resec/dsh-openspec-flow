@@ -9,6 +9,7 @@ import test from 'node:test'
 import {
   CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, passDraftConstructing, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
+import { apply } from '../index.js'
 import { reviewDirectory } from '../lib/review/store.js'
 import { readApplyState } from '../lib/worktree/state.js'
 import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/worktree/seal.js'
@@ -16,15 +17,105 @@ import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/wo
 test.after(cleanupFixtures)
 
 test('new change locks a policy and ignores later settings', async () => {
-  const root = fixture()
-  const fake = setup(root, { draft: { enabled: false, reviewers: 0 } })
+  const { root } = gitFixture()
+  const fake = setup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 0 },
+  })
   const created = await call(fake, 'openspec_new_change', { name: 'add-light-mode' })
   assert.equal(created.change.id, 'add-light-mode')
+  cpSync(
+    join(root, 'openspec', 'changes', CHANGE),
+    join(root, 'openspec', 'changes', 'add-light-mode'),
+    { recursive: true, force: true },
+  )
   const policyPath = join(reviewDirectory(root, undefined, 'add-light-mode'), 'policy.json')
   assert.equal(existsSync(policyPath), true)
-  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
-  assert.equal(policy.reviews.draft.enabled, false)
-  assert.match(readFileSync(join(root, 'openspec', '.gitignore'), 'utf8'), /\.review\//)
+  const lockedText = readFileSync(policyPath, 'utf8')
+  const policy = JSON.parse(lockedText)
+  assert.equal(policy.reviews.draft.enabled, true)
+  assert.equal(policy.reviews.draft.reviewers, 0)
+  assert.equal(policy.reviews.apply.enabled, true)
+  assert.deepEqual(policy.reviews.draft.reviewerModel, {
+    source: 'inherit',
+    provider: 'deepseek',
+    model: 'deepseek-flash',
+    reasoningEffort: 'max',
+  })
+
+  // The user edits the settings after the change was created.
+  apply(fake.ctx, {
+    timeoutMs: 30_000,
+    reviews: {
+      draft: {
+        enabled: false,
+        reviewers: 1,
+        reviewerModel: {
+          source: 'explicit', provider: 'deepseek', model: 'other-model', reasoningEffort: 'max',
+        },
+      },
+      apply: { enabled: false, reviewers: 1 },
+    },
+    worktree: { enabled: false },
+  })
+
+  // The locked policy, including the reviewer model, did not change.
+  assert.equal(readFileSync(policyPath, 'utf8'), lockedText)
+  const draft = await call(fake, 'openspec_review', {
+    action: 'start', change: 'add-light-mode', intent: 'Add a light-mode switch.',
+  })
+  assert.equal(draft.mode, 'self')
+
+  // The edit is effective for a change created after it.
+  await call(fake, 'openspec_new_change', { name: 'add-dark-toggle' })
+  const nextPolicy = JSON.parse(readFileSync(
+    join(reviewDirectory(root, undefined, 'add-dark-toggle'), 'policy.json'),
+    'utf8',
+  ))
+  assert.equal(nextPolicy.reviews.draft.enabled, false)
+  assert.equal(nextPolicy.reviews.draft.reviewers, 1)
+  assert.deepEqual(nextPolicy.reviews.draft.reviewerModel, {
+    source: 'explicit',
+    provider: 'deepseek',
+    model: 'other-model',
+    reasoningEffort: 'max',
+  })
+})
+
+// The locked policy enables the apply review, so the archive gate must still
+// refuse while that review has not started. This assertion fails on the
+// current implementation because the gate reads the current settings; it stays
+// a todo until #45 decides whether later settings may unlock a locked policy.
+test('a locked apply policy still gates archive after the settings disable it', {
+  todo: 'depends on the direction in issue #45',
+}, async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, {
+    draft: { enabled: false },
+    apply: { enabled: true, reviewers: 0 },
+  })
+  await call(fake, 'openspec_new_change', { name: 'add-light-mode' })
+  cpSync(
+    join(root, 'openspec', 'changes', CHANGE),
+    join(root, 'openspec', 'changes', 'add-light-mode'),
+    { recursive: true, force: true },
+  )
+  run(['add', 'openspec/changes/add-light-mode'])
+  run(['commit', '-m', 'the new change'])
+  apply(fake.ctx, {
+    timeoutMs: 30_000,
+    reviews: { draft: { enabled: false }, apply: { enabled: false } },
+    worktree: { enabled: false },
+  })
+  const policy = JSON.parse(readFileSync(
+    join(reviewDirectory(root, undefined, 'add-light-mode'), 'policy.json'),
+    'utf8',
+  ))
+  assert.equal(policy.reviews.apply.enabled, true)
+  await assert.rejects(
+    () => call(fake, 'openspec_archive', { change: 'add-light-mode' }),
+    /apply review has not started/,
+  )
 })
 
 test('a no-git project locks apply review off even when settings enable it', async () => {
