@@ -186,7 +186,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 ## 失败处理
 
-- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
+- **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。复用未报告轮次的 `resume` 不重置该轮的计时起点，`wait` 仍按原截止时间返回 `overdue`；延长等待只能经用户批准的 `extend`。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
 - **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。rebase 额外轮次不占普通轮次号，也不受轮次上限影响。
