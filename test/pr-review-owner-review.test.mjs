@@ -457,6 +457,65 @@ test('the scheduled reconcile then cleanup and per-PR add sequence runs in order
   }
 })
 
+test('reconcile retries a closed PR label removal that failed after cleanup', () => {
+  const root = makeRoot()
+  try {
+    saveState(root, {
+      schemaVersion: 1,
+      prs: { 13: makeEntry({ number: 13, change: 'widget', ownerReview: { head: HEAD, at: 't' } }) },
+    })
+    const closedPr = makePr({
+      number: 13,
+      state: 'CLOSED',
+      labels: [{ name: OWNER_REVIEW_LABEL }],
+      statusCheckRollup: [],
+      files: [],
+      mergeable: 'UNKNOWN',
+      mergeStateStatus: 'UNKNOWN',
+      comments: [],
+    })
+    let denyRemoval = true
+    let labeled = true
+    const edits = []
+    const { gh } = fakeGh((args) => {
+      if (args[0] === 'api') return LOGIN
+      if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify([])
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return JSON.stringify({ ...closedPr, labels: labeled ? closedPr.labels : [] })
+      }
+      if (args[0] === 'pr' && args[1] === 'edit') {
+        if (args[3] === '--remove-label' && denyRemoval) throw new Error('label removal denied')
+        if (args[3] === '--remove-label') labeled = false
+        edits.push(args)
+        return 'ok'
+      }
+      throw new Error(`unexpected gh call: ${args.join(' ')}`)
+    })
+
+    const first = reconcileOwnerReview({ root, apply: true, gh })
+    assert.equal(first.errors.length, 1)
+    assert.match(first.errors[0].error, /label removal denied/)
+
+    cleanupClosedPullRequests({ root, gh })
+    assert.notEqual(loadState(root).prs['13'].ownerReview, undefined)
+
+    denyRemoval = false
+    const second = reconcileOwnerReview({ root, apply: true, gh })
+    assert.deepEqual(second.errors, [])
+    assert.equal(second.results.find((entry) => entry.number === 13).action, 'remove')
+    assert.equal(edits.filter((args) => args[3] === '--remove-label').length, 1)
+    assert.equal(loadState(root).prs['13'].ownerReview, undefined)
+
+    reconcileOwnerReview({ root, apply: true, gh })
+    assert.equal(edits.filter((args) => args[3] === '--remove-label').length, 1)
+
+    assert.equal(cleanupClosedPullRequests({ root, gh }).length, 1)
+    assert.equal(loadState(root).prs['13'], undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('main dry-run prints a plan and the lock refuses a second run', () => {
   const root = makeRoot()
   try {

@@ -646,6 +646,9 @@ export function cleanupClosedPullRequests({ root = process.cwd(), gh = ghText } 
   const state = loadState(root)
   const cleaned = []
   for (const [key, entry] of Object.entries(state.prs)) {
+    // A recorded ownerReview head means the advisory label is still on the pull
+    // request; keep the entry so the next reconcile retries a failed removal.
+    if (entry.ownerReview !== undefined) continue
     const pr = ghJson(gh, ['pr', 'view', key, '--json', 'state,mergedAt'])
     if (pr.state === 'OPEN') continue
     cleaned.push(forgetPullRequest({ root, number: entry.number, change: entry.change, worktree: entry.worktree }))
