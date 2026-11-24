@@ -191,16 +191,19 @@ Run the PR review watch for this repository in this fixed session:
    node scripts/pr-review-lock.mjs force-release --reason "<the owner session ended>"
    and re-run the preflight; when the lock is held and not stale, do not
    start a contributor landing.
-4. Before the first contributor landing command in the run, acquire the
-   landing lock: node scripts/pr-review-lock.mjs acquire
-   --owner-session <scheduled-session> --pr <n> --json. The same scheduled
-   session re-enters a lock left by an earlier delivery, so a crash does not
-   wait for the TTL. Keep the token and pass
-   --session <scheduled-session> to every pr-review-land.mjs landing command.
-   finish releases the lock; when the run stops without finish, run
-   node scripts/pr-review-lock.mjs release --session <scheduled-session>
-   --token <token>.
-5. Resume one phase of an unfinished contributor landing, then stop:
+4. Run node scripts/pr-review-land.mjs candidates before acquiring the
+   landing lock. candidates is a read-only pre-acquire step: it takes no
+   --session or --token and refuses while any lock is held. Choose the first
+   candidate.
+5. If an unfinished contributor landing exists, acquire its landing lock:
+   node scripts/pr-review-lock.mjs acquire --owner-session <scheduled-session>
+   --pr <n> --json. The same scheduled session re-enters a lock left by an
+   earlier delivery, so a crash does not wait for the TTL. Keep the token and
+   pass --session <scheduled-session> to every pr-review-land.mjs landing
+   command, including plan. finish releases the lock; when the run stops
+   without finish, run node scripts/pr-review-lock.mjs release
+   --session <scheduled-session> --token <token>. Then resume one phase of an
+   unfinished contributor landing, then stop:
    - prepared: read the apply record with
      openspec_review action=status review=apply change=<change>
      worktree=<landing worktree>, then run
@@ -228,14 +231,15 @@ Run the PR review watch for this repository in this fixed session:
      push <n> --apply --session <scheduled-session> and
      finish <n> --apply --session <scheduled-session>.
    - review-failed: report it and stop.
-6. When a mergeable contributor candidate exists and the landing lock is
-   free, acquire it as in step 4 and land it before reviewing: choose the
-   first candidate. When it is syncable, run
+6. Otherwise, when a mergeable candidate exists, acquire the lock for it as
+   in step 5 and land it before reviewing. plan is a locked command and takes
+   --session <scheduled-session>. When the candidate is syncable, run
    node scripts/pr-review-land.mjs sync <n> --apply
    --session <scheduled-session> and stop, then release the lock; the next
    poll reviews the new head once its CI rollup is green. Otherwise run
-   node scripts/pr-review-land.mjs plan <n>; when the plan refuses with the
-   sync instruction, run node scripts/pr-review-land.mjs sync <n> --apply
+   node scripts/pr-review-land.mjs plan <n> --session <scheduled-session>;
+   when the plan refuses with the sync instruction, run
+   node scripts/pr-review-land.mjs sync <n> --apply
    --session <scheduled-session> and stop, then release the lock. Otherwise
    run node scripts/pr-review-land.mjs prepare <n> --apply
    --session <scheduled-session> and stop, then release the lock.

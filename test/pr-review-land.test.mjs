@@ -895,7 +895,10 @@ test('a local landing lock refuses every contributor landing command', () => {
     const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
     acquireLock({ root, session: 'local-owner', token: 'local-token', pr: 99 })
     assert.throws(() => assertLandingLockFree(root), /held by session local-owner for PR #99/)
-    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /landing lock is held by session local-owner/)
+    assert.throws(
+      () => planLanding({ root, number: 12, gh: fake }),
+      /landing lock is held by session local-owner for PR #99; pass --session local-owner/,
+    )
     assert.throws(
       () => planLanding({ root, number: 12, gh: fake, session: 'local-owner', token: 'wrong' }),
       /landing lock token does not match/,

@@ -176,7 +176,7 @@ export function assertLandingLockFree(root, { session, token } = {}) {
     }
     return owner
   }
-  throw new Error(`the landing lock is held by session ${owner.ownerSession} for PR #${owner.pr}; wait for the local owner to release it`)
+  throw new Error(`the landing lock is held by session ${owner.ownerSession} for PR #${owner.pr}; pass --session ${owner.ownerSession} to a landing command or release it`)
 }
 
 /** Refuse a contributor landing for an owner-managed local PR. */
