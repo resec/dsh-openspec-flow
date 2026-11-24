@@ -357,7 +357,7 @@ export function fetchRemoteMain(root) {
   if (fetched.status !== 0) {
     throw new Error(`cannot fetch origin main: ${(fetched.stderr || '').trim()}`)
   }
-  const remote = runGit(root, ['rev-parse', '--verify', 'origin/main^{commit}'], { allowFailure: true })
+  const remote = runGit(root, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], { allowFailure: true })
   if (remote.status !== 0 || remote.stdout.trim() === '') {
     throw new Error('origin/main does not resolve after fetching')
   }

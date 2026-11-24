@@ -18,7 +18,7 @@ import { resolveBase } from './coverage-gate.mjs'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const STAMP_FILE = join('.cache', 'coverage-stamp.json')
 const RECORD_VERSION = 1
-const BASE_REF = 'origin/main'
+const BASE_REF = 'refs/remotes/origin/main'
 
 /**
  * Every committed input whose change can alter a coverage verdict.

@@ -35,7 +35,7 @@ export function buildRunnerArgv(root, concurrency = DEFAULT_CONCURRENCY) {
 export function parseArgs(argv) {
   const options = {
     mode: undefined,
-    base: 'origin/main',
+    base: 'refs/remotes/origin/main',
     updateBaseline: false,
     allowLower: false,
     reason: null,

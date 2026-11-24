@@ -446,21 +446,24 @@ test('apply review can run with draft review disabled and the merge-base fallbac
   run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
   run(['commit', '-m', 'seal the draft'])
   const seal = run(['rev-parse', 'HEAD'])
-  run(['branch', 'origin/main', seal])
+  // git resolves the short name to the local branch before the tracking ref.
+  run(['update-ref', 'refs/remotes/origin/main', seal])
+  run(['branch', 'origin/main', 'HEAD^'])
   const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
   const started = await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, review: 'apply',
   })
   assert.equal(started.baseline, 'none')
   assert.match(started.brief, /- baseline: none/)
-  assert.match(started.brief, /The base is `git merge-base HEAD origin\/main`; no seal commit was recorded for this change\./)
+  assert.match(started.brief, /The base is `git merge-base HEAD refs\/remotes\/origin\/main`; no seal commit was recorded for this change\./)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.baseline, 'none')
   assert.equal(record.baseSource, 'merge-base')
+  assert.equal(record.baseCommit, seal)
   const resumed = await call(fake, 'openspec_review', {
     action: 'resume', change: CHANGE, review: 'apply',
   })
-  assert.match(resumed.brief, /The base is `git merge-base HEAD origin\/main`; no seal commit was recorded for this change\./)
+  assert.match(resumed.brief, /The base is `git merge-base HEAD refs\/remotes\/origin\/main`; no seal commit was recorded for this change\./)
   const resumedRecord = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(resumedRecord.baseSource, 'merge-base')
 })

@@ -13,6 +13,7 @@ import {
   mergeUntrackedFiles,
   newCodeViolations,
   parseLcov,
+  parseArgs as parseGateArgs,
   parseUnifiedDiff,
   percentage,
   resolveBase,
@@ -22,7 +23,7 @@ import {
   validateBaselineNode,
   writeBaseline,
 } from '../scripts/coverage-gate.mjs'
-import { runVerification } from '../scripts/coverage.mjs'
+import { parseArgs, runVerification } from '../scripts/coverage.mjs'
 import { readStamp as readStampFixture, writeStamp as writeStampFixture } from '../scripts/coverage-stamp.mjs'
 
 const isSource = (file) => file === 'lib/a.js'
@@ -411,6 +412,32 @@ test('a passing enforce run reports the resolved base to onEnforcePass', async (
     assert.equal(passed.length, 1)
     assert.equal(passed[0].base, head)
     assert.equal(failed.length, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the default base is the remote-tracking ref, not a branch of that name', async () => {
+  assert.equal(parseArgs([]).base, 'refs/remotes/origin/main')
+  assert.equal(parseGateArgs([]).base, 'refs/remotes/origin/main')
+  const root = makePassingGateRepo()
+  try {
+    const first = git(root, ['rev-parse', 'HEAD']).stdout.trim()
+    mkdirSync(join(root, 'docs'), { recursive: true })
+    writeFileSync(join(root, 'docs', 'note.md'), 'note\n')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'second'])
+    const head = git(root, ['rev-parse', 'HEAD']).stdout.trim()
+    // A bare `origin/main` resolves to a local branch of that name first, so
+    // the two refs must name different commits for this run to tell the
+    // default apart.
+    git(root, ['branch', 'origin/main', head])
+    git(root, ['update-ref', 'refs/remotes/origin/main', first])
+    const passed = []
+    const code = await runGate({ root, mode: 'enforce', onEnforcePass: (payload) => passed.push(payload) })
+    assert.equal(code, 0)
+    assert.equal(passed.length, 1)
+    assert.equal(passed[0].base, first)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

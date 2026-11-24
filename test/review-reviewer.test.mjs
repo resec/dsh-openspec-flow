@@ -947,7 +947,7 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   assert.match(explicit, /The base is the explicit base passed to this review\./)
   assert.doesNotMatch(explicit, /seal commit recorded/)
   const merge = buildApplyBrief({ ...base, baseSource: 'merge-base', validation: { strict: true, issues: [] } })
-  assert.match(merge, /git merge-base HEAD origin\/main/)
+  assert.match(merge, /git merge-base HEAD refs\/remotes\/origin\/main/)
   assert.match(merge, /no seal commit was recorded/)
 })
 
