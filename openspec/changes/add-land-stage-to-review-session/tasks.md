@@ -16,8 +16,8 @@
 ## 3. Prompt and integration
 
 - [x] 3.1 Update the scheduled task prompt to the fixed-session flow, including the rule that a `prepared` landing with no review record starts the final review and one with a review record checks it; confirm the five-minute recurrence and the existing target session; verify `schedule_list` shows the new prompt and still one PR schedule.
-- [ ] 3.2 Commit the implementation, run `npm run verify` on Node 24 and record the result; verify the run passes.
-- [ ] 3.3 Run `openspec_inspect action=validate strict=true`; verify it reports no findings.
+- [x] 3.2 Commit the implementation, run `npm run verify` on Node 24 and record the result; verify the run passes.
+- [x] 3.3 Run `openspec_inspect action=validate strict=true`; verify it reports no findings.
 
 ## Workflow follow-up
 
