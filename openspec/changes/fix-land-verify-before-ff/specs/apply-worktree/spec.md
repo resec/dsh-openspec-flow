@@ -4,7 +4,7 @@
 
 ### Requirement: A failed land keeps a resumable state
 
-A failed fast-forward, tree check, archive, commit or manifest write SHALL keep the worktree, SHALL NOT claim a completed land and SHALL be retryable without fast-forwarding twice or archiving twice. A completed fast-forward SHALL be retained only after its tree check passed and while main still points at the land commit. Land SHALL refuse before the fast-forward, with main unchanged, when the worktree head is not the tip of the state's branch.
+A failed fast-forward, tree check, archive, commit or manifest write SHALL keep the worktree, SHALL NOT claim a completed land and SHALL be retryable without fast-forwarding twice or archiving twice. A completed fast-forward SHALL be retained only after its tree check passed and while main still points at the land commit. Land SHALL refuse before the fast-forward, with main unchanged, when the state's branch exists and the worktree head is not the tip of that branch.
 
 #### Scenario: Archive fails after the merge
 
@@ -23,5 +23,5 @@ A failed fast-forward, tree check, archive, commit or manifest write SHALL keep 
 
 #### Scenario: The worktree head is not the branch tip
 
-- **WHEN** the worktree head carries the required tree but is not the tip of the state's branch
+- **WHEN** the state's branch exists, and the worktree head carries the required tree but is not the tip of that branch
 - **THEN** land refuses before the fast-forward and names the branch, main is unchanged, the state stays `active`, and the worktree and branch remain
