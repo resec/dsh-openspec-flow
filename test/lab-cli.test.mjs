@@ -24,8 +24,10 @@ test('a boolean switch never takes the value after it', () => {
 })
 
 test('value flags still consume the token after them', () => {
-  const { flags, positional } = parseOptions(['--name', 'poc', '--mode', 'headless', '--offline', '--', 'a task'])
-  assert.deepEqual(flags, { name: 'poc', mode: 'headless', offline: true })
+  const { flags, positional } = parseOptions([
+    '--plugin', 'pkg.tgz', '--name', 'poc', '--mode', 'headless', '--offline', '--', 'a task',
+  ])
+  assert.deepEqual(flags, { plugin: 'pkg.tgz', name: 'poc', mode: 'headless', offline: true })
   assert.deepEqual(positional, ['a task'])
 })
 
