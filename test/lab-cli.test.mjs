@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { main, parseOptions } from '../scripts/lab/cli.mjs'
+import { keepIsValueFor, main, parseCommand, parseOptions } from '../scripts/lab/cli.mjs'
 
 test('the CLI parser keeps flags and positional arguments separate', () => {
   const { flags, positional } = parseOptions(['--name', 'poc', '--mock-only', '--', 'a task'])
@@ -29,13 +29,23 @@ test('value flags still consume the token after them', () => {
   assert.deepEqual(positional, ['a task'])
 })
 
-test('cache prune still reads --keep as a value', () => {
-  const valued = parseOptions(['prune', '--keep', 'a,b'], { keepIsValue: true })
+test('only cache prune reads --keep as a value', () => {
+  assert.equal(keepIsValueFor('cache', 'prune'), true)
+  assert.equal(keepIsValueFor('cache', 'list'), false)
+  assert.equal(keepIsValueFor('cache', undefined), false)
+  assert.equal(keepIsValueFor('test', 'prune'), false)
+  const valued = parseCommand(['cache', 'prune', '--keep', 'a,b'])
   assert.equal(valued.flags.keep, 'a,b')
   assert.deepEqual(valued.positional, ['prune'])
-  const switched = parseOptions(['run', '--keep', 'a'])
-  assert.equal(switched.flags.keep, true)
-  assert.deepEqual(switched.positional, ['run', 'a'])
+  const listed = parseCommand(['cache', 'list', '--keep', 'a'])
+  assert.equal(listed.flags.keep, true)
+  assert.deepEqual(listed.positional, ['list', 'a'])
+  const tested = parseCommand(['test', '--keep', 'a'])
+  assert.equal(tested.flags.keep, true)
+  assert.deepEqual(tested.positional, ['a'])
+  const defaulted = parseOptions(['run', '--keep', 'a'])
+  assert.equal(defaulted.flags.keep, true)
+  assert.deepEqual(defaulted.positional, ['run', 'a'])
 })
 
 test('the CLI help exits successfully', async () => {

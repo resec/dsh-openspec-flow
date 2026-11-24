@@ -32,6 +32,17 @@ const COMMANDS = ['doctor', 'cache', 'up', 'run', 'exec', 'inspect', 'down', 'te
 const VALUE_FLAGS = new Set(['name', 'mode', 'plugin'])
 
 /**
+ * Whether `--keep` takes a value for a command. Only `cache prune` reads it as
+ * a value; every other command reads it as a switch.
+ * @param command - the command word.
+ * @param subcommand - the command's first positional argument.
+ * @returns true when `--keep` consumes the token after it.
+ */
+export function keepIsValueFor(command, subcommand) {
+  return command === 'cache' && subcommand === 'prune'
+}
+
+/**
  * Parse `--flag value`, boolean switches and positional arguments.
  * @param argv - arguments after the command.
  * @param options - `keepIsValue` reads `--keep` as a value, which only the
@@ -61,6 +72,17 @@ export function parseOptions(argv, { keepIsValue = false } = {}) {
     }
   }
   return { flags, positional }
+}
+
+/**
+ * Parse the arguments of one command word, so the per-command `--keep` decision
+ * is the one the handlers run with.
+ * @param argv - the command word followed by its arguments.
+ * @returns flags and positionals.
+ */
+export function parseCommand(argv) {
+  const [command, ...rest] = argv
+  return parseOptions(rest, { keepIsValue: keepIsValueFor(command, rest[0]) })
 }
 
 function statePath(name) {
@@ -102,7 +124,7 @@ export async function main(argv = process.argv.slice(2)) {
     return 0
   }
   if (!COMMANDS.includes(command)) throw new Error(`unknown command ${command}; use ${COMMANDS.join(', ')}`)
-  const { flags, positional } = parseOptions(argv.slice(1), { keepIsValue: command === 'cache' })
+  const { flags, positional } = parseCommand(argv)
   if (command === 'doctor') {
     const result = runDoctor()
     console.log(formatDoctor(result).join('\n'))
