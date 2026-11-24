@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Record a merge that landed on GitHub while local main could not fast-forward as a failure phase, so the merged tree is checked before archive.
