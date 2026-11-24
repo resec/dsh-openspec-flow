@@ -6,11 +6,9 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-import { resolveBundledCli } from '../lib/openspec.js'
 import { main } from '../scripts/check-pre-push.mjs'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/check-pre-push.mjs', import.meta.url))
-const CLI = resolveBundledCli()
 const PURPOSE = 'Defines the capability behavior that the pre-push validation test needs.'
 
 /**
