@@ -29,6 +29,7 @@ import {
   withRunLock,
 } from './pr-review-watch.mjs'
 import { readLockOwner, releaseLock } from './pr-review-lock.mjs'
+import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
 
 export { trustedPass }
 
@@ -522,6 +523,7 @@ export function syncBatch({
   limit = 20,
   pollAttempts = 10,
   pollIntervalMs = 1000,
+  retryDelayMs = 2000,
   sleep = sleepSync,
   session,
   token,
@@ -531,6 +533,7 @@ export function syncBatch({
     assertLandingLockFree(root)
   } catch (error) {
     return {
+      apply,
       locked: true,
       error: error instanceof Error ? error.message : String(error),
       checked: 0,
@@ -540,23 +543,58 @@ export function syncBatch({
     }
   }
   assertLocalMainNotAhead(root)
-  const listed = JSON.parse(ghRunner([
-    'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
-    'number,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,labels,mergeStateStatus,files',
-  ], root))
+  let listed
+  try {
+    listed = JSON.parse(withGhRetry(() => ghRunner([
+      'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
+      'number,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,labels',
+    ], root), { delayMs: retryDelayMs, sleep }))
+  } catch (error) {
+    if (!isTransientGhFailure(error)) throw error
+    return {
+      apply,
+      unavailable: true,
+      locked: false,
+      checked: 0,
+      eligible: 0,
+      updated: 0,
+      changed: false,
+      results: [],
+      remaining: 0,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
   const rows = Array.isArray(listed) ? listed : []
-  const eligible = rows.filter((row) => {
-    if (row?.isDraft === true) return false
-    if (String(row?.baseRefName ?? '') !== 'main') return false
-    if (!Array.isArray(row?.labels) || !row.labels.some((label) => label?.name === LANDING_LABEL)) return false
-    return activeChangeNames(row?.files).length === 1
-  })
   const results = []
   let updated = 0
   let planned = 0
-  for (const row of eligible) {
-    if (apply ? updated >= limit : planned >= limit) break
+  let eligible = 0
+  let attempted = 0
+  for (const row of rows) {
+    if (row?.isDraft === true) continue
+    if (String(row?.baseRefName ?? '') !== 'main') continue
+    if (!Array.isArray(row?.labels) || !row.labels.some((label) => label?.name === LANDING_LABEL)) continue
     const n = Number(row.number)
+    let files
+    try {
+      files = JSON.parse(withGhRetry(
+        () => ghRunner(['pr', 'view', String(n), '--json', 'files'], root),
+        { delayMs: retryDelayMs, sleep },
+      )).files
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      results.push({
+        number: n,
+        status: 'refused',
+        previousHead: row.headRefOid,
+        reason: `the changed paths of PR #${n} could not be read: ${reason}`,
+      })
+      continue
+    }
+    if (activeChangeNames(files).length !== 1) continue
+    eligible += 1
+    if (apply ? updated >= limit : planned >= limit) continue
+    attempted += 1
     try {
       const result = syncLanding({
         root, number: n, gh: ghRunner, apply,
@@ -581,11 +619,11 @@ export function syncBatch({
     apply,
     locked: false,
     checked: rows.length,
-    eligible: eligible.length,
+    eligible,
     updated,
     changed: results.some((entry) => entry.status === 'synced'),
     results,
-    remaining: Math.max(0, eligible.length - results.length),
+    remaining: Math.max(0, eligible - attempted),
   }
 }
 

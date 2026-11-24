@@ -1022,3 +1022,224 @@ test('poll reads the full open list and reports a candidate beyond the old page'
     cleanup(root)
   }
 })
+
+function pollRow(number, head, overrides = {}) {
+  return {
+    number,
+    headRefOid: head,
+    baseRefOid: BASE,
+    baseRefName: 'main',
+    isDraft: false,
+    statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+    files: [{ path: 'openspec/changes/widget/proposal.md' }],
+    labels: [],
+    ...overrides,
+  }
+}
+
+test('the poll retries a transient list failure without the fallback marker', () => {
+  const root = makeRepository()
+  try {
+    const rows = [pollRow(12, HEAD)]
+    let lists = 0
+    const gh = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      lists += 1
+      if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
+      return JSON.stringify(rows)
+    }
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    assert.equal(lists, 2)
+    assert.equal(result.fallback, false)
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll falls back to a scalar list plus one detail request per evaluated row', () => {
+  const root = makeRepository()
+  try {
+    const rows = [pollRow(12, HEAD), pollRow(13, BASE)]
+    const state = { schemaVersion: 1, prs: {} }
+    const direct = pollPullRequests({
+      root,
+      gh: () => JSON.stringify(rows),
+      state,
+    })
+    let lists = 0
+    const detailNumbers = []
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)')
+        assert.equal(args[args.indexOf('--json') + 1], 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels')
+        return JSON.stringify(rows.map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        detailNumbers.push(Number(args[2]))
+        assert.equal(args[args.indexOf('--json') + 1], 'files,statusCheckRollup')
+        const row = rows.find((entry) => Number(entry.number) === Number(args[2]))
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const degraded = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    assert.equal(degraded.fallback, true)
+    assert.deepEqual(detailNumbers, [12, 13])
+    assert.deepEqual(
+      degraded.candidates.map((candidate) => candidate.number),
+      direct.candidates.map((candidate) => candidate.number),
+    )
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fallback skips a recorded commented head and keeps the others', () => {
+  const root = makeRepository()
+  try {
+    const recorded = pollRow(12, HEAD)
+    const fresh = pollRow(13, BASE)
+    const state = {
+      schemaVersion: 1,
+      prs: {
+        12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented' },
+      },
+    }
+    let lists = 0
+    const detailNumbers = []
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        return JSON.stringify([recorded, fresh].map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        detailNumbers.push(Number(args[2]))
+        const row = [recorded, fresh].find((entry) => Number(entry.number) === Number(args[2]))
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const result = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    assert.equal(result.fallback, true)
+    assert.deepEqual(detailNumbers, [13])
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [13])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fallback retries a detail request once', () => {
+  const root = makeRepository()
+  try {
+    const row = pollRow(12, HEAD)
+    let lists = 0
+    let views = 0
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        return JSON.stringify([{ number: row.number, headRefOid: row.headRefOid, baseRefOid: row.baseRefOid, baseRefName: row.baseRefName, isDraft: row.isDraft, labels: row.labels }])
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        views += 1
+        if (views === 1) throw new Error('gh pr view 12 failed: HTTP 502: 502 Bad Gateway')
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    assert.equal(views, 2)
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fails instead of reporting a partial candidate list', () => {
+  const root = makeRepository()
+  try {
+    const row = pollRow(12, HEAD)
+    const scalarOnly = [{ number: row.number, headRefOid: row.headRefOid, baseRefOid: row.baseRefOid, baseRefName: row.baseRefName, isDraft: row.isDraft, labels: row.labels }]
+    let primaryLists = 0
+    const scalarUnavailable = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      primaryLists += 1
+      throw new Error('HTTP 504: 504 Gateway Timeout')
+    }
+    assert.throws(
+      () => pollPullRequests({ root, gh: scalarUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      /HTTP 504/,
+    )
+    assert.equal(primaryLists, 4)
+    let lists = 0
+    const detailUnavailable = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        return JSON.stringify(scalarOnly)
+      }
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'view')
+      throw new Error('HTTP 502: 502 Bad Gateway')
+    }
+    assert.throws(
+      () => pollPullRequests({ root, gh: detailUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      /gh pr view 12 failed: HTTP 502/,
+    )
+    assert.equal(lists, 3)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a comment publish is attempted once and the failure is recorded', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, {
+      schemaVersion: 1,
+      prs: {
+        12: {
+          number: 12,
+          head: HEAD,
+          base: BASE,
+          baseTip: BASE,
+          change: 'widget',
+          worktree: null,
+          round: 1,
+          status: 'prepared',
+          error: null,
+          commentId: null,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    })
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [], round: 1 }))
+    let comments = 0
+    const gh = (args) => {
+      if (args[0] === 'api') return 'maintainer'
+      if (args[0] === 'pr' && args[1] === 'view' && args.includes('comments')) return JSON.stringify({ comments: [] })
+      if (args[0] === 'pr' && args[1] === 'comment') {
+        comments += 1
+        throw new Error('gh pr comment 12 failed: HTTP 502: 502 Bad Gateway')
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    assert.throws(
+      () => publishComment({ root, number: 12, reportPath: report, apply: true, gh }),
+      /HTTP 502/,
+    )
+    assert.equal(comments, 1)
+    const state = loadState(root)
+    assert.equal(state.prs['12'].status, 'failed')
+    assert.match(state.prs['12'].error, /HTTP 502/)
+  } finally {
+    cleanup(root)
+  }
+})

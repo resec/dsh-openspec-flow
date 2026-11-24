@@ -13,6 +13,8 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
+
 /** Cache directory under the main worktree. */
 export const CACHE_DIRECTORY = join('.cache', 'pr-review')
 /** State file name. */
@@ -79,6 +81,16 @@ function ghText(args, options = {}) {
     throw error
   }
   if (result.status !== 0) return undefined
+  return result.stdout.trim()
+}
+
+/** Gh text helper that throws with stderr, for reads that retry. */
+function ghRead(args, options = {}) {
+  const result = capture('gh', args, { cwd: options.cwd, allowFailure: true })
+  if (result.status !== 0) {
+    const detail = String(result.stderr ?? '').trim() || String(result.stdout ?? '').trim()
+    throw new Error(`gh ${args.join(' ')} failed${detail === '' ? '' : `: ${detail}`}`)
+  }
   return result.stdout.trim()
 }
 
@@ -536,19 +548,55 @@ export function filterCandidates(prs, state, localNumbers = new Set()) {
  * @returns `{ candidates, ownerManaged }`, where ownerManaged lists the open
  *          pull-request numbers recorded as local owner entries.
  */
-export function pollPullRequests({ root = process.cwd(), gh = ghText, state = loadState(root), local = localPullRequestNumbers(root) } = {}) {
-  const text = gh([
-    'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
-    'number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,labels,updatedAt',
-  ])
-  if (text === undefined) throw new Error('gh pr list failed')
-  const prs = JSON.parse(text)
+export function pollPullRequests({
+  root = process.cwd(),
+  gh = ghRead,
+  state = loadState(root),
+  local = localPullRequestNumbers(root),
+  retryDelayMs = 2000,
+} = {}) {
+  const readList = (fields) => {
+    const text = withGhRetry(
+      () => gh(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', fields]),
+      { delayMs: retryDelayMs },
+    )
+    if (text === undefined) throw new Error('gh pr list failed')
+    return JSON.parse(text)
+  }
+  const readDetail = (number) => {
+    let text
+    try {
+      text = withGhRetry(
+        () => gh(['pr', 'view', String(number), '--json', 'files,statusCheckRollup']),
+        { delayMs: retryDelayMs },
+      )
+    } catch (error) {
+      throw new Error(`gh pr view ${number} failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (text === undefined) throw new Error(`gh pr view ${number} failed`)
+    const detail = JSON.parse(text)
+    return { files: detail.files, statusCheckRollup: detail.statusCheckRollup }
+  }
+  let fallback = false
+  let prs
+  try {
+    prs = readList('number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,labels,updatedAt')
+  } catch (error) {
+    if (!isTransientGhFailure(error)) throw error
+    fallback = true
+    prs = readList('number,headRefOid,baseRefOid,baseRefName,isDraft,labels').map((row) => {
+      const number = Number(row?.number)
+      const recorded = state?.prs?.[String(number)]
+      if (recorded !== undefined && recorded.head === row.headRefOid && recorded.status === 'commented') return row
+      return { ...row, ...readDetail(number) }
+    })
+  }
   const candidates = filterCandidates(prs, state, local)
   const ownerManaged = [...new Set((Array.isArray(prs) ? prs : [])
     .map((pr) => Number(pr?.number))
     .filter((number) => Number.isInteger(number) && number > 0 && local.has(String(number))))]
     .sort((left, right) => left - right)
-  return { candidates, ownerManaged }
+  return { candidates, ownerManaged, fallback }
 }
 
 /**
