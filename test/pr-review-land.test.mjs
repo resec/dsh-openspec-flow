@@ -116,7 +116,9 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
 }
 
 function fakeGh({ pr = {}, list = [], onMerge } = {}) {
-  return (args, cwd) => {
+  const calls = []
+  const runner = (args, cwd) => {
+    calls.push([...args])
     if (args[0] === 'api') return LOGIN
     if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(pr)
     if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify(list)
@@ -126,6 +128,13 @@ function fakeGh({ pr = {}, list = [], onMerge } = {}) {
     }
     throw new Error(`unexpected gh ${args.join(' ')}`)
   }
+  runner.calls = calls
+  return runner
+}
+
+/** The recorded `gh pr merge` invocations, as argument lists. */
+function mergeCalls(runner) {
+  return runner.calls.filter((args) => args[0] === 'pr' && args[1] === 'merge')
 }
 
 function reviewRecord(root, tree, state = 'passed') {
@@ -207,6 +216,52 @@ test('plan refuses a missing label, a stale head and a non-main base', () => {
     number: 12,
     gh: fakeGh({ pr: JSON.parse(prJson(head, 'release')) }),
   }), /targets release, not main/)
+})
+
+test('plan and prepare refuse one pull request per landing gate', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const cases = [
+    { override: { state: 'CLOSED' }, error: /PR #12 is closed/ },
+    { override: { isDraft: true }, error: /PR #12 is a draft/ },
+    { override: { files: [{ path: 'README.md' }] }, error: /exactly one active change; found none/ },
+    {
+      override: {
+        files: [
+          { path: 'openspec/changes/widget/proposal.md' },
+          { path: 'openspec/changes/gadget/proposal.md' },
+        ],
+      },
+      error: /exactly one active change; found widget, gadget/,
+    },
+    { override: { mergeable: 'CONFLICTING' }, error: /not mergeable: CONFLICTING/ },
+    { override: { mergeable: 'UNKNOWN' }, error: /not mergeable: UNKNOWN/ },
+    { override: { mergeStateStatus: 'DIRTY' }, error: /merge state is DIRTY/ },
+    { override: { mergeStateStatus: 'CONFLICTING' }, error: /merge state is CONFLICTING/ },
+    { override: { mergeStateStatus: 'BLOCKED' }, error: /merge state is BLOCKED/ },
+  ]
+  const landingsFile = join(resolvePaths(root).cache, 'landings.json')
+  for (const { override, error } of cases) {
+    const runner = fakeGh({ pr: JSON.parse(prJson(head, 'main', override)) })
+    assert.throws(() => planLanding({ root, number: 12, gh: runner }), error)
+    assert.throws(() => prepareLanding({ root, number: 12, gh: runner, apply: true }), error)
+    assert.equal(mergeCalls(runner).length, 0)
+  }
+  assert.equal(existsSync(landingsFile), false)
+  assert.equal(loadLandings(root).lands['12'], undefined)
+})
+
+test('prepare refuses a second unfinished landing', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  saveLandings(root, { schemaVersion: 1, lands: { 2: { number: 2, phase: 'prepared' } } })
+  const runner = fakeGh({ pr: JSON.parse(prJson(head)) })
+  assert.throws(
+    () => prepareLanding({ root, number: 12, gh: runner, apply: true }),
+    /PR #2 is already landing in phase prepared/,
+  )
+  assert.equal(loadLandings(root).lands['12'], undefined)
+  assert.equal(loadLandings(root).lands['2'].phase, 'prepared')
 })
 
 test('plan accepts a green newest run after a superseded failure', () => {
@@ -333,6 +388,78 @@ test('reviewed refuses a non-passed record, a dirty checkout and a record tree m
   rmSync(join(prepared.worktree, 'dirty.txt'))
   reviewRecord(root, 'f'.repeat(40))
   assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /does not match/)
+})
+
+test('reviewed refuses a moved watch head and a moved landing head', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  setWatchHead(root, 'c'.repeat(40))
+  assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /head moved; run prepare again/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'prepared')
+  setWatchHead(root, head)
+  git(prepared.worktree, ['commit', '-q', '--allow-empty', '-m', 'landing head moved'])
+  assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /landing head moved from/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'prepared')
+})
+
+test('merge re-checks every landing gate after reviewed and never calls gh', () => {
+  const cases = [
+    { override: { state: 'CLOSED' }, error: /PR #12 is closed/ },
+    { override: { isDraft: true }, error: /PR #12 is a draft/ },
+    { override: { labels: [{ name: 'owner-review' }] }, error: /no mergeable label/ },
+    { override: { mergeable: 'CONFLICTING' }, error: /not mergeable: CONFLICTING/ },
+    { override: { mergeStateStatus: 'DIRTY' }, error: /merge state is DIRTY/ },
+    { override: { mergeStateStatus: 'CONFLICTING' }, error: /merge state is CONFLICTING/ },
+    { override: { mergeStateStatus: 'BLOCKED' }, error: /merge state is BLOCKED/ },
+    { override: { statusCheckRollup: [{ conclusion: 'FAILURE' }] }, error: /green CI rollup/ },
+  ]
+  for (const { override, error } of cases) {
+    const { root, remote } = makeRepo()
+    try {
+      const { head } = addPullRequest(root, remote)
+      const prepared = prepareLanding({
+        root,
+        number: 12,
+        apply: true,
+        gh: fakeGh({ pr: JSON.parse(prJson(head)) }),
+      })
+      reviewRecord(root, git(prepared.worktree, ['rev-parse', 'HEAD^{tree}']))
+      reviewedLanding({ root, number: 12, apply: true })
+      const gated = fakeGh({ pr: JSON.parse(prJson(head, 'main', override)) })
+      assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: gated }), error)
+      assert.equal(mergeCalls(gated).length, 0)
+      assert.equal(loadLandings(root).lands['12'].phase, 'reviewed')
+      assert.equal(existsSync(prepared.worktree), true)
+    } finally {
+      cleanup(root, remote)
+    }
+  }
+})
+
+test('merge calls gh pr merge with exactly --rebase', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const prepared = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+    reviewRecord(root, git(prepared.worktree, ['rev-parse', 'HEAD^{tree}']))
+    reviewedLanding({ root, number: 12, apply: true })
+    const runner = fakeGh({
+      pr: JSON.parse(prJson(head)),
+      onMerge: () => { git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`]) },
+    })
+    mergeLanding({ root, number: 12, apply: true, gh: runner })
+    const merges = mergeCalls(runner)
+    assert.equal(merges.length, 1)
+    assert.deepEqual(merges[0], ['pr', 'merge', '12', '--rebase'])
+    for (const forbidden of ['--admin', '--squash', '--merge', '--force']) {
+      assert.equal(merges[0].includes(forbidden), false, `gh pr merge must not pass ${forbidden}`)
+    }
+  } finally {
+    cleanup(root, remote)
+  }
 })
 
 test('merge records failed on a gh merge failure', () => {
@@ -560,6 +687,53 @@ test('merge verifies the merged tree and archive/push/finish complete the landin
   assert.equal(existsSync(prepared.worktree), false)
   assert.equal(git(root, ['branch', '--list', 'pr-land/12']), '')
   assert.equal(loadLandings(root).lands['12'], undefined)
+})
+
+test('archive refuses an archive commit that is not HEAD', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const prepared = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+    reviewRecord(root, git(prepared.worktree, ['rev-parse', 'HEAD^{tree}']))
+    reviewedLanding({ root, number: 12, apply: true })
+    const onMerge = () => { git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`]) }
+    mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+    git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
+    git(root, ['commit', '-qm', 'archive widget'])
+    assert.throws(
+      () => archiveLanding({ root, number: 12, apply: true, commit: prepared.landingHead }),
+      /is not HEAD/,
+    )
+    assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+    assert.equal(archiveLanding({ root, number: 12, apply: true }).phase, 'archived')
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('finish refuses a pushed head that no longer matches HEAD', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const prepared = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+    reviewRecord(root, git(prepared.worktree, ['rev-parse', 'HEAD^{tree}']))
+    reviewedLanding({ root, number: 12, apply: true })
+    const onMerge = () => { git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`]) }
+    mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+    git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
+    git(root, ['commit', '-qm', 'archive widget'])
+    archiveLanding({ root, number: 12, apply: true })
+    git(root, ['push', '-q', 'origin', 'main'])
+    assert.equal(pushLanding({ root, number: 12, apply: true }).phase, 'pushed')
+    writeFileSync(join(root, 'README.md'), 'local commit after push\n')
+    git(root, ['add', 'README.md'])
+    git(root, ['commit', '-qm', 'local commit after push'])
+    assert.throws(() => finishLanding({ root, number: 12, apply: true }), /pushed head does not match HEAD/)
+    assert.equal(loadLandings(root).lands['12'].phase, 'pushed')
+    assert.equal(existsSync(prepared.worktree), true)
+  } finally {
+    cleanup(root, remote)
+  }
 })
 
 test('merge refuses a tree mismatch after the PR is merged', () => {
