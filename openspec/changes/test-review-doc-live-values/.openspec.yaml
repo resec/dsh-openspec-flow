@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Compare every number and field name docs/review.md states with the
+  implementation that owns it, so the document test fails when the code moves.
