@@ -16,4 +16,4 @@
 ## 3. Verify
 
 - [x] 3.1 Run `node --test --test-name-pattern="remove" test/worktree-land.test.mjs`.
-- [ ] 3.2 Run `/tmp/b3/gates.sh fix-remove-keeps-archived-state`.
+- [x] 3.2 Run `/tmp/b3/gates.sh fix-remove-keeps-archived-state`: strict validate, `npm run openspec:check`, the requirement length gate, the generated-skill check, `check:pr` and `npm run verify` (1344 tests, plugin coverage 98.63/93.62/99.21, new code 100/100/100).
