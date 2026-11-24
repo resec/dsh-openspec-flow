@@ -158,6 +158,44 @@ test('prepare creates a detached worktree, reports the merge base and is idempot
   }
 })
 
+test('prepare preserves the owner-review head when it records a new head', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    writeFileSync(join(root, 'openspec', 'changes', 'widget', 'design.md'), '# Design\n')
+    git(root, ['add', '.'])
+    git(root, ['commit', '-qm', 'PR head one'])
+    const first = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', first])
+    git(root, ['checkout', '-q', 'main'])
+
+    const { gh: firstGh } = fakeGh(() => prJson({ headRefOid: first }))
+    preparePullRequest({ root, number: 12, gh: firstGh })
+    const state = loadState(root)
+    state.prs['12'].ownerReview = { head: first, at: 't' }
+    saveState(root, state)
+
+    git(root, ['checkout', '-q', 'pr-head'])
+    writeFileSync(join(root, 'openspec', 'changes', 'widget', 'design.md'), '# Design two\n')
+    git(root, ['add', '.'])
+    git(root, ['commit', '-qm', 'PR head two'])
+    const second = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', second])
+    git(root, ['checkout', '-q', 'main'])
+
+    const { gh: secondGh } = fakeGh(() => prJson({ headRefOid: second }))
+    preparePullRequest({ root, number: 12, gh: secondGh })
+    const next = loadState(root).prs['12']
+    assert.equal(next.head, second)
+    assert.deepEqual(next.ownerReview, { head: first, at: 't' })
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
 test('renderReport carries the verdict, findings, verifications and marker', () => {
   const text = renderReport({
     verdict: 'changes-requested',

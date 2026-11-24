@@ -91,6 +91,14 @@ test('CONTRIBUTING.md describes the labeled rebase landing', () => {
   assert.match(CONTRIBUTING, /merged tree equals the reviewed tree/)
 })
 
+test('CONTRIBUTING.md and AGENTS.md separate owner-review from mergeable', () => {
+  assert.match(CONTRIBUTING, /owner-review/)
+  assert.match(CONTRIBUTING, /does not authorize landing/)
+  assert.match(CONTRIBUTING, /never adds or removes `mergeable`/)
+  assert.match(AGENTS, /owner-review/)
+  assert.match(AGENTS, /writes only `owner-review` and never `mergeable`/)
+})
+
 test('AGENTS.md scopes the push step to the maintainer', () => {
   const pushLine = AGENTS.split('\n').find((line) => line.includes('origin/main') && line.includes('push'))
   assert.ok(pushLine, 'AGENTS.md has no push step naming origin/main')

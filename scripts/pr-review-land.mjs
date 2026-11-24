@@ -17,13 +17,15 @@ import {
   activeChangeNames,
   checksGreen,
   forgetPullRequest,
-  hasTrustedMarker,
   loadState,
   mainWorktree,
   resolvePaths,
+  trustedPass,
   UsageError,
   withRunLock,
 } from './pr-review-watch.mjs'
+
+export { trustedPass }
 
 /** Landing label required for authorization. */
 export const LANDING_LABEL = 'mergeable'
@@ -150,17 +152,6 @@ export function hasLandingLabel(pr) {
 /** Read the authenticated gh login. */
 function ghLogin(ghRunner, root) {
   return ghRunner(['api', 'user', '--jq', '.login'], root)
-}
-
-/** Whether a comment is a trusted pass for the PR head. */
-export function trustedPass(comments, login, number, head) {
-  const matching = (Array.isArray(comments) ? comments : []).filter((comment) => {
-    if (comment?.author?.login !== login) return false
-    return hasTrustedMarker([comment], login, number, head)
-  })
-  if (matching.length === 0) return false
-  const latest = matching.at(-1)
-  return /\*\*Verdict:\*\*\s*pass\b/iu.test(String(latest?.body ?? ''))
 }
 
 /** Verify the main worktree is clean and on main. */

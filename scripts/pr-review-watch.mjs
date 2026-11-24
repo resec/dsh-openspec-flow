@@ -326,6 +326,7 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
     status: 'prepared',
     error: null,
     commentId: previous.commentId ?? null,
+    ...(previous.ownerReview === undefined ? {} : { ownerReview: previous.ownerReview }),
     updatedAt: new Date().toISOString(),
   }
   saveState(root, state)
@@ -411,6 +412,24 @@ export function hasTrustedMarker(comments, login, number, head) {
     const match = MARKER_PATTERN.exec(String(comment?.body ?? ''))
     return match !== null && Number(match[1]) === Number(number) && match[2] === head
   })
+}
+
+/**
+ * Whether a comment is a trusted pass for the PR head.
+ * @param comments - `gh pr view --json comments` comments.
+ * @param login - authenticated GitHub login.
+ * @param number - PR number.
+ * @param head - head SHA.
+ * @returns true when the latest trusted marker for the head is a pass.
+ */
+export function trustedPass(comments, login, number, head) {
+  const matching = (Array.isArray(comments) ? comments : []).filter((comment) => {
+    if (comment?.author?.login !== login) return false
+    return hasTrustedMarker([comment], login, number, head)
+  })
+  if (matching.length === 0) return false
+  const latest = matching.at(-1)
+  return /\*\*Verdict:\*\*\s*pass\b/iu.test(String(latest?.body ?? ''))
 }
 
 /**
