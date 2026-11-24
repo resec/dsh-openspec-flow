@@ -22,6 +22,7 @@ function childEnv(overrides) {
   const env = { ...process.env, ...overrides }
   delete env.NODE_TEST_CONTEXT
   delete env.COVERAGE
+  if (!('DSH_TEST_KEEP_TMP' in overrides)) delete env.DSH_TEST_KEEP_TMP
   return env
 }
 
