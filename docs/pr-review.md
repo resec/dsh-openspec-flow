@@ -133,7 +133,7 @@ The landing sequence is:
 6. `reviewed <n> --apply` requires the apply review record to be `passed` with its `treeSha` equal to the landing tree, then records `reviewedTree`.
 7. `merge <n> --apply` fetches `origin/main`, requires it to equal the recorded pre-merge main and to be contained in the head, then runs `gh pr merge <n> --rebase`. It never uses squash, `--admin`, force or a merge commit on `main`. A moved main or a stale head records `failed` before any merge call. After the merge it fast-forwards local main and requires the merged tree to equal `reviewedTree`.
 8. The session runs `openspec_archive` on main, commits the archive and pushes.
-9. `archive <n> --commit <sha> --apply` records the archive commit; `push <n> --apply` verifies local main equals `origin/main` and records the pushed head; `finish <n> --apply` writes the manifest and removes the landing checkout and branch.
+9. `archive <n> --commit <sha> --apply` records the archive commit; `push <n> --apply` verifies local main equals `origin/main` and records the pushed head; `finish <n> --apply` writes the manifest, removes the landing checkout and branch and forgets the watch entry. A failed cleanup keeps the `pushed` phase, and `finish` retries it without pushing again.
 
 If the merged tree differs, `merge` records `tree-mismatch` and archive is refused; a deliberate merged-tree review is required. If archive, commit or push fails after the merge, the PR stays merged and the change stays active; the landing state records the phase and retries from there without merging again.
 
@@ -178,6 +178,7 @@ Run the PR review watch for this repository in this fixed session:
    - reviewed: node scripts/pr-review-land.mjs merge <n> --apply.
    - archive-pending: run openspec_archive on main, commit, push, then
      archive <n> --commit <sha> --apply, push <n> --apply and finish <n> --apply.
+   - pushed: node scripts/pr-review-land.mjs finish <n> --apply.
    - review-failed: report it and stop.
 4. Otherwise run node scripts/pr-review-watch.mjs poll --json, review one
    candidate through the Session flow and stop. After a pass, run
@@ -216,7 +217,7 @@ The script's `run.lock` makes a second overlapping run exit; inspect `.cache/pr-
   reports/pr-<n>-<head>.json report handoff written by the session
 ```
 
-Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed` and `tree-mismatch`; `blocked` is accepted only for legacy state files. A retry resumes at the recorded phase; a merge is never repeated. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run, while a label-removed pull request appears in `refused` for the missing label.
+Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed` and `tree-mismatch`; `blocked` is accepted only for legacy state files. A retry resumes at the recorded phase; a merge is never repeated. A `pushed` landing only waits for its cleanup: `finish` stays retryable there and never pushes again, and one that already pushed does not block another landing. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run, while a label-removed pull request appears in `refused` for the missing label.
 
 The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at the PR checkout while the review is active. `state --cleanup` and `state --forget` remove that matching entry with the checkout; a foreign entry is refused and reported. Remove the checkout and state before a merged-tree apply review.
 

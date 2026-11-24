@@ -39,8 +39,12 @@ export const LANDINGS_FILE = 'landings.json'
 export const MANIFEST_DIRECTORY = 'landings'
 /** Local landing branch prefix. */
 export const LANDING_BRANCH_PREFIX = 'pr-land/'
-/** Phases that keep a landing open or awaiting a retry. */
-const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
+/**
+ * Phases that keep a landing open or awaiting a retry.
+ * `pushed` is deliberately absent: main is already pushed and only the cleanup
+ * of `finish` remains, so a failed cleanup must not block another landing.
+ */
+const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending'])
 /** Phases that may be forgotten by the operator. */
 const TERMINAL_PHASES = new Set(['pushed', 'failed', 'blocked', 'tree-mismatch'])
 /** Pre-merge phases that may be abandoned without losing merged work. */

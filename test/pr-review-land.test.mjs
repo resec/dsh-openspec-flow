@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
@@ -172,6 +172,8 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /without disposing a finding/)
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
+  assert.match(doc, /A `pushed` landing only waits for its cleanup/)
+  assert.match(doc, /`finish` retries it without pushing again/)
   assert.match(doc, /every five minutes/)
 })
 
@@ -556,6 +558,75 @@ test('merge verifies the merged tree and archive/push/finish complete the landin
   assert.equal(manifest.change, 'widget')
   assert.equal(existsSync(prepared.worktree), false)
   assert.equal(git(root, ['branch', '--list', 'pr-land/12']), '')
+  assert.equal(loadLandings(root).lands['12'], undefined)
+})
+
+test('a failed finish keeps the pushed landing retryable and does not block another landing', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  const onMerge = () => {
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
+  git(root, ['commit', '-qm', 'archive widget'])
+  archiveLanding({ root, number: 12, apply: true })
+  git(root, ['push', '-q', 'origin', 'main'])
+  pushLanding({ root, number: 12, apply: true })
+  const pushedMain = git(remote, ['rev-parse', 'main'])
+
+  // A foreign apply state makes forgetPullRequest refuse after main is pushed.
+  const foreign = join(resolvePaths(root).commonDir, 'openspec-flow', 'apply', 'foreign.json')
+  mkdirSync(dirname(foreign), { recursive: true })
+  writeFileSync(foreign, `${JSON.stringify({ change: 'widget', worktree: join(root, 'elsewhere') })}\n`)
+  assert.throws(() => finishLanding({ root, number: 12, apply: true }), /apply state .* names/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'pushed')
+
+  // A pushed landing only awaits its cleanup, so the next PR is not blocked.
+  const state = JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8'))
+  git(root, ['checkout', '-q', '-b', 'pr-13', 'main'])
+  writeFileSync(join(root, 'gadget.txt'), 'gadget\n')
+  git(root, ['add', 'gadget.txt'])
+  git(root, ['commit', '-qm', 'gadget change'])
+  const nextHead = git(root, ['rev-parse', 'HEAD'])
+  git(root, ['push', '-q', 'origin', 'HEAD:refs/pull/13/head'])
+  git(root, ['checkout', '-q', 'main'])
+  state.prs['13'] = {
+    number: 13,
+    head: nextHead,
+    base: git(root, ['merge-base', 'origin/main', nextHead]),
+    baseTip: git(root, ['rev-parse', 'origin/main']),
+    change: 'gadget',
+    worktree: join(resolvePaths(root).worktrees, 'pr-13'),
+    round: 1,
+    status: 'commented',
+    error: null,
+    commentId: 'https://example.test/comment/13',
+    updatedAt: new Date().toISOString(),
+  }
+  saveState(root, state)
+  const nextPr = {
+    ...JSON.parse(prJson(nextHead)),
+    number: 13,
+    files: [{ path: 'openspec/changes/gadget/proposal.md' }, { path: 'gadget.txt' }],
+    comments: [{ author: { login: LOGIN }, body: `## Apply review\n\n**Verdict:** pass\n\n<!-- pr-review: pr=13 head=${nextHead} round=1 -->` }],
+  }
+  const nextGh = fakeGh({ pr: nextPr, list: [{ number: 13, labels: [{ name: LANDING_LABEL }] }] })
+  assert.doesNotThrow(() => assertSingleLanding(loadLandings(root), 13))
+  assert.deepEqual(listLandingCandidates({ root, gh: nextGh }).candidates.map((item) => item.number), [13])
+  assert.equal(prepareLanding({ root, number: 13, apply: true, gh: nextGh }).phase, 'prepared')
+
+  // The cleanup is retryable and never pushes again.
+  rmSync(foreign)
+  const manifest = finishLanding({ root, number: 12, apply: true })
+  assert.equal(manifest.pushedHead, pushedMain)
+  assert.equal(git(remote, ['rev-parse', 'main']), pushedMain)
+  assert.equal(git(root, ['rev-parse', 'origin/main']), pushedMain)
   assert.equal(loadLandings(root).lands['12'], undefined)
 })
 
