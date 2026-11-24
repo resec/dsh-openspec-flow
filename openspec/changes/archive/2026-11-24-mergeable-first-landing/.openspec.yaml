@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: 让 PR 巡检优先评审并合并已获 mergeable 授权的 PR；对同仓库落后 main 的存量 PR 在同一轮批量触发 update
+  branch，不占用每轮一个 landing 阶段的额度；候选发现不再截断。
