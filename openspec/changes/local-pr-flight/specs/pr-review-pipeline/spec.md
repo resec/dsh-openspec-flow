@@ -147,6 +147,39 @@ Contributor landing commands SHALL refuse while a local owner holds the `landing
 - **WHEN** the landing lock is held by a local owner
 - **THEN** the watch may still review a contributor pull request
 
+### Requirement: Contributor landing lock protocol
+
+A contributor landing run SHALL run `candidates` before acquiring `landing.lock`, acquire the lock before its first landing command, and pass that owner session to every landing command, including `plan`. The same owner session SHALL re-enter a lock left by an earlier run. `finish` SHALL release the lock, and a run that stops without `finish` SHALL release it explicitly. While a local owner holds the lock, contributor landing SHALL refuse and reviews SHALL remain available.
+
+#### Scenario: Candidates precede the acquire
+
+- **WHEN** a run looks for a contributor landing candidate
+- **THEN** it runs `candidates` before acquiring the lock
+- **AND** `candidates` refuses while any lock is held
+
+#### Scenario: A landing command uses the run session
+
+- **WHEN** the run holds the lock and runs `plan`, `sync`, `prepare`, `merge`, `archive`, `push` or `finish`
+- **THEN** it passes the recorded owner session
+- **AND** `plan` is accepted as a locked command
+
+#### Scenario: The same session re-enters its lock
+
+- **WHEN** the same scheduled session acquires a lock left by an earlier run
+- **THEN** the recorded owner is returned without the earlier token
+- **AND** another session is refused
+
+#### Scenario: A stopped run releases the lock
+
+- **WHEN** the run finishes or stops without `finish`
+- **THEN** the lock is released
+
+#### Scenario: A local owner still blocks contributor landing
+
+- **WHEN** a local owner holds the landing lock
+- **THEN** contributor landing refuses
+- **AND** the watch may still review a contributor pull request
+
 ### Requirement: Local pull-request landing
 
 The owner session SHALL merge a local pull request only when the head contains the current `origin/main`, CI is green, the apply review is passed and its `treeSha` equals the head tree. It SHALL run `gh pr merge --rebase` and then require the merge commit tree to equal the reviewed tree. It SHALL not require a `mergeable` label or a trusted pass comment.
@@ -304,7 +337,7 @@ The watch SHALL keep atomic state under `.cache/pr-review/state.json`, local own
 
 ### Requirement: Scheduled run sequencing
 
-The session SHALL reconcile `owner-review` and clean up each run. Without a held `landing.lock`, it SHALL advance one landing phase in order: resume or prepare a landing, land a mergeable candidate including a same-repository sync. When no landing phase advances, or a local owner holds the lock, it MAY review one candidate. A ready final review SHALL merge, archive and push in the same locked run. A synced head SHALL stop the run. Local pull requests SHALL be reported, never reviewed or landed.
+The session SHALL reconcile `owner-review` and clean up each run. It SHALL advance one landing phase in order: resume or prepare a landing, land a mergeable candidate including a same-repository sync. When no landing phase advances, or a local owner holds the lock, it MAY review one candidate. A ready final review SHALL merge, archive and push in the same locked run. A synced head SHALL stop the run and release the lock. Local pull requests SHALL be reported, never reviewed or landed.
 
 #### Scenario: A run stops after one landing phase
 
@@ -346,6 +379,12 @@ The session SHALL reconcile `owner-review` and clean up each run. Without a held
 - **WHEN** a local owner holds the landing lock
 - **THEN** the run does not start or resume a contributor landing
 - **AND** it may still review one contributor candidate
+
+#### Scenario: A run acquires the lock before landing
+
+- **WHEN** a run has a contributor landing phase to advance
+- **THEN** it runs the read-only candidate listing before acquiring the landing lock
+- **AND** it passes the recorded owner session to the landing command
 
 #### Scenario: Local pull request needs recovery
 
