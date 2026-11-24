@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineScenario, discoverScenarios, loadScenario, selectScenarioFiles } from '../scripts/lab/index.mjs'
@@ -18,9 +18,12 @@ function fixture() {
 test('discovery walks test/lab and ignores POCs', () => {
   const root = fixture()
   try {
-    const files = discoverScenarios({ root })
-    assert.equal(files.length, 2)
-    assert.equal(files.some((file) => file.includes('experiments')), false)
+    const poc = join(root, '.cache', 'lab', 'experiments', 'poc.scenario.mjs')
+    assert.ok(existsSync(poc))
+    assert.deepEqual(discoverScenarios({ root }), [
+      join(root, 'test', 'lab', 'a.scenario.mjs'),
+      join(root, 'test', 'lab', 'nested', 'b.scenario.mjs'),
+    ])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

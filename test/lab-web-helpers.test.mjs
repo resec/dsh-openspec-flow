@@ -67,7 +67,7 @@ test('send, openSession and screenshot drive the page', async () => {
   assert.ok(calls.includes('screenshot:shot.png'))
 })
 
-test('browserPresent is false for an empty directory', () => {
+test('browserPresent reports whether the browser root exists', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-lab-browser-'))
   try {
     assert.equal(browserPresent(directory), true)
