@@ -8,14 +8,14 @@
 
 ## 2. Make workspace selection strict
 
-- [x] 2.1 Throw in `chooseWorkspace` when the `Choose workspace` button, a path segment in the picker or the `Open` button is missing, naming what was not found.
-- [x] 2.2 Wait for the page to show the selected directory name and throw when it does not.
+- [x] 2.1 Enter the scenario's absolute directory through the picker's `Edit path` editor instead of walking from `Home`, which only worked when the picker happened to open at the project level.
+- [x] 2.2 Assert the picker's breadcrumb names that directory, that `Open` closes the picker and that the workspace chip no longer shows the `Choose workspace` placeholder; throw with what was not found when the page offers no button, no path editor or no adoption.
 
 ## 3. Cover the conditions with fake pages
 
 - [x] 3.1 Extend the fake page so a locator can report absence, and add a page that emits `console`, `pageerror` and `requestfailed` events.
 - [x] 3.2 Assert that a page error fails the open check and that a clean page records the screenshot path with the file present.
-- [x] 3.3 Assert the throws for a missing button, a missing path segment and a page that does not show the workspace, and the wait on the selected name.
+- [x] 3.3 Assert the throws for a missing button, a missing path editor, an unentered directory, an unrenamed breadcrumb, a picker that stays open and a workspace that is not adopted.
 - [x] 3.4 Rename the `browserPresent` case to its real semantics; leave the function unchanged.
 
 ## 4. Update the documentation

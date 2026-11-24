@@ -9,8 +9,8 @@ The lab-harness spec states three pass conditions for the Web GUI that the drive
 - Move the page-event recording into an exported `watchPage`, keep page errors in their own list and fail the run when the loaded page recorded one, naming the error the page raised.
 - Enforce the open conditions in one driver step: `confirmPageLoaded` fails on a recorded page error, otherwise screenshots the page to `artifacts/web.png` and appends that path to the report's `screenshots`. A scenario's own `web.screenshot` call records its path too, so every screenshot in the run is listed with the path it was written to.
 - Record the counts of console errors, page errors and failed requests in the report. The contents stay out: a failed request URL can carry the startup token, which the report must not contain.
-- Make `chooseWorkspace` throw when the page offers no `Choose workspace` button, when the directory picker has no entry for one path segment, or when it has no `Open` button, and wait until the page shows the selected directory name before returning.
-- Cover the three conditions with fake pages: a page error fails the run, the screenshot path reaches the report and the file exists, and a missing button or path segment throws. Rename the `browserPresent` case to the behaviour it asserts; the function itself is unchanged, since F15 may remove it.
+- Make `chooseWorkspace` drive the picker by the exact absolute path through its `Edit path` editor instead of walking from `Home`, then assert the picker's breadcrumb names the directory, that `Open` closes the picker and that the workspace chip no longer shows the `Choose workspace` placeholder. Throw when the page offers no `Choose workspace` button, no path editor, no `Open` button, or when any of those assertions fails.
+- Cover the three conditions with fake pages: a page error fails the run, the screenshot path reaches the report and the file exists, and a missing control or an unadopted workspace throws. Rename the `browserPresent` case to the behaviour it asserts; the function itself is unchanged, since F15 may remove it.
 
 ## Capabilities
 
