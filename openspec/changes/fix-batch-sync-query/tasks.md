@@ -22,9 +22,9 @@
 
 ## 5. Integration
 
-- [ ] 5.1 Run `npm run test:affected -- scripts/pr-review-land.mjs scripts/pr-review-watch.mjs scripts/gh-retry.mjs` and then the full `npm run verify` on the primary Node 24; verify both report a pass and the coverage verdict is a pass
-- [ ] 5.2 Run `node scripts/pr-review-land.mjs sync-batch` and `node scripts/pr-review-watch.mjs poll --json` from the main worktree as read-only checks; verify exit status 0, that the batch reports a `checked` count equal to the open list, and that the poll still reports its candidates
-- [ ] 5.3 Run `npm run check:requirement-length` and the OpenSpec strict validation for the change; verify both report no finding
+- [x] 5.1 Run `npm run test:affected -- scripts/pr-review-land.mjs scripts/pr-review-watch.mjs scripts/gh-retry.mjs` and then the full `npm run verify` on the primary Node 24; verify both report a pass and the coverage verdict is a pass
+- [x] 5.2 Run `node scripts/pr-review-land.mjs sync-batch` and `node scripts/pr-review-watch.mjs poll --json` from the main worktree as read-only checks; verify exit status 0, that the batch reports a `checked` count equal to the open list, and that the poll still reports its candidates
+- [x] 5.3 Run `npm run check:requirement-length` and the OpenSpec strict validation for the change; verify both report no finding
 
 ## Workflow follow-up
 
