@@ -161,22 +161,63 @@ The repository SHALL provide a development-only contract check that compares the
 
 ### Requirement: Strict artifact validation gate
 
-The pre-push hook SHALL validate every active change and main spec with warnings treated as failures, and SHALL check archived changes for completed tasks, before the reusable lab scenarios run. It SHALL then run `npm run test:lab -- --mock-only` before `npm run verify`; a lab failure SHALL block the push and SHALL NOT be skipped by `COVERAGE_SKIP=1`. A failure in either validation step or the lab gate SHALL block the push.
+A main-only push SHALL validate main specs and archived tasks with warnings as failures, and SHALL proceed only when every active change reports `in-progress`. Any other push SHALL validate every active change, main spec, and archived tasks the same way. Validation SHALL precede the lab scenarios, which SHALL precede `npm run verify`; a validation or lab failure SHALL block the push, and `COVERAGE_SKIP=1` SHALL NOT skip the lab gate.
 
 #### Scenario: Artifacts pass strict validation
 
 - **WHEN** every active change and main spec passes strict validation and every archived change has all tasks checked
 - **THEN** the hook continues to the lab gate
 
+#### Scenario: A main-only push ignores an in-progress change
+
+- **WHEN** a push targets only `refs/heads/main` and an active change reports `in-progress`
+- **THEN** the hook validates main specs and archived tasks
+- **AND** the hook does not validate that active change
+- **AND** the hook continues to the lab gate
+
+#### Scenario: A main-only push blocks a complete change
+
+- **WHEN** a push targets only `refs/heads/main` and an active change reports `complete`
+- **THEN** the hook exits nonzero before the lab gate
+- **AND** it names the change to archive or land
+
+#### Scenario: A main-only push blocks a task-less change
+
+- **WHEN** a push targets only `refs/heads/main` and an active change reports `no-tasks`
+- **THEN** the hook exits nonzero before the lab gate
+- **AND** it names the task-less change
+
+#### Scenario: A main-only push blocks an unknown status
+
+- **WHEN** a push targets only `refs/heads/main` and an active change reports a status other than `in-progress`, `complete` or `no-tasks`
+- **THEN** the hook exits nonzero before the lab gate
+- **AND** it names the change and the unrecognized status
+
+#### Scenario: A non-main push validates a complete change
+
+- **WHEN** a push targets a ref other than `refs/heads/main` and its complete active change passes strict validation
+- **THEN** the hook runs the full validation
+- **AND** it continues to the lab gate
+
+#### Scenario: A mixed push validates every active change
+
+- **WHEN** a push targets `refs/heads/main` and another ref
+- **THEN** the hook runs the full validation over every active change
+
 #### Scenario: A warning exists
 
-- **WHEN** a main spec or an active change reports a warning
+- **WHEN** a main spec reports a warning, or a non-main push's active change reports a warning
 - **THEN** the hook exits nonzero and the push is blocked
 
 #### Scenario: An archived change has unfinished tasks
 
 - **WHEN** an archived change has unchecked tasks
 - **THEN** the hook exits nonzero and the push is blocked
+
+#### Scenario: The active-change listing is unreadable
+
+- **WHEN** the main-only gate cannot read the active-change status
+- **THEN** the hook exits nonzero before the lab gate
 
 #### Scenario: Coverage is skipped
 
