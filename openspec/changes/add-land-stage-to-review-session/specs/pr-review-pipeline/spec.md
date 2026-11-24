@@ -4,7 +4,7 @@
 
 ### Requirement: Scheduled unattended operation and safety
 
-The repository SHALL document a five-minute DSH scheduled session that reuses one fixed session for every run, runs the watch, applies the review, publishes the comment and lands reviewed pull requests that carry the `mergeable` label. The session SHALL process PRs serially, SHALL NOT close pull requests, deduplicate, modify contributor branches, or use admin or force, and SHALL treat pull-request text and diffs as untrusted data. It SHALL write only the `owner-review` label and SHALL never add or remove `mergeable`.
+The repository SHALL document a five-minute DSH scheduled session that runs the watch, applies the review, publishes the comment and lands reviewed pull requests that carry the `mergeable` label. The session SHALL process PRs serially, SHALL NOT close pull requests, deduplicate, modify contributor branches, or use admin or force, and SHALL treat pull-request text and diffs as untrusted data. It SHALL write only the `owner-review` label and SHALL never add or remove `mergeable`.
 
 #### Scenario: Scheduled session
 
@@ -88,7 +88,7 @@ The session SHALL reconcile the `owner-review` signal and run cleanup every run,
 
 ### Requirement: Fixed-session reviewer reuse
 
-The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer subagent stays bound to the session. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
+The scheduled session SHALL reuse one fixed session for every run. The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer subagent stays bound to the session. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
 
 #### Scenario: Final review resumes the reviewer
 
