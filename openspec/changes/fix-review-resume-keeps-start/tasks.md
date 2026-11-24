@@ -14,4 +14,4 @@
 
 ## 3. Verify
 
-- [ ] 3.1 Run `/tmp/b3/gates.sh fix-review-resume-keeps-start`: strict validation, `npm run openspec:check`, the requirement length gate, the generated skills check, `check:pr` and `npm run verify`.
+- [x] 3.1 Run `/tmp/b3/gates.sh fix-review-resume-keeps-start` on Node 24: strict validation, `npm run openspec:check`, the requirement length gate, the generated skills check, `check:pr` and `npm run verify`; every step exits 0.
