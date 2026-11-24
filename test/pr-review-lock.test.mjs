@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -18,6 +17,9 @@ import {
   releaseLock,
 } from '../scripts/pr-review-lock.mjs'
 import { mainWorktree, resolvePaths } from '../scripts/pr-review-watch.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 function git(cwd, args) {
   const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -26,7 +28,7 @@ function git(cwd, args) {
 }
 
 function makeRepository() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-review-lock-'))
+  const root = tempDir('dsh-pr-review-lock-')
   git(root, ['init', '-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])

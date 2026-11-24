@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { recordProfileInitFailure } from '../scripts/lab/core/profile-init.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const CAUSE = 'Error: Failed to initialize the profile store'
 const FULL_OUTPUT = `${CAUSE}\n    at boot (/opt/dsh/lib/profile-boot.js:164:4)\nNode.js v24.22.2`
@@ -13,7 +15,7 @@ const FULL_OUTPUT = `${CAUSE}\n    at boot (/opt/dsh/lib/profile-boot.js:164:4)\
  * @returns the absolute path.
  */
 function artifacts() {
-  return mkdtempSync(join(tmpdir(), 'dsh-lab-profile-init-'))
+  return tempDir('dsh-lab-profile-init-')
 }
 
 test('the untouched output lands in the artifact directory and the message names it', () => {

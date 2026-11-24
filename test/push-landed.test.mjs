@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { offlineLandsPath } from '../scripts/landed-push-guard.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const SCRIPT = fileURLToPath(new URL('../scripts/push-landed.mjs', import.meta.url))
 
@@ -26,7 +28,7 @@ function write(path, text) {
 }
 
 function makeRepository() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-push-landed-'))
+  const root = tempDir('dsh-push-landed-')
   git(root, ['init', '-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
@@ -35,7 +37,7 @@ function makeRepository() {
   git(root, ['add', '.'])
   git(root, ['commit', '-qm', 'initial'])
   const initial = git(root, ['rev-parse', 'HEAD'])
-  const origin = join(root, '..', `${root.split('/').pop()}-origin.git`)
+  const origin = tempDir('dsh-push-landed-origin-')
   git(root, ['init', '--bare', '-q', origin])
   git(root, ['remote', 'add', 'origin', origin])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
@@ -410,7 +412,7 @@ test('selection, missing manifests and usage errors are reported', () => {
       assert.equal(selected.status, 0, selected.stderr)
     }
 
-    const empty = mkdtempSync(join(tmpdir(), 'dsh-push-landed-empty-'))
+    const empty = tempDir('dsh-push-landed-empty-')
     try {
       const emptyGit = join(empty, '.git', 'openspec-flow', 'landed')
       mkdirSync(emptyGit, { recursive: true })

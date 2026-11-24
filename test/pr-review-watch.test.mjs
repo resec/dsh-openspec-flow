@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -36,6 +35,9 @@ import {
   withRunLock,
 } from '../scripts/pr-review-watch.mjs'
 import { acquireLock } from '../scripts/pr-review-lock.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
@@ -47,7 +49,7 @@ function git(cwd, args) {
 }
 
 function makeRepository() {
-  const directory = mkdtempSync(join(tmpdir(), 'dsh-pr-review-watch-'))
+  const directory = tempDir('dsh-pr-review-watch-')
   git(directory, ['init', '-q', '-b', 'main'])
   git(directory, ['config', 'user.email', 'test@example.com'])
   git(directory, ['config', 'user.name', 'Test'])
@@ -62,7 +64,7 @@ function makeRepository() {
 }
 
 function makeOrigin(root) {
-  const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-review-remote-'))
+  const remote = tempDir('dsh-pr-review-remote-')
   git(remote, ['init', '--bare', '-q'])
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
@@ -298,7 +300,7 @@ test('renderReport carries the verdict, findings, verifications and marker', () 
 })
 
 test('readReport requires the PR/head file name and a matching head', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-review-report-'))
+  const root = tempDir('dsh-pr-review-report-')
   try {
     const file = join(root, `pr-12-${HEAD}.json`)
     writeFileSync(file, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [], head: HEAD }))
@@ -770,7 +772,7 @@ test('the local owner state round-trips every field and refuses a corrupt file',
 
 test('the local owner state resolves against the main worktree from a linked checkout', () => {
   const root = makeRepository()
-  const linked = mkdtempSync(join(tmpdir(), 'dsh-pr-review-linked-'))
+  const linked = tempDir('dsh-pr-review-linked-')
   try {
     git(root, ['worktree', 'add', '-q', '--detach', linked, 'HEAD'])
     assert.equal(mainWorktree(linked), root)
@@ -941,7 +943,7 @@ test('the poll text names an owner-managed pull request and keeps candidate line
 test('preflight routes a missing gh binary to offline-land instead of a spawn error', () => {
   const root = makeRepository()
   const remote = makeOrigin(root)
-  const bin = mkdtempSync(join(tmpdir(), 'dsh-pr-review-bin-'))
+  const bin = tempDir('dsh-pr-review-bin-')
   const saved = process.env.PATH
   try {
     const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()

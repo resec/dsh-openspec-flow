@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -14,13 +13,16 @@ import {
   syncPullRequest,
 } from '../scripts/pr-review-owner-review.mjs'
 import { cleanupClosedPullRequests, loadState, saveState, saveLocalState } from '../scripts/pr-review-watch.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const HEAD = 'a'.repeat(40)
 const OLD = 'b'.repeat(40)
 const LOGIN = 'tester'
 
 function makeRoot() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-owner-review-'))
+  const root = tempDir('dsh-owner-review-')
   const init = spawnSync('git', ['init', '-q', root], { encoding: 'utf8' })
   assert.equal(init.status, 0, init.stderr)
   mkdirSync(join(root, '.cache', 'pr-review'), { recursive: true })
