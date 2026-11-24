@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Refuse a stopped landing in landing candidate discovery so a blocked
+  rebase is reported once with its recovery instead of being re-prepared every run.
