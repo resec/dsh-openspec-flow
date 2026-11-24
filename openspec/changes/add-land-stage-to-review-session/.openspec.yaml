@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Let the existing five-minute PR review watch session discover, prepare and
+  land pull requests that carry the maintainer-applied mergeable label, reusing
+  the reviewer subagent bound to that session, and document the fixed-session
+  flow.
