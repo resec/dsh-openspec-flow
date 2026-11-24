@@ -113,7 +113,7 @@ Each run writes under `.cache/lab/runs/<id>/artifacts/`:
 - `init-<mode>.log` — the untouched output of a profile initialization that failed; the failure message names it
 - copied session logs, card files and screenshots
 
-The invocation's scenario summary, including skipped real-model scenarios, is written to `.cache/lab/reports/<id>.json`.
+The invocation's scenario summary, including skipped real-model scenarios, is written to `.cache/lab/reports/<id>.json`. The headless check records the run's `exitStatus` and `finalReason`, and every failed result, a provisioning failure included, carries the kept `runDir` so the scene is reachable from the summary.
 
 Reports never contain tokens, cookies or API keys. Before the default post-pass cleanup removes the isolated home, sessions and cards are copied into `artifacts/`, so every evidence path survives.
 

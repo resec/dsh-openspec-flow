@@ -17,6 +17,8 @@ test('the lab document states the commands, POC location and browser install', (
   assert.match(doc, /apply-worktree-dev\.md/)
   assert.match(doc, /otherwise `\.cache\/lab\/pw-browsers`/)
   assert.match(doc, /COVERAGE_SKIP=1/)
+  assert.match(doc, /records the run's `exitStatus` and `finalReason`/)
+  assert.match(doc, /every failed result, a provisioning failure included, carries the kept `runDir`/)
 })
 
 test('AGENTS and the README point at the lab gate and documentation', () => {

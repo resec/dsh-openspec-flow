@@ -49,6 +49,25 @@ test('a provisioning failure leaves a failed run report', async () => {
   }
 })
 
+test('a provisioning failure keeps its run directory in the summary', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lab-runner-'))
+  const file = join(root, 'mock.scenario.mjs')
+  writeFileSync(file, 'export default { name: "mock", model: "mock", run() {} }\n')
+  try {
+    const result = await runScenarios({ files: [file], plugin: fakePlugin, root, offline: true, fresh: true, log: { log() {}, error() {} } })
+    assert.equal(result.passed, false)
+    const [entry] = result.results
+    assert.equal(entry.status, 'failed')
+    assert.equal(entry.reason, 'provisioning failed')
+    assert.ok(entry.runDir.startsWith(join(root, '.cache', 'lab', 'runs')), entry.runDir)
+    assert.ok(existsSync(join(entry.runDir, 'artifacts', 'report.json')))
+    const report = JSON.parse(readFileSync(result.reportPath, 'utf8'))
+    assert.equal(report.results[0].runDir, entry.runDir)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('a real-model scenario requires the explicit flag', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-lab-runner-'))
   const file = join(root, 'real.scenario.mjs')
