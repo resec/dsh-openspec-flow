@@ -6,6 +6,7 @@ import {
 import { join } from 'node:path'
 import test from 'node:test'
 import { buildApplyBrief } from '../lib/review/brief.js'
+import { assertReport } from '../lib/review/report.js'
 import { apply as reviewerApply, PRESET_TOOL_NAMES } from '../reviewer.js'
 import { clearCache } from '../lib/cache.js'
 import { apply } from '../index.js'
@@ -927,6 +928,7 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   const seal = buildApplyBrief({ ...base, validation: { strict: true, issues: [] } })
   assert.match(seal, /"id": "R1-01"/)
   assert.match(seal, /"verifications": \[\]/)
+  assert.match(seal, /verifications name only findings recorded before this round/)
   assert.match(seal, /repository-relative path and line/)
   assert.match(seal, /`title`/)
   assert.match(seal, /review prompts, not report values/)
@@ -976,6 +978,48 @@ test('the apply brief verifies a recorded fixed finding', () => {
   )
   assert.throws(() => buildApplyBrief(base), /positive integer round/)
   assert.throws(() => buildApplyBrief({ ...base, round: 0 }), /positive integer round/)
+})
+
+test('the brief verification example offers only statuses the report accepts', () => {
+  const base = {
+    change: CHANGE,
+    commitSha: 'a'.repeat(40),
+    treeSha: 'b'.repeat(40),
+    baseCommit: 'd'.repeat(40),
+    baseSource: 'seal',
+    baseTreeSha: 'c'.repeat(40),
+    diffPath: 'apply-round-2/diff.patch',
+    changedPaths: [],
+    validation: { strict: true, issues: [] },
+  }
+  const example = (brief) => {
+    const start = brief.indexOf('```json\n') + '```json\n'.length
+    const text = brief.slice(start, brief.indexOf('\n```', start))
+    return { text, report: JSON.parse(text) }
+  }
+  const legalReport = (sample) => ({
+    ...sample.report,
+    verdict: 'pass',
+    findings: sample.report.findings.map((finding) => ({ ...finding, severity: 'minor', axis: 'intent' })),
+    verifications: sample.report.verifications.map((verification) => ({
+      ...verification, status: verification.status.split(' | ')[0],
+    })),
+  })
+  const open = example(buildApplyBrief({
+    ...base, round: 2, findings: [{ id: 'R1-01', status: 'open', severity: 'minor' }],
+  }))
+  assert.match(open.text, /"id": "R1-01", "status": "still-open \| regressed"/)
+  assert.doesNotMatch(open.text, /verified-fixed/)
+  assert.doesNotThrow(() => assertReport(legalReport(open), {
+    round: 2, findings: [{ id: 'R1-01', status: 'open', severity: 'minor' }], kind: 'apply',
+  }))
+  const fixed = example(buildApplyBrief({
+    ...base, round: 2, findings: [{ id: 'R1-01', status: 'fixed', severity: 'minor' }],
+  }))
+  assert.match(fixed.text, /"id": "R1-01", "status": "verified-fixed \| still-open \| regressed"/)
+  assert.doesNotThrow(() => assertReport(legalReport(fixed), {
+    round: 2, findings: [{ id: 'R1-01', status: 'fixed', severity: 'minor' }], kind: 'apply',
+  }))
 })
 
 test('the reviewer preset tool names match the declaration', () => {
