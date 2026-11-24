@@ -4,7 +4,7 @@
 
 ### Requirement: Landing checkout separation
 
-The landing command SHALL keep its rebased checkout in its own worktree at `.cache/pr-review/worktrees/pr-<n>-land` and SHALL NOT reuse, modify or remove the review watch checkout at `.cache/pr-review/worktrees/pr-<n>`. Abandoning, finishing or forgetting a landing SHALL remove only the landing checkout, and the watch entry SHALL keep the checkout it names until the pull request is closed or merged.
+The landing command SHALL keep its landing checkout in its own worktree at `.cache/pr-review/worktrees/pr-<n>-land` and SHALL NOT reuse, modify or remove the review watch checkout at `.cache/pr-review/worktrees/pr-<n>`. Abandoning, finishing or forgetting a landing SHALL remove only the landing checkout, and the watch entry SHALL keep the checkout it names until the pull request is closed or merged.
 
 #### Scenario: Prepare creates a separate checkout
 

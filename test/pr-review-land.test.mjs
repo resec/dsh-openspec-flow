@@ -25,6 +25,7 @@ import {
   reviewedLanding,
   saveLandings,
   stateLanding,
+  syncLanding,
   trustedPass,
 } from '../scripts/pr-review-land.mjs'
 import { resolvePaths, saveState } from '../scripts/pr-review-watch.mjs'
@@ -98,6 +99,7 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
     headRefOid: head,
     baseRefOid: 'b'.repeat(40),
     baseRefName,
+    headRefName: 'pr-branch',
     statusCheckRollup: [{ conclusion: 'SUCCESS' }],
     files: [{ path: 'openspec/changes/widget/proposal.md' }, { path: 'feature.txt' }],
     labels: [{ name: LANDING_LABEL }],
@@ -158,6 +160,10 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /openspec_archive/)
   assert.match(doc, /tree-mismatch/)
   assert.match(doc, /pr-review-land\.mjs candidates/)
+  assert.match(doc, /sync <n> --apply/)
+  assert.match(doc, /update-branch/)
+  assert.match(doc, /same-repository/)
+  assert.match(doc, /latest main/)
   assert.match(doc, /action=resume/)
   assert.match(doc, /state=passed/)
   assert.match(doc, /state=in-review/)
@@ -236,20 +242,15 @@ test('plan refuses a changes-requested comment and a stale watch head', () => {
   assert.throws(() => planLanding({ root, number: 12, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) }), /head moved/)
 })
 
-test('prepare rebases the local landing branch and reviewed checks the record tree', () => {
+test('prepare creates the landing branch at the current head and reviewed checks the record tree', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
-  // Advance main after the PR was created so prepare must rebase.
-  writeFileSync(join(root, 'README.md'), 'main moved\n')
-  git(root, ['add', 'README.md'])
-  git(root, ['commit', '-qm', 'main moved'])
-  git(root, ['push', '-q', 'origin', 'main'])
   const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
   const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
   assert.equal(prepared.phase, 'prepared')
+  assert.equal(prepared.landingHead, head)
   assert.equal(prepared.worktree, join(resolvePaths(root).worktrees, 'pr-12-land'))
   assert.equal(existsSync(join(resolvePaths(root).worktrees, 'pr-12')), false)
-  assert.notEqual(prepared.landingHead, head)
   const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
   assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /apply review record/)
   reviewRecord(root, tree)
@@ -260,17 +261,30 @@ test('prepare rebases the local landing branch and reviewed checks the record tr
   assert.equal(again.phase, 'reviewed')
 })
 
-test('prepare reports a rebase conflict and leaves the contributor ref alone', () => {
+test('plan and prepare refuse a behind same-repository head without a landing entry', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
-  writeFileSync(join(root, 'feature.txt'), 'main conflict\n')
-  git(root, ['add', 'feature.txt'])
-  git(root, ['commit', '-qm', 'main conflict'])
+  writeFileSync(join(root, 'README.md'), 'main moved\n')
+  git(root, ['add', 'README.md'])
+  git(root, ['commit', '-qm', 'main moved'])
   git(root, ['push', '-q', 'origin', 'main'])
   const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
-  assert.throws(() => prepareLanding({ root, number: 12, apply: true, gh: fake }), /rebase conflict/)
-  assert.equal(loadLandings(root).lands['12'].phase, 'blocked')
+  assert.throws(() => planLanding({ root, number: 12, gh: fake }), /behind origin\/main; run sync 12/)
+  assert.throws(() => prepareLanding({ root, number: 12, apply: true, gh: fake }), /behind origin\/main; run sync 12/)
+  assert.equal(loadLandings(root).lands['12'], undefined)
   assert.equal(git(remote, ['rev-parse', 'refs/pull/12/head']), head)
+})
+
+test('prepare names the author update for a behind fork head', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  writeFileSync(join(root, 'README.md'), 'main moved\n')
+  git(root, ['add', 'README.md'])
+  git(root, ['commit', '-qm', 'main moved'])
+  git(root, ['push', '-q', 'origin', 'main'])
+  const fake = fakeGh({ pr: JSON.parse(prJson(head, 'main', { isCrossRepository: true })) })
+  assert.throws(() => prepareLanding({ root, number: 12, apply: true, gh: fake }), /author must update the branch/)
+  assert.equal(loadLandings(root).lands['12'], undefined)
 })
 
 
@@ -354,6 +368,60 @@ test('merge refuses when origin/main moved after prepare', () => {
   git(root, ['push', '-q', 'origin', 'main'])
   git(root, ['fetch', 'origin', 'main'])
   assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /origin\/main moved/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
+test('merge records failed when the PR head moved after reviewed', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  let merges = 0
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)), onMerge: () => { merges += 1 } })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  newPullRequestHead(root, remote)
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /head moved/)
+  assert.equal(merges, 0)
+  assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
+test('merge names the author update for a fork when origin/main moved', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  advanceMain(root, 'main moved after prepare')
+  let merges = 0
+  const fork = fakeGh({
+    pr: JSON.parse(prJson(head, 'main', { isCrossRepository: true })),
+    onMerge: () => { merges += 1 },
+  })
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fork }), /the author must update the branch/)
+  assert.equal(merges, 0)
+  assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
+test('merge records a head that no longer contains the recorded main', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  advanceMain(root, 'main moved before the synthetic entry')
+  git(root, ['fetch', 'origin', 'main'])
+  const lands = loadLandings(root)
+  lands.lands['12'].preMergeMain = git(root, ['rev-parse', 'origin/main'])
+  saveLandings(root, lands)
+  let merges = 0
+  const gh = fakeGh({ pr: JSON.parse(prJson(head)), onMerge: () => { merges += 1 } })
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh }), /behind origin\/main; run sync 12/)
+  assert.equal(merges, 0)
   assert.equal(loadLandings(root).lands['12'].phase, 'failed')
 })
 
@@ -654,10 +722,193 @@ test('candidates lists a labeled, commented pull request without writing state',
   })
   const result = listLandingCandidates({ root, gh: fake })
   assert.equal(result.blocked, undefined)
-  assert.deepEqual(result.candidates, [{ number: 12, head, change: 'widget', base: 'main' }])
+  assert.deepEqual(result.candidates, [{
+    number: 12,
+    head,
+    change: 'widget',
+    base: 'main',
+    behind: true,
+    sameRepository: true,
+    syncable: true,
+  }])
   assert.deepEqual(result.refused, [])
   assert.equal(readFileSync(stateFile, 'utf8'), beforeState)
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+})
+
+test('candidates refuses a behind fork entry for author update', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const result = listLandingCandidates({
+    root,
+    gh: fakeGh({
+      pr: JSON.parse(prJson(head, 'main', { isCrossRepository: true })),
+      list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+    }),
+  })
+  assert.deepEqual(result.candidates, [])
+  assert.match(result.refused[0].reason, /author must update the branch/)
+})
+
+function advanceMain(root, line = 'main moved') {
+  writeFileSync(join(root, 'README.md'), `${line}\n`)
+  git(root, ['add', 'README.md'])
+  git(root, ['commit', '-qm', line])
+  git(root, ['push', '-q', 'origin', 'main'])
+}
+
+function syncGh(pr, { newHead = 'e'.repeat(40), failApi = false, pollHead } = {}) {
+  let updated = false
+  const calls = []
+  const runner = (args) => {
+    calls.push(args)
+    if (args[0] === 'api' && args[1] === 'user') return LOGIN
+    if (args[0] === 'api') {
+      if (failApi) throw new Error('update rejected')
+      updated = true
+      return '{}'
+    }
+    if (args[0] === 'pr' && args[1] === 'view' && args[4] === 'headRefOid') {
+      return JSON.stringify({ headRefOid: pollHead ?? (updated ? newHead : pr.headRefOid) })
+    }
+    if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(pr)
+    throw new Error(`unexpected gh ${args.join(' ')}`)
+  }
+  runner.calls = calls
+  return runner
+}
+
+test('sync is a dry run by default and reports the behind head', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  const gh = syncGh(JSON.parse(prJson(head)))
+  const result = syncLanding({ root, number: 12, gh })
+  assert.equal(result.dryRun, true)
+  assert.equal(result.head, head)
+  assert.equal(result.branch, 'pr-branch')
+  assert.equal(gh.calls.some((args) => args[0] === 'api' && args[1] !== 'user'), false)
+  assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+})
+
+test('sync updates a behind same-repository branch and records the heads', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  const newHead = 'e'.repeat(40)
+  const gh = syncGh(JSON.parse(prJson(head)), { newHead })
+  const result = syncLanding({ root, number: 12, apply: true, gh, pollAttempts: 2, pollIntervalMs: 0 })
+  assert.equal(result.previousHead, head)
+  assert.equal(result.newHead, newHead)
+  const updateCall = gh.calls.find((args) => args[0] === 'api' && args[1] === '--method')
+  assert.equal(updateCall[2], 'PUT')
+  assert.match(updateCall[3], /\/pulls\/12\/update-branch$/)
+  assert.equal(updateCall[5], `expected_head_sha=${head}`)
+  const landings = loadLandings(root)
+  assert.equal(landings.lands['12'], undefined)
+  assert.deepEqual(landings.syncs['12'], {
+    previousHead: head,
+    newHead,
+    at: landings.syncs['12'].at,
+  })
+})
+
+test('sync refuses a fork branch, a missing label, a conflict and an open landing', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  const landingsFile = join(resolvePaths(root).cache, 'landings.json')
+  assert.throws(() => syncLanding({
+    root,
+    number: 12,
+    gh: syncGh(JSON.parse(prJson(head, 'main', { isCrossRepository: true }))),
+  }), /cross-repository/)
+  assert.equal(existsSync(landingsFile), false)
+  assert.throws(() => syncLanding({
+    root,
+    number: 12,
+    gh: syncGh(JSON.parse(prJson(head, 'main', { labels: [] }))),
+  }), /no mergeable label/)
+  assert.equal(existsSync(landingsFile), false)
+  assert.throws(() => syncLanding({
+    root,
+    number: 12,
+    gh: syncGh(JSON.parse(prJson(head, 'main', { mergeable: 'CONFLICTING' }))),
+  }), /not mergeable/)
+  assert.equal(existsSync(landingsFile), false)
+  saveLandings(root, { schemaVersion: 1, lands: { 12: { phase: 'prepared' } }, syncs: {} })
+  const before = readFileSync(landingsFile, 'utf8')
+  assert.throws(() => syncLanding({ root, number: 12, gh: syncGh(JSON.parse(prJson(head))) }), /already landing/)
+  assert.equal(readFileSync(landingsFile, 'utf8'), before)
+})
+
+test('sync refuses a head that already contains main', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  assert.throws(() => syncLanding({ root, number: 12, gh: syncGh(JSON.parse(prJson(head))) }), /already contains origin\/main/)
+})
+
+test('candidates reports an up-to-date same-repository candidate as not syncable', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const result = listLandingCandidates({
+    root,
+    gh: fakeGh({
+      pr: JSON.parse(prJson(head, 'main', { mergeStateStatus: 'CLEAN' })),
+      list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+    }),
+  })
+  assert.deepEqual(result.candidates, [{
+    number: 12,
+    head,
+    change: 'widget',
+    base: 'main',
+    behind: false,
+    sameRepository: true,
+    syncable: false,
+  }])
+})
+
+test('plan names the author update for a behind fork head', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  assert.throws(() => planLanding({
+    root,
+    number: 12,
+    gh: fakeGh({ pr: JSON.parse(prJson(head, 'main', { isCrossRepository: true })) }),
+  }), /author must update the branch/)
+})
+
+test('sync refuses a stale head and an update-branch rejection', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  const moved = JSON.parse(prJson(head))
+  const movedHead = newPullRequestHead(root, remote)
+  assert.throws(() => syncLanding({ root, number: 12, gh: syncGh(moved) }), /moved from .* to .*; retry/)
+  assert.throws(() => syncLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: syncGh(JSON.parse(prJson(movedHead)), { failApi: true }),
+  }), /update-branch failed/)
+})
+
+test('sync reports a head that never changes', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  const pr = JSON.parse(prJson(head))
+  assert.throws(() => syncLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: syncGh(pr, { pollHead: head }),
+    pollAttempts: 2,
+    pollIntervalMs: 0,
+  }), /request for PR #12 was accepted but the head did not change within/)
+  assert.equal(loadLandings(root).syncs, undefined)
 })
 
 test('candidates refuses an unlabeled pull request and a mismatched watch entry', () => {

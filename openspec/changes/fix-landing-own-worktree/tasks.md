@@ -2,7 +2,7 @@
 
 ## 1. Give the landing its own checkout
 
-- [x] 1.1 Record the landing worktree at `worktrees/pr-<n>-land` and use it for fetch, add, rebase and every later phase.
+- [x] 1.1 Record the landing worktree at `worktrees/pr-<n>-land` and use it for the fetch, the branch creation and every later phase.
 - [x] 1.2 Remove only the landing checkout on `abandon`, `finish` and `state --forget`, and let `finish` forget the watch checkout through its own path.
 - [x] 1.3 Rebuild a landing recorded on the shared watch checkout at the new path; move the old checkout off the landing branch and leave the directory in place.
 - [x] 1.4 Refuse the rebuild when the previously recorded checkout has local changes.
