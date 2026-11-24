@@ -8,8 +8,8 @@
 
 ## 2. Make workspace selection strict
 
-- [x] 2.1 Enter the scenario's absolute directory through the picker's `Edit path` editor instead of walking from `Home`, which only worked when the picker happened to open at the project level.
-- [x] 2.2 Assert the picker's breadcrumb names that directory, that `Open` closes the picker and that the workspace chip no longer shows the `Choose workspace` placeholder; throw with what was not found when the page offers no button, no path editor or no adoption.
+- [x] 2.1 Reach the picker through the chip's `Add workspace…` menu entry when a workspace is already listed, then enter the scenario's absolute directory through the picker's `Edit path` editor instead of walking from `Home`, which only worked when the picker happened to open at the project level.
+- [x] 2.2 Assert the picker's breadcrumb names that directory, that `Open` closes the picker and that the workspace chip shows that directory's name; throw with what was not found when the page offers no button, no path editor or no adoption.
 
 ## 3. Cover the conditions with fake pages
 
