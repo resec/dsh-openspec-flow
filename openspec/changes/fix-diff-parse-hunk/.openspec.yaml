@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Keep every added line in the new-code coverage set when its source
+  text starts with `++ `, so the diff parser only treats real file headers
+  as file boundaries.
