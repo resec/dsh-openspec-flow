@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import {
@@ -1220,6 +1221,7 @@ test('sync-batch refuses a landing lock even for the same session', () => {
   acquireLock({ root, session: 'local-owner', token: 'local-token', pr: 99 })
   const result = syncBatch({ root, gh, apply: true, session: 'local-owner', token: 'local-token' })
   assert.equal(result.locked, true)
+  assert.equal(result.apply, true)
   assert.deepEqual(result.results, [])
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
 })
@@ -1381,4 +1383,178 @@ test('sync-batch counts only planned syncs against the dry-run limit', () => {
   assert.equal(result.results.at(-1).status, 'planned')
   assert.equal(result.results.at(-1).number, 21)
   assert.equal(result.remaining, 0)
+})
+
+test('sync-batch reads the open list without change paths and inspects each labeled row', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const head = addBatchPullRequest(root, remote, 12)
+    advanceMain(root)
+    const gh = batchGh(batchRows([{ number: 12, head }]))
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const list = gh.calls.find((args) => args[0] === 'pr' && args[1] === 'list')
+    const fields = list[list.indexOf('--json') + 1]
+    assert.equal(fields.split(',').includes('files'), false)
+    assert.equal(fields.split(',').includes('mergeStateStatus'), false)
+    assert.equal(fields.split(',').includes('labels'), true)
+    assert.deepEqual(
+      gh.calls.find((args) => args[0] === 'pr' && args[1] === 'view' && args.includes('files')),
+      ['pr', 'view', '12', '--json', 'files'],
+    )
+    assert.equal(result.changed, true)
+    assert.equal(result.eligible, 1)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch leaves out a row that changes two active changes', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const heads = {
+      12: addBatchPullRequest(root, remote, 12),
+      13: addBatchPullRequest(root, remote, 13),
+    }
+    advanceMain(root)
+    const base = batchGh(batchRows([
+      { number: 12, head: heads[12] },
+      { number: 13, head: heads[13] },
+    ]))
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'view' && args[2] === '13' && args.includes('files') && !args.includes('headRefOid')) {
+        return JSON.stringify({ files: [{ path: 'openspec/changes/widget/proposal.md' }, { path: 'openspec/changes/other/proposal.md' }] })
+      }
+      return base(args)
+    }
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    assert.equal(result.eligible, 1)
+    assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced'])
+    assert.equal(base.calls.some((args) => args[0] === 'api' && args[1] === '--method' && String(args[3]).includes('13')), false)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch retries the open list once after a transient gateway error', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const head = addBatchPullRequest(root, remote, 12)
+    advanceMain(root)
+    const base = batchGh(batchRows([{ number: 12, head }]))
+    let lists = 0
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)')
+      }
+      return base(args)
+    }
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    assert.equal(lists, 2)
+    assert.equal(result.changed, true)
+    assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced'])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch reports an inspection refusal without counting it in the remainder', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const heads = {
+      12: addBatchPullRequest(root, remote, 12),
+      13: addBatchPullRequest(root, remote, 13),
+      14: addBatchPullRequest(root, remote, 14),
+    }
+    advanceMain(root)
+    const base = batchGh(batchRows([
+      { number: 12, head: heads[12] },
+      { number: 13, head: heads[13] },
+      { number: 14, head: heads[14] },
+    ]))
+    let views = 0
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'view' && args[2] === '12' && args.includes('files') && !args.includes('headRefOid')) {
+        views += 1
+        throw new Error('gh pr view 12 failed: HTTP 502: 502 Bad Gateway')
+      }
+      return base(args)
+    }
+    const result = syncBatch({ root, gh, apply: true, limit: 1, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    assert.equal(views, 2)
+    assert.equal(result.eligible, 2)
+    assert.equal(result.updated, 1)
+    assert.equal(result.remaining, 1)
+    assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:refused', '13:synced'])
+    assert.match(result.results[0].reason, /the changed paths of PR #12 could not be read: .*HTTP 502/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch does not retry the update-branch request', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const head = addBatchPullRequest(root, remote, 12)
+    advanceMain(root)
+    const base = batchGh(batchRows([{ number: 12, head }]))
+    let updates = 0
+    const gh = (args) => {
+      if (args[0] === 'api' && args[1] === '--method') {
+        updates += 1
+        throw new Error('update-branch rejected: HTTP 502: 502 Bad Gateway')
+      }
+      return base(args)
+    }
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    assert.equal(updates, 1)
+    assert.equal(result.changed, false)
+    assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:refused'])
+    assert.match(result.results[0].reason, /update-branch failed for PR #12/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch reports an unavailable open list without writing state', () => {
+  const { root, remote } = makeRepo()
+  try {
+    let lists = 0
+    const gh = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      lists += 1
+      throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
+    }
+    const result = syncBatch({ root, gh, apply: true, retryDelayMs: 0 })
+    assert.equal(lists, 2)
+    assert.equal(result.unavailable, true)
+    assert.equal(result.apply, true)
+    assert.equal(result.locked, false)
+    assert.equal(result.changed, false)
+    assert.deepEqual(result.results, [])
+    assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('the sync-batch command exits successfully when the open list is unavailable', () => {
+  const { root, remote } = makeRepo()
+  const bin = mkdtempSync(join(tmpdir(), 'dsh-fake-gh-'))
+  try {
+    writeFileSync(join(bin, 'gh'), '#!/bin/sh\necho "HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)" >&2\nexit 1\n', { mode: 0o755 })
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('../scripts/pr-review-land.mjs', import.meta.url)), 'sync-batch', '--apply'],
+      { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    const parsed = JSON.parse(result.stdout)
+    assert.equal(parsed.unavailable, true)
+    assert.equal(parsed.apply, true)
+    assert.equal(parsed.changed, false)
+  } finally {
+    cleanup(root, remote, bin)
+  }
 })
