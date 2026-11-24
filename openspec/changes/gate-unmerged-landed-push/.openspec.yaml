@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Prevent a direct worktree land from reaching origin/main while preserving
+  online PR landings, contributor landings, recorded offline deferred pushes,
+  and non-worktree direct pushes.
