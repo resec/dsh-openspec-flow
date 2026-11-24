@@ -24,12 +24,14 @@ const POLL_MS = 5
 const CONSOLE_METHODS = ['log', 'error', 'warn', 'info', 'debug']
 
 /**
- * Await one command promise with the call's deadline and abort signal.
+ * Await one command promise with the call's deadline, abort signal and handle.
  * @param promise - the CLI's awaitable command.
- * @param options - `deadlineMs` and the call's abort `signal`.
- * @returns `'done'` or `'deadline'`; rejects on abort or a command error.
+ * @param options - `deadlineMs`, the call's abort `signal` and its `terminated`
+ *   signal.
+ * @returns `'done'`, `'deadline'` or `'terminated'`; rejects on abort or a
+ *   command error.
  */
-async function awaitCommand(promise, { deadlineMs, signal }) {
+async function awaitCommand(promise, { deadlineMs, signal, terminated }) {
   let timer
   let onAbort
   try {
@@ -44,7 +46,7 @@ async function awaitCommand(promise, { deadlineMs, signal }) {
     })
     const completion = Promise.resolve(promise).then(() => 'done')
     completion.catch(() => {})
-    return await Promise.race([completion, timeout, aborted])
+    return await Promise.race([completion, timeout, aborted, terminated])
   } finally {
     clearTimeout(timer)
     if (signal !== undefined) signal.removeEventListener('abort', onAbort)
@@ -98,6 +100,10 @@ export function createInprocSpawner({
       const done = new Promise((resolve, reject) => {
         resolveDone = resolve
         rejectDone = reject
+      })
+      let terminateCall
+      const terminated = new Promise((resolve) => {
+        terminateCall = () => resolve('terminated')
       })
       let release
       const gate = new Promise((resolve) => {
@@ -165,8 +171,10 @@ export function createInprocSpawner({
             const result = await awaitCommand(module.program.parseAsync(spec.argv), {
               deadlineMs,
               signal: spec.signal,
+              terminated,
             })
-            if (result === 'deadline') explicitExit = 124
+            if (result === 'terminated') explicitExit = 143
+            else if (result === 'deadline') explicitExit = 124
             else if (explicitExit === undefined && process.exitCode !== savedExitCode) {
               assignedExit = process.exitCode
             }
@@ -218,6 +226,7 @@ export function createInprocSpawner({
         terminate() {
           explicitExit = 143
           lastActivity = Date.now()
+          terminateCall()
         },
         waitForExit() {
           return done.then(() => true)
