@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Make the scheduled landing prompt instruct every recorded landing phase,
+  one phase per run, so a run interrupted after archive, push or finish resumes
+  from the recorded phase instead of stalling.
