@@ -17,5 +17,6 @@
 
 ## 4. Verify
 
-- [x] 4.1 Run `node --test test/pr-review-land.test.mjs`.
-- [x] 4.2 Run `openspec validate fix-landing-blocked-refused --strict` and `npm run openspec:check`.
+- [x] 4.1 Run `node --test test/pr-review-land.test.mjs` (29 passed).
+- [x] 4.2 Run `node --test --test-name-pattern "blocked landing after a conflicting rebase|every landing phase documented as stopped" test/pr-review-land.test.mjs` with `scripts/pr-review-land.mjs` stashed (2 failed), then restored (2 passed).
+- [x] 4.3 Run `npx openspec validate fix-landing-blocked-refused --strict` and `npm run openspec:check`.

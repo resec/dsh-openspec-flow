@@ -166,6 +166,7 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /without disposing a finding/)
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
+  assert.match(doc, /`blocked` landing reports the rebase conflict/)
   assert.match(doc, /every five minutes/)
 })
 
@@ -563,6 +564,29 @@ test('candidates reports a dirty main worktree once and lists nothing', () => {
   assert.match(result.blocked, /clean main worktree/)
 })
 
+test('candidates refuses a blocked landing after a conflicting rebase', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  writeFileSync(join(root, 'feature.txt'), 'main conflict\n')
+  git(root, ['add', 'feature.txt'])
+  git(root, ['commit', '-qm', 'main conflict'])
+  git(root, ['push', '-q', 'origin', 'main'])
+  const fake = fakeGh({
+    pr: JSON.parse(prJson(head)),
+    list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+  })
+  assert.throws(() => prepareLanding({ root, number: 12, apply: true, gh: fake }), /rebase conflict/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'blocked')
+  const result = listLandingCandidates({ root, gh: fake })
+  assert.deepEqual(result.candidates, [])
+  assert.equal(result.refused.length, 1)
+  assert.equal(result.refused[0].number, 12)
+  assert.match(result.refused[0].reason, /blocked/)
+  assert.match(result.refused[0].reason, /rebase conflict/)
+  assert.match(result.refused[0].reason, /prepare 12 --apply/)
+  assert.match(result.refused[0].reason, /mergeable label/)
+})
+
 test('candidates omits a review-failed landing and another unfinished landing', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
@@ -579,6 +603,28 @@ test('candidates omits a review-failed landing and another unfinished landing', 
   const other = listLandingCandidates({ root, gh: fake })
   assert.deepEqual(other.candidates, [])
   assert.match(other.refused[0].reason, /already landing in phase prepared/)
+})
+
+test('candidates refuses every landing phase documented as stopped', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({
+    pr: JSON.parse(prJson(head)),
+    list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+  })
+  const doc = readFileSync(new URL('../docs/pr-review.md', import.meta.url), 'utf8')
+  const sentence = doc.match(/Landing phases are ([^.]*)\./)
+  assert.ok(sentence, 'docs/pr-review.md names the landing phases')
+  const phases = [...sentence[1].matchAll(/`([a-z-]+)`/g)].map((match) => match[1])
+  assert.ok(phases.length >= 11, `documented phases: ${phases.join(', ')}`)
+  for (const phase of phases) {
+    saveLandings(root, { schemaVersion: 1, lands: { 12: { number: 12, phase, error: 'recorded failure' } } })
+    const result = listLandingCandidates({ root, gh: fake })
+    assert.deepEqual(result.candidates, [], `${phase} must not be a candidate`)
+    assert.equal(result.refused.length, 1, `${phase} must be refused once`)
+    assert.equal(result.refused[0].number, 12)
+    assert.match(result.refused[0].reason, new RegExp(`phase ${phase}|is ${phase}:`), `${phase} must be named`)
+  }
 })
 
 test('state --fail records review-failed, keeps the checkout and abandon clears it', () => {

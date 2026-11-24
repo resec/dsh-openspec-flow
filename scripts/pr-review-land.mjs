@@ -37,7 +37,7 @@ export const LANDINGS_FILE = 'landings.json'
 export const MANIFEST_DIRECTORY = 'landings'
 /** Local landing branch prefix. */
 export const LANDING_BRANCH_PREFIX = 'pr-land/'
-/** Phases that keep a landing open or awaiting a retry. */
+/** Phases that keep a landing open or awaiting a retry; `pushed` is the finished phase. */
 const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
 /** Phases that may be forgotten by the operator. */
 const TERMINAL_PHASES = new Set(['pushed', 'failed', 'blocked', 'tree-mismatch'])
@@ -197,6 +197,20 @@ export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh }
   return plan
 }
 
+/**
+ * Refusal reason for a recorded landing outside the open phases. Every such
+ * phase is a stopped landing, so the reason names the phase, the recorded error
+ * and the action that clears it instead of letting the run prepare it again.
+ */
+function stoppedLandingReason(n, entry) {
+  const error = String(entry.error ?? '').trim()
+  const detail = error === '' ? '' : `: ${error}`
+  if (entry.phase === 'blocked') {
+    return `PR #${n} landing is blocked${detail}; resolve the conflict and run prepare ${n} --apply again, or remove the ${LANDING_LABEL} label to give up`
+  }
+  return `PR #${n} landing is ${String(entry.phase)}${detail}; inspect it with state and clear it with abandon ${n} --apply`
+}
+
 /** List landing candidates without writing watch or landing state. */
 export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh } = {}) {
   try {
@@ -224,6 +238,10 @@ export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh
     }
     if (own !== undefined && OPEN_PHASES.has(own.phase)) {
       refused.push({ number: n, reason: `PR #${n} is already landing in phase ${own.phase}` })
+      continue
+    }
+    if (own !== undefined) {
+      refused.push({ number: n, reason: stoppedLandingReason(n, own) })
       continue
     }
     try {
