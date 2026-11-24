@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Keep state and review keys unique per name by refusing the key separator
+  and by checking that a state file names the requested change.
