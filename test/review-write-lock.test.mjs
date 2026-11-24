@@ -90,6 +90,19 @@ test('a self-report reads the intent only while it holds the review lock', async
   )
 })
 
+test('a disabled draft policy still refuses the start with the same error', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  await assert.rejects(
+    () => call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+    }),
+    /draft review is disabled for this change/,
+  )
+  assert.equal(existsSync(policyFile(root)), true)
+  assert.equal(existsSync(recordFile(root)), false)
+})
+
 test('a start that holds the lock makes the second start report the holder', async () => {
   const root = fixture()
   const { fake, subagents } = externalSetup(root, {
