@@ -258,12 +258,43 @@ export function checksGreen(rollup) {
 }
 
 /**
+ * Whether an apply review round already covers one prepared head.
+ *
+ * The plugin keeps the apply record in the shared review store, and every
+ * round names the tree it reviewed. A prepared head therefore has a record
+ * only when a round reviewed the tree that head commits.
+ *
+ * @param root - main worktree.
+ * @param change - active change name.
+ * @param head - prepared head SHA.
+ * @returns true when a recorded round reviewed the head's tree.
+ */
+export function hasReviewRound(root, change, head) {
+  const commonDir = gitText(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'], true)
+  if (commonDir === undefined) return false
+  const directory = join(commonDir, 'openspec-flow', 'review')
+  if (!existsSync(directory)) return false
+  const names = readdirSync(directory)
+  const local = `local#${change}`
+  const name = names.includes(local) ? local : names.find((entry) => entry.split('@')[0].endsWith(`#${change}`))
+  if (name === undefined) return false
+  const record = readJson(join(directory, name, 'apply-review.json'))
+  const rounds = [
+    ...(Array.isArray(record?.rounds) ? record.rounds : []),
+    ...(Array.isArray(record?.extraRounds) ? record.extraRounds : []),
+  ]
+  const tree = gitText(root, ['rev-parse', `${head}^{tree}`], true)
+  return tree !== undefined && rounds.some((round) => round?.treeSha === tree || round?.objectHash === tree)
+}
+
+/**
  * Filter open PRs to review candidates.
  * @param prs - `gh pr list` result.
  * @param state - current state.
+ * @param hasRound - whether a review round covers a change and head.
  * @returns candidate records.
  */
-export function filterCandidates(prs, state) {
+export function filterCandidates(prs, state, hasRound = () => false) {
   const candidates = []
   for (const pr of Array.isArray(prs) ? prs : []) {
     if (pr?.isDraft === true) continue
@@ -277,15 +308,16 @@ export function filterCandidates(prs, state) {
     const recorded = state?.prs?.[String(number)]
     if (recorded !== undefined && recorded.head === head) {
       if (recorded.status === 'commented') continue
+      const change = recorded.change ?? changes[0]
       candidates.push({
         number,
         head,
         baseRefOid: String(pr.baseRefOid ?? ''),
         baseRefName: String(pr.baseRefName ?? ''),
-        change: recorded.change ?? changes[0],
+        change,
         worktree: recorded.worktree ?? null,
         status: recorded.status,
-        resume: true,
+        resume: hasRound(change, head),
       })
       continue
     }
@@ -314,7 +346,7 @@ export function pollPullRequests({ root = process.cwd(), gh = ghText, state = lo
     'number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,updatedAt',
   ])
   if (text === undefined) throw new Error('gh pr list failed')
-  return filterCandidates(JSON.parse(text), state)
+  return filterCandidates(JSON.parse(text), state, (change, head) => hasReviewRound(root, change, head))
 }
 
 /** Run the gh JSON helper and parse the result. */

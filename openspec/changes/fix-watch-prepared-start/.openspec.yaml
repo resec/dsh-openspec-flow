@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Emit a prepared head with no review round for its first start, not as a resume.
