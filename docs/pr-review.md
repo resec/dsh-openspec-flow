@@ -162,7 +162,7 @@ The landing sequence is:
 1. `plan <n>` checks the gates without writing. It fetches `origin/main` and requires the pull-request head to contain it. A behind same-repository branch is refused with a `sync` instruction; a behind fork branch is refused with an author-update instruction.
 2. `sync <n> --apply` updates a behind same-repository branch through GitHub's update-branch API with the current head as `expected_head_sha`. It requires the `mergeable` label, a conflict-free update and no open landing for the pull request. It never touches a fork branch, never force-pushes, publishes no comment and changes no label. It records `syncs[<n>] = { previousHead, newHead, at }` in `landings.json` without creating a landing entry.
 3. The synced head is a new head. The watch reviews it once its CI rollup is green and publishes the report; the landing gates then require that new pass.
-4. `prepare <n> --apply` fetches the PR head and `origin/main`, requires the head to contain the latest main, and creates the local `pr-land/<n>` branch at the head. There is no local rebase; a refusal leaves no landing entry.
+4. `prepare <n> --apply` fetches the PR head and `origin/main`, requires the head to contain the latest main, and creates the local `pr-land/<n>` branch at the head in its own checkout `.cache/pr-review/worktrees/pr-<n>-land`. The landing checkout is separate from the watch checkout `.cache/pr-review/worktrees/pr-<n>`; prepare never reuses or writes that one, so abandoning a landing leaves the watch entry and its checkout intact. There is no local rebase; a refusal leaves no landing entry.
 5. The session resumes the recorded apply review on the landing checkout with `openspec_review action=resume`, `base` set to the pre-merge main and the record's `baseline: "none"`. `start` is not used because the change already has a record. If the resume fails, run `state --fail <n> --error <text> --apply` to record `review-failed`, keep the checkout and stop; do not call `replace` and do not start another session.
 6. `reviewed <n> --apply` requires the apply review record to be `passed` with its `treeSha` equal to the landing tree, then records `reviewedTree`.
 7. `merge <n> --apply` fetches `origin/main`, requires it to equal the recorded pre-merge main and to be contained in the head, then runs `gh pr merge <n> --rebase`. It never uses squash, `--admin`, force or a merge commit on `main`. A moved main or a stale head records `failed` before any merge call. After the merge it fast-forwards local main and requires the merged tree to equal `reviewedTree`.
@@ -173,7 +173,7 @@ If the merged tree differs, `merge` records `tree-mismatch` and archive is refus
 
 ### Review-failed recovery
 
-`review-failed` is a durable stop: `candidates` omits the pull request until the operator clears the blocker. `abandon` alone deletes the landing entry, so the pull request returns to the candidate list and fails again; fix the blocker first. Steps 1 to 3 end by clearing the phase with `abandon <n> --apply`: the entry and checkout are removed, the PR returns to the candidate list, and the next run prepares the landing again from the PR head while the repaired review record lets the final review resume. Step 4 also clears the entry with `abandon <n> --apply`, but the label is gone so the PR stays out of the candidate list. The recovery steps are:
+`review-failed` is a durable stop: `candidates` omits the pull request until the operator clears the blocker. `abandon` alone deletes the landing entry, so the pull request returns to the candidate list and fails again; fix the blocker first. Steps 1 to 3 end by clearing the phase with `abandon <n> --apply`: the entry and landing checkout are removed, the watch entry and its checkout stay, the PR returns to the candidate list, and the next run prepares the landing again from the PR head while the repaired review record lets the final review resume. Step 4 also clears the entry with `abandon <n> --apply`, but the label is gone so the PR stays out of the candidate list. The recovery steps are:
 
 1. With user approval, run `openspec_review action=replace review=apply` with a reason, which rebinds the same reviewer slot, then clear the phase with `abandon <n> --apply`.
 2. Remove the locked review record and start a fresh review as the self-mode recovery does, then clear the phase with `abandon <n> --apply`.
@@ -296,13 +296,16 @@ The script's `run.lock` makes a second overlapping run exit; inspect `.cache/pr-
   landings.json              landing phases, reviewed tree, merged head, archive commit, sync records
   landings/pr-<n>-<sha>.json completed landing manifest
   run.lock/                  exclusive run lock and owner
-  worktrees/pr-<n>/          detached PR checkout
+  worktrees/pr-<n>/          detached PR checkout owned by the review watch
+  worktrees/pr-<n>-land/     landing checkout for the local pr-land/<n> branch
   reports/pr-<n>-<head>.json report handoff written by the session
 ```
 
 The local owner state and the landing lock are resolved against the main worktree, so a script run from the plugin apply worktree and the scheduled watch share them. A corrupt local state refuses the run.
 
 Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed` and `tree-mismatch`; `blocked` is accepted only for legacy state files. A retry resumes at the recorded phase; a merge is never repeated. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run, while a label-removed pull request appears in `refused` for the missing label.
+
+`abandon`, `finish` and `state --forget` remove only `.cache/pr-review/worktrees/pr-<n>-land`. The watch checkout `pr-<n>` and its entry are never removed by the landing command; `finish` hands the watch checkout to the watch's own cleanup after the merge. A landing prepared before the separate checkout existed records the shared `pr-<n>` path. The next `prepare` refuses when that checkout has local changes; otherwise it moves the old checkout off the landing branch, leaves the directory in place, and records the new `pr-<n>-land` path. Remove such a leftover directory by hand once the watch no longer needs it.
 
 The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at the PR checkout while the review is active. `state --cleanup` and `state --forget` remove that matching entry with the checkout; a foreign entry is refused and reported. Remove the checkout and state before a merged-tree apply review.
 
