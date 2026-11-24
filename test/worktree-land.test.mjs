@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -52,6 +52,12 @@ async function withGitRace(root, mode, run) {
     '  fi',
     '  if [ "$3" = "merge" ] && [ "$4" = "--ff-only" ] && [ "$RACE_MODE" = "merge" ]; then',
     '    "$REAL_GIT" -C "$2" commit --allow-empty -m "seal merge" >/dev/null 2>&1',
+    '  fi',
+    '  if [ "$3" = "rev-parse" ] && [ "$4" = "HEAD^{tree}" ] && [ "$RACE_MODE" = "tree" ] && [ ! -e "$RACE_COUNTER" ]; then',
+    '    : > "$RACE_COUNTER"',
+    '    printf "concurrent\\n" > "$2/concurrent.txt"',
+    '    "$REAL_GIT" -C "$2" add concurrent.txt >/dev/null 2>&1',
+    '    "$REAL_GIT" -C "$2" commit -q -m "concurrent commit" >/dev/null 2>&1',
     '  fi',
     'fi',
     'exec "$REAL_GIT" "$@"',
@@ -142,6 +148,35 @@ test('land advances main to a feature commit without a merge commit', async () =
   assert.equal(run(['rev-list', '--merges', `${before}..HEAD`]), '')
   assert.equal(run(['show', `${landed.landCommit}:feature.txt`]), 'feature')
   assert.equal(existsSync(join(root, 'feature.txt')), true)
+})
+
+test('land does not push to a remote', async () => {
+  const { root, run, fake, state } = await readyLand()
+  const bare = mkdtempSync(join(tmpdir(), 'dsh-land-remote-'))
+  try {
+    const init = spawnSync('git', ['init', '--bare', '-q', bare], { encoding: 'utf8' })
+    assert.equal(init.status, 0, init.stderr)
+    const before = run(['rev-parse', 'HEAD'])
+    run(['remote', 'add', 'origin', bare])
+    run(['push', '-q', '-u', 'origin', 'main'])
+    run(['push', '-q', 'origin', state.branch])
+    const remoteRefs = () => spawnSync('git', ['ls-remote', bare], { encoding: 'utf8' }).stdout.trim()
+    const refsBefore = remoteRefs()
+    assert.match(refsBefore, /refs\/heads\/main/)
+    assert.match(refsBefore, new RegExp(`refs/heads/${state.branch}`))
+    const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+    assert.equal(landed.cleanup.complete, true)
+    assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+    assert.notEqual(run(['rev-parse', 'HEAD']), before)
+    assert.equal(remoteRefs(), refsBefore)
+    const remoteMain = spawnSync('git', ['-C', bare, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' })
+    assert.equal(remoteMain.status, 0, remoteMain.stderr)
+    assert.equal(remoteMain.stdout.trim(), before)
+    const remoteBranch = spawnSync('git', ['-C', bare, 'rev-parse', '--verify', `refs/heads/${state.branch}`], { encoding: 'utf8' })
+    assert.equal(remoteBranch.status, 0, remoteBranch.stderr)
+  } finally {
+    rmSync(bare, { recursive: true, force: true })
+  }
 })
 
 test('land resumes a legacy merge and records the legacy mode', async () => {
@@ -569,7 +604,7 @@ test('land refuses when apply review never started', async () => {
 
 
 test('a manifest write failure is retried after the archive commit', async () => {
-  const { root, fake } = await readyLand()
+  const { root, run, fake } = await readyLand()
   const landedDirectory = dirname(manifestPath(root, 'x'))
   mkdirSync(dirname(landedDirectory), { recursive: true })
   writeFileSync(landedDirectory, 'blocked')
@@ -578,9 +613,16 @@ test('a manifest write failure is retried after the archive commit', async () =>
     /EEXIST|ENOTDIR|not a directory/i,
   )
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  const manifests = () => (statSync(landedDirectory).isDirectory()
+    ? readdirSync(landedDirectory).filter((name) => name.endsWith('.json'))
+    : [])
+  assert.equal(manifests().length, 0)
   rmSync(landedDirectory, { force: true })
+  const head = run(['rev-parse', 'HEAD'])
   const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+  assert.equal(manifests().length, 1)
+  assert.equal(run(['rev-parse', 'HEAD']), head)
   assert.equal(existsSync(manifestPath(root, retried.landCommit)), true)
 })
 
@@ -689,6 +731,31 @@ test('the tree guard refuses without resetting main', async () => {
   assert.throws(() => assertLandedTree(root, 'not-the-current-tree'), /tree differs/)
   assert.equal(run(['rev-parse', 'HEAD']), after)
   assert.notEqual(before, after)
+})
+
+test('land fails after the fast-forward when a concurrent commit changes the tree', async () => {
+  const { root, run, fake, state } = await readyLand()
+  const before = run(['rev-parse', 'HEAD'])
+  const featureHead = run(['-C', state.worktree, 'rev-parse', 'HEAD'])
+  await withGitRace(root, 'tree', async () => {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /tree differs from the required tree/,
+    )
+  })
+  const after = run(['rev-parse', 'HEAD'])
+  assert.notEqual(after, before)
+  assert.notEqual(after, featureHead)
+  assert.equal(run(['log', '-1', '--format=%s']), 'concurrent commit')
+  const archiveRoot = join(root, 'openspec', 'changes', 'archive')
+  const archived = existsSync(archiveRoot) ? readdirSync(archiveRoot) : []
+  assert.equal(archived.some((name) => name.endsWith(`-${CHANGE}`)), false)
+  assert.equal(existsSync(join(root, 'openspec', 'changes', CHANGE)), true)
+  assert.equal(existsSync(manifestPath(root, featureHead)), false)
+  assert.equal(existsSync(state.worktree), true)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  assert.equal(existsSync(join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d')), false)
+  assert.equal(existsSync(join(root, '.git', 'openspec-flow', 'lifecycle.lock.d')), false)
 })
 
 test('land writes a rebase marker when the worktree is behind main', async () => {
