@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -105,6 +105,22 @@ test('safe segments are refused before a state path is written', () => {
   }
   assert.match(applyStatePath(root, null, 'foo..bar'), /local#foo\.\.bar\.json$/u)
   assert.throws(() => applyStatePath(root, 'a/b', 'demo'), /store must be one non-empty path segment/)
+  assert.throws(() => applyStatePath(root, null, 'a#b'), /must not contain '#'/)
+  assert.throws(() => applyStatePath(root, 'a#b', 'demo'), /must not contain '#'/)
+})
+
+test('a state that names another change is rejected', () => {
+  const root = repository()
+  const path = applyStatePath(root, null, 'demo')
+  assert.throws(
+    () => writeApplyState(root, null, 'demo', state(root, { change: 'Demo' })),
+    /belongs to change 'Demo', not 'demo'/,
+  )
+  assert.equal(existsSync(path), false)
+  // A file another name left behind, e.g. a case variant on a case-insensitive volume.
+  mkdirSync(join(path, '..'), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(state(root, { change: 'Demo' }))}\n`)
+  assert.throws(() => readApplyState(root, null, 'demo'), /belongs to change 'Demo', not 'demo'/)
 })
 
 test('the main worktree root is the main checkout from a linked worktree', () => {
