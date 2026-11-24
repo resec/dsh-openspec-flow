@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -9,22 +8,36 @@ import {
   activeChangeNames,
   checksGreen,
   cleanupClosedPullRequests,
+  cleanupLocalEntries,
   filterCandidates,
+  findLocalEntry,
   forgetPullRequest,
   hasTrustedMarker,
+  loadLocalState,
   loadState,
+  localPullRequestNumbers,
   main,
+  mainWorktree,
   markFailed,
   parseArgs,
   pollPullRequests,
+  pollText,
+  preflight,
   preparePullRequest,
   publishComment,
   readReport,
   renderReport,
+  resolvePaths,
+  saveLocalState,
   saveState,
   stateCommand,
+  updateLocalEntry,
   withRunLock,
 } from '../scripts/pr-review-watch.mjs'
+import { acquireLock } from '../scripts/pr-review-lock.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
@@ -36,7 +49,7 @@ function git(cwd, args) {
 }
 
 function makeRepository() {
-  const directory = mkdtempSync(join(tmpdir(), 'dsh-pr-review-watch-'))
+  const directory = tempDir('dsh-pr-review-watch-')
   git(directory, ['init', '-q', '-b', 'main'])
   git(directory, ['config', 'user.email', 'test@example.com'])
   git(directory, ['config', 'user.name', 'Test'])
@@ -51,7 +64,7 @@ function makeRepository() {
 }
 
 function makeOrigin(root) {
-  const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-review-remote-'))
+  const remote = tempDir('dsh-pr-review-remote-')
   git(remote, ['init', '--bare', '-q'])
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
@@ -287,7 +300,7 @@ test('renderReport carries the verdict, findings, verifications and marker', () 
 })
 
 test('readReport requires the PR/head file name and a matching head', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-review-report-'))
+  const root = tempDir('dsh-pr-review-report-')
   try {
     const file = join(root, `pr-12-${HEAD}.json`)
     writeFileSync(file, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [], head: HEAD }))
@@ -448,7 +461,7 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
       if (args[0] === 'pr' && args[1] === 'comment') return 'https://example.test/comment'
       throw new Error(`unexpected gh call ${args.join(' ')}`)
     }
-    assert.equal(pollPullRequests({ root, gh }).length, 1)
+    assert.equal(pollPullRequests({ root, gh }).candidates.length, 1)
     const first = preparePullRequest({ root, number: 12, gh })
     const report = (path, round) => {
       mkdirSync(dirname(path), { recursive: true })
@@ -504,7 +517,7 @@ test('state loading, missing reports and empty polls fail or return explicitly',
     assert.throws(() => loadState(root), /not JSON|corrupt/)
     rmSync(stateFile)
     const { gh } = fakeGh(() => '[]')
-    assert.deepEqual(pollPullRequests({ root, gh }), [])
+    assert.deepEqual(pollPullRequests({ root, gh }).candidates, [])
     assert.throws(() => readReport(join(root, 'missing.json'), 12, HEAD), /does not exist/)
   } finally {
     cleanup(root)
@@ -704,4 +717,531 @@ test('the CLI help and usage errors use the documented exit codes', () => {
   output = ''
   assert.equal(main(['bogus'], (text) => { output += text }), 2)
   assert.match(output, /unknown command/)
+})
+
+
+function localEntry(overrides = {}) {
+  return {
+    number: 12,
+    change: 'widget',
+    branch: 'openspec/apply/local-widget-12345678',
+    head: HEAD,
+    tree: BASE,
+    record: 'local#widget',
+    ownerSession: 'owner-1',
+    phase: 'published',
+    ...overrides,
+  }
+}
+
+function saveLocalEntries(root, entries) {
+  saveLocalState(root, { schemaVersion: 1, prs: entries })
+}
+
+test('the local owner state round-trips every field and refuses a corrupt file', () => {
+  const root = makeRepository()
+  try {
+    const entry = localEntry()
+    saveLocalEntries(root, { 12: entry })
+    const loaded = loadLocalState(root)
+    assert.deepEqual(loaded.prs['12'], entry)
+    assert.deepEqual([...localPullRequestNumbers(root)], ['12'])
+    assert.equal(findLocalEntry(root, { change: 'widget' }).number, 12)
+    assert.equal(findLocalEntry(root, { change: 'widget', branch: entry.branch }).number, 12)
+    assert.equal(findLocalEntry(root, { change: 'other' }), undefined)
+    const updated = updateLocalEntry(root, 12, { phase: 'merged' })
+    assert.equal(updated.phase, 'merged')
+    assert.equal(typeof updated.updatedAt, 'string')
+    const file = resolvePaths(root).localState
+    writeFileSync(file, '{not json')
+    assert.throws(() => loadLocalState(root), /corrupt/)
+    writeFileSync(file, JSON.stringify({ schemaVersion: 1, prs: { 12: localEntry({ phase: 'unknown' }) } }))
+    assert.throws(() => loadLocalState(root), /invalid phase/)
+    for (const field of ['change', 'branch', 'head', 'tree', 'record', 'ownerSession']) {
+      writeFileSync(file, JSON.stringify({ schemaVersion: 1, prs: { 12: localEntry({ [field]: '' }) } }))
+      assert.throws(() => loadLocalState(root), new RegExp(`invalid ${field}`))
+    }
+    writeFileSync(file, JSON.stringify({ schemaVersion: 1, prs: { 12: localEntry({ number: 0 }) } }))
+    assert.throws(() => loadLocalState(root), /invalid number/)
+    writeFileSync(file, JSON.stringify({ schemaVersion: 2, prs: {} }))
+    assert.throws(() => loadLocalState(root), /corrupt/)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the local owner state resolves against the main worktree from a linked checkout', () => {
+  const root = makeRepository()
+  const linked = tempDir('dsh-pr-review-linked-')
+  try {
+    git(root, ['worktree', 'add', '-q', '--detach', linked, 'HEAD'])
+    assert.equal(mainWorktree(linked), root)
+    saveLocalEntries(root, { 12: localEntry() })
+    const main = mainWorktree(linked)
+    assert.deepEqual([...localPullRequestNumbers(main)], ['12'])
+    assert.equal(findLocalEntry(main, { change: 'widget' }).ownerSession, 'owner-1')
+    assert.equal(existsSync(join(linked, '.cache', 'pr-review', 'local-prs.json')), false)
+  } finally {
+    cleanup(root, linked)
+  }
+})
+
+test('poll, prepare and comment exclude a local pull request and refuse corrupt state', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: {} })
+    saveLocalEntries(root, { 12: localEntry() })
+    const list = JSON.stringify([{
+      number: 12,
+      headRefOid: HEAD,
+      baseRefOid: BASE,
+      baseRefName: 'main',
+      isDraft: false,
+      statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+      files: [{ path: 'openspec/changes/widget/proposal.md' }],
+    }])
+    const { gh } = fakeGh(() => list)
+    const poll = pollPullRequests({ root, gh })
+    assert.deepEqual(poll.candidates, [])
+    assert.deepEqual(poll.ownerManaged, [12])
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /owner-managed locally/)
+    assert.throws(
+      () => publishComment({ root, number: 12, reportPath: join(root, 'report.json') }),
+      /owner-managed locally/,
+    )
+    const place = join(resolvePaths(root).reports, `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(place), { recursive: true })
+    writeFileSync(place, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [] }))
+    assert.throws(() => publishComment({ root, number: 12, reportPath: place }), /owner-managed locally/)
+
+    saveLocalState(root, { schemaVersion: 1, prs: { 12: localEntry({ phase: 'bogus' }) } })
+    assert.throws(() => pollPullRequests({ root, gh }), /corrupt|invalid phase/)
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /corrupt|invalid phase/)
+    assert.throws(() => publishComment({ root, number: 12, reportPath: place }), /corrupt|invalid phase/)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('local cleanup removes only closed unlanded or pushed entries and retains the rest', () => {
+  const root = makeRepository()
+  try {
+    saveLocalEntries(root, {
+      12: localEntry({ number: 12, phase: 'merged' }),
+      13: localEntry({ number: 13, phase: 'pushed' }),
+      14: localEntry({ number: 14, phase: 'landed' }),
+      15: localEntry({ number: 15, phase: 'failed' }),
+      16: localEntry({ number: 16, phase: 'published' }),
+    })
+    const states = { 12: 'MERGED', 13: 'OPEN', 14: 'MERGED', 15: 'CLOSED', 16: 'CLOSED' }
+    const gh = (args) => JSON.stringify({ state: states[args[2]] })
+    const result = cleanupLocalEntries({ root, gh })
+    assert.deepEqual(result.removed.map((entry) => entry.number), [13, 15, 16])
+    assert.deepEqual(result.removed.map((entry) => entry.local), [true, true, true])
+    assert.deepEqual(result.retained.map((entry) => entry.number).sort(), [12, 14])
+    assert.equal(result.retained.find((entry) => entry.number === 14).phase, 'landed')
+    assert.deepEqual(Object.keys(loadLocalState(root).prs).sort(), ['12', '14'])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('state cleanup reports a retained unfinished local entry', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    saveLocalEntries(root, {
+      12: localEntry({ number: 12, phase: 'landed-offline' }),
+      13: localEntry({ number: 13, phase: 'pushed' }),
+    })
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'view') {
+        const number = Number(args[2])
+        if (args.includes('mergedAt')) return JSON.stringify({ state: number === 12 ? 'MERGED' : 'OPEN', mergedAt: null })
+        return JSON.stringify({ state: number === 12 ? 'MERGED' : 'OPEN' })
+      }
+      return '[]'
+    }
+    const cleaned = cleanupClosedPullRequests({ root, gh })
+    assert.deepEqual(cleaned.map((entry) => entry.number), [13, 12])
+    assert.equal(cleaned.find((entry) => entry.number === 12).retained, true)
+    assert.equal(cleaned.find((entry) => entry.number === 12).phase, 'landed-offline')
+    assert.deepEqual(Object.keys(loadLocalState(root).prs), ['12'])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('preflight reports online, offline, unpushed main, landings and the lock', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const onlineGh = () => JSON.stringify({ nameWithOwner: 'owner/repo' })
+    const ready = preflight({ root, gh: onlineGh })
+    assert.equal(ready.online, true)
+    assert.equal(ready.reason, null)
+    assert.equal(ready.offlineLand, false)
+    assert.equal(ready.command, null)
+    assert.equal(ready.localMain.ahead, 0)
+    assert.equal(ready.localMain.behind, 0)
+    assert.deepEqual(ready.landings, [])
+    assert.equal(ready.lock.held, false)
+    assert.equal(existsSync(resolvePaths(root).localState), false)
+
+    git(root, ['commit', '--allow-empty', '-qm', 'unpushed land'])
+    const ahead = preflight({ root, gh: onlineGh })
+    assert.equal(ahead.reason, 'local-main-ahead')
+    assert.equal(ahead.localMain.ahead, 1)
+    assert.equal(ahead.offlineLand, false)
+
+    git(root, ['push', '-q', 'origin', 'main'])
+    const offline = preflight({ root, gh: () => undefined })
+    assert.equal(offline.online, false)
+    assert.equal(offline.offlineLand, true)
+    assert.equal(offline.reason, 'github-unreachable')
+    assert.match(offline.command, /npm run test:lab -- --mock-only/)
+    assert.match(offline.command, /openspec_apply_worktree action=land/)
+
+    const landingsFile = join(resolvePaths(root).cache, 'landings.json')
+    mkdirSync(dirname(landingsFile), { recursive: true })
+    writeFileSync(landingsFile, JSON.stringify({ schemaVersion: 1, lands: { 7: { phase: 'prepared', mode: 'local' } } }))
+    const landing = preflight({ root, gh: onlineGh })
+    assert.deepEqual(landing.landings, [{ number: 7, phase: 'prepared', mode: 'local' }])
+    assert.equal(landing.reason, null)
+
+    acquireLock({ root, session: 'owner-1', token: 'token-1', pr: 12 })
+    const held = preflight({ root, gh: onlineGh })
+    assert.equal(held.reason, 'landing-lock-held')
+    assert.equal(held.lock.held, true)
+    assert.equal(held.lock.ownerSession, 'owner-1')
+    assert.equal(held.lock.pr, 12)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+
+test('the poll text names an owner-managed pull request and keeps candidate lines', () => {
+  assert.equal(pollText({ candidates: [], ownerManaged: [] }), 'no review candidates\n')
+  assert.equal(
+    pollText({ candidates: [], ownerManaged: [12] }),
+    'PR #12 owner-managed (skipped)\n',
+  )
+  const candidate = {
+    number: 13,
+    head: 'a'.repeat(40),
+    change: 'widget',
+    resume: false,
+  }
+  assert.equal(
+    pollText({ candidates: [candidate], ownerManaged: [12] }),
+    'PR #12 owner-managed (skipped)\nPR #13 aaaaaaaaaaaa widget\n',
+  )
+})
+
+
+test('preflight routes a missing gh binary to offline-land instead of a spawn error', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const bin = tempDir('dsh-pr-review-bin-')
+  const saved = process.env.PATH
+  try {
+    const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+    assert.ok(gitPath !== '', 'git is on PATH')
+    symlinkSync(gitPath, join(bin, 'git'))
+    process.env.PATH = bin
+    const result = preflight({ root })
+    assert.equal(result.online, false)
+    assert.equal(result.offlineLand, true)
+    assert.equal(result.reason, 'github-unreachable')
+    assert.match(result.command, /npm run test:lab -- --mock-only/)
+  } finally {
+    process.env.PATH = saved
+    cleanup(root, remote, bin)
+  }
+})
+
+test('filterCandidates orders mergeable-labeled candidates before the rest', () => {
+  const eligible = (number, extra = {}) => ({
+    number,
+    headRefOid: String(number).padStart(40, 'a'),
+    baseRefOid: BASE,
+    baseRefName: 'main',
+    isDraft: false,
+    statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+    files: [{ path: 'openspec/changes/widget/proposal.md' }],
+    labels: [],
+    ...extra,
+  })
+  const candidates = filterCandidates([
+    eligible(12),
+    eligible(13, { labels: [{ name: 'mergeable' }] }),
+    eligible(14, { isDraft: true, labels: [{ name: 'mergeable' }] }),
+    eligible(15),
+    eligible(16, { labels: [{ name: 'mergeable' }] }),
+  ], { schemaVersion: 1, prs: {} })
+  assert.deepEqual(candidates.map((candidate) => candidate.number), [13, 16, 12, 15])
+})
+
+test('poll reads the full open list and reports a candidate beyond the old page', () => {
+  const root = makeRepository()
+  try {
+    const rows = []
+    for (let number = 1; number <= 100; number += 1) {
+      rows.push({
+        number,
+        headRefOid: String(number).padStart(40, 'a'),
+        baseRefOid: BASE,
+        baseRefName: 'main',
+        isDraft: true,
+        statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+        files: [{ path: 'openspec/changes/widget/proposal.md' }],
+        labels: [],
+      })
+    }
+    rows.push({
+      number: 101,
+      headRefOid: 'b'.repeat(40),
+      baseRefOid: BASE,
+      baseRefName: 'main',
+      isDraft: false,
+      statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+      files: [{ path: 'openspec/changes/widget/proposal.md' }],
+      labels: [{ name: 'mergeable' }],
+    })
+    const limits = []
+    const gh = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      const limit = Number(args[args.indexOf('--limit') + 1])
+      limits.push(limit)
+      return JSON.stringify(rows.slice(0, limit))
+    }
+    const result = pollPullRequests({ root, gh })
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [101])
+    assert.deepEqual(limits, [1000])
+  } finally {
+    cleanup(root)
+  }
+})
+
+function pollRow(number, head, overrides = {}) {
+  return {
+    number,
+    headRefOid: head,
+    baseRefOid: BASE,
+    baseRefName: 'main',
+    isDraft: false,
+    statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+    files: [{ path: 'openspec/changes/widget/proposal.md' }],
+    labels: [],
+    ...overrides,
+  }
+}
+
+test('the poll retries a transient list failure without the fallback marker', () => {
+  const root = makeRepository()
+  try {
+    const rows = [pollRow(12, HEAD)]
+    let lists = 0
+    const gh = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      lists += 1
+      if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
+      return JSON.stringify(rows)
+    }
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    assert.equal(lists, 2)
+    assert.equal(result.fallback, false)
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll falls back to a scalar list plus one detail request per evaluated row', () => {
+  const root = makeRepository()
+  try {
+    const rows = [pollRow(12, HEAD), pollRow(13, BASE)]
+    const state = { schemaVersion: 1, prs: {} }
+    const direct = pollPullRequests({
+      root,
+      gh: () => JSON.stringify(rows),
+      state,
+    })
+    let lists = 0
+    const detailNumbers = []
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)')
+        assert.equal(args[args.indexOf('--json') + 1], 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels')
+        return JSON.stringify(rows.map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        detailNumbers.push(Number(args[2]))
+        assert.equal(args[args.indexOf('--json') + 1], 'files,statusCheckRollup')
+        const row = rows.find((entry) => Number(entry.number) === Number(args[2]))
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const degraded = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    assert.equal(degraded.fallback, true)
+    assert.deepEqual(detailNumbers, [12, 13])
+    assert.deepEqual(
+      degraded.candidates.map((candidate) => candidate.number),
+      direct.candidates.map((candidate) => candidate.number),
+    )
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fallback skips a recorded commented head and keeps the others', () => {
+  const root = makeRepository()
+  try {
+    const recorded = pollRow(12, HEAD)
+    const fresh = pollRow(13, BASE)
+    const state = {
+      schemaVersion: 1,
+      prs: {
+        12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented' },
+      },
+    }
+    let lists = 0
+    const detailNumbers = []
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        return JSON.stringify([recorded, fresh].map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        detailNumbers.push(Number(args[2]))
+        const row = [recorded, fresh].find((entry) => Number(entry.number) === Number(args[2]))
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const result = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    assert.equal(result.fallback, true)
+    assert.deepEqual(detailNumbers, [13])
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [13])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fallback retries a detail request once', () => {
+  const root = makeRepository()
+  try {
+    const row = pollRow(12, HEAD)
+    let lists = 0
+    let views = 0
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        return JSON.stringify([{ number: row.number, headRefOid: row.headRefOid, baseRefOid: row.baseRefOid, baseRefName: row.baseRefName, isDraft: row.isDraft, labels: row.labels }])
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        views += 1
+        if (views === 1) throw new Error('gh pr view 12 failed: HTTP 502: 502 Bad Gateway')
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    assert.equal(views, 2)
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fails instead of reporting a partial candidate list', () => {
+  const root = makeRepository()
+  try {
+    const row = pollRow(12, HEAD)
+    const scalarOnly = [{ number: row.number, headRefOid: row.headRefOid, baseRefOid: row.baseRefOid, baseRefName: row.baseRefName, isDraft: row.isDraft, labels: row.labels }]
+    let primaryLists = 0
+    const scalarUnavailable = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      primaryLists += 1
+      throw new Error('HTTP 504: 504 Gateway Timeout')
+    }
+    assert.throws(
+      () => pollPullRequests({ root, gh: scalarUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      /HTTP 504/,
+    )
+    assert.equal(primaryLists, 4)
+    let lists = 0
+    const detailUnavailable = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        lists += 1
+        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        return JSON.stringify(scalarOnly)
+      }
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'view')
+      throw new Error('HTTP 502: 502 Bad Gateway')
+    }
+    assert.throws(
+      () => pollPullRequests({ root, gh: detailUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      /gh pr view 12 failed: HTTP 502/,
+    )
+    assert.equal(lists, 3)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a comment publish is attempted once and the failure is recorded', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, {
+      schemaVersion: 1,
+      prs: {
+        12: {
+          number: 12,
+          head: HEAD,
+          base: BASE,
+          baseTip: BASE,
+          change: 'widget',
+          worktree: null,
+          round: 1,
+          status: 'prepared',
+          error: null,
+          commentId: null,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    })
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [], round: 1 }))
+    let comments = 0
+    const gh = (args) => {
+      if (args[0] === 'api') return 'maintainer'
+      if (args[0] === 'pr' && args[1] === 'view' && args.includes('comments')) return JSON.stringify({ comments: [] })
+      if (args[0] === 'pr' && args[1] === 'comment') {
+        comments += 1
+        throw new Error('gh pr comment 12 failed: HTTP 502: 502 Bad Gateway')
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    assert.throws(
+      () => publishComment({ root, number: 12, reportPath: report, apply: true, gh }),
+      /HTTP 502/,
+    )
+    assert.equal(comments, 1)
+    const state = loadState(root)
+    assert.equal(state.prs['12'].status, 'failed')
+    assert.match(state.prs['12'].error, /HTTP 502/)
+  } finally {
+    cleanup(root)
+  }
 })
