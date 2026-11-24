@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Assert every landing gate the pr-review-pipeline spec requires, so a
+  removed check or an extra gh pr merge flag fails the suite.
