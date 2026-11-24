@@ -71,7 +71,7 @@ node scripts/pr-review-watch.mjs state --fail 12 --error "the reviewer did not f
 
 ## Requirement length gate
 
-Pull-request CI runs the same requirement-description length check the apply preflight uses: `npm run check:requirement-length` runs after `npm run openspec:check` and fails the verify job when an archive merge would exceed the limit. A failed step prints the same report to the job log and the job summary: the rationale, the blocking entries with their lengths, the official handling, the delta file and requirement line to edit, and `npm run check:requirement-length` for a local rerun. Because the watch only selects pull requests whose checks all succeed, a pull request blocked by the gate leaves the candidate list until the author fixes its delta, and the watch records no review attempt or failure for it. The apply preflight stays as the last check before an apply round, and its message remains the authoritative one for a review that cannot start.
+Pull-request CI runs the same requirement-description length check the apply preflight uses: `npm run check:requirement-length` runs after `npm run openspec:check` and fails the verify job when an archive merge would exceed the limit. A failed step prints the same report to the job log and the job summary: the rationale, the blocking entries with their lengths, the official handling, the delta file and requirement line to edit, and `npm run check:requirement-length` for a local rerun. Because the watch only selects pull requests whose newest run of every check succeeded, a pull request blocked by the gate leaves the candidate list until the author fixes its delta, and the watch records no review attempt or failure for it. The apply preflight stays as the last check before an apply round, and its message remains the authoritative one for a review that cannot start.
 
 ## Session flow
 
@@ -97,7 +97,7 @@ The scheduled session processes candidates one at a time:
 9. Publish with `comment <n> --report <path> --apply`. The comment carries a hidden marker for the PR, head and round; a trusted marker from the authenticated `gh` login suppresses a duplicate. A failed publish records `status: failed` and the error, and the next poll re-emits the prepared head. A failed `openspec_review` call is recorded the same way with `state --fail <n> --error <text>`. Only `status: commented` stops a head from being re-emitted; a prepared or failed head stays retryable.
 10. After a published `pass`, run `owner-review <n> --apply`. It adds the label when every non-label gate still passes. A label failure is reported and does not invalidate the review; the next reconcile retries.
 
-Candidates must be non-draft, have at least one CI check with every rollup entry successful, and change exactly one active change. Pending or absent checks are not candidates.
+Candidates must be non-draft, have at least one CI check whose newest run per check name succeeded, and change exactly one active change. Pending or absent checks are not candidates. A run superseded by a newer run of the same check does not make a pull request ineligible.
 
 ## Owner-review signal
 
@@ -113,7 +113,7 @@ A head change removes the stale label and then adds it again in the same run whe
 
 Landing is separate from the review watch and owner-review signal. The review watch remains read-only except for its explicit comment publish; the owner-review command writes only `owner-review`; `scripts/pr-review-land.mjs` performs the git and GitHub work and the scheduled session calls the plugin review and archive tools.
 
-The `mergeable` label is the only landing authorization. Only a maintainer adds it; the landing command reads it and never creates or removes labels. A labeled PR must also be open, non-draft, based on `main`, change exactly one active change, have a trusted `pass` comment for its current head, have green CI and be `MERGEABLE`. The advisory `owner-review` label does not authorize landing and is never a substitute for `mergeable`.
+The `mergeable` label is the only landing authorization. Only a maintainer adds it; the landing command reads it and never creates or removes labels. A labeled PR must also be open, non-draft, based on `main`, change exactly one active change, have a trusted `pass` comment for its current head, have a green CI rollup and be `MERGEABLE`. The advisory `owner-review` label does not authorize landing and is never a substitute for `mergeable`.
 
 The landing sequence is:
 

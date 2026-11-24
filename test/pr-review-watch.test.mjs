@@ -113,6 +113,81 @@ test('filterCandidates keeps only eligible PRs and skips processed heads', () =>
   assert.equal(candidates[0].change, 'widget')
 })
 
+test('checksGreen judges each check by its newest run', () => {
+  const entry = (name, conclusion, startedAt, extra = {}) => ({ name, workflowName: 'ci', conclusion, startedAt, ...extra })
+  const older = '2026-11-23T03:06:12Z'
+  const newer = '2026-11-23T03:27:16Z'
+
+  assert.equal(checksGreen([
+    entry('verify', 'FAILURE', older),
+    entry('lab', 'SUCCESS', older),
+    entry('verify', 'SUCCESS', newer),
+    entry('lab', 'SUCCESS', newer),
+  ]), true)
+  assert.equal(checksGreen([entry('verify', 'SUCCESS', older), entry('verify', 'FAILURE', newer)]), false)
+  assert.equal(checksGreen([
+    entry('verify', 'SUCCESS', older),
+    entry('verify', null, newer, { status: 'IN_PROGRESS' }),
+  ]), false)
+  assert.equal(checksGreen([
+    entry('verify', 'SUCCESS', older),
+    entry('verify', 'SUCCESS', newer),
+    entry('verify', 'FAILURE', newer),
+  ]), false)
+  assert.equal(checksGreen([
+    entry('verify', 'SUCCESS', older),
+    entry('verify', null, '0001-01-01T00:00:00Z', { status: 'QUEUED' }),
+  ]), false)
+  assert.equal(checksGreen([
+    entry('verify', 'SUCCESS', older),
+    entry('verify', 'FAILURE', older, { workflowName: 'nightly' }),
+  ]), false)
+  assert.equal(checksGreen([
+    { context: 'ci/verify', state: 'FAILURE', startedAt: older },
+    { context: 'ci/verify', state: 'SUCCESS', startedAt: newer },
+  ]), true)
+  assert.equal(checksGreen([
+    { name: 'verify', conclusion: 'SUCCESS' },
+    { name: 'verify', conclusion: 'FAILURE', startedAt: older },
+  ]), false)
+  assert.equal(checksGreen([
+    { name: 'verify', conclusion: 'SUCCESS' },
+    { name: 'verify', conclusion: 'SUCCESS', startedAt: newer },
+  ]), true)
+})
+
+test('filterCandidates includes a head whose newer run replaced a failure', () => {
+  const state = { schemaVersion: 1, prs: {} }
+  const files = [{ path: 'openspec/changes/widget/proposal.md' }]
+  const candidates = filterCandidates([
+    {
+      number: 17,
+      headRefOid: HEAD,
+      baseRefOid: BASE,
+      baseRefName: 'main',
+      isDraft: false,
+      statusCheckRollup: [
+        { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: '2026-11-23T03:06:12Z' },
+        { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: '2026-11-23T03:27:16Z' },
+      ],
+      files,
+    },
+    {
+      number: 18,
+      headRefOid: 'f'.repeat(40),
+      baseRefOid: BASE,
+      baseRefName: 'main',
+      isDraft: false,
+      statusCheckRollup: [
+        { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: '2026-11-23T03:06:12Z' },
+        { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: '2026-11-23T03:27:16Z' },
+      ],
+      files,
+    },
+  ], state)
+  assert.deepEqual(candidates.map((candidate) => candidate.number), [17])
+})
+
 test('parseArgs validates commands and the comment report flag', () => {
   assert.equal(parseArgs(['--help']).command, 'help')
   assert.deepEqual(parseArgs(['poll', '--json']), { command: 'poll', json: true, apply: false, cleanup: false, report: undefined, change: undefined, fail: undefined, error: undefined, number: undefined })

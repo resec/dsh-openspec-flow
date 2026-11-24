@@ -180,14 +180,76 @@ export function activeChangeNames(files) {
   return [...names]
 }
 
+/** The timestamp GitHub reports for a check run that has not started. */
+const ZERO_TIMESTAMP = '0001-01-01T00:00:00Z'
+
 /**
- * Whether every CI entry is successful and at least one exists.
+ * The identity a check entry is grouped by.
+ * @param entry - one `statusCheckRollup` entry.
+ * @returns the workflow and check key, or the status context key.
+ */
+function checkIdentity(entry) {
+  const workflow = typeof entry?.workflowName === 'string' ? entry.workflowName : ''
+  const name = typeof entry?.name === 'string'
+    ? entry.name
+    : typeof entry?.context === 'string'
+      ? entry.context
+      : ''
+  return `${workflow}\u0000${name}`
+}
+
+/**
+ * A check entry's usable start time.
+ * @param entry - one `statusCheckRollup` entry.
+ * @returns milliseconds since the epoch, or NaN when the entry has no usable start time.
+ */
+function checkStartedAt(entry) {
+  const value = typeof entry?.startedAt === 'string' ? entry.startedAt : ''
+  if (value === '' || value === ZERO_TIMESTAMP) return NaN
+  const time = Date.parse(value)
+  return Number.isFinite(time) && time > 0 ? time : NaN
+}
+
+/**
+ * Whether one check entry succeeded.
+ * @param entry - one `statusCheckRollup` entry.
+ * @returns whether the entry's conclusion or state is successful.
+ */
+function checkSucceeded(entry) {
+  return entry?.conclusion === 'SUCCESS' || entry?.state === 'SUCCESS'
+}
+
+/**
+ * Whether every check's newest entry is successful and at least one check exists.
+ *
+ * Checks are grouped by workflow and name, or by status context. When every
+ * entry of a group has a usable `startedAt`, only the entries at the latest
+ * start time decide the group; earlier entries are superseded. A group with any
+ * unusable start time requires every entry in it to succeed.
+ *
  * @param rollup - `statusCheckRollup`.
- * @returns true only for a non-empty all-success rollup.
+ * @returns true only for a non-empty rollup with every newest check entry successful.
  */
 export function checksGreen(rollup) {
   if (!Array.isArray(rollup) || rollup.length === 0) return false
-  return rollup.every((entry) => entry?.conclusion === 'SUCCESS' || entry?.state === 'SUCCESS')
+  const groups = new Map()
+  for (const entry of Array.isArray(rollup) ? rollup : []) {
+    const key = checkIdentity(entry)
+    const group = groups.get(key)
+    if (group === undefined) groups.set(key, [entry])
+    else group.push(entry)
+  }
+  for (const group of groups.values()) {
+    const times = group.map(checkStartedAt)
+    if (times.some((time) => Number.isNaN(time))) {
+      if (!group.every(checkSucceeded)) return false
+      continue
+    }
+    const latest = Math.max(...times)
+    const newest = group.filter((entry, index) => times[index] === latest)
+    if (!newest.every(checkSucceeded)) return false
+  }
+  return true
 }
 
 /**

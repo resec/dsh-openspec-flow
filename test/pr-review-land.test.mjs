@@ -175,6 +175,25 @@ test('plan refuses a missing label, a stale head and a non-main base', () => {
   }), /targets release, not main/)
 })
 
+test('plan accepts a green newest run after a superseded failure', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const superseded = prJson(head, 'main', {
+    statusCheckRollup: [
+      { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: '2026-11-23T03:06:12Z' },
+      { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: '2026-11-23T03:27:16Z' },
+    ],
+  })
+  assert.equal(planLanding({ root, number: 12, gh: fakeGh({ pr: JSON.parse(superseded) }) }).change, 'widget')
+  const failed = prJson(head, 'main', {
+    statusCheckRollup: [
+      { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: '2026-11-23T03:06:12Z' },
+      { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: '2026-11-23T03:27:16Z' },
+    ],
+  })
+  assert.throws(() => planLanding({ root, number: 12, gh: fakeGh({ pr: JSON.parse(failed) }) }), /green CI rollup/)
+})
+
 test('plan refuses a changes-requested comment and a stale watch head', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
