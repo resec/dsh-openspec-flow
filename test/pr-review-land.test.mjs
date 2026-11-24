@@ -29,6 +29,7 @@ import {
   syncLanding,
   trustedPass,
 } from '../scripts/pr-review-land.mjs'
+import { OWNER_REVIEW_LABEL } from '../scripts/pr-review-owner-review.mjs'
 import { loadState, resolvePaths, saveLocalState, saveState } from '../scripts/pr-review-watch.mjs'
 import { acquireLock, forceRelease } from '../scripts/pr-review-lock.mjs'
 
@@ -202,6 +203,12 @@ test('plan refuses a missing label, a stale head and a non-main base', () => {
     number: 12,
     gh: fakeGh({ pr: JSON.parse(prJson(head, 'main', { labels: [] })) }),
   }), /no mergeable label/)
+  assert.throws(() => planLanding({
+    root,
+    number: 12,
+    gh: fakeGh({ pr: JSON.parse(prJson(head, 'main', { labels: [{ name: OWNER_REVIEW_LABEL }] })) }),
+  }), /no mergeable label/)
+  assert.equal(loadLandings(root).lands['12'], undefined)
   assert.throws(() => planLanding({
     root,
     number: 12,
