@@ -17,4 +17,4 @@
 ## 4. Verify
 
 - [x] 4.1 Run `node --test test/push-landed.test.mjs`.
-- [ ] 4.2 Run `/tmp/b3/gates.sh fix-push-landed-archive-scope`.
+- [x] 4.2 Run `/tmp/b3/gates.sh fix-push-landed-archive-scope`.
