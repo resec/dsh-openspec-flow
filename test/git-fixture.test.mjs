@@ -31,6 +31,7 @@ test('an inherited GIT_DIR makes the fixture registration fail and name the fixt
   const host = join(base, 'host')
   mkdirSync(host)
   initFixtureRepo(host, ['-q'])
+  const previous = process.env.GIT_DIR
   process.env.GIT_DIR = join(host, '.git')
   try {
     assert.throws(
@@ -43,7 +44,8 @@ test('an inherited GIT_DIR makes the fixture registration fail and name the fixt
       },
     )
   } finally {
-    delete process.env.GIT_DIR
+    if (previous === undefined) delete process.env.GIT_DIR
+    else process.env.GIT_DIR = previous
   }
   assert.equal(existsSync(join(root, '.git')), false)
 })
