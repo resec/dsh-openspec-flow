@@ -809,6 +809,91 @@ test('waive-reviewer records a reason and leaves an unready review in review', a
   assert.equal(saved.state, 'in-review')
 })
 
+test('an abandoned draft review refuses the reviewer submit and the reviewer recovery actions', async () => {
+  const root = fixture()
+  const { fake, activations, messages } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', { action: 'abandon', change: CHANGE, reason: 'superseded' })
+  const file = join(reviewDir(root), 'review.json')
+  const before = readFileSync(file, 'utf8')
+  const refusal = /draft review was abandoned; start a new change or remove its review record/
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  await assert.rejects(
+    execute({ action: 'submit', change: CHANGE, review: 'draft', report: report() }),
+    refusal,
+  )
+  assert.equal(readFileSync(file, 'utf8'), before)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'replace', change: CHANGE, review: 'draft', reason: 'stuck',
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'accepted', approvedBy: 'user',
+    }),
+    refusal,
+  )
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 0)
+  assert.equal(readFileSync(file, 'utf8'), before)
+  const status = await execute({ action: 'read', target: 'status', change: CHANGE, review: 'draft' })
+  assert.equal(status.state, 'abandoned')
+})
+
+test('an abandoned apply review refuses the reviewer submit and a replace', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const policyPath = join(reviewDir(root), 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  policy.reviews.apply.reviewers = 1
+  writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
+  const external = externalSetup(root)
+  await call(external.fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(external.fake, 'openspec_review', {
+    action: 'abandon', change: CHANGE, review: 'apply', reason: 'superseded',
+  })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const before = readFileSync(file, 'utf8')
+  const refusal = /apply review was abandoned; start a new change or remove its review record/
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  await assert.rejects(
+    reviewer.tools.get('openspec_reviewer').execute({
+      action: 'submit', change: CHANGE, review: 'apply', report: report(),
+    }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal }),
+    refusal,
+  )
+  assert.equal(readFileSync(file, 'utf8'), before)
+  await assert.rejects(
+    call(external.fake, 'openspec_review', {
+      action: 'replace', change: CHANGE, review: 'apply', reason: 'stuck',
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(external.fake, 'openspec_review', {
+      action: 'waive-reviewer', change: CHANGE, review: 'apply', waiver: 'accepted', approvedBy: 'user',
+    }),
+    refusal,
+  )
+  assert.equal(external.activations.length, 1)
+  assert.equal(external.messages.length, 0)
+  assert.equal(readFileSync(file, 'utf8'), before)
+})
+
 test('the reviewer preset is read-only and exported as a subpath', () => {
   const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /id: preset-openspec-reviewer/)
