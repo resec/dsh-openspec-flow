@@ -439,7 +439,7 @@ export function syncLanding({
     }
   }
   if (newHead === head) {
-    throw new Error(`the update-branch call did not change the head of PR #${n} within ${pollAttempts} polls`)
+    throw new Error(`the update-branch request for PR #${n} was accepted but the head did not change within ${pollAttempts} polls; recheck the head on the next run`)
   }
   const syncs = lands.syncs !== null && typeof lands.syncs === 'object' && !Array.isArray(lands.syncs) ? lands.syncs : {}
   syncs[String(n)] = { previousHead: head, newHead, at: new Date().toISOString() }

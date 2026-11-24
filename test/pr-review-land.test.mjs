@@ -737,7 +737,7 @@ test('sync reports a head that never changes', () => {
     gh: syncGh(pr, { pollHead: head }),
     pollAttempts: 2,
     pollIntervalMs: 0,
-  }), /did not change the head/)
+  }), /request for PR #12 was accepted but the head did not change within/)
   assert.equal(loadLandings(root).syncs, undefined)
 })
 
