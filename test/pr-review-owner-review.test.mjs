@@ -9,6 +9,7 @@ import {
   decideOwnerReview,
   main,
   OWNER_REVIEW_LABEL,
+  PR_LIST_LIMIT,
   parseArgs,
   reconcileOwnerReview,
   syncPullRequest,
@@ -347,6 +348,46 @@ test('reconcileOwnerReview backfills and removes orphan labels', () => {
     assert.deepEqual(loadState(root).prs['12'].ownerReview, { head: HEAD, at: 'now' })
     assert.equal(calls.some((args) => args[2] === '13' && args[3] === '--remove-label'), true)
     assert.deepEqual(result.errors, [])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('reconcileOwnerReview asks gh for owner-review-labeled pull requests within one cap', () => {
+  const root = makeRoot()
+  try {
+    writeState(root)
+    const open = [{ number: 12, labels: [{ name: OWNER_REVIEW_LABEL }] }]
+    const { gh, calls } = fakeGh(prHandler({ 12: makePr() }, open))
+    const result = reconcileOwnerReview({ root, gh })
+    const listing = calls.find((args) => args[0] === 'pr' && args[1] === 'list')
+    assert.deepEqual(listing, [
+      'pr', 'list', '--state', 'open', '--label', OWNER_REVIEW_LABEL, '--limit', String(PR_LIST_LIMIT), '--json', 'number,labels',
+    ])
+    assert.equal(listing.includes('--search'), false)
+    assert.equal(result.truncated, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('reconcileOwnerReview reports the listing cap in JSON and text output', () => {
+  const root = makeRoot()
+  try {
+    writeState(root)
+    const local = {}
+    for (let index = 0; index < PR_LIST_LIMIT; index += 1) {
+      local[String(1000 + index)] = { ...localEntry(), number: 1000 + index }
+    }
+    saveLocalState(root, { schemaVersion: 1, prs: local })
+    const open = Object.keys(local).map((number) => ({ number: Number(number), labels: [{ name: OWNER_REVIEW_LABEL }] }))
+    const { gh } = fakeGh(prHandler({ 12: makePr() }, open))
+    const result = reconcileOwnerReview({ root, gh })
+    assert.equal(result.results.some((entry) => entry.number === 12), true)
+    assert.match(result.truncated, new RegExp(`returned ${PR_LIST_LIMIT} open pull requests labeled ${OWNER_REVIEW_LABEL}`))
+    let output = ''
+    assert.equal(main(['--reconcile'], (text) => { output += text }, { root, gh }), 0)
+    assert.match(output, new RegExp(`^warning: gh pr list returned ${PR_LIST_LIMIT} `, 'm'))
   } finally {
     cleanup(root)
   }
