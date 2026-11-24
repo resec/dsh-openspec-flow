@@ -9,6 +9,7 @@ import { resetAdminState } from '../lib/admin.js'
 import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { clearCliVerification, resolveBundledCli } from '../lib/openspec.js'
 import { parseTaskLines, taskKey } from '../lib/tasks.js'
+import { POLICY_TEXT } from '../lib/policy.js'
 import { createFakeContext } from './fake-context.mjs'
 import { PROBE_ROOT } from './review-fixtures.mjs'
 
@@ -1066,6 +1067,9 @@ test('initializes an empty project without writing skills', async () => {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-init-'))
   created.push(root)
   const fake = setup(root)
+  const { agent, sections } = fake.createAgent({ directory: root })
+  fake.emit('agent/created', { agent })
+  assert.equal(sections[0].text(), '')
 
   const result = await call(fake, 'openspec_init', {})
   assert.equal(result.root, root)
@@ -1073,6 +1077,7 @@ test('initializes an empty project without writing skills', async () => {
   assert.ok(existsSync(join(root, 'openspec', 'config.yaml')))
   assert.ok(existsSync(join(root, 'openspec', 'specs')))
   assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
+  assert.equal(sections[0].text(), POLICY_TEXT)
 
   const again = await call(fake, 'openspec_init', {})
   assert.equal(again.config, 'exists')
