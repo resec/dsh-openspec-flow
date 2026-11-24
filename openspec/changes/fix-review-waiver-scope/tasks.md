@@ -15,3 +15,8 @@
 ## 3. Sync the documents
 
 - [x] 3.1 State the waiver scope in the unavailable-reviewer row of `docs/review.md` and guard it in `test/review-doc.test.mjs`.
+
+## 4. Verify
+
+- [x] 4.1 Run `node --test test/review-unit.test.mjs test/review-reviewer.test.mjs test/review-watch.test.mjs test/review-wait.test.mjs test/review-doc.test.mjs` with Node 24 active and verify every test passes; with `lib/review/readiness.js` and `lib/tools/review.js` stashed, verify the waiver assertions fail.
+- [x] 4.2 Run `openspec validate fix-review-waiver-scope --strict`, `npm run openspec:check`, `node scripts/check-requirement-length.mjs`, `node scripts/check-generated-skills.mjs --base <merge-base>`, `npm run check:pr` and `npm run verify` with Node 24 active and verify the test suite and the coverage gate pass.
