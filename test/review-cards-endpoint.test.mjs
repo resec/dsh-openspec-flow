@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { compareCards, createReviewChannel } from '../lib/review/settings.js'
 import { sessionKeyOf } from '../lib/review/cards.js'
 import { reviewDirectory, reviewRoot, writeJsonAtomic } from '../lib/review/store.js'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 /** Build a project, a review directory and the channel. */
 function fixture(options = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-endpoint-'))
+  const root = tempDir('dsh-cards-endpoint-')
   const directory = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(directory, 'cards'), { recursive: true })
   const warnings = []
@@ -94,7 +96,7 @@ function reviewRecord(directory, options = {}) {
 }
 
 test('an unclaimed card binds to the first turn and stays after a refresh', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     const first = await channel.dispatch('reviewCards/get', {
@@ -114,12 +116,12 @@ test('an unclaimed card binds to the first turn and stays after a refresh', asyn
     })
     assert.deepEqual(other.value.cards, [])
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('the delivery watermark binds without a turn start time', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     cardFile(directory, { writtenAt: '2026-01-01T00:05:00.000Z' })
     const first = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
@@ -127,12 +129,12 @@ test('the delivery watermark binds without a turn start time', async () => {
     const second = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 2 })
     assert.deepEqual(second.value.cards, [])
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a card written before the turn start is not bound', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory, { writtenAt: '2026-01-01T00:01:00.000Z' })
     const result = await channel.dispatch('reviewCards/get', {
@@ -141,12 +143,12 @@ test('a card written before the turn start is not bound', async () => {
     assert.deepEqual(result.value.cards, [])
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a corrupt card is skipped and the valid one is returned', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     writeFileSync(join(directory, 'cards', `${sessionKeyOf('changer')}-corrupt-1.json`), '{not json')
     cardFile(directory)
@@ -155,12 +157,12 @@ test('a corrupt card is skipped and the valid one is returned', async () => {
     })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('multiple cards sort review before resolution and by round', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     cardFile(directory, { phase: 'resolution', round: 1, writtenAt: '2026-01-01T00:01:00.000Z' })
     cardFile(directory, { phase: 'review', round: 2, writtenAt: '2026-01-01T00:02:00.000Z' })
@@ -169,12 +171,12 @@ test('multiple cards sort review before resolution and by round', async () => {
     })
     assert.deepEqual(result.value.cards.map((card) => card.phase), ['review', 'resolution'])
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('invalid card shapes are skipped', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const invalid = [
       { schemaVersion: 2 },
@@ -193,12 +195,12 @@ test('invalid card shapes are skipped', async () => {
     })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a project without a review root returns no cards', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-empty-'))
+  const root = tempDir('dsh-cards-empty-')
   try {
     mkdirSync(join(root, 'openspec'), { recursive: true })
     const ctx = {
@@ -218,7 +220,7 @@ test('a project without a review root returns no cards', async () => {
 })
 
 test('a broken review entry, a cardless change and a non-JSON file are skipped', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const base = join(directory, '..')
     symlinkSync(join(base, 'missing-target'), join(base, 'broken-link'))
@@ -230,12 +232,12 @@ test('a broken review entry, a cardless change and a non-JSON file are skipped',
     })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a delivery write failure is logged and keeps the endpoint answer', async () => {
-  const { directory, channel, warnings } = fixture()
+  const { root, directory, channel, warnings } = fixture()
   try {
     mkdirSync(join(directory, 'card-delivery.json'))
     cardFile(directory)
@@ -245,12 +247,12 @@ test('a delivery write failure is logged and keeps the endpoint answer', async (
     assert.equal(result.ok, true)
     assert.ok(warnings.some((message) => message.includes('could not be delivered')))
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('the endpoint rejects a missing session or turn', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const noSession = await channel.dispatch('reviewCards/get', { turn: 1 })
     assert.equal(noSession.ok, false)
@@ -259,12 +261,12 @@ test('the endpoint rejects a missing session or turn', async () => {
     assert.equal(noTurn.ok, false)
     assert.match(noTurn.error.message, /turn/)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('an unparsable turn end is rejected and binds nothing', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', {
@@ -274,12 +276,12 @@ test('an unparsable turn end is rejected and binds nothing', async () => {
     assert.match(result.error.message, /turn end/)
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('an offset-form turn end compares by instant', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory, { writtenAt: '2026-01-01T00:01:00.000Z' })
     const skipped = await channel.dispatch('reviewCards/get', {
@@ -298,12 +300,12 @@ test('an offset-form turn end compares by instant', async () => {
     })
     assert.equal(bound.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a card written after the turn end is skipped and the later turn binds it', async () => {
-  const { directory, channel } = fixture({ now: () => Date.parse('2026-01-01T00:40:00.000Z') })
+  const { root, directory, channel } = fixture({ now: () => Date.parse('2026-01-01T00:40:00.000Z') })
   try {
     const path = cardFile(directory, { writtenAt: '2026-01-01T00:20:00.000Z' })
     const historical = await channel.dispatch('reviewCards/get', {
@@ -325,12 +327,12 @@ test('a card written after the turn end is skipped and the later turn binds it',
     assert.equal(later.value.cards.length, 1)
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 22)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('cards sort by write time inside one phase', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const draft = {
       phase: 'review',
@@ -356,7 +358,7 @@ test('cards sort by write time inside one phase', async () => {
     })
     assert.deepEqual(result.value.cards.map((card) => card.review), ['draft', 'apply'])
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
@@ -375,7 +377,7 @@ test('compareCards orders by phase, write time and round', () => {
 })
 
 test('a card without a write time follows the watermark fallback', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     const file = JSON.parse(readFileSync(path, 'utf8'))
@@ -384,12 +386,12 @@ test('a card without a write time follows the watermark fallback', async () => {
     const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a card without a write time is skipped when a turn end is given', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     const file = JSON.parse(readFileSync(path, 'utf8'))
@@ -401,12 +403,12 @@ test('a card without a write time is skipped when a turn end is given', async ()
     assert.deepEqual(result.value.cards, [])
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a non-string or empty turn end is rejected and binds nothing', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     for (const value of [1767225600000, '', '   ', null, true, ['2026-01-01']]) {
@@ -418,12 +420,12 @@ test('a non-string or empty turn end is rejected and binds nothing', async () =>
     }
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a stored watermark later than the turn end is kept', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     writeFileSync(join(directory, 'card-delivery.json'), JSON.stringify({
       schemaVersion: 1,
@@ -441,12 +443,12 @@ test('a stored watermark later than the turn end is kept', async () => {
       '2026-01-01T00:40:00.000Z',
     )
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a request without a turn end resets the watermark to now', async () => {
-  const { directory, channel } = fixture({ now: () => Date.parse('2026-01-01T00:00:00.000Z') })
+  const { root, directory, channel } = fixture({ now: () => Date.parse('2026-01-01T00:00:00.000Z') })
   try {
     cardFile(directory, { writtenAt: '2026-01-01T00:30:00.000Z' })
     writeFileSync(join(directory, 'card-delivery.json'), JSON.stringify({
@@ -461,13 +463,13 @@ test('a request without a turn end resets the watermark to now', async () => {
       '2026-01-01T00:00:00.000Z',
     )
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 
 test('legacy cards remain readable until migration and are suppressed after removal', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-legacy-'))
+  const root = tempDir('dsh-cards-legacy-')
   const legacy = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(legacy, 'cards'), { recursive: true })
   execFileSync('git', ['-C', root, 'init', '-q'])
@@ -498,7 +500,7 @@ test('legacy cards remain readable until migration and are suppressed after remo
 })
 
 test('an independent review withholds the changer review card and keeps the resolution card', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory)
     const reviewPath = cardFile(directory, { phase: 'review', round: 1 })
@@ -509,12 +511,12 @@ test('an independent review withholds the changer review card and keeps the reso
     assert.deepEqual(result.value.cards.map((card) => card.phase), ['resolution'])
     assert.equal(JSON.parse(readFileSync(reviewPath, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('an already-bound changer review card stays hidden', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory)
     const path = cardFile(directory, { turn: 5 })
@@ -522,12 +524,12 @@ test('an already-bound changer review card stays hidden', async () => {
     assert.deepEqual(result.value.cards, [])
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 5)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a reviewer review card is delivered for an independent review', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory)
     cardFile(directory, { sessionId: 'reviewer-1' })
@@ -535,24 +537,24 @@ test('a reviewer review card is delivered for an independent review', async () =
     assert.equal(result.value.cards.length, 1)
     assert.equal(result.value.cards[0].review, 'draft')
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a self review keeps the changer review card', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory, { independent: false })
     cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a directory with both records selects the record by the card review kind', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory, { kind: 'draft', independent: false })
     reviewRecord(directory, { kind: 'apply' })
@@ -563,12 +565,12 @@ test('a directory with both records selects the record by the card review kind',
     assert.equal(result.value.cards[0].review, 'draft')
     assert.equal(JSON.parse(readFileSync(applyPath, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a card without a review kind compares against the draft record', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory, { kind: 'draft', independent: false })
     reviewRecord(directory, { kind: 'apply' })
@@ -579,24 +581,24 @@ test('a card without a review kind compares against the draft record', async () 
     const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a record without changerSessionId keeps delivery', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory, { changerSessionId: null })
     cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a corrupt record keeps delivery and logs a warning', async () => {
-  const { directory, channel, warnings } = fixture()
+  const { root, directory, channel, warnings } = fixture()
   try {
     writeFileSync(join(directory, 'review.json'), '{ not json')
     cardFile(directory)
@@ -604,12 +606,12 @@ test('a corrupt record keeps delivery and logs a warning', async () => {
     assert.equal(result.value.cards.length, 1)
     assert.ok(warnings.some((message) => message.includes('could not be read for card filtering')))
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a legacy changer review card is withheld for an independent review', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-legacy-withhold-'))
+  const root = tempDir('dsh-cards-legacy-withhold-')
   const legacy = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(legacy, 'cards'), { recursive: true })
   execFileSync('git', ['-C', root, 'init', '-q'])
@@ -636,7 +638,7 @@ test('a legacy changer review card is withheld for an independent review', async
 })
 
 test('two project roots sharing a review root return each card once', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-cards-shared-'))
+  const root = tempDir('dsh-cards-shared-')
   try {
     execFileSync('git', ['-C', root, 'init', '-q'])
     mkdirSync(join(root, 'openspec'), { recursive: true })
@@ -680,7 +682,7 @@ test('two project roots sharing a review root return each card once', async () =
 
 test('two project roots with different review roots return both cards', async () => {
   const first = fixture()
-  const second = mkdtempSync(join(tmpdir(), 'dsh-cards-other-'))
+  const second = tempDir('dsh-cards-other-')
   try {
     mkdirSync(join(second, 'openspec'), { recursive: true })
     const secondDirectory = join(second, 'openspec', '.review', 'local#demo')
@@ -723,7 +725,7 @@ test('two project roots with different review roots return both cards', async ()
 })
 
 test('a card file outside the session key is ignored', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const foreign = join(directory, 'cards', 'foreign.json')
     writeFileSync(foreign, JSON.stringify({
@@ -742,12 +744,12 @@ test('a card file outside the session key is ignored', async () => {
     assert.equal(result.value.cards.length, 1)
     assert.equal(JSON.parse(readFileSync(foreign, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a malformed file outside the session key does not fail the request', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     writeFileSync(join(directory, 'cards', 'other-session.json'), '{not json')
     cardFile(directory)
@@ -756,12 +758,12 @@ test('a malformed file outside the session key does not fail the request', async
     })
     assert.equal(result.value.cards.length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a batch returns one entry per turn in ascending order', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     cardFile(directory, { turn: 4, round: 2, writtenAt: '2026-01-01T00:02:00.000Z' })
     cardFile(directory, { turn: 5, round: 3, writtenAt: '2026-01-01T00:03:00.000Z' })
@@ -775,12 +777,12 @@ test('a batch returns one entry per turn in ascending order', async () => {
     assert.equal(result.value.byTurn['4'][0].round, 2)
     assert.equal(result.value.byTurn['5'][0].round, 3)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('each batch turn applies its own window', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory, { writtenAt: '2026-01-01T00:05:00.000Z' })
     const result = await channel.dispatch('reviewCards/get', {
@@ -794,12 +796,12 @@ test('each batch turn applies its own window', async () => {
     assert.equal(result.value.byTurn['2'].length, 1)
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 2)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a batch binds unclaimed cards in ascending turn order', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const early = cardFile(directory, { round: 1, writtenAt: '2026-01-01T00:01:00.000Z' })
     const late = cardFile(directory, { round: 2, writtenAt: '2026-01-01T00:06:00.000Z' })
@@ -815,12 +817,12 @@ test('a batch binds unclaimed cards in ascending turn order', async () => {
     assert.equal(JSON.parse(readFileSync(early, 'utf8')).turn, 1)
     assert.equal(JSON.parse(readFileSync(late, 'utf8')).turn, 2)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a repeated batch turn binds once', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', {
@@ -833,12 +835,12 @@ test('a repeated batch turn binds once', async () => {
     assert.equal(result.value.byTurn['1'].length, 1)
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a batch withholds the changer review card and keeps the resolution card', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     reviewRecord(directory)
     const reviewPath = cardFile(directory, { phase: 'review', round: 1 })
@@ -852,12 +854,12 @@ test('a batch withholds the changer review card and keeps the resolution card', 
     assert.equal(cards[0].phase, 'resolution')
     assert.equal(JSON.parse(readFileSync(reviewPath, 'utf8')).turn, null)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a batch rejects more than 64 turns and bad windows', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const path = cardFile(directory)
     const tooMany = await channel.dispatch('reviewCards/get', {
@@ -877,22 +879,22 @@ test('a batch rejects more than 64 turns and bad windows', async () => {
     assert.equal(badTo.ok, false)
     assert.match(badTo.error.message, /turn end/)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a batch with no turns answers an empty byTurn', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turns: [] })
     assert.deepEqual(result.value.byTurn, {})
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('a single-turn answer carries no byTurn object', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     cardFile(directory)
     const result = await channel.dispatch('reviewCards/get', {
@@ -901,12 +903,12 @@ test('a single-turn answer carries no byTurn object', async () => {
     assert.equal(result.value.cards.length, 1)
     assert.equal(Object.prototype.hasOwnProperty.call(result.value, 'byTurn'), false)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('an unreadable matching card does not fail the batch', async () => {
-  const { directory, channel } = fixture()
+  const { root, directory, channel } = fixture()
   try {
     writeFileSync(join(directory, 'cards', `${sessionKeyOf('changer')}-corrupt-9.json`), '{not json')
     cardFile(directory)
@@ -915,7 +917,7 @@ test('an unreadable matching card does not fail the batch', async () => {
     })
     assert.equal(result.value.byTurn['1'].length, 1)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })
 

@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 import { filterUnrelatedChangeStatus } from '../lib/review/store.js'
+import { assertPushRange, clearOfflineRecord } from './landed-push-guard.mjs'
 
 /** Manifest directory under the git common directory. */
 export const MANIFEST_DIRECTORY = 'openspec-flow/landed'
@@ -37,7 +38,10 @@ export class UsageError extends Error {
  * @returns the spawn result.
  */
 function runGit(cwd, args, options = {}) {
-  const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' })
+  const result = spawnSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8',
+    ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+  })
   if (result.error) throw result.error
   if (result.status !== 0 && options.allowFailure !== true) {
     throw new Error(`git ${args.join(' ')} failed: ${(result.stderr || '').trim()}`)
@@ -83,12 +87,17 @@ function isAncestor(cwd, ancestor, descendant) {
  * @throws {UsageError} on an unknown, duplicate or incomplete flag.
  */
 export function parseArgs(argv) {
-  const options = { push: false, change: undefined, land: undefined, manifest: undefined, help: false }
+  const options = { push: false, offline: false, change: undefined, land: undefined, manifest: undefined, help: false }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--push') {
       if (options.push) throw new UsageError('--push was passed more than once')
       options.push = true
+      continue
+    }
+    if (argument === '--offline') {
+      if (options.offline) throw new UsageError('--offline was passed more than once')
+      options.offline = true
       continue
     }
     if (argument === '--help' || argument === '-h') {
@@ -120,9 +129,10 @@ export function parseArgs(argv) {
  */
 export function usage() {
   return [
-    'usage: node scripts/push-landed.mjs [--push] [--change <name>|--land <sha>|--manifest <path>]',
+    'usage: node scripts/push-landed.mjs [--push] [--offline] [--change <name>|--land <sha>|--manifest <path>]',
     '',
     'Verifies a landed manifest and pushes main only with --push. The default is a dry run.',
+    '--offline allows a recorded landed-offline change to publish its deferred commits.',
     '--merge is accepted as a legacy alias for --land.',
   ].join('\n')
 }
@@ -369,8 +379,11 @@ export function fetchRemoteMain(root) {
  * @param root - main worktree.
  * @returns remote commit reported by ls-remote.
  */
-export function pushMain(root) {
-  const pushed = runGit(root, ['push', 'origin', 'HEAD:refs/heads/main'], { allowFailure: true })
+export function pushMain(root, { offline = false } = {}) {
+  const pushed = runGit(root, ['push', 'origin', 'HEAD:refs/heads/main'], {
+    allowFailure: true,
+    ...(offline ? { env: { DSH_PUSH_LANDED_OFFLINE: '1' } } : {}),
+  })
   if (pushed.stdout.trim() !== '') process.stdout.write(pushed.stdout)
   if (pushed.stderr.trim() !== '') process.stderr.write(pushed.stderr)
   if (pushed.status !== 0) {
@@ -425,6 +438,7 @@ export function main(argv = process.argv.slice(2)) {
   }
   const head = validateLocalState(root, entry.manifest)
   const remote = fetchRemoteMain(root)
+  assertPushRange({ root, base: remote, tip: head, allowOffline: options.offline })
 
   if (remote === head) {
     report(entry, { remote, action: 'already pushed; nothing to do' })
@@ -445,10 +459,11 @@ export function main(argv = process.argv.slice(2)) {
     return 0
   }
 
-  const pushed = pushMain(root)
+  const pushed = pushMain(root, { offline: options.offline })
   if (pushed !== head) {
     throw new Error(`origin/main is ${pushed} after the push, expected ${head}`)
   }
+  if (options.offline) clearOfflineRecord(root, entry.manifest.landCommit)
   report(entry, { remote: pushed, action: `pushed ${count} commit(s)` })
   return 0
 }

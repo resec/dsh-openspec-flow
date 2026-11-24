@@ -474,7 +474,7 @@ Pull-request CI SHALL run the change check against the pull request head commit,
 
 ### Requirement: Label-authorized pull-request landing
 
-When the `mergeable` label is present and the final apply review is ready, the landing command SHALL merge with `gh pr merge --rebase` and the session SHALL archive on main after the merge only when the merged tree equals the reviewed tree. Neither SHALL add or remove `mergeable`, modify the contributor branch, squash, create a merge commit or force. The session MAY add or remove the advisory `owner-review` label.
+When the `mergeable` label is present and the final apply review is ready, the landing command SHALL merge with `gh pr merge --rebase` and the session SHALL archive on main only when the merged tree equals the reviewed tree. Neither SHALL add or remove `mergeable`, squash, force, create a merge commit on main or modify a fork branch. A same-repository branch behind `main` MAY be updated by the sync command before the final review; `owner-review` MAY be maintained.
 
 #### Scenario: The label authorizes landing
 
@@ -500,3 +500,13 @@ When the `mergeable` label is present and the final apply review is ready, the l
 
 - **WHEN** the merged main tree differs from the reviewed tree
 - **THEN** archive is refused until another review is ready
+
+#### Scenario: A same-repository pull request is synced
+
+- **WHEN** a labeled same-repository pull request is behind `main` and the update is conflict-free
+- **THEN** the session may update its branch through the sync command before the final review
+
+#### Scenario: A fork branch is not updated
+
+- **WHEN** a labeled fork pull request is behind `main`
+- **THEN** the session does not update its branch and reports that the author must update it

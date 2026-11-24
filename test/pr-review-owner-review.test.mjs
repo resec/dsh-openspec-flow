@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -13,14 +12,17 @@ import {
   reconcileOwnerReview,
   syncPullRequest,
 } from '../scripts/pr-review-owner-review.mjs'
-import { loadState, saveState, cleanupClosedPullRequests } from '../scripts/pr-review-watch.mjs'
+import { cleanupClosedPullRequests, loadState, saveState, saveLocalState } from '../scripts/pr-review-watch.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const HEAD = 'a'.repeat(40)
 const OLD = 'b'.repeat(40)
 const LOGIN = 'tester'
 
 function makeRoot() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-owner-review-'))
+  const root = tempDir('dsh-owner-review-')
   const init = spawnSync('git', ['init', '-q', root], { encoding: 'utf8' })
   assert.equal(init.status, 0, init.stderr)
   mkdirSync(join(root, '.cache', 'pr-review'), { recursive: true })
@@ -280,6 +282,24 @@ test('syncPullRequest removes then adds for a new qualifying head', () => {
   }
 })
 
+test('syncPullRequest removes a stale label and does not re-add it when mergeable is present', () => {
+  const root = makeRoot()
+  try {
+    writeState(root, makeEntry(), { head: OLD, at: 'old' })
+    const { gh, calls } = fakeGh(prHandler({
+      12: makePr({ labels: [{ name: OWNER_REVIEW_LABEL }, { name: 'mergeable' }] }),
+    }))
+    const result = syncPullRequest({ root, number: 12, apply: true, gh })
+    assert.equal(result.action, 'remove')
+    const edits = calls.filter((args) => args[1] === 'edit')
+    assert.equal(edits.length, 1)
+    assert.equal(edits[0][3], '--remove-label')
+    assert.equal(loadState(root).prs['12'].ownerReview, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('syncPullRequest removes an orphan label even when mergeable is unknown', () => {
   const root = makeRoot()
   try {
@@ -456,6 +476,67 @@ test('main dry-run prints a plan and the lock refuses a second run', () => {
     assert.equal(locked, 1)
     assert.match(output, /another PR review run holds/)
     assert.equal(loadState(root).prs['12'].ownerReview, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
+
+function localEntry(overrides = {}) {
+  return {
+    number: 12,
+    change: 'widget',
+    branch: 'openspec/apply/local-widget-12345678',
+    head: HEAD,
+    tree: OLD,
+    record: 'local#widget',
+    ownerSession: 'owner-1',
+    phase: 'published',
+    ...overrides,
+  }
+}
+
+test('owner-review skips a local pull request without touching labels', () => {
+  const root = makeRoot()
+  try {
+    writeState(root, makeEntry())
+    saveLocalState(root, { schemaVersion: 1, prs: { 12: localEntry() } })
+    const { gh, calls } = fakeGh(prHandler({ 12: makePr() }))
+    const result = syncPullRequest({ root, number: 12, apply: true, gh })
+    assert.equal(result.action, 'none')
+    assert.equal(result.reason, 'local-owner')
+    assert.deepEqual(result.actions, [])
+    assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'edit'), false)
+    assert.deepEqual(loadState(root).prs['12'].ownerReview, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('owner-review reconcile excludes a labeled local pull request', () => {
+  const root = makeRoot()
+  try {
+    writeState(root)
+    saveLocalState(root, { schemaVersion: 1, prs: { 12: localEntry() } })
+    const open = [{ number: 12, labels: [{ name: OWNER_REVIEW_LABEL }] }]
+    const { gh, calls } = fakeGh(prHandler({ 12: makePr({ labels: [{ name: OWNER_REVIEW_LABEL }] }) }, open))
+    const result = reconcileOwnerReview({ root, apply: true, gh })
+    assert.deepEqual(result.results, [])
+    assert.deepEqual(result.errors, [])
+    assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'edit'), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('owner-review refuses a corrupt local owner state', () => {
+  const root = makeRoot()
+  try {
+    writeState(root)
+    writeFileSync(join(root, '.cache', 'pr-review', 'local-prs.json'), '{not json')
+    const { gh } = fakeGh(prHandler({ 12: makePr() }))
+    assert.throws(() => syncPullRequest({ root, number: 12, gh }), /corrupt/)
+    assert.throws(() => reconcileOwnerReview({ root, gh }), /corrupt/)
   } finally {
     cleanup(root)
   }
