@@ -116,6 +116,7 @@ test('the propose skill runs the draft review before presenting', () => {
   assert.match(propose, /execution preflight/)
   assert.match(propose, /another unarchived change/)
   assert.match(propose, /do not call `dispose`/)
+  assert.match(propose, /recorded no finding/)
   assert.match(propose, /Do not present the proposal while a blocker is open/)
 })
 
@@ -143,6 +144,7 @@ test('the apply and archive skills run the apply review', () => {
   assert.match(apply, /policy/)
   assert.match(apply, /locks or migrates/)
   assert.match(apply, /disables apply review/)
+  assert.match(apply, /recorded no finding/)
   const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
   assert.match(archive, /openspec_review/)
   assert.match(archive, /review: "apply"/)

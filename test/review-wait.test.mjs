@@ -1055,6 +1055,36 @@ test('an apply not-ready submit wakes with the apply dispose action', async () =
   assert.equal(waited.nextAction, 'openspec_review action=dispose review=apply')
 })
 
+test('a blocked apply submit without findings points the next action at resume', async () => {
+  const { root, run } = gitFixture()
+  const { fake, subagents } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const reviewer = createFakeContext({ cwd: readApplyState(root, null, CHANGE).worktree, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'apply',
+    report: report({ verdict: 'blocked', summary: 'The tree could not be reviewed.' }),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const status = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.ready, false)
+  assert.match(status.reasons.join(' '), /verdict is blocked/)
+  assert.equal(status.nextAction, 'openspec_review action=resume review=apply')
+  assert.doesNotMatch(status.nextAction, /dispose/)
+  const waited = await call(fake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(waited.waitState, 'ready')
+  assert.equal(waited.nextAction, 'openspec_review action=resume review=apply')
+})
+
 test('a not-ready draft wait points at dispose', async () => {
   const root = fixture()
   const { fake } = externalSetup(root)

@@ -319,6 +319,32 @@ test('an open blocker refuses apply', async () => {
   )
 })
 
+test('a blocked draft report without findings points the next action at resume', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start',
+    change: CHANGE,
+    intent: 'Add a theme selector.',
+  })
+  const submitted = await call(fake, 'openspec_review', {
+    action: 'self-report',
+    change: CHANGE,
+    report: report({ verdict: 'blocked', summary: 'The artifacts cannot be reviewed yet.' }),
+  })
+  assert.equal(submitted.ready, false)
+  assert.match(submitted.reasons.join(' '), /verdict is blocked/)
+  assert.equal(submitted.nextAction, 'openspec_review action=resume review=draft')
+  assert.doesNotMatch(submitted.nextAction, /dispose/)
+
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.nextAction, 'openspec_review action=resume review=draft')
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /Next: openspec_review action=resume review=draft/,
+  )
+})
+
 test('the draft gate names the report step before a report exists', async () => {
   const root = fixture()
   const fake = setup(root)
