@@ -6,7 +6,6 @@ set -eu
 
 ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 MIRROR=${NODE_DIST_MIRROR:-https://nodejs.org/dist}
-PASSTHROUGH=
 
 usage() {
   cat <<'EOF'
@@ -141,28 +140,35 @@ for arg in "$@"; do
   esac
 done
 
-while [ $# -gt 0 ]; do
-  case "$1" in
+# Options this file does not handle are moved to the tail of "$@", which then
+# holds exactly the arguments for bootstrap.mjs. Moving whole words keeps a
+# value containing spaces in one argument instead of splitting it.
+pending=$#
+while [ "$pending" -gt 0 ]; do
+  arg=$1
+  shift
+  pending=$((pending - 1))
+  case "$arg" in
     --)
-      shift
-      while [ $# -gt 0 ]; do
-        PASSTHROUGH="$PASSTHROUGH $1"
+      while [ "$pending" -gt 0 ]; do
+        arg=$1
         shift
+        pending=$((pending - 1))
+        set -- "$@" "$arg"
       done
       break
       ;;
     --node-mirror)
-      [ $# -ge 2 ] || { echo "bootstrap: --node-mirror needs a value" >&2; exit 2; }
-      MIRROR=$2
-      shift 2
+      [ "$pending" -ge 1 ] || { echo "bootstrap: --node-mirror needs a value" >&2; exit 2; }
+      MIRROR=$1
+      shift
+      pending=$((pending - 1))
       ;;
     --node-mirror=*)
-      MIRROR=${1#*=}
-      shift
+      MIRROR=${arg#*=}
       ;;
     *)
-      PASSTHROUGH="$PASSTHROUGH $1"
-      shift
+      set -- "$@" "$arg"
       ;;
   esac
 done
@@ -181,8 +187,7 @@ done
 if [ -n "$BEST_PATH" ]; then
   PATH="$(dirname "$BEST_PATH"):$PATH"
   export PATH
-  # shellcheck disable=SC2086
-  exec "$BEST_PATH" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
+  exec "$BEST_PATH" "$ROOT/scripts/bootstrap.mjs" "$@"
 fi
 
 VERSION=$(baseline_version)
@@ -196,8 +201,7 @@ if [ -x "$TARGET/bin/node" ]; then
   ln -sfn "$TARGET" "$ROOT/.cache/toolchain/node"
   PATH="$TARGET/bin:$PATH"
   export PATH
-  # shellcheck disable=SC2086
-  exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
+  exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" "$@"
 fi
 
 mkdir -p "$ROOT/.cache/toolchain"
@@ -227,5 +231,4 @@ tar -xzf "$TARBALL" -C "$ROOT/.cache/toolchain"
 ln -sfn "$TARGET" "$ROOT/.cache/toolchain/node"
 PATH="$TARGET/bin:$PATH"
 export PATH
-# shellcheck disable=SC2086
-exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
+exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" "$@"

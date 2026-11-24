@@ -175,6 +175,33 @@ test('the shell forwards options after the separator', () => {
   assert.match(result.stdout, /Usage: scripts\/bootstrap\.sh/)
 })
 
+test('the shell forwards an argument with spaces as one word', () => {
+  for (const argv of [['a b'], ['--', 'a b']]) {
+    const result = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh'), ...argv], {
+      encoding: 'utf8',
+    })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /unknown bootstrap option: a b/)
+  }
+})
+
+test('the shell keeps an option value with spaces in the same argument', () => {
+  const result = spawnSync(
+    'sh',
+    [
+      join(ROOT, 'scripts', 'bootstrap.sh'),
+      '--',
+      '--playwright-host',
+      'https://mirror.example/a b',
+      '--help',
+    ],
+    { encoding: 'utf8' },
+  )
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stderr, '')
+  assert.match(result.stdout, /Usage: scripts\/bootstrap\.sh/)
+})
+
 test('parses the re-run and download options', () => {
   const options = parseBootstrapArgs([
     '--skip-install',
