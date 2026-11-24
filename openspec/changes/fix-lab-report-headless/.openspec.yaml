@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Record the headless exit status and final reason in the run report, and
+  carry the kept run directory in the scenario summary for a provisioning
+  failure, so a failed scene stays findable from .cache/lab/reports/.
