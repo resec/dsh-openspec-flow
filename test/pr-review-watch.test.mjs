@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -935,4 +935,26 @@ test('the poll text names an owner-managed pull request and keeps candidate line
     pollText({ candidates: [candidate], ownerManaged: [12] }),
     'PR #12 owner-managed (skipped)\nPR #13 aaaaaaaaaaaa widget\n',
   )
+})
+
+
+test('preflight routes a missing gh binary to offline-land instead of a spawn error', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const bin = mkdtempSync(join(tmpdir(), 'dsh-pr-review-bin-'))
+  const saved = process.env.PATH
+  try {
+    const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+    assert.ok(gitPath !== '', 'git is on PATH')
+    symlinkSync(gitPath, join(bin, 'git'))
+    process.env.PATH = bin
+    const result = preflight({ root })
+    assert.equal(result.online, false)
+    assert.equal(result.offlineLand, true)
+    assert.equal(result.reason, 'github-unreachable')
+    assert.match(result.command, /npm run test:lab -- --mock-only/)
+  } finally {
+    process.env.PATH = saved
+    cleanup(root, remote, bin)
+  }
 })

@@ -34,9 +34,15 @@ export function gitText(cwd, args, allowFailure = false) {
   return result.stdout.trim()
 }
 
-/** Gh output, or undefined on failure. */
+/** Gh output, or undefined when the binary is missing or the command fails. */
 export function ghText(args, cwd) {
-  const result = run('gh', args, { cwd, allowFailure: true })
+  let result
+  try {
+    result = run('gh', args, { cwd, allowFailure: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined
+    throw error
+  }
   if (result.status !== 0) return undefined
   return result.stdout.trim()
 }

@@ -69,9 +69,15 @@ function gitText(cwd, args, allowFailure = false) {
   return result.stdout.trim()
 }
 
-/** Gh text helper. */
+/** Gh text helper; a missing gh binary is reported as unreachable. */
 function ghText(args, options = {}) {
-  const result = capture('gh', args, { cwd: options.cwd, allowFailure: options.allowFailure })
+  let result
+  try {
+    result = capture('gh', args, { cwd: options.cwd, allowFailure: options.allowFailure })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined
+    throw error
+  }
   if (result.status !== 0) return undefined
   return result.stdout.trim()
 }

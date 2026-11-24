@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -15,6 +15,7 @@ import {
   pullRequestNumber,
 } from '../scripts/pr-publish.mjs'
 import { loadLocalState, resolvePaths } from '../scripts/pr-review-watch.mjs'
+import { ghText } from '../scripts/pr-local-shared.mjs'
 import { acquireLock, forceRelease } from '../scripts/pr-review-lock.mjs'
 
 const CHANGE = 'widget'
@@ -548,4 +549,39 @@ test('a failed ready marking records the failed phase', () => {
 test('listBranchPullRequests rejects a failed gh call', () => {
   assert.throws(() => listBranchPullRequests({ root: '/tmp', branch: BRANCH, gh: () => undefined }), /gh pr list/)
   assert.deepEqual(listBranchPullRequests({ root: '/tmp', branch: BRANCH, gh: () => '[]' }), [])
+})
+
+
+test('a missing gh binary routes the publish gates to offline-land and other spawn errors throw', () => {
+  const fixture = makeFixture()
+  const bin = mkdtempSync(join(tmpdir(), 'dsh-pr-publish-bin-'))
+  const blocked = mkdtempSync(join(tmpdir(), 'dsh-pr-publish-blocked-'))
+  const saved = process.env.PATH
+  try {
+    writeReview(fixture.root, fixture.tree)
+    const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+    assert.ok(gitPath !== '', 'git is on PATH')
+    symlinkSync(gitPath, join(bin, 'git'))
+    process.env.PATH = bin
+    assert.equal(ghText(['repo', 'view', '--json', 'nameWithOwner']), undefined)
+    const result = publishPullRequest({
+      root: fixture.root,
+      worktree: fixture.worktree,
+      session: 'owner-1',
+      apply: true,
+      gh: ghText,
+      git: runGit,
+    })
+    assert.equal(result.offlineLand, true)
+    assert.equal(result.reason, 'github-unreachable')
+    assert.equal(originBranch(fixture.remote, BRANCH), undefined)
+    assert.equal(existsSync(resolvePaths(fixture.root).localState), false)
+
+    writeFileSync(join(blocked, 'gh'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
+    process.env.PATH = blocked
+    assert.throws(() => ghText(['repo', 'view']), /EACCES|permission denied/i)
+  } finally {
+    process.env.PATH = saved
+    cleanup(fixture.root, fixture.remote, bin, blocked)
+  }
 })
