@@ -23,4 +23,4 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run `npm run verify` on Node 24, `npm run check:requirement-length` and `openspec_inspect action=validate strict=true`, and verify all pass without warnings
+- [x] 5.1 Run `npm run verify` on Node 24, `npm run check:requirement-length` and `openspec_inspect action=validate strict=true`, and verify all pass without warnings
