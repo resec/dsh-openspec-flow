@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Describe the shared change parameter the same way on every tool and drop
+  store usage guidance from the tool-level schemas.
