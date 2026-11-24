@@ -32,7 +32,7 @@ export function fixture() {
 
 export function setup(root, reviews, options = {}) {
   clearCache()
-  const fake = createFakeContext({ cwd: root })
+  const fake = createFakeContext({ cwd: options.cwd ?? root })
   const settings = {
     reviews: reviews ?? { draft: { enabled: true }, apply: { enabled: true } },
     worktree: options.worktree ?? { enabled: false },

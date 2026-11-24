@@ -5,7 +5,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
-import { applyLockLocation } from '../lib/review/apply-lock.js'
+import { acquireApplyLocks, applyLockLocation, releaseApplyLocks } from '../lib/review/apply-lock.js'
 import { reviewDirectory } from '../lib/review/store.js'
 import {
   CHANGE, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
@@ -65,6 +65,69 @@ test('a draft-disabled apply takes the lock and refuses a second change', async 
     () => call(fake, 'openspec_apply_next', { change: SECOND }),
     /held by local#add-dark-mode/,
   )
+})
+
+test('a non-git project in a subdirectory checks the lock at the project root', async () => {
+  const root = fixture()
+  copySecond(root)
+  const cwd = join(root, 'pkg')
+  mkdirSync(cwd, { recursive: true })
+  const fake = setup(
+    root,
+    { draft: { enabled: false }, apply: { enabled: false } },
+    { cwd, worktree: { enabled: true } },
+  )
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  assert.equal(existsSync(applyLockLocation(root).file), true)
+  await assert.rejects(
+    () => call(fake, 'openspec_apply_next', { change: SECOND }),
+    /held by local#add-dark-mode/,
+  )
+  await assert.rejects(
+    () => call(fake, 'openspec_archive', { change: SECOND }),
+    /held by local#add-dark-mode/,
+  )
+})
+
+test('a worktree-disabled git project checks the lock from a subdirectory', async () => {
+  const { root } = gitFixture()
+  const cwd = join(root, 'pkg')
+  mkdirSync(cwd, { recursive: true })
+  copySecond(root)
+  const fake = setup(
+    root,
+    { draft: { enabled: false }, apply: { enabled: false } },
+    { cwd },
+  )
+  await call(fake, 'openspec_apply_next', { change: CHANGE })
+  await assert.rejects(
+    () => call(fake, 'openspec_archive', { change: SECOND }),
+    /held by local#add-dark-mode/,
+  )
+})
+
+test('a git worktree session checks the lock at the main worktree root', async () => {
+  const { root, run } = gitFixture()
+  copySecond(root)
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  const worktree = fake.ctx.workingDirectory.get({ id: 'review-test' })
+  assert.notEqual(worktree, root)
+  const held = acquireApplyLocks({
+    cwd: worktree,
+    resolvedRoot: root,
+    implementationRoot: root,
+    change: SECOND,
+    changeRoot: join(root, 'openspec', 'changes', SECOND),
+  })
+  try {
+    await assert.rejects(
+      () => call(fake, 'openspec_archive', { change: CHANGE }),
+      /held by local#second-change/,
+    )
+  } finally {
+    releaseApplyLocks(held.created)
+  }
 })
 
 test('apply is serial and a successful archive releases the lock', async () => {
