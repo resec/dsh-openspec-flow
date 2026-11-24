@@ -27,7 +27,7 @@ None.
 ## Impact
 
 - `scripts/test-env.mjs`, `scripts/run-tests.mjs`, `scripts/affected-tests.mjs`: run-root creation and removal.
-- New `test/temp.mjs`, new `test/run-temp.test.mjs`, new `test/temp.test.mjs`; `test/affected-tests.test.mjs` gains the environment assertion.
-- `test/coverage-stamp.test.mjs`, `test/hooks.test.mjs`, `test/pr-review-land.test.mjs`, `test/check-pre-push.test.mjs`, `test/review-seal.test.mjs`, `test/pr-publish.test.mjs`, `test/pr-local-land.test.mjs`, `test/push-landed.test.mjs`, `test/pr-review-lock.test.mjs`, `test/pr-review-owner-review.test.mjs`, `test/pr-review-watch.test.mjs`, `test/worktree-land.test.mjs`, `test/local-pr-retarget.test.mjs`, `test/inproc-cli.test.mjs`, `test/review-cards-endpoint.test.mjs`.
+- New `test/temp.mjs`, new `test/run-temp.test.mjs`, new `test/temp.test.mjs`, new `test/run-root-lifecycle.test.mjs`; `test/affected-tests.test.mjs` gains the environment assertion.
+- `test/coverage-stamp.test.mjs`, `test/hooks.test.mjs`, `test/pr-review-land.test.mjs`, `test/check-pre-push.test.mjs`, `test/review-seal.test.mjs`, `test/pr-publish.test.mjs`, `test/pr-local-land.test.mjs`, `test/push-landed.test.mjs`, `test/pr-review-lock.test.mjs`, `test/pr-review-owner-review.test.mjs`, `test/pr-review-watch.test.mjs`, `test/worktree-land.test.mjs`, `test/local-pr-retarget.test.mjs`, `test/inproc-cli.test.mjs`, `test/lab-profile-init.test.mjs`, `test/review-cards-endpoint.test.mjs`.
 - `README.md`: the test-entrypoint environment paragraph documents the per-run `TMPDIR` and `DSH_TEST_KEEP_TMP`.
 - No plugin runtime, tool schema, configuration, dependency or data change; no bundle repack.
