@@ -11,7 +11,8 @@
 - [x] 2.2 Assert a resume under a held lock reports the holder instead of judging a changed intent, and still reports the intent verdict once the lock is free.
 - [x] 2.3 Assert a self-report under a held lock reports the holder instead of reading a missing intent, and still reports the missing intent once the lock is free.
 - [x] 2.4 Assert a second start reports the holder while a gated reviewer activation holds the lock, and that the record's `policyHash` matches the policy left on disk.
-- [x] 2.5 Confirm 2.1-2.3 fail against the previous implementation.
+- [x] 2.5 Assert a disabled draft policy still refuses the start with the same error and writes no record.
+- [x] 2.6 Confirm 2.1-2.3 fail against the previous implementation (`git stash push -- lib/tools/review.js`): the start, resume and self-report ordering tests fail; the holder test in 2.4 passes either way because it asserts serialization, not the write point.
 
 ## 3. Document the ordering
 
@@ -20,5 +21,5 @@
 ## 4. Verify
 
 - [x] 4.1 Run `node --test test/review-write-lock.test.mjs`, `test/review-draft.test.mjs`, `test/review-apply.test.mjs`, `test/review-unit.test.mjs`, `test/review-model.test.mjs` and `test/policy.test.mjs`.
-- [x] 4.2 Run `npm run verify` on Node 24 and record the test summary and the coverage verdict.
+- [x] 4.2 Run `npm run verify` on Node 24: 1469 pass, 0 fail; coverage line 98.64%, branch 93.76%, function 99.21%; new code 100.00% line and 100.00% branch.
 - [x] 4.3 Run `openspec validate fix-review-writes-under-lock --strict`, `npm run openspec:check`, `node scripts/check-requirement-length.mjs`, `node scripts/check-generated-skills.mjs` and `node scripts/check-pr-change.mjs` through `/tmp/b3/gates.sh`.
