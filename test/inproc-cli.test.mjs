@@ -175,42 +175,6 @@ test('releases the queue when an awaitable command is aborted', async () => {
   assert.equal(process.cwd(), beforeCwd)
 })
 
-test('terminate ends an awaitable command with exit code 143', async () => {
-  let started
-  const parseStarted = new Promise((resolve) => {
-    started = resolve
-  })
-  let calls = 0
-  const instance = createInprocSpawner({
-    load: () => Promise.resolve({
-      runCli: () => {
-        throw new Error('the fallback must not run')
-      },
-      program: {
-        parseAsync() {
-          calls += 1
-          if (calls === 1) {
-            started()
-            return new Promise(() => {})
-          }
-          console.log('next')
-          return Promise.resolve()
-        },
-      },
-    }),
-    deadlineMs: 10_000,
-  })
-  const first = instance.spawn(spec())
-  await parseStarted
-  first.terminate()
-  const result = await first.done
-  assert.equal(result.exitCode, 143)
-  const second = instance.spawn(spec())
-  const secondResult = await second.done
-  assert.equal(secondResult.exitCode, 0)
-  assert.equal(second.collected.stdout.readFrom(0).text, 'next\n')
-})
-
 test('falls back to runCli when no awaitable entry is exposed', async () => {
   let calls = 0
   const instance = spawner((argv) => {

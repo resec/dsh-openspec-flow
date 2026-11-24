@@ -14,7 +14,9 @@
  * captured console and the process exit code, so two runs cannot overlap. A
  * second call waits for the first one to finish and keeps its own output. When
  * the CLI exposes an awaitable program entry, the runner waits for the command
- * action; otherwise it uses the output-based fallback.
+ * action; otherwise it uses the output-based fallback. The polling fallback
+ * honors `terminate()`; the awaitable path has no cancellation hook, so only
+ * the deadline or the call's signal can end it early.
  */
 
 import { format } from 'node:util'
@@ -26,14 +28,12 @@ const POLL_MS = 5
 const CONSOLE_METHODS = ['log', 'error', 'warn', 'info', 'debug']
 
 /**
- * Await one command promise with the call's deadline, abort signal and handle.
+ * Await one command promise with the call's deadline and abort signal.
  * @param promise - the CLI's awaitable command.
- * @param options - `deadlineMs`, the call's abort `signal` and its `terminated`
- *   signal.
- * @returns `'done'`, `'deadline'` or `'terminated'`; rejects on abort or a
- *   command error.
+ * @param options - `deadlineMs` and the call's abort `signal`.
+ * @returns `'done'` or `'deadline'`; rejects on abort or a command error.
  */
-async function awaitCommand(promise, { deadlineMs, signal, terminated }) {
+async function awaitCommand(promise, { deadlineMs, signal }) {
   let timer
   let onAbort
   try {
@@ -48,7 +48,7 @@ async function awaitCommand(promise, { deadlineMs, signal, terminated }) {
     })
     const completion = Promise.resolve(promise).then(() => 'done')
     completion.catch(() => {})
-    return await Promise.race([completion, timeout, aborted, terminated])
+    return await Promise.race([completion, timeout, aborted])
   } finally {
     clearTimeout(timer)
     if (signal !== undefined) signal.removeEventListener('abort', onAbort)
@@ -103,10 +103,6 @@ export function createInprocSpawner({
       const done = new Promise((resolve, reject) => {
         resolveDone = resolve
         rejectDone = reject
-      })
-      let terminateCall
-      const terminated = new Promise((resolve) => {
-        terminateCall = () => resolve('terminated')
       })
       let release
       const gate = new Promise((resolve) => {
@@ -174,10 +170,8 @@ export function createInprocSpawner({
             const result = await awaitCommand(module.program.parseAsync(spec.argv), {
               deadlineMs,
               signal: spec.signal,
-              terminated,
             })
-            if (result === 'terminated') explicitExit = 143
-            else if (result === 'deadline' && explicitExit === undefined) explicitExit = 124
+            if (result === 'deadline' && explicitExit === undefined) explicitExit = 124
             else if (explicitExit === undefined && process.exitCode !== savedExitCode) {
               assignedExit = process.exitCode
             }
@@ -229,7 +223,6 @@ export function createInprocSpawner({
         terminate() {
           explicitExit = 143
           lastActivity = Date.now()
-          terminateCall()
         },
         waitForExit() {
           return done.then(() => true)
