@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Make every lab boolean switch take no value, so a scenario path after a
+  switch stays a positional argument instead of being read as the switch value.

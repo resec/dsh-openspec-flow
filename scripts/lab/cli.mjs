@@ -25,14 +25,24 @@ import { run as execute } from './core/process.mjs'
 
 const COMMANDS = ['doctor', 'cache', 'up', 'run', 'exec', 'inspect', 'down', 'test']
 
+// Flags that always take a value, and switches that never do. A switch takes
+// no value, so the token after it stays a positional argument: `--offline
+// a.scenario.mjs` is the switch plus one scenario path, not a path-valued
+// `--offline`. An unknown flag is read as a switch for the same reason.
+const VALUE_FLAGS = new Set(['name', 'mode', 'plugin'])
+const SWITCHES = new Set(['offline', 'fresh-dsh', 'mock-only', 'include-real-model', 'cleanup', 'all'])
+
 /**
- * Parse `--flag value` and positional arguments.
+ * Parse `--flag value`, boolean switches and positional arguments.
  * @param argv - arguments after the command.
+ * @param options - `keepIsValue` reads `--keep` as a value, which only the
+ *   `cache prune` command uses; every other command uses it as a switch.
  * @returns flags and positionals.
  */
-export function parseOptions(argv) {
+export function parseOptions(argv, { keepIsValue = false } = {}) {
   const flags = {}
   const positional = []
+  const takesValue = (name) => VALUE_FLAGS.has(name) || (name === 'keep' && keepIsValue)
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index]
     if (value === '--') {
@@ -42,7 +52,7 @@ export function parseOptions(argv) {
     if (value.startsWith('--')) {
       const name = value.slice(2)
       const next = argv[index + 1]
-      if (next === undefined || next.startsWith('--')) flags[name] = true
+      if (next === undefined || next.startsWith('--') || !takesValue(name)) flags[name] = true
       else {
         flags[name] = next
         index++
@@ -93,7 +103,7 @@ export async function main(argv = process.argv.slice(2)) {
     return 0
   }
   if (!COMMANDS.includes(command)) throw new Error(`unknown command ${command}; use ${COMMANDS.join(', ')}`)
-  const { flags, positional } = parseOptions(argv.slice(1))
+  const { flags, positional } = parseOptions(argv.slice(1), { keepIsValue: command === 'cache' })
   if (command === 'doctor') {
     const result = runDoctor()
     console.log(formatDoctor(result).join('\n'))
