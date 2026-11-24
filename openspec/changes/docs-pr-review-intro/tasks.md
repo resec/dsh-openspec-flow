@@ -11,4 +11,4 @@
 
 ## 3. Verify
 
-- [x] 3.1 Run `node --test test/pr-review-land.test.mjs` on Node 24, then run `/tmp/b3/gates.sh docs-pr-review-intro` and record its strict validation, `openspec:check`, requirement-length, generated-skills, `check:pr` and `npm run verify` results.
+- [x] 3.1 Run `node --test test/pr-review-land.test.mjs` on Node 24 (47 pass), then `/tmp/b3/gates.sh docs-pr-review-intro`: `openspec validate` strict valid, `openspec:check` 119 passed, requirement length gate ok, generated skills ok, `check:pr` ok, `npm run verify` 1432 pass with coverage plugin 98.63% line, 93.61% branch, 99.21% function.
