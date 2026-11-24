@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { COMPILE_CACHE, testEnvFor } from '../scripts/test-env.mjs'
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 function scratch(t) {
   const base = mkdtempSync(join(tmpdir(), 'test-env-'))
@@ -62,4 +66,50 @@ test('git-injected variables never reach the test process', () => {
     assert.equal(child.GIT_CONFIG_SYSTEM, '/tmp/system')
   }
   assert.equal(env.GIT_DIR, '/host/.git/worktrees/wt', 'the base environment is left as it was')
+})
+
+function cleanGitEnv() {
+  const env = { ...process.env }
+  for (const name of GIT_INJECTED) delete env[name]
+  return env
+}
+
+function hostGit(cwd, args) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: cleanGitEnv() })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim()
+}
+
+test('a hook-shaped run leaves the hosting repository untouched', (t) => {
+  const base = realpathSync.native(scratch(t))
+  const host = join(base, 'host')
+  mkdirSync(host)
+  hostGit(host, ['init', '-q', '-b', 'main'])
+  hostGit(host, ['config', 'user.email', 'test@example.com'])
+  hostGit(host, ['config', 'user.name', 'Test'])
+  writeFileSync(join(host, 'README.md'), 'host\n')
+  hostGit(host, ['add', 'README.md'])
+  hostGit(host, ['commit', '-qm', 'host'])
+  const linked = join(base, 'linked')
+  hostGit(host, ['worktree', 'add', '-q', '-b', 'linked-branch', linked])
+  const hostGitDir = join(host, '.git', 'worktrees', 'linked')
+  assert.equal(existsSync(join(hostGitDir, 'HEAD')), true, 'the linked worktree has its own git dir')
+  const refsBefore = hostGit(host, ['for-each-ref'])
+  const configBefore = hostGit(host, ['config', '--local', '--list'])
+
+  const fixture = join(base, 'fixture')
+  mkdirSync(fixture)
+  const env = testEnvFor(false, { ...process.env, GIT_DIR: hostGitDir, GIT_WORK_TREE: linked })
+  const helper = new URL('./git-fixture.mjs', import.meta.url).href
+  const child = spawnSync(process.execPath, [
+    '--input-type=module',
+    '-e',
+    `const { initFixtureRepo } = await import(${JSON.stringify(helper)}); initFixtureRepo(process.argv[1], ['-q', '-b', 'main'])`,
+    fixture,
+  ], { cwd: ROOT, encoding: 'utf8', env })
+
+  assert.equal(child.status, 0, child.stderr)
+  assert.equal(existsSync(join(fixture, '.git', 'HEAD')), true, 'the fixture root owns its repository')
+  assert.equal(hostGit(host, ['for-each-ref']), refsBefore, 'the hosting repository gained or lost a ref')
+  assert.equal(hostGit(host, ['config', '--local', '--list']), configBefore, 'the hosting repository configuration changed')
 })
