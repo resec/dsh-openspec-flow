@@ -301,6 +301,44 @@ test('land rejects a non-linear feature history before updating main', async () 
   assert.equal(readApplyState(root, null, CHANGE).status, 'active')
 })
 
+test('land refuses a worktree head that is not its branch tip before updating main', async () => {
+  const { root, run, fake, state } = await readyLand()
+  writeFileSync(join(state.worktree, 'feature.txt'), 'feature\n')
+  run(['-C', state.worktree, 'add', 'feature.txt'])
+  run(['-C', state.worktree, 'commit', '-m', 'feature work'])
+  run(['-C', state.worktree, 'checkout', '--detach', 'HEAD~1'])
+  const before = run(['rev-parse', 'HEAD'])
+  const worktreeHead = run(['-C', state.worktree, 'rev-parse', 'HEAD'])
+  assert.notEqual(run(['rev-parse', state.branch]), worktreeHead)
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /not the tip of its branch/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']), before)
+  assert.equal(run(['-C', state.worktree, 'rev-parse', 'HEAD']), worktreeHead)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'active')
+  assert.equal(existsSync(state.worktree), true)
+  assert.equal(run(['branch', '--list', state.branch]).trim(), state.branch)
+  assert.equal(existsSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md')), true)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.rebaseReview, undefined)
+})
+
+test('land refuses a worktree head ahead of its branch before updating main', async () => {
+  const { root, run, fake, state } = await readyLand()
+  run(['-C', state.worktree, 'checkout', '--detach'])
+  run(['-C', state.worktree, 'commit', '--allow-empty', '-m', 'detached work'])
+  const before = run(['rev-parse', 'HEAD'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /not the tip of its branch/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']), before)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'active')
+  assert.equal(existsSync(state.worktree), true)
+  assert.equal(run(['branch', '--list', state.branch]).trim(), state.branch)
+})
+
 test('land rechecks main under the locks and preserves the moved head', async () => {
   const { root, run, fake, state } = await readyLand()
   const before = run(['rev-parse', 'HEAD'])
