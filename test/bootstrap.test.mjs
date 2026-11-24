@@ -323,7 +323,7 @@ test('the bootstrap browser step contends on the same shared lock', () => {
   const held = acquireInstallLockSync(installLockPath(browsers), 'parent', { timeoutMs: 1000 })
   try {
     assert.throws(
-      () => runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, install, lockOptions: { timeoutMs: 30, pollMs: 5 } }),
+      () => runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, root, install, lockOptions: { timeoutMs: 30, pollMs: 5 } }),
       /timed out waiting/,
     )
     assert.equal(existsSync(marker), true)
@@ -332,10 +332,49 @@ test('the bootstrap browser step contends on the same shared lock', () => {
     releaseInstallLock(held)
   }
   try {
-    assert.deepEqual(runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, install }), { installed: true, reused: false })
+    assert.deepEqual(runBrowserStep({ resetBrowsers: true }, { browsersPath: browsers, root, install }), { installed: true, reused: false })
     assert.equal(installs, 1)
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the bootstrap browser step refuses a shared browser path', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-reset-root-'))
+  const shared = mkdtempSync(join(tmpdir(), 'bootstrap-reset-shared-'))
+  const marker = join(shared, 'chromium-9999', 'chrome')
+  let installs = 0
+  mkdirSync(join(shared, 'chromium-9999'), { recursive: true })
+  writeFileSync(marker, 'other project')
+  try {
+    assert.throws(
+      () => runBrowserStep({ resetBrowsers: true }, { browsersPath: shared, root, install: () => { installs += 1 } }),
+      /refusing to remove/,
+    )
+    assert.equal(readFileSync(marker, 'utf8'), 'other project')
+    assert.equal(installs, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(shared, { recursive: true, force: true })
+  }
+})
+
+test('--reset-browsers with a shared path exits nonzero and keeps the browsers', () => {
+  const shared = mkdtempSync(join(tmpdir(), 'bootstrap-reset-cli-'))
+  const marker = join(shared, 'chromium-9999', 'chrome')
+  mkdirSync(join(shared, 'chromium-9999'), { recursive: true })
+  writeFileSync(marker, 'other project')
+  try {
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts', 'bootstrap.mjs'), '--reset-browsers'], {
+      encoding: 'utf8',
+      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: shared },
+    })
+    assert.equal(result.status, 1, result.stdout)
+    assert.match(result.stderr, /bootstrap: refusing to remove/)
+    assert.ok(result.stderr.includes(shared), result.stderr)
+    assert.equal(readFileSync(marker, 'utf8'), 'other project')
+  } finally {
+    rmSync(shared, { recursive: true, force: true })
   }
 })
 

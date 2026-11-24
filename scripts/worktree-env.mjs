@@ -8,7 +8,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findBrowserExecutable } from './lab/core/doctor.mjs'
@@ -311,13 +311,38 @@ export function installChromium({ browsersPath, host, cwd = process.cwd(), spawn
 }
 
 /**
+ * Refuse a browser directory that a reset must not remove.
+ *
+ * `--reset-browsers` deletes the directory recursively, so it may only touch a
+ * browser cache this checkout owns: a directory inside the repository root,
+ * such as the default `.cache/lab/pw-browsers`. `PLAYWRIGHT_BROWSERS_PATH` can
+ * name a cache shared with other projects or with the host, and removing that
+ * would delete browsers this repository does not own.
+ * @param options - browser path and the repository root that bounds it.
+ * @returns the resolved browser path when a reset may remove it.
+ * @throws when the path is the repository root itself or lies outside it.
+ */
+export function assertResettableBrowsersPath({ browsersPath, root }) {
+  const target = resolve(browsersPath)
+  const repository = resolve(root)
+  const relativePath = relative(repository, target)
+  const inside = relativePath !== '' && relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath)
+  if (inside) return target
+  const where = relativePath === '' ? 'is the repository root itself' : `is outside the repository at ${repository}`
+  throw new Error(
+    `refusing to remove ${target}: --reset-browsers only removes a browser cache inside ${repository}, and ${target} ${where}. Remove that directory yourself, or run --reset-browsers with PLAYWRIGHT_BROWSERS_PATH unset to reset ${join(repository, '.cache', 'lab', 'pw-browsers')}.`,
+  )
+}
+
+/**
  * Prepare Chromium under the shared lock.
- * @param options - browser path, reset flag, host, install seam and lock options.
+ * @param options - browser path, reset flag, repository root, host, install seam and lock options.
  * @returns `{ installed, reused }`.
  */
 export function prepareChromium({
   browsersPath,
   reset = false,
+  root = process.cwd(),
   host,
   install = installChromium,
   cwd = process.cwd(),
@@ -325,6 +350,7 @@ export function prepareChromium({
   timeoutMs,
   pollMs,
 } = {}) {
+  if (reset) assertResettableBrowsersPath({ browsersPath, root })
   const lockPath = installLockPath(browsersPath)
   return withInstallLockSync(lockPath, 'chromium', () => {
     if (reset) rmSync(browsersPath, { recursive: true, force: true })

@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
 import { MIN_FREE_BYTES } from './bootstrap-lib.mjs'
-import { prepareChromium, resolveBrowsersPath } from './worktree-env.mjs'
+import { assertResettableBrowsersPath, prepareChromium, resolveBrowsersPath } from './worktree-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const NPM_CACHE = process.env.npm_config_cache ?? join(ROOT, '.cache', 'npm')
@@ -127,10 +127,10 @@ export function playwrightEnv(host) {
 /**
  * Run the Chromium preparation step, including the download-host option.
  * @param options - parsed bootstrap options.
- * @param overrides - browser path, npm environment and install seam.
+ * @param overrides - browser path, repository root, npm environment and install seam.
  * @returns `{ installed, reused }`.
  */
-export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, npmEnv = {}, install, lockOptions = {} } = {}) {
+export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, root = ROOT, npmEnv = {}, install, lockOptions = {} } = {}) {
   const prepare = install ?? (({ browsersPath: browser, host }) => run('npx', ['playwright', 'install', 'chromium'], {
     ...npmEnv,
     ...playwrightEnv(host),
@@ -139,6 +139,7 @@ export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, np
   return prepareChromium({
     browsersPath: path,
     reset: options.resetBrowsers,
+    root,
     host: options.playwrightHost,
     cwd: ROOT,
     install: prepare,
@@ -193,6 +194,8 @@ function main() {
     process.stdout.write(USAGE)
     return
   }
+
+  if (options.resetBrowsers) assertResettableBrowsersPath({ browsersPath: BROWSERS_PATH, root: ROOT })
 
   assertCurrentNode()
 

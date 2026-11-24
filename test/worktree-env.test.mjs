@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 import {
   acquireInstallLockSync,
+  assertResettableBrowsersPath,
   checkEnvironment,
   initEnvironment,
   inspectInstallLock,
@@ -108,6 +109,55 @@ test('resolves lab browser and npm paths from root and environment', () => {
   assert.equal(resolveNpmCache({ fallback: '/fallback', env: { LAB_NPM_CACHE: '/lab' } }), '/lab')
 })
 
+test('a browser reset is confined to a cache inside the repository', () => {
+  const repository = mkdtempSync(join(tmpdir(), 'dsh-reset-guard-'))
+  const host = mkdtempSync(join(tmpdir(), 'dsh-reset-host-'))
+  const shared = join(host, 'pw-browsers')
+  try {
+    const browsers = join(repository, '.cache', 'lab', 'pw-browsers')
+    assert.equal(assertResettableBrowsersPath({ browsersPath: browsers, root: repository }), browsers)
+    assert.throws(
+      () => assertResettableBrowsersPath({ browsersPath: shared, root: repository }),
+      (error) => {
+        assert.match(error.message, /refusing to remove/)
+        assert.ok(error.message.includes(shared), error.message)
+        assert.ok(error.message.includes(`outside the repository at ${repository}`), error.message)
+        assert.match(error.message, /Remove that directory yourself/)
+        assert.match(error.message, /PLAYWRIGHT_BROWSERS_PATH unset/)
+        return true
+      },
+    )
+    assert.throws(
+      () => assertResettableBrowsersPath({ browsersPath: repository, root: repository }),
+      /is the repository root itself/,
+    )
+  } finally {
+    rmSync(repository, { recursive: true, force: true })
+    rmSync(host, { recursive: true, force: true })
+  }
+})
+
+test('a reset refuses a shared browser directory and leaves it alone', () => {
+  const repository = mkdtempSync(join(tmpdir(), 'dsh-reset-repo-'))
+  const shared = mkdtempSync(join(tmpdir(), 'dsh-reset-shared-'))
+  const marker = join(shared, 'chromium-9999', 'chrome')
+  let installs = 0
+  mkdirSync(join(shared, 'chromium-9999'), { recursive: true })
+  writeFileSync(marker, 'other project')
+  try {
+    assert.throws(
+      () => prepareChromium({ browsersPath: shared, reset: true, root: repository, install: () => { installs += 1 } }),
+      /refusing to remove/,
+    )
+    assert.equal(readFileSync(marker, 'utf8'), 'other project')
+    assert.equal(installs, 0)
+    assert.equal(existsSync(installLockPath(shared)), false)
+  } finally {
+    rmSync(repository, { recursive: true, force: true })
+    rmSync(shared, { recursive: true, force: true })
+  }
+})
+
 test('prepareChromium installs once, reuses the browser and resets under the lock', () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-chromium-'))
   const browsers = join(root, 'pw-browsers')
@@ -120,7 +170,7 @@ test('prepareChromium installs once, reuses the browser and resets under the loc
   try {
     assert.deepEqual(prepareChromium({ browsersPath: browsers, install }), { installed: true, reused: false })
     assert.deepEqual(prepareChromium({ browsersPath: browsers, install }), { installed: false, reused: true })
-    assert.deepEqual(prepareChromium({ browsersPath: browsers, reset: true, install }), { installed: true, reused: false })
+    assert.deepEqual(prepareChromium({ browsersPath: browsers, reset: true, root, install }), { installed: true, reused: false })
     assert.equal(installations.length, 2)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -210,7 +260,7 @@ test('a reset blocks on the held lock and keeps the browser until release', () =
   const held = acquireInstallLockSync(installLockPath(browsers), 'parent', { timeoutMs: 1000 })
   try {
     assert.throws(
-      () => prepareChromium({ browsersPath: browsers, reset: true, install, timeoutMs: 30, pollMs: 5 }),
+      () => prepareChromium({ browsersPath: browsers, reset: true, root, install, timeoutMs: 30, pollMs: 5 }),
       /timed out waiting/,
     )
     assert.equal(existsSync(marker), true)
@@ -219,7 +269,7 @@ test('a reset blocks on the held lock and keeps the browser until release', () =
     releaseInstallLock(held)
   }
   try {
-    assert.deepEqual(prepareChromium({ browsersPath: browsers, reset: true, install }), { installed: true, reused: false })
+    assert.deepEqual(prepareChromium({ browsersPath: browsers, reset: true, root, install }), { installed: true, reused: false })
     assert.equal(installs, 1)
     assert.equal(readFileSync(marker, 'utf8'), 'installed')
   } finally {
