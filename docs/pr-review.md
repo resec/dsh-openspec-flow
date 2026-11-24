@@ -15,8 +15,8 @@ This is the repository-side loop for reviewing open pull requests with the insta
   ```
 
   Confirm this before enabling the schedule. An apply review with `reviewers: 0` is self-review and is not used by this loop.
-- The repository is clean in the main worktree. The script creates its own checkout under `.cache/pr-review/worktrees/` and never writes the main worktree.
-- The `owner-review` label exists. Verify it with `gh label list --search owner-review`; if it is absent, create it with `gh label create owner-review --description "require owner review before auto merge"`.
+- The repository is clean in the main worktree. The watch creates its own checkout under `.cache/pr-review/worktrees/` and never writes the main worktree. Landing is different: it runs in the main worktree, fast-forwards local `main` to `origin/main` and commits the archive there, so keep that checkout clean.
+- The `owner-review` label exists. Verify it with `gh label list --search owner-review`; if it is absent, create it with `gh label create owner-review --description "queue signal only, not a landing authorization; mergeable is the only landing authorization"`.
 
 ## Commands
 
