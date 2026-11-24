@@ -545,14 +545,18 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'reviewed') throw new Error(`PR #${n} landing phase is ${entry.phase}, not reviewed`)
   assertReviewRecord(root, entry)
+  const pr = readPullRequest({ root, number: n, gh: ghRunner })
+  const sameRepository = pr.isCrossRepository !== true
   try {
     git(root, ['fetch', 'origin', 'main'])
     git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
     const fetched = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
     if (fetched !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
     const originMain = git(root, ['rev-parse', 'origin/main'])
-    if (originMain !== entry.preMergeMain) throw new Error('origin/main moved; sync and review again')
-    if (!headContainsMain(root, entry.prHead)) throw new Error(`PR #${n} is behind origin/main; sync and review again`)
+    if (originMain !== entry.preMergeMain) {
+      throw new Error(sameRepository ? 'origin/main moved; sync and review again' : 'origin/main moved; the author must update the branch')
+    }
+    if (!headContainsMain(root, entry.prHead)) throw new Error(latestMainMessage(n, sameRepository))
     const plan = planLanding({ root, number: n, gh: ghRunner })
     if (plan.head !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
     if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
