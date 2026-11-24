@@ -18,6 +18,7 @@ import {
   resolveEnvironment,
   resolveNpmCache,
 } from '../scripts/worktree-env.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const MODULE = fileURLToPath(new URL('../scripts/worktree-env.mjs', import.meta.url))
 
@@ -29,7 +30,7 @@ function git(cwd, args) {
 
 function makeRepository() {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-worktree-env-'))
-  git(directory, ['init', '-q'])
+  initFixtureRepo(directory, ['-q'])
   git(directory, ['config', 'user.email', 'test@example.com'])
   git(directory, ['config', 'user.name', 'Test'])
   writeFileSync(join(directory, 'README.md'), '# test\n')

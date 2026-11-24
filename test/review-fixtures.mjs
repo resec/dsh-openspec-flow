@@ -17,6 +17,7 @@ import { clearCache } from '../lib/cache.js'
 import { reviewDirectory } from '../lib/review/store.js'
 import { clearRoundWatches } from '../lib/review/watch.js'
 import { createFakeContext } from './fake-context.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 export const PROBE_ROOT = fileURLToPath(new URL('./fixtures/probe/openspec', import.meta.url))
 export const CHANGE = 'add-dark-mode'
@@ -116,7 +117,7 @@ export function gitFixture() {
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   run(['add', 'openspec'])

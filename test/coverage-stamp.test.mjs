@@ -15,6 +15,7 @@ import {
   writeStamp,
 } from '../scripts/coverage-stamp.mjs'
 import { resolveBase } from '../scripts/coverage-gate.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 /** @param root - git repository root. @param args - git arguments. @returns stdout. */
 function git(root, args) {
@@ -34,7 +35,7 @@ function git(root, args) {
  */
 function makeRepo() {
   const root = mkdtempSync(join(tmpdir(), 'coverage-stamp-'))
-  git(root, ['init', '-b', 'main'])
+  initFixtureRepo(root, ['-b', 'main'])
   git(root, ['config', 'user.email', 'stamp@example.test'])
   git(root, ['config', 'user.name', 'Stamp Test'])
   writeFileSync(join(root, '.gitignore'), '.cache/\n')

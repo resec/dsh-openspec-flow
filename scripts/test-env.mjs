@@ -8,6 +8,10 @@
  * that bytecode deserialised from the cache can make V8 coverage less precise.
  *
  * The path stays absolute: a relative value would resolve inside fixtures.
+ *
+ * The variables git injects into a hook it runs are dropped: a run started from
+ * a `pre-push` hook in a linked worktree would otherwise hand every fixture's
+ * `git init` the path of the hosting repository.
  */
 
 import { mkdirSync, realpathSync } from 'node:fs'
@@ -19,6 +23,17 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /** Absolute compile-cache directory shared by every plain test run. */
 export const COMPILE_CACHE = join(ROOT, '.cache', 'node-compile')
+
+/** Variables git sets for a process it starts; each one redirects a later `git` command. */
+const GIT_INJECTED = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+]
 
 /**
  * Build the environment for a plain test run.
@@ -67,11 +82,15 @@ function canonicalTempDir(env = process.env) {
 /**
  * Pick the environment for a run.
  *
+ * Both runs leave out the git-injected variables; `GIT_CONFIG_GLOBAL` and the
+ * other settings a test relies on are passed through.
+ *
  * @param coverage - whether the run collects coverage.
  * @param env - base environment, defaulting to the current process.
  * @returns the environment for the child process.
  */
 export function testEnvFor(coverage, env = process.env) {
   const child = coverage ? coverageTestEnv(env) : plainTestEnv(env)
+  for (const name of GIT_INJECTED) delete child[name]
   return { ...child, TMPDIR: canonicalTempDir(env) }
 }

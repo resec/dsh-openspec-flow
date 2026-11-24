@@ -7,7 +7,6 @@
  */
 
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +25,7 @@ import {
 } from '../lib/review/settings.js'
 import { ensurePolicy } from '../lib/review/policy.js'
 import { reviewDirectory, writeJsonAtomic } from '../lib/review/store.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const RESOLVED = { provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' }
 
@@ -670,7 +670,7 @@ test('the route registers as one prefix and unregisters with the plugin', async 
 test('a legacy policy is listed once and migrated to the shared root', () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-openspec-legacy-policy-'))
   try {
-    execFileSync('git', ['-C', root, 'init', '-q'])
+    initFixtureRepo(root, ['-q'])
     const legacy = join(root, 'openspec', '.review', 'local#demo')
     mkdirSync(legacy, { recursive: true })
     const reviews = {

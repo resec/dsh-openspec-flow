@@ -9,6 +9,7 @@ import { gitCommonDir, reviewRoot } from '../lib/review/store.js'
 import {
   APPLY_STATE_SCHEMA_VERSION, applyStatePath, applyStateRoot, mainWorktreeRoot, readApplyState, writeApplyState,
 } from '../lib/worktree/state.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const roots = []
 
@@ -24,7 +25,7 @@ function git(root, args) {
 
 function repository() {
   const root = temporary()
-  git(root, ['init', '-q'])
+  initFixtureRepo(root, ['-q'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   writeFileSync(join(root, 'README.md'), 'root\n')

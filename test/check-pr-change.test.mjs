@@ -15,6 +15,7 @@ import {
   parseHead,
   uncheckedTasks,
 } from '../scripts/check-pr-change.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 test('recognizes active change paths and excludes the archive', () => {
   assert.equal(isActiveChangePath('openspec/changes/add-thing/proposal.md'), true)
@@ -124,7 +125,7 @@ function writeFileAt(root, path, text) {
  */
 function makeMergeCheckout({ prFiles = {}, mainFiles = {}, prDelete = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-pr-change-'))
-  gitRun(root, ['init', '-q', '-b', 'main'])
+  initFixtureRepo(root, ['-q', '-b', 'main'])
   gitRun(root, ['config', 'user.email', 'test@example.test'])
   gitRun(root, ['config', 'user.name', 'Test'])
   writeFileAt(root, 'package.json', '{"name":"widget","version":"1.0.0"}\n')

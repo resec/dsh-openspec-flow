@@ -9,6 +9,7 @@ import { gitCommonDir } from '../lib/review/store.js'
 import {
   acquireLock, acquireOrdered, inspectLock, isDeadLock, lockPath, recoverLock, releaseLock,
 } from '../lib/worktree/lock.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const roots = []
 
@@ -20,7 +21,7 @@ function temporary() {
 
 function repository() {
   const root = temporary()
-  execFileSync('git', ['-C', root, 'init', '-q'])
+  initFixtureRepo(root, ['-q'])
   execFileSync('git', ['-C', root, 'config', 'user.email', 'test@example.com'])
   execFileSync('git', ['-C', root, 'config', 'user.name', 'Test'])
   writeFileSync(join(root, 'README.md'), 'root\n')

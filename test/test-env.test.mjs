@@ -41,3 +41,25 @@ test('the compile-cache split stays unchanged', () => {
   assert.equal(testEnvFor(false).NODE_COMPILE_CACHE, COMPILE_CACHE)
   assert.equal(testEnvFor(true).NODE_COMPILE_CACHE, undefined)
 })
+
+const GIT_INJECTED = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+]
+
+test('git-injected variables never reach the test process', () => {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/tmp/fixture-gitconfig', GIT_CONFIG_SYSTEM: '/tmp/system' }
+  for (const name of GIT_INJECTED) env[name] = name === 'GIT_PREFIX' || name === 'GIT_WORK_TREE' ? '' : '/host/.git/worktrees/wt'
+  for (const coverage of [false, true]) {
+    const child = testEnvFor(coverage, env)
+    for (const name of GIT_INJECTED) assert.equal(Object.hasOwn(child, name), false, `${name} is dropped`)
+    assert.equal(child.GIT_CONFIG_GLOBAL, '/tmp/fixture-gitconfig')
+    assert.equal(child.GIT_CONFIG_SYSTEM, '/tmp/system')
+  }
+  assert.equal(env.GIT_DIR, '/host/.git/worktrees/wt', 'the base environment is left as it was')
+})

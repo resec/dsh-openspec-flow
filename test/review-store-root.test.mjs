@@ -8,6 +8,7 @@ import test from 'node:test'
 import {
   clearGitRootCache, ensureReviewIgnored, gitCommonDir, gitTopLevel, legacyReviewDirectory, reviewDirectory, reviewRecordName, reviewRoot,
 } from '../lib/review/store.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const roots = []
 
@@ -23,7 +24,7 @@ function git(root, args) {
 
 function repository() {
   const root = temporary()
-  git(root, ['init', '-q'])
+  initFixtureRepo(root, ['-q'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   writeFileSync(join(root, 'README.md'), 'root\n')

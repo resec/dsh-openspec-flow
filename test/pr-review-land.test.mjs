@@ -27,6 +27,7 @@ import {
   trustedPass,
 } from '../scripts/pr-review-land.mjs'
 import { resolvePaths, saveState } from '../scripts/pr-review-watch.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const HEAD = 'a'.repeat(40)
 const LOGIN = 'maintainer'
@@ -39,7 +40,7 @@ function git(cwd, args) {
 
 function makeRepo() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-pr-review-land-'))
-  git(root, ['init', '-q', '-b', 'main'])
+  initFixtureRepo(root, ['-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   const change = join(root, 'openspec', 'changes', 'widget')
@@ -52,7 +53,7 @@ function makeRepo() {
   git(root, ['add', '.'])
   git(root, ['commit', '-qm', 'initial'])
   const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-review-land-remote-'))
-  git(remote, ['init', '--bare', '-q'])
+  initFixtureRepo(remote, ['--bare', '-q'])
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return { root, remote }
