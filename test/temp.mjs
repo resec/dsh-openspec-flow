@@ -28,11 +28,20 @@ export function tempDir(prefix) {
 
 /**
  * Remove every recorded root and clear the registry. A second call is a no-op,
- * and a root a test removed on its own is skipped by the force delete.
+ * and a root a test removed on its own is skipped by the force delete. A root
+ * that cannot be removed is reported without failing the file's teardown, so a
+ * cleanup problem never turns a passing suite red.
  */
 export function cleanupTempDirs() {
-  for (const directory of CREATED) {
-    rmSync(directory, { recursive: true, force: true })
+  try {
+    for (const directory of CREATED) {
+      try {
+        rmSync(directory, { recursive: true, force: true })
+      } catch (error) {
+        console.error(`temporary fixtures: cannot remove ${directory}: ${error.message}`)
+      }
+    }
+  } finally {
+    CREATED.clear()
   }
-  CREATED.clear()
 }
