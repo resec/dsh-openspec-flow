@@ -187,8 +187,18 @@ Run the PR review watch for this repository in this fixed session:
    node scripts/pr-local-land.mjs status and report any local pull request
    whose entry phase is merged, retargeted, landed or landed-offline, or whose
    pull request is merged but not pushed; never retarget, land or merge a
-   local pull request here.
-4. Resume one phase of an unfinished contributor landing, then stop:
+   local pull request here. When lock.stale is true, run
+   node scripts/pr-review-lock.mjs force-release --reason "<the owner session ended>"
+   and re-run the preflight; when the lock is held and not stale, do not
+   start a contributor landing.
+4. Before the first contributor landing command in the run, acquire the
+   landing lock: node scripts/pr-review-lock.mjs acquire
+   --owner-session <scheduled-session> --pr <n> --json. Keep the token and
+   pass --session <scheduled-session> to every pr-review-land.mjs landing
+   command. finish releases the lock; when the run stops without finish, run
+   node scripts/pr-review-lock.mjs release --session <scheduled-session>
+   --token <token>.
+5. Resume one phase of an unfinished contributor landing, then stop:
    - prepared: read the apply record with
      openspec_review action=status review=apply change=<change>
      worktree=<landing worktree>, then run
@@ -199,34 +209,43 @@ Run the PR review watch for this repository in this fixed session:
      fails, run node scripts/pr-review-land.mjs state --fail <n>
      --error "<text>" --apply and stop.
      When the record treeSha matches and state=passed, run
-     node scripts/pr-review-land.mjs reviewed <n> --apply and then
-     node scripts/pr-review-land.mjs merge <n> --apply in the same run.
+     node scripts/pr-review-land.mjs reviewed <n> --apply
+     --session <scheduled-session> and then
+     node scripts/pr-review-land.mjs merge <n> --apply
+     --session <scheduled-session> in the same run.
      When the record treeSha matches and state=in-review, follow the status
      nextAction without disposing a finding: a wait nextAction calls
      openspec_review action=wait review=apply, a resume nextAction calls
      openspec_review action=resume review=apply, and a dispose nextAction
      calls resume anyway so the failed resume records review-failed through
      state --fail.
-   - reviewed: node scripts/pr-review-land.mjs merge <n> --apply.
+   - reviewed: node scripts/pr-review-land.mjs merge <n> --apply
+     --session <scheduled-session>.
    - archive-pending: run openspec_archive on main, commit, push, then
-     archive <n> --commit <sha> --apply, push <n> --apply and finish <n> --apply.
+     archive <n> --commit <sha> --apply --session <scheduled-session>,
+     push <n> --apply --session <scheduled-session> and
+     finish <n> --apply --session <scheduled-session>.
    - review-failed: report it and stop.
-5. When a mergeable contributor candidate exists and the landing lock is
-   free, land it before reviewing: choose the first candidate. When it is
-   syncable, run node scripts/pr-review-land.mjs sync <n> --apply and stop;
-   the next poll reviews the new head once its CI rollup is green. Otherwise
-   run node scripts/pr-review-land.mjs plan <n>; when the plan refuses with
-   the sync instruction, run node scripts/pr-review-land.mjs sync <n> --apply
-   and stop. Otherwise run node scripts/pr-review-land.mjs prepare <n> --apply
-   and stop.
-6. Otherwise, when no landing phase advanced (or a local owner holds the
+6. When a mergeable contributor candidate exists and the landing lock is
+   free, acquire it as in step 4 and land it before reviewing: choose the
+   first candidate. When it is syncable, run
+   node scripts/pr-review-land.mjs sync <n> --apply
+   --session <scheduled-session> and stop, then release the lock; the next
+   poll reviews the new head once its CI rollup is green. Otherwise run
+   node scripts/pr-review-land.mjs plan <n>; when the plan refuses with the
+   sync instruction, run node scripts/pr-review-land.mjs sync <n> --apply
+   --session <scheduled-session> and stop, then release the lock. Otherwise
+   run node scripts/pr-review-land.mjs prepare <n> --apply
+   --session <scheduled-session> and stop, then release the lock.
+7. Otherwise, when no landing phase advanced (or a local owner holds the
    landing lock), run
    node scripts/pr-review-watch.mjs poll --json, review one candidate through
    the Session flow and stop. After a pass, run
    node scripts/pr-review-owner-review.mjs <n> --apply.
 Process one contributor PR at a time and at most one landing phase per run,
 except that a ready final review records reviewed, merges, archives, pushes
-and finishes in the same locked run. A synced head stops the run. Local
+and finishes in the same run while holding the landing lock. A synced head
+stops the run and releases the lock. Local
 pull requests are reported, never reviewed or landed here. Do not modify PR
 code or a fork branch; a same-repository branch behind main may be updated
 only through the sync command under the mergeable label. Do not add or remove

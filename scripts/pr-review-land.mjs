@@ -27,7 +27,7 @@ import {
   UsageError,
   withRunLock,
 } from './pr-review-watch.mjs'
-import { readLockOwner } from './pr-review-lock.mjs'
+import { readLockOwner, releaseLock } from './pr-review-lock.mjs'
 
 export { trustedPass }
 
@@ -160,10 +160,22 @@ function ghLogin(ghRunner, root) {
   return ghRunner(['api', 'user', '--jq', '.login'], root)
 }
 
-/** Refuse a landing command while a local owner holds the landing lock. */
-export function assertLandingLockFree(root) {
+/**
+ * Refuse a landing command while another session holds the landing lock.
+ *
+ * A contributor landing run may hold the lock itself: when `session` matches
+ * the recorded owner, the command proceeds. A supplied token must match.
+ * @returns the lock owner, or undefined when free.
+ */
+export function assertLandingLockFree(root, { session, token } = {}) {
   const owner = readLockOwner(root)
   if (owner === undefined) return undefined
+  if (typeof session === 'string' && session !== '' && owner.ownerSession === session) {
+    if (typeof token === 'string' && token !== '' && token !== owner.token) {
+      throw new Error(`the landing lock token does not match the token recorded for session ${session}`)
+    }
+    return owner
+  }
   throw new Error(`the landing lock is held by session ${owner.ownerSession} for PR #${owner.pr}; wait for the local owner to release it`)
 }
 
@@ -252,8 +264,8 @@ function assertLatestMain(root, plan) {
 }
 
 /** Evaluate all landing gates. */
-function planLandingChecked({ root, number, gh: ghRunner, checkAhead }) {
-  assertLandingLockFree(root)
+function planLandingChecked({ root, number, gh: ghRunner, checkAhead, session, token }) {
+  assertLandingLockFree(root, { session, token })
   const plan = evaluateLanding({ root, number, gh: ghRunner })
   assertMainReady(root)
   if (checkAhead) assertLocalMainNotAhead(root)
@@ -261,8 +273,8 @@ function planLandingChecked({ root, number, gh: ghRunner, checkAhead }) {
   return plan
 }
 
-export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh } = {}) {
-  return planLandingChecked({ root, number, gh: ghRunner, checkAhead: true })
+export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh, session, token } = {}) {
+  return planLandingChecked({ root, number, gh: ghRunner, checkAhead: true, session, token })
 }
 
 /** List landing candidates without writing watch or landing state. */
@@ -356,9 +368,9 @@ export function assertSingleLanding(lands, number) {
 }
 
 /** Prepare the local landing branch and state. */
-export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false } = {}) {
+export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  const plan = planLanding({ root, number: n, gh: ghRunner })
+  const plan = planLanding({ root, number: n, gh: ghRunner, session, token })
   if (!apply) return { dryRun: true, ...plan }
   const lands = loadLandings(root)
   assertSingleLanding(lands, n)
@@ -431,9 +443,11 @@ export function syncLanding({
   pollAttempts = 60,
   pollIntervalMs = 1000,
   sleep = sleepSync,
+  session,
+  token,
 } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   assertNotLocal(root, n)
   assertMainReady(root)
   assertLocalMainNotAhead(root)
@@ -519,9 +533,9 @@ function assertReviewRecord(root, entry, expectedTree = entry.reviewedTree) {
 }
 
 /** Verify the reviewed tree and advance to reviewed. */
-export function reviewedLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function reviewedLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state; run prepare first`)
@@ -575,9 +589,9 @@ function completeMergedLanding(root, lands, entry) {
 }
 
 /** Merge the reviewed pull request with gh rebase. */
-export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false } = {}) {
+export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -608,7 +622,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
     failMergeGate(sameRepository ? 'origin/main moved; sync and review again' : 'origin/main moved; the author must update the branch')
   }
   if (!headContainsMain(root, entry.prHead)) failMergeGate(latestMainMessage(n, sameRepository))
-  const plan = planLandingChecked({ root, number: n, gh: ghRunner, checkAhead: false })
+  const plan = planLandingChecked({ root, number: n, gh: ghRunner, checkAhead: false, session, token })
   if (plan.head !== entry.prHead) failMergeGate(`PR #${n} head moved; prepare and review again`)
   if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
   try {
@@ -627,9 +641,9 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
 }
 
 /** Record the archive commit after the session archived on main. */
-export function archiveLanding({ root = mainWorktree(), number, commit, apply = false } = {}) {
+export function archiveLanding({ root = mainWorktree(), number, commit, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -663,9 +677,9 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
 }
 
 /** Record the pushed head after the session pushes main. */
-export function pushLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function pushLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -695,9 +709,9 @@ export function pushLanding({ root = mainWorktree(), number, apply = false } = {
 }
 
 /** Finish a pushed landing and clean its checkout. */
-export function finishLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function finishLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -723,13 +737,17 @@ export function finishLanding({ root = mainWorktree(), number, apply = false } =
   forgetPullRequest({ root, number: n, change: entry.change, worktree: entry.worktree })
   delete lands.lands[String(n)]
   saveLandings(root, lands)
+  const lock = readLockOwner(root)
+  if (lock !== undefined && typeof session === 'string' && lock.ownerSession === session) {
+    releaseLock({ root, session, token: lock.token })
+  }
   return manifest
 }
 
 /** Abandon a pre-merge landing and remove its checkout. */
-export function abandonLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function abandonLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  assertLandingLockFree(root)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -779,6 +797,8 @@ export function usage() {
     '  state [--forget <n> | --fail <n> --error <text>] --apply',
     '',
     'The landing command never pushes, archives or merges without --apply.',
+    'A contributor landing run may pass --session <id> so its own landing.lock is accepted;',
+    '--token is optional and must match when supplied.',
   ].join('\n')
 }
 
@@ -790,17 +810,19 @@ export function parseArgs(argv) {
   if (!['candidates', 'plan', 'sync', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
     throw new LandUsageError(`unknown command '${command}'`)
   }
-  const options = { command, apply: false, commit: undefined, forget: undefined, fail: undefined, error: undefined }
+  const options = { command, apply: false, commit: undefined, forget: undefined, fail: undefined, error: undefined, session: undefined, token: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]
     if (value === '--apply') options.apply = true
-    else if (value === '--commit' || value === '--forget' || value === '--fail' || value === '--error') {
+    else if (value === '--commit' || value === '--forget' || value === '--fail' || value === '--error' || value === '--session' || value === '--token') {
       const next = args[index + 1]
       if (next === undefined || next === '' || next.startsWith('--')) throw new LandUsageError(`${value} needs a value`)
       if (value === '--commit') options.commit = next
       else if (value === '--error') options.error = next
       else if (value === '--fail') options.fail = requireNumber(next)
+      else if (value === '--session') options.session = next
+      else if (value === '--token') options.token = next
       else options.forget = next
       index += 1
     } else if (value.startsWith('--')) throw new LandUsageError(`unknown argument '${value}'`)
@@ -809,7 +831,8 @@ export function parseArgs(argv) {
   if (command === 'candidates') {
     if (positional.length > 0) throw new LandUsageError('candidates takes no positional argument')
     if (options.apply) throw new LandUsageError('candidates is read-only and takes no --apply')
-    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined || options.error !== undefined) {
+    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined
+      || options.error !== undefined || options.session !== undefined || options.token !== undefined) {
       throw new LandUsageError('candidates takes no command options')
     }
     return options
@@ -822,6 +845,7 @@ export function parseArgs(argv) {
       throw new LandUsageError('state --fail needs a non-empty --error')
     }
     if (options.commit !== undefined) throw new LandUsageError('state takes no --commit')
+    if (options.session !== undefined || options.token !== undefined) throw new LandUsageError('state takes no --session or --token')
     return options
   }
   if (options.fail !== undefined || options.error !== undefined) throw new LandUsageError('--fail and --error belong to state')
@@ -857,17 +881,18 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     const result = withRunLock(root, () => {
-      if (options.command === 'plan') return planLanding({ root, number: options.number })
-      if (options.command === 'sync') return syncLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'prepare') return prepareLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'reviewed') return reviewedLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'merge') return mergeLanding({ root, number: options.number, apply: options.apply })
+      const shared = { root, number: options.number, apply: options.apply, session: options.session, token: options.token }
+      if (options.command === 'plan') return planLanding(shared)
+      if (options.command === 'sync') return syncLanding(shared)
+      if (options.command === 'prepare') return prepareLanding(shared)
+      if (options.command === 'reviewed') return reviewedLanding(shared)
+      if (options.command === 'merge') return mergeLanding(shared)
       if (options.command === 'archive') {
-        return archiveLanding({ root, number: options.number, commit: options.commit, apply: options.apply })
+        return archiveLanding({ ...shared, commit: options.commit })
       }
-      if (options.command === 'push') return pushLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'abandon') return abandonLanding({ root, number: options.number, apply: options.apply })
-      return finishLanding({ root, number: options.number, apply: options.apply })
+      if (options.command === 'push') return pushLanding(shared)
+      if (options.command === 'abandon') return abandonLanding(shared)
+      return finishLanding(shared)
     })
     write(`${JSON.stringify(result, null, 2)}\n`)
     return 0

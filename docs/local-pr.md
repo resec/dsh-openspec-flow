@@ -56,6 +56,8 @@ node scripts/pr-review-lock.mjs force-release --reason "<why the owner is gone>"
 
 Contributor landing commands (`plan`, `sync`, `prepare`, `reviewed`, `merge`, `archive`, `push`, `finish`) refuse while a local owner holds the lock. Review commands remain available, so the watch may still review a contributor pull request.
 
+A contributor landing run takes the same lock. Before its first landing command the scheduled session runs `node scripts/pr-review-lock.mjs acquire --owner-session <scheduled-session> --pr <n> --json` and keeps the token, then passes `--session <scheduled-session>` to each `pr-review-land.mjs` landing command. `finish` releases the lock; a run that stops after a sync, a prepare or a sync-refusal releases it with `release --session <scheduled-session> --token <token>`. When `preflight` reports a stale lock, the operator force-releases it before acquiring again; a non-stale lock held by another session stops contributor landing.
+
 ## Preflight
 
 `scripts/pr-review-watch.mjs preflight` is read-only. It reports GitHub reachability, whether local `main` leads `origin/main`, unfinished landing phases and the landing-lock owner:

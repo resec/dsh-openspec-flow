@@ -896,6 +896,10 @@ test('a local landing lock refuses every contributor landing command', () => {
     acquireLock({ root, session: 'local-owner', token: 'local-token', pr: 99 })
     assert.throws(() => assertLandingLockFree(root), /held by session local-owner for PR #99/)
     assert.throws(() => planLanding({ root, number: 12, gh: fake }), /landing lock is held by session local-owner/)
+    assert.throws(
+      () => planLanding({ root, number: 12, gh: fake, session: 'local-owner', token: 'wrong' }),
+      /landing lock token does not match/,
+    )
     assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /landing lock is held/)
     assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /landing lock is held/)
     for (const run of [
@@ -982,6 +986,36 @@ test('a new landing is refused while local main leads origin/main', () => {
     assert.match(blocked.blocked, /local main leads origin\/main/)
     git(root, ['push', '-q', 'origin', 'main'])
     assert.throws(() => planLanding({ root, number: 12, gh: fake }), /behind origin\/main; run sync 12/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+
+test('a contributor landing may hold the landing lock for its own run', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+    acquireLock({ root, session: 'watch-1', token: 'watch-token', pr: 12 })
+    const prepared = prepareLanding({ root, number: 12, gh: fake, apply: true, session: 'watch-1' })
+    assert.equal(prepared.phase, 'prepared')
+    const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+    reviewRecord(root, tree)
+    reviewedLanding({ root, number: 12, apply: true, session: 'watch-1' })
+    const onMerge = () => {
+      git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+    }
+    mergeLanding({ root, number: 12, apply: true, session: 'watch-1', gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+    git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
+    git(root, ['commit', '-qm', 'archive widget'])
+    archiveLanding({ root, number: 12, apply: true, session: 'watch-1' })
+    git(root, ['push', '-q', 'origin', 'main'])
+    pushLanding({ root, number: 12, apply: true, session: 'watch-1' })
+    const manifest = finishLanding({ root, number: 12, apply: true, session: 'watch-1' })
+    assert.equal(manifest.change, 'widget')
+    assert.equal(loadLandings(root).lands['12'], undefined)
+    assert.equal(existsSync(join(resolvePaths(root).landingLock)), false)
   } finally {
     cleanup(root, remote)
   }

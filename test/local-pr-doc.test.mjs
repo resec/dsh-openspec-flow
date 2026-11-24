@@ -102,6 +102,10 @@ test('the review document excludes local pull requests and documents the lock an
     '`ownerManaged`',
     'owner-managed (skipped)',
     'refuses while a local owner holds `landing.lock`',
+    'pr-review-lock.mjs acquire',
+    'force-release',
+    'lock.stale',
+    'finish releases the lock',
     'merges, archives, pushes and finishes in one locked run',
     'node scripts/pr-local-land.mjs status',
     'phase is merged, retargeted, landed or landed-offline',
@@ -146,6 +150,19 @@ test('the local pull-request document scopes the restricted-path exemption to ma
     '`github.event.pull_request.head.repo.full_name`',
     'external pull request still fails on a restricted path',
     'The flag skips only the restricted-path refusal',
+  ]) {
+    assert.ok(doc.includes(text), `local-pr.md names ${text}`)
+  }
+})
+
+test('the landing lock documents the contributor run lifecycle and stale release', () => {
+  const doc = read('docs/local-pr.md')
+  for (const text of [
+    'A contributor landing run takes the same lock',
+    '--owner-session <scheduled-session>',
+    '`finish` releases the lock',
+    'a stale lock, the operator force-releases it',
+    'passes `--session <scheduled-session>`',
   ]) {
     assert.ok(doc.includes(text), `local-pr.md names ${text}`)
   }
