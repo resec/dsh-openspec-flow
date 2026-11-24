@@ -382,6 +382,45 @@ test('merge records failed when the PR head moved after reviewed', () => {
   assert.equal(loadLandings(root).lands['12'].phase, 'failed')
 })
 
+test('merge names the author update for a fork when origin/main moved', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  advanceMain(root, 'main moved after prepare')
+  let merges = 0
+  const fork = fakeGh({
+    pr: JSON.parse(prJson(head, 'main', { isCrossRepository: true })),
+    onMerge: () => { merges += 1 },
+  })
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fork }), /the author must update the branch/)
+  assert.equal(merges, 0)
+  assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
+test('merge records a head that no longer contains the recorded main', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  advanceMain(root, 'main moved before the synthetic entry')
+  git(root, ['fetch', 'origin', 'main'])
+  const lands = loadLandings(root)
+  lands.lands['12'].preMergeMain = git(root, ['rev-parse', 'origin/main'])
+  saveLandings(root, lands)
+  let merges = 0
+  const gh = fakeGh({ pr: JSON.parse(prJson(head)), onMerge: () => { merges += 1 } })
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh }), /behind origin\/main; run sync 12/)
+  assert.equal(merges, 0)
+  assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
 test('abandon clears a pre-merge landing without touching the watch entry', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
