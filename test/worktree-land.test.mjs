@@ -10,8 +10,10 @@ import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { sha256 } from '../lib/review/store.js'
 import { manifestPath } from '../lib/worktree/land.js'
 import { removeSealRef, sealRefName } from '../lib/worktree/seal.js'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 test.after(cleanupFixtures)
+test.after(cleanupTempDirs)
 
 async function readyLand({ feature = false } = {}) {
   const { root, run } = gitFixture()
@@ -224,7 +226,7 @@ test('remove guards active and dirty checkouts', async () => {
 })
 
 test('land refuses no git, no state, a foreign state and non-main', async () => {
-  const plainRoot = (await import('node:fs')).mkdtempSync(join((await import('node:os')).tmpdir(), 'land-plain-'))
+  const plainRoot = tempDir('land-plain-')
   const plain = setup(plainRoot)
   await assert.rejects(
     call(plain, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
@@ -479,7 +481,7 @@ test('a missing branch keeps a resumable active state and remove refuses no git'
 })
 
 test('remove refuses outside git', async () => {
-  const plainRoot = (await import('node:fs')).mkdtempSync(join((await import('node:os')).tmpdir(), 'remove-plain-'))
+  const plainRoot = tempDir('remove-plain-')
   const plain = setup(plainRoot)
   await assert.rejects(
     call(plain, 'openspec_apply_worktree', { action: 'remove', change: CHANGE }),
@@ -544,7 +546,7 @@ test('land refuses an archived state and abandon needs a reason', async () => {
 })
 
 test('the worktree tool rejects an unknown action and recover outside git', async () => {
-  const plainRoot = (await import('node:fs')).mkdtempSync(join((await import('node:os')).tmpdir(), 'worktree-tool-'))
+  const plainRoot = tempDir('worktree-tool-')
   const fake = setup(plainRoot)
   await assert.rejects(
     call(fake, 'openspec_apply_worktree', { action: 'bogus' }),
