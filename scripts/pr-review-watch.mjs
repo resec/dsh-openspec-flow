@@ -486,7 +486,8 @@ export function checksGreen(rollup) {
  */
 export function filterCandidates(prs, state, localNumbers = new Set()) {
   const candidates = []
-  for (const pr of Array.isArray(prs) ? prs : []) {
+  const listed = Array.isArray(prs) ? prs : []
+  for (const pr of listed) {
     if (pr?.isDraft === true) continue
     if (!checksGreen(pr?.statusCheckRollup)) continue
     const changes = activeChangeNames(pr?.files)
@@ -522,6 +523,10 @@ export function filterCandidates(prs, state, localNumbers = new Set()) {
       resume: false,
     })
   }
+  const labeled = new Set(listed
+    .filter((pr) => Array.isArray(pr?.labels) && pr.labels.some((label) => label?.name === 'mergeable'))
+    .map((pr) => Number(pr?.number)))
+  candidates.sort((left, right) => Number(labeled.has(right.number)) - Number(labeled.has(left.number)))
   return candidates
 }
 
@@ -533,8 +538,8 @@ export function filterCandidates(prs, state, localNumbers = new Set()) {
  */
 export function pollPullRequests({ root = process.cwd(), gh = ghText, state = loadState(root), local = localPullRequestNumbers(root) } = {}) {
   const text = gh([
-    'pr', 'list', '--state', 'open', '--limit', '100', '--json',
-    'number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,updatedAt',
+    'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
+    'number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,labels,updatedAt',
   ])
   if (text === undefined) throw new Error('gh pr list failed')
   const prs = JSON.parse(text)

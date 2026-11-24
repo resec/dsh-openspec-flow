@@ -958,3 +958,67 @@ test('preflight routes a missing gh binary to offline-land instead of a spawn er
     cleanup(root, remote, bin)
   }
 })
+
+test('filterCandidates orders mergeable-labeled candidates before the rest', () => {
+  const eligible = (number, extra = {}) => ({
+    number,
+    headRefOid: String(number).padStart(40, 'a'),
+    baseRefOid: BASE,
+    baseRefName: 'main',
+    isDraft: false,
+    statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+    files: [{ path: 'openspec/changes/widget/proposal.md' }],
+    labels: [],
+    ...extra,
+  })
+  const candidates = filterCandidates([
+    eligible(12),
+    eligible(13, { labels: [{ name: 'mergeable' }] }),
+    eligible(14, { isDraft: true, labels: [{ name: 'mergeable' }] }),
+    eligible(15),
+    eligible(16, { labels: [{ name: 'mergeable' }] }),
+  ], { schemaVersion: 1, prs: {} })
+  assert.deepEqual(candidates.map((candidate) => candidate.number), [13, 16, 12, 15])
+})
+
+test('poll reads the full open list and reports a candidate beyond the old page', () => {
+  const root = makeRepository()
+  try {
+    const rows = []
+    for (let number = 1; number <= 100; number += 1) {
+      rows.push({
+        number,
+        headRefOid: String(number).padStart(40, 'a'),
+        baseRefOid: BASE,
+        baseRefName: 'main',
+        isDraft: true,
+        statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+        files: [{ path: 'openspec/changes/widget/proposal.md' }],
+        labels: [],
+      })
+    }
+    rows.push({
+      number: 101,
+      headRefOid: 'b'.repeat(40),
+      baseRefOid: BASE,
+      baseRefName: 'main',
+      isDraft: false,
+      statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+      files: [{ path: 'openspec/changes/widget/proposal.md' }],
+      labels: [{ name: 'mergeable' }],
+    })
+    const limits = []
+    const gh = (args) => {
+      assert.equal(args[0], 'pr')
+      assert.equal(args[1], 'list')
+      const limit = Number(args[args.indexOf('--limit') + 1])
+      limits.push(limit)
+      return JSON.stringify(rows.slice(0, limit))
+    }
+    const result = pollPullRequests({ root, gh })
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [101])
+    assert.deepEqual(limits, [1000])
+  } finally {
+    cleanup(root)
+  }
+})

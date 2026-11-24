@@ -294,7 +294,7 @@ export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh
   } catch (error) {
     return { candidates: [], refused: [], blocked: error instanceof Error ? error.message : String(error) }
   }
-  const listed = JSON.parse(ghRunner(['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,labels'], root))
+  const listed = JSON.parse(ghRunner(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,labels'], root))
   const lands = loadLandings(root)
   const state = loadState(root)
   const login = ghLogin(ghRunner, root)
@@ -509,6 +509,83 @@ export function syncLanding({
   lands.syncs = syncs
   saveLandings(root, lands)
   return { number: n, change: change[0], previousHead: head, newHead, branch: pr.headRefName }
+}
+
+/**
+ * Sync every eligible same-repository behind branch in one bounded batch.
+ * Read-only unless `apply`; reports one outcome per attempted pull request.
+ */
+export function syncBatch({
+  root = mainWorktree(),
+  gh: ghRunner = gh,
+  apply = false,
+  limit = 20,
+  pollAttempts = 10,
+  pollIntervalMs = 1000,
+  sleep = sleepSync,
+  session,
+  token,
+} = {}) {
+  assertMainReady(root)
+  try {
+    assertLandingLockFree(root, { session, token })
+  } catch (error) {
+    return {
+      locked: true,
+      error: error instanceof Error ? error.message : String(error),
+      checked: 0,
+      eligible: 0,
+      changed: false,
+      results: [],
+    }
+  }
+  assertLocalMainNotAhead(root)
+  const listed = JSON.parse(ghRunner([
+    'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
+    'number,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,labels,mergeStateStatus,files',
+  ], root))
+  const rows = Array.isArray(listed) ? listed : []
+  const eligible = rows.filter((row) => {
+    if (row?.isDraft === true) return false
+    if (String(row?.baseRefName ?? '') !== 'main') return false
+    if (row?.isCrossRepository === true) return false
+    if (!Array.isArray(row?.labels) || !row.labels.some((label) => label?.name === LANDING_LABEL)) return false
+    if (!['BEHIND', 'UNKNOWN'].includes(String(row?.mergeStateStatus))) return false
+    return activeChangeNames(row?.files).length === 1
+  })
+  const results = []
+  let updated = 0
+  for (const row of eligible) {
+    if (apply ? updated >= limit : results.length >= limit) break
+    const n = Number(row.number)
+    try {
+      const result = syncLanding({
+        root, number: n, gh: ghRunner, apply, session, token,
+        pollAttempts, pollIntervalMs, sleep,
+      })
+      if (apply) updated += 1
+      results.push(apply
+        ? { number: n, status: 'synced', previousHead: result.previousHead, newHead: result.newHead }
+        : { number: n, status: 'planned', previousHead: result.head, newHead: null })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      results.push({
+        number: n,
+        status: reason.includes('already contains origin/main') ? 'skipped' : 'refused',
+        reason,
+      })
+    }
+  }
+  return {
+    apply,
+    locked: false,
+    checked: rows.length,
+    eligible: eligible.length,
+    updated,
+    changed: results.some((entry) => entry.status === 'synced'),
+    results,
+    remaining: Math.max(0, eligible.length - results.length),
+  }
 }
 
 /** Resolve the apply review record for one landing. */
@@ -795,6 +872,7 @@ export function usage() {
     '  candidates                            list landing candidates without writing',
     '  plan <n>                              check landing gates without writing',
     '  sync <n> --apply                      update a behind same-repository branch',
+    '  sync-batch                            update every eligible labeled behind branch',
     '  prepare <n> --apply                   create the landing branch at the head',
     '  reviewed <n> --apply                  record the passed review tree',
     '  merge <n> --apply                     merge with gh pr merge --rebase',
@@ -815,7 +893,7 @@ export function parseArgs(argv) {
   const args = [...argv]
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
-  if (!['candidates', 'plan', 'sync', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
+  if (!['candidates', 'sync-batch', 'plan', 'sync', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
     throw new LandUsageError(`unknown command '${command}'`)
   }
   const options = { command, apply: false, commit: undefined, forget: undefined, fail: undefined, error: undefined, session: undefined, token: undefined }
@@ -842,6 +920,14 @@ export function parseArgs(argv) {
     if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined
       || options.error !== undefined || options.session !== undefined || options.token !== undefined) {
       throw new LandUsageError('candidates takes no command options')
+    }
+    return options
+  }
+  if (command === 'sync-batch') {
+    if (positional.length > 0) throw new LandUsageError('sync-batch takes no positional argument')
+    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined
+      || options.error !== undefined) {
+      throw new LandUsageError('sync-batch takes no --commit, --forget, --fail or --error')
     }
     return options
   }
@@ -873,6 +959,13 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
     const root = mainWorktree()
     if (options.command === 'candidates') {
       const result = listLandingCandidates({ root })
+      write(`${JSON.stringify(result, null, 2)}\n`)
+      return 0
+    }
+    if (options.command === 'sync-batch') {
+      const result = withRunLock(root, () => syncBatch({
+        root, apply: options.apply, session: options.session, token: options.token,
+      }))
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
