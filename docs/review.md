@@ -89,6 +89,8 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 更早的 policy 没有 `reviewerModel` 时，下一次 `start` 或 `resume` 会解析一次并补写字段；已有模型的策略不会被重写，所以事后修改配置页只影响新变更。改动默认值不会移动已锁定评审的模型或等待上限。
 
+首次 `start` 与 `resume` 的这次补写都在该 change 的评审目录锁内完成：锁被其他写入持有时，调用直接报告持有者与锁路径，不会先写 `policy.json`。`resume` 的意图校验与 `self-report` 的当前对象哈希同样在锁内读取并重算，所以比较的哈希与随后写入的记录来自同一份持锁状态。
+
 ## 报告与 finding
 
 draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：finding id 必须匹配 `R<round>-NN`；`verifications` 状态取 `verified-fixed`、`still-open`、`regressed`，首轮为空，后续轮只引用本轮开始前已记录的 finding；report 的 `axis` 取下文枚举，brief 的 `## Axes` 标题只是评审提示。
