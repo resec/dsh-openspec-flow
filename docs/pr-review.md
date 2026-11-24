@@ -126,7 +126,7 @@ The scheduled session processes candidates one at a time:
 
 Candidates must be non-draft, have at least one CI check and every check's newest run succeeded, and change exactly one active change. Pending or absent checks are not candidates. A run superseded by a newer run of the same check does not make a pull request ineligible.
 
-A pull request recorded in `.cache/pr-review/local-prs.json` is owner-managed and never becomes a review candidate. The watch also refuses `prepare`, `comment`, `owner-review` and landing for it. The owner drives it with `scripts/pr-publish.mjs` and `scripts/pr-local-land.mjs`; see [local-pr.md](local-pr.md).
+A pull request recorded in `.cache/pr-review/local-prs.json` is owner-managed and never becomes a review candidate. `poll --json` reports its number in `ownerManaged`, and the text output prints `PR #<n> owner-managed (skipped)`; a poll with no candidates still reports the local numbers. The watch also refuses `prepare`, `comment`, `owner-review` and landing for it. The owner drives it with `scripts/pr-publish.mjs` and `scripts/pr-local-land.mjs`; see [local-pr.md](local-pr.md).
 
 The scheduled session runs `preflight` first. It stops all pull-request work when GitHub is unreachable, stops landing while local `main` leads `origin/main`, and does not start a contributor landing while a local owner holds `landing.lock`. Contributor work is strictly ordered: resume an unfinished landing, land a `mergeable` candidate including a same-repository sync, then review. A ready contributor landing merges, archives and pushes in the same locked run.
 

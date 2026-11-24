@@ -520,9 +520,10 @@ export function filterCandidates(prs, state, localNumbers = new Set()) {
 }
 
 /**
- * List review candidates from open PRs.
+ * List review candidates from open PRs and report owner-managed local PRs.
  * @param options - root, gh runner and state.
- * @returns candidates.
+ * @returns `{ candidates, ownerManaged }`, where ownerManaged lists the open
+ *          pull-request numbers recorded as local owner entries.
  */
 export function pollPullRequests({ root = process.cwd(), gh = ghText, state = loadState(root), local = localPullRequestNumbers(root) } = {}) {
   const text = gh([
@@ -530,7 +531,29 @@ export function pollPullRequests({ root = process.cwd(), gh = ghText, state = lo
     'number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,updatedAt',
   ])
   if (text === undefined) throw new Error('gh pr list failed')
-  return filterCandidates(JSON.parse(text), state, local)
+  const prs = JSON.parse(text)
+  const candidates = filterCandidates(prs, state, local)
+  const ownerManaged = [...new Set((Array.isArray(prs) ? prs : [])
+    .map((pr) => Number(pr?.number))
+    .filter((number) => Number.isInteger(number) && number > 0 && local.has(String(number))))]
+    .sort((left, right) => left - right)
+  return { candidates, ownerManaged }
+}
+
+/**
+ * Render the poll result for the command line.
+ * @param result - `{ candidates, ownerManaged }`.
+ * @returns one line per local and candidate pull request.
+ */
+export function pollText({ candidates, ownerManaged }) {
+  const lines = (Array.isArray(ownerManaged) ? ownerManaged : [])
+    .map((number) => `PR #${number} owner-managed (skipped)`)
+  const list = Array.isArray(candidates) ? candidates : []
+  lines.push(...list.map((candidate) => (
+    `PR #${candidate.number} ${candidate.head.slice(0, 12)} ${candidate.change}${candidate.resume ? ' (resume)' : ''}`
+  )))
+  if (lines.length === 0) return 'no review candidates\n'
+  return `${lines.join('\n')}\n`
 }
 
 /** Run the gh JSON helper and parse the result. */
@@ -995,10 +1018,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     const result = withRunLock(root, () => {
-      if (options.command === 'poll') {
-        const candidates = pollPullRequests({ root })
-        return { candidates }
-      }
+      if (options.command === 'poll') return pollPullRequests({ root })
       if (options.command === 'prepare') return preparePullRequest({ root, number: options.number })
       if (options.report === undefined) throw new UsageError('comment needs --report <path>')
       return publishComment({ root, number: options.number, reportPath: options.report, apply: options.apply })
@@ -1009,10 +1029,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
     }
     if (!options.json) {
       if (options.command === 'poll') {
-        const candidates = result.candidates
-        write(candidates.length === 0
-          ? 'no review candidates\n'
-          : `${candidates.map((candidate) => `PR #${candidate.number} ${candidate.head.slice(0, 12)} ${candidate.change}${candidate.resume ? ' (resume)' : ''}`).join('\n')}\n`)
+        write(pollText(result))
         return 0
       }
       if (options.command === 'prepare') {

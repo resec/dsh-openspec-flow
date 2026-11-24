@@ -22,6 +22,7 @@ import {
   markFailed,
   parseArgs,
   pollPullRequests,
+  pollText,
   preflight,
   preparePullRequest,
   publishComment,
@@ -458,7 +459,7 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
       if (args[0] === 'pr' && args[1] === 'comment') return 'https://example.test/comment'
       throw new Error(`unexpected gh call ${args.join(' ')}`)
     }
-    assert.equal(pollPullRequests({ root, gh }).length, 1)
+    assert.equal(pollPullRequests({ root, gh }).candidates.length, 1)
     const first = preparePullRequest({ root, number: 12, gh })
     const report = (path, round) => {
       mkdirSync(dirname(path), { recursive: true })
@@ -514,7 +515,7 @@ test('state loading, missing reports and empty polls fail or return explicitly',
     assert.throws(() => loadState(root), /not JSON|corrupt/)
     rmSync(stateFile)
     const { gh } = fakeGh(() => '[]')
-    assert.deepEqual(pollPullRequests({ root, gh }), [])
+    assert.deepEqual(pollPullRequests({ root, gh }).candidates, [])
     assert.throws(() => readReport(join(root, 'missing.json'), 12, HEAD), /does not exist/)
   } finally {
     cleanup(root)
@@ -798,7 +799,9 @@ test('poll, prepare and comment exclude a local pull request and refuse corrupt 
       files: [{ path: 'openspec/changes/widget/proposal.md' }],
     }])
     const { gh } = fakeGh(() => list)
-    assert.deepEqual(pollPullRequests({ root, gh }), [])
+    const poll = pollPullRequests({ root, gh })
+    assert.deepEqual(poll.candidates, [])
+    assert.deepEqual(poll.ownerManaged, [12])
     assert.throws(() => preparePullRequest({ root, number: 12, gh }), /owner-managed locally/)
     assert.throws(
       () => publishComment({ root, number: 12, reportPath: join(root, 'report.json') }),
@@ -913,4 +916,23 @@ test('preflight reports online, offline, unpushed main, landings and the lock', 
   } finally {
     cleanup(root, remote)
   }
+})
+
+
+test('the poll text names an owner-managed pull request and keeps candidate lines', () => {
+  assert.equal(pollText({ candidates: [], ownerManaged: [] }), 'no review candidates\n')
+  assert.equal(
+    pollText({ candidates: [], ownerManaged: [12] }),
+    'PR #12 owner-managed (skipped)\n',
+  )
+  const candidate = {
+    number: 13,
+    head: 'a'.repeat(40),
+    change: 'widget',
+    resume: false,
+  }
+  assert.equal(
+    pollText({ candidates: [candidate], ownerManaged: [12] }),
+    'PR #12 owner-managed (skipped)\nPR #13 aaaaaaaaaaaa widget\n',
+  )
 })

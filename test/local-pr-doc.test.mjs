@@ -99,6 +99,8 @@ test('the review document excludes local pull requests and documents the lock an
     'landing.lock/owner.json',
     'owner-managed',
     'never becomes a review candidate',
+    '`ownerManaged`',
+    'owner-managed (skipped)',
     'refuses while a local owner holds `landing.lock`',
     'merges, archives, pushes and finishes in one locked run',
     'node scripts/pr-local-land.mjs status',

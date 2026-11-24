@@ -147,5 +147,6 @@ test('AGENTS.md excludes local pull requests from the scheduled watch', () => {
   assert.match(AGENTS, /local-prs\.json/)
   assert.match(AGENTS, /owner-managed/)
   assert.match(AGENTS, /landing\.lock/)
-  assert.match(AGENTS, /never polls, prepares, comments on, retargets, lands or merges it/)
+  assert.match(AGENTS, /`poll` reports its number as owner-managed/)
+  assert.match(AGENTS, /never reviews, prepares, comments on, retargets, lands or merges it/)
 })
