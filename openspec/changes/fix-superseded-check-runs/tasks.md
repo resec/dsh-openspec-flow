@@ -3,7 +3,7 @@
 ## 1. Green rollup helper
 
 - [x] 1.1 Replace `checksGreen` with the newest-entry-per-check judgment and update its JSDoc; verify `node --test test/pr-review-watch.test.mjs` passes
-- [x] 1.2 Add unit cases for a superseded failure, a newest failure or pending entry, a same-start-time tie, a queued entry with the zero timestamp, same-named checks in two workflows, the absent-timestamp fallback and an empty rollup; verify `node --test test/pr-review-watch.test.mjs` passes
+- [x] 1.2 Add unit cases for a superseded failure, a newest failure or pending entry, a same-start-time tie, a queued entry with the zero timestamp, same-named checks in two workflows, a status context timestamped by `createdAt`, the absent-timestamp fallback and an empty rollup; verify `node --test test/pr-review-watch.test.mjs` passes
 
 ## 2. Shared gates
 

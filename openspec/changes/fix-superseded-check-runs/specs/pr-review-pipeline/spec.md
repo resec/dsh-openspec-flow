@@ -65,3 +65,37 @@ Checks SHALL be grouped by workflow name and check name, or by status context na
 
 - **WHEN** every open PR is filtered out
 - **THEN** the poll reports an empty candidate list and exits successfully
+
+### Requirement: Owner-review eligibility
+
+The owner-review command SHALL add `owner-review` only when the pull request is open, non-draft, targets `main`, changes exactly one active change, has a green CI rollup, has `mergeable: MERGEABLE`, has a `mergeStateStatus` other than `DIRTY` or `BLOCKED`, has a trusted `pass` comment for its current head, and has no `mergeable` label. The watch state SHALL name that head and report `commented`.
+
+#### Scenario: Every non-label gate passes
+
+- **WHEN** an open, non-draft pull request targets `main`, changes one active change, has green CI, is mergeable without a conflicting state, has a trusted pass for its head, has no `mergeable` label, and its watch state names that head as commented
+- **THEN** the command adds `owner-review` and records the head
+
+#### Scenario: No trusted pass for the head
+
+- **WHEN** the only trusted review is a pass for an older head, or no trusted pass exists
+- **THEN** the command does not add `owner-review`
+
+#### Scenario: The head moved
+
+- **WHEN** the watch state names a different head, or the PR head is not the reviewed head
+- **THEN** the command does not add `owner-review` for the current head
+
+#### Scenario: Continuous integration is not green
+
+- **WHEN** the newest run of a check is failing or pending, no check exists, or the rollup is not green
+- **THEN** the command does not add `owner-review`
+
+#### Scenario: Mergeability or conflict state fails
+
+- **WHEN** `mergeable` is not `MERGEABLE`, or `mergeStateStatus` is `DIRTY` or `BLOCKED`
+- **THEN** the command does not add `owner-review`
+
+#### Scenario: Authorization or eligibility already changed
+
+- **WHEN** the pull request already carries `mergeable`, is a draft, targets another base, or changes two active changes
+- **THEN** the command does not add `owner-review`
