@@ -13,6 +13,8 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
+
 /** Cache directory under the main worktree. */
 export const CACHE_DIRECTORY = join('.cache', 'pr-review')
 /** State file name. */
@@ -23,6 +25,16 @@ export const RUN_LOCK = 'run.lock'
 export const WORKTREE_DIRECTORY = 'worktrees'
 /** Report directory name. */
 export const REPORT_DIRECTORY = 'reports'
+/** Local owner state file name. */
+export const LOCAL_STATE_FILE = 'local-prs.json'
+/** Local owner phases. */
+export const LOCAL_PHASES = ['published', 'merged', 'retargeted', 'landed', 'pushed', 'landed-offline', 'failed']
+/** Cross-session landing lock directory name. */
+export const LANDING_LOCK_DIRECTORY = 'landing.lock'
+/** Age after which a landing lock is reported stale. */
+export const LANDING_LOCK_TTL_MINUTES = 120
+/** The offline route when GitHub or the origin remote is unreachable. */
+export const OFFLINE_LAND_COMMAND = 'run npm run test:lab -- --mock-only, then openspec_apply_worktree action=land with approvedBy "user", archive, record the offline land with node scripts/offline-land.mjs record --change <change> --land <sha> --apply (or pr-local-land finish --phase landed-offline when a local entry exists), and stop at local main without a push; run node scripts/push-landed.mjs --push --offline when GitHub returns; the matching record is removed'
 /** Marker pattern for a trusted report comment. */
 const MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+) -->/u
 /** Active change path pattern. */
@@ -59,10 +71,26 @@ function gitText(cwd, args, allowFailure = false) {
   return result.stdout.trim()
 }
 
-/** Gh text helper. */
+/** Gh text helper; a missing gh binary is reported as unreachable. */
 function ghText(args, options = {}) {
-  const result = capture('gh', args, { cwd: options.cwd, allowFailure: options.allowFailure })
+  let result
+  try {
+    result = capture('gh', args, { cwd: options.cwd, allowFailure: options.allowFailure })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined
+    throw error
+  }
   if (result.status !== 0) return undefined
+  return result.stdout.trim()
+}
+
+/** Gh text helper that throws with stderr, for reads that retry. */
+function ghRead(args, options = {}) {
+  const result = capture('gh', args, { cwd: options.cwd, allowFailure: true })
+  if (result.status !== 0) {
+    const detail = String(result.stderr ?? '').trim() || String(result.stdout ?? '').trim()
+    throw new Error(`gh ${args.join(' ')} failed${detail === '' ? '' : `: ${detail}`}`)
+  }
   return result.stdout.trim()
 }
 
@@ -93,6 +121,8 @@ export function resolvePaths(root) {
     lock: join(cache, RUN_LOCK),
     worktrees: join(cache, WORKTREE_DIRECTORY),
     reports: join(cache, REPORT_DIRECTORY),
+    localState: join(cache, LOCAL_STATE_FILE),
+    landingLock: join(cache, LANDING_LOCK_DIRECTORY),
     commonDir: gitText(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
   }
 }
@@ -139,6 +169,209 @@ export function loadState(root) {
  */
 export function saveState(root, state) {
   writeJsonAtomic(resolvePaths(root).state, state)
+}
+
+/**
+ * Read the local owner state.
+ * @param root - main worktree.
+ * @returns state object.
+ */
+export function loadLocalState(root) {
+  const paths = resolvePaths(root)
+  let value
+  try {
+    value = readJson(paths.localState)
+  } catch (error) {
+    throw new Error(`the local PR state at ${paths.localState} is corrupt: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (value === undefined) return { schemaVersion: 1, prs: {} }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || value.schemaVersion !== 1 || value.prs === null || typeof value.prs !== 'object' || Array.isArray(value.prs)) {
+    throw new Error(`the local PR state at ${paths.localState} is corrupt`)
+  }
+  for (const [key, entry] of Object.entries(value.prs)) {
+    validateLocalEntry(entry, key, paths.localState)
+  }
+  return value
+}
+
+/** Validate one local owner entry. */
+function validateLocalEntry(entry, key, file) {
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`the local PR state at ${file} has an invalid entry ${key}`)
+  }
+  for (const field of ['change', 'branch', 'head', 'tree', 'record', 'ownerSession', 'phase']) {
+    if (typeof entry[field] !== 'string' || entry[field].trim() === '') {
+      throw new Error(`the local PR state at ${file} has an invalid ${field} for ${key}`)
+    }
+  }
+  if (!LOCAL_PHASES.includes(entry.phase)) {
+    throw new Error(`the local PR state at ${file} has an invalid phase for ${key}`)
+  }
+  if (!Number.isInteger(entry.number) || entry.number < 1) {
+    throw new Error(`the local PR state at ${file} has an invalid number for ${key}`)
+  }
+  if (entry.publishedAt !== undefined && typeof entry.publishedAt !== 'string') {
+    throw new Error(`the local PR state at ${file} has an invalid publishedAt for ${key}`)
+  }
+  if (entry.updatedAt !== undefined && typeof entry.updatedAt !== 'string') {
+    throw new Error(`the local PR state at ${file} has an invalid updatedAt for ${key}`)
+  }
+}
+
+/** Save the local owner state. */
+export function saveLocalState(root, state) {
+  writeJsonAtomic(resolvePaths(root).localState, state)
+}
+
+/** Return the local owner PR numbers. */
+export function localPullRequestNumbers(root) {
+  return new Set(Object.keys(loadLocalState(root).prs))
+}
+
+/**
+ * Find the local owner entry for a change and branch.
+ * @param root - main worktree.
+ * @param options - change and optional branch.
+ * @returns the matching entry, or undefined.
+ */
+export function findLocalEntry(root, { change, branch } = {}) {
+  if (typeof change !== 'string' || change === '') return undefined
+  for (const entry of Object.values(loadLocalState(root).prs)) {
+    if (entry.change !== change) continue
+    if (branch !== undefined && entry.branch !== branch) continue
+    return entry
+  }
+  return undefined
+}
+
+/** Update one local owner entry. */
+export function updateLocalEntry(root, number, patch) {
+  const state = loadLocalState(root)
+  const entry = state.prs[String(number)]
+  if (entry === undefined) throw new Error(`PR #${number} has no local owner entry`)
+  state.prs[String(number)] = { ...entry, ...patch, updatedAt: new Date().toISOString() }
+  saveLocalState(root, state)
+  return state.prs[String(number)]
+}
+
+/** Delete one local owner entry. */
+export function deleteLocalEntry(root, number) {
+  const state = loadLocalState(root)
+  const entry = state.prs[String(number)]
+  if (entry === undefined) return undefined
+  delete state.prs[String(number)]
+  saveLocalState(root, state)
+  return entry
+}
+
+/**
+ * Remove closed or completed local owner entries, retaining unfinished ones.
+ * @param options - root and gh runner.
+ * @returns removed and retained entries.
+ */
+export function cleanupLocalEntries({ root = process.cwd(), gh = ghText } = {}) {
+  const state = loadLocalState(root)
+  const removed = []
+  const retained = []
+  for (const [key, entry] of Object.entries(state.prs)) {
+    const text = gh(['pr', 'view', key, '--json', 'state'])
+    if (text === undefined) throw new Error(`gh pr view ${key} failed`)
+    const pr = JSON.parse(text)
+    const landed = entry.phase === 'landed' || entry.phase === 'landed-offline'
+    const remove = entry.phase === 'pushed'
+      || (pr.state === 'CLOSED' && !landed)
+    if (remove) {
+      delete state.prs[key]
+      removed.push({ number: entry.number, change: entry.change, local: true, removed: true })
+    } else if (pr.state !== 'OPEN') {
+      retained.push({ number: entry.number, change: entry.change, phase: entry.phase, state: pr.state })
+    }
+  }
+  saveLocalState(root, state)
+  return { removed, retained }
+}
+
+/** Read the landing-lock owner without importing the lock CLI. */
+export function readLandingLock(root = process.cwd(), now = Date.now()) {
+  const file = join(resolvePaths(root).landingLock, 'owner.json')
+  let value
+  try {
+    value = readJson(file)
+  } catch (error) {
+    throw new Error(`the landing lock at ${file} is corrupt: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (value === undefined) return { held: false }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || typeof value.ownerSession !== 'string' || typeof value.token !== 'string'
+    || !Number.isInteger(value.pr) || typeof value.at !== 'string' || Number.isNaN(Date.parse(value.at))) {
+    throw new Error(`the landing lock at ${file} is corrupt`)
+  }
+  const ageMinutes = Math.max(0, Math.floor((now - Date.parse(value.at)) / 60000))
+  return {
+    held: true,
+    ownerSession: value.ownerSession,
+    token: value.token,
+    pr: value.pr,
+    at: value.at,
+    ageMinutes,
+    stale: !Number.isFinite(ageMinutes) || ageMinutes > LANDING_LOCK_TTL_MINUTES,
+  }
+}
+
+/** List open landing phases from the landing state. */
+function openLandings(root) {
+  const file = join(resolvePaths(root).cache, 'landings.json')
+  let value
+  try {
+    value = readJson(file)
+  } catch {
+    return []
+  }
+  if (value === null || typeof value !== 'object' || value.lands === null || typeof value.lands !== 'object') return []
+  const open = new Set(['prepared', 'review-failed', 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending'])
+  return Object.entries(value.lands)
+    .filter(([, entry]) => open.has(entry?.phase))
+    .map(([number, entry]) => ({ number: Number(number), phase: entry.phase, mode: entry.mode ?? null }))
+}
+
+/**
+ * Read-only environment preflight.
+ * @param options - root, gh and git runners.
+ * @returns online, local-main, landing and lock facts.
+ */
+export function preflight({ root = mainWorktree(), gh = ghText, git = gitText } = {}) {
+  const paths = resolvePaths(root)
+  const repo = gh(['repo', 'view', '--json', 'nameWithOwner'])
+  const online = repo !== undefined
+  const fetched = online && git(root, ['fetch', 'origin', 'main'], true) !== undefined
+  const originMain = git(root, ['rev-parse', 'origin/main'])
+  const main = git(root, ['rev-parse', 'main'])
+  const ahead = originMain === undefined || main === undefined
+    ? null
+    : Number(git(root, ['rev-list', '--count', 'origin/main..main']) ?? '0')
+  const behind = originMain === undefined || main === undefined
+    ? null
+    : Number(git(root, ['rev-list', '--count', 'main..origin/main']) ?? '0')
+  const lock = readLandingLock(root)
+  const landings = openLandings(root)
+  let reason = null
+  if (!online) reason = 'github-unreachable'
+  else if (!fetched || originMain === undefined) reason = 'origin-unreachable'
+  else if (ahead !== 0) reason = 'local-main-ahead'
+  else if (lock.held && !lock.stale) reason = 'landing-lock-held'
+  const offlineLand = !online || !fetched || originMain === undefined
+  return {
+    root,
+    online,
+    reason,
+    offlineLand,
+    command: offlineLand ? OFFLINE_LAND_COMMAND : null,
+    localMain: { main: main ?? null, originMain: originMain ?? null, ahead, behind },
+    lock,
+    landings,
+    paths: { localState: paths.localState, landingLock: paths.landingLock },
+  }
 }
 
 /**
@@ -263,15 +496,17 @@ export function checksGreen(rollup) {
  * @param state - current state.
  * @returns candidate records.
  */
-export function filterCandidates(prs, state) {
+export function filterCandidates(prs, state, localNumbers = new Set()) {
   const candidates = []
-  for (const pr of Array.isArray(prs) ? prs : []) {
+  const listed = Array.isArray(prs) ? prs : []
+  for (const pr of listed) {
     if (pr?.isDraft === true) continue
     if (!checksGreen(pr?.statusCheckRollup)) continue
     const changes = activeChangeNames(pr?.files)
     if (changes.length !== 1) continue
     const number = Number(pr.number)
     if (!Number.isInteger(number) || number < 1) continue
+    if (localNumbers.has(String(number))) continue
     const head = String(pr.headRefOid ?? '')
     if (head === '') continue
     const recorded = state?.prs?.[String(number)]
@@ -300,21 +535,85 @@ export function filterCandidates(prs, state) {
       resume: false,
     })
   }
+  const labeled = new Set(listed
+    .filter((pr) => Array.isArray(pr?.labels) && pr.labels.some((label) => label?.name === 'mergeable'))
+    .map((pr) => Number(pr?.number)))
+  candidates.sort((left, right) => Number(labeled.has(right.number)) - Number(labeled.has(left.number)))
   return candidates
 }
 
 /**
- * List review candidates from open PRs.
- * @param options - root, gh runner and state.
- * @returns candidates.
+ * List review candidates from open PRs and report owner-managed local PRs.
+ * @param options - root, gh runner, state, local numbers and the retry delay.
+ * @returns `{ candidates, ownerManaged, fallback }`, where ownerManaged lists
+ *          the open pull-request numbers recorded as local owner entries and
+ *          fallback marks a result served by the scalar-list fallback read.
  */
-export function pollPullRequests({ root = process.cwd(), gh = ghText, state = loadState(root) } = {}) {
-  const text = gh([
-    'pr', 'list', '--state', 'open', '--limit', '100', '--json',
-    'number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,updatedAt',
-  ])
-  if (text === undefined) throw new Error('gh pr list failed')
-  return filterCandidates(JSON.parse(text), state)
+export function pollPullRequests({
+  root = process.cwd(),
+  gh = ghRead,
+  state = loadState(root),
+  local = localPullRequestNumbers(root),
+  retryDelayMs = 2000,
+} = {}) {
+  const readList = (fields) => {
+    const text = withGhRetry(
+      () => gh(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', fields]),
+      { delayMs: retryDelayMs },
+    )
+    if (text === undefined) throw new Error('gh pr list failed')
+    return JSON.parse(text)
+  }
+  const readDetail = (number) => {
+    let text
+    try {
+      text = withGhRetry(
+        () => gh(['pr', 'view', String(number), '--json', 'files,statusCheckRollup']),
+        { delayMs: retryDelayMs },
+      )
+    } catch (error) {
+      throw new Error(`gh pr view ${number} failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (text === undefined) throw new Error(`gh pr view ${number} failed`)
+    const detail = JSON.parse(text)
+    return { files: detail.files, statusCheckRollup: detail.statusCheckRollup }
+  }
+  let fallback = false
+  let prs
+  try {
+    prs = readList('number,headRefOid,baseRefOid,baseRefName,isDraft,statusCheckRollup,files,labels,updatedAt')
+  } catch (error) {
+    if (!isTransientGhFailure(error)) throw error
+    fallback = true
+    prs = readList('number,headRefOid,baseRefOid,baseRefName,isDraft,labels').map((row) => {
+      const number = Number(row?.number)
+      const recorded = state?.prs?.[String(number)]
+      if (recorded !== undefined && recorded.head === row.headRefOid && recorded.status === 'commented') return row
+      return { ...row, ...readDetail(number) }
+    })
+  }
+  const candidates = filterCandidates(prs, state, local)
+  const ownerManaged = [...new Set((Array.isArray(prs) ? prs : [])
+    .map((pr) => Number(pr?.number))
+    .filter((number) => Number.isInteger(number) && number > 0 && local.has(String(number))))]
+    .sort((left, right) => left - right)
+  return { candidates, ownerManaged, fallback }
+}
+
+/**
+ * Render the poll result for the command line.
+ * @param result - `{ candidates, ownerManaged }`.
+ * @returns one line per local and candidate pull request.
+ */
+export function pollText({ candidates, ownerManaged }) {
+  const lines = (Array.isArray(ownerManaged) ? ownerManaged : [])
+    .map((number) => `PR #${number} owner-managed (skipped)`)
+  const list = Array.isArray(candidates) ? candidates : []
+  lines.push(...list.map((candidate) => (
+    `PR #${candidate.number} ${candidate.head.slice(0, 12)} ${candidate.change}${candidate.resume ? ' (resume)' : ''}`
+  )))
+  if (lines.length === 0) return 'no review candidates\n'
+  return `${lines.join('\n')}\n`
 }
 
 /** Run the gh JSON helper and parse the result. */
@@ -332,6 +631,9 @@ function ghJson(gh, args) {
 export function preparePullRequest({ root = process.cwd(), number, gh = ghText, git = gitText } = {}) {
   if (!Number.isInteger(Number(number)) || Number(number) < 1) throw new UsageError('prepare needs a positive PR number')
   const n = Number(number)
+  if (localPullRequestNumbers(root).has(String(n))) {
+    throw new Error(`PR #${n} is owner-managed locally; use pr-local-land, not the review watch`)
+  }
   const pr = ghJson(gh, [
     'pr', 'view', String(n), '--json',
     'number,state,isDraft,headRefOid,baseRefOid,baseRefName,statusCheckRollup,files',
@@ -526,6 +828,10 @@ export function readReport(file, number, head) {
  * @returns `{ published, marker, dryRun }`.
  */
 export function publishComment({ root = process.cwd(), number, reportPath, apply = false, gh = ghText } = {}) {
+  const n = Number(number)
+  if (localPullRequestNumbers(root).has(String(n))) {
+    throw new Error(`PR #${n} is owner-managed locally; the watch does not review or comment on it`)
+  }
   const state = loadState(root)
   const entry = state.prs[String(number)]
   if (entry === undefined) throw new Error(`PR #${number} has no watch state; run prepare first`)
@@ -650,7 +956,12 @@ export function cleanupClosedPullRequests({ root = process.cwd(), gh = ghText } 
     if (pr.state === 'OPEN') continue
     cleaned.push(forgetPullRequest({ root, number: entry.number, change: entry.change, worktree: entry.worktree }))
   }
-  return cleaned
+  const local = cleanupLocalEntries({ root, gh })
+  return [
+    ...cleaned,
+    ...local.removed,
+    ...local.retained.map((entry) => ({ ...entry, local: true, retained: true })),
+  ]
 }
 
 /**
@@ -662,13 +973,20 @@ export function stateCommand({ root = process.cwd(), change, forget = false } = 
   if (!forget) return loadState(root)
   const state = loadState(root)
   const entries = Object.values(state.prs).filter((entry) => entry.change === change)
-  if (entries.length === 0) throw new Error(`no tracked PR changes ${change}`)
+  const local = loadLocalState(root)
+  const localEntries = Object.values(local.prs).filter((entry) => entry.change === change)
+  if (entries.length === 0 && localEntries.length === 0) throw new Error(`no tracked PR changes ${change}`)
   const results = entries.map((entry) => forgetPullRequest({
     root,
     number: entry.number,
     change: entry.change,
     worktree: entry.worktree,
   }))
+  for (const entry of localEntries) {
+    delete local.prs[String(entry.number)]
+    results.push({ number: entry.number, change: entry.change, local: true, removed: true })
+  }
+  if (localEntries.length > 0) saveLocalState(root, local)
   return results.length === 1 ? results[0] : results
 }
 
@@ -679,6 +997,7 @@ export function usage() {
     '',
     'commands:',
     '  poll [--json]                       list review candidates',
+    '  preflight [--json]                  report GitHub, main and landing-lock readiness',
     '  prepare <n> [--json]                prepare a PR worktree',
     '  comment <n> --report <path> [--apply]  render or publish a report',
     '  state [--json] [--cleanup] [--forget <change>] [--fail <n> --error <text>]',
@@ -692,7 +1011,7 @@ export function parseArgs(argv) {
   const args = [...argv]
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
-  if (!['poll', 'prepare', 'comment', 'state'].includes(command)) throw new UsageError(`unknown command '${command}'`)
+  if (!['poll', 'prepare', 'comment', 'state', 'preflight'].includes(command)) throw new UsageError(`unknown command '${command}'`)
   const options = { command, json: false, apply: false, cleanup: false, report: undefined, change: undefined, fail: undefined, error: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
@@ -714,6 +1033,9 @@ export function parseArgs(argv) {
   if ((command === 'prepare' || command === 'comment') && positional.length !== 1) {
     throw new UsageError(`${command} needs one PR number`)
   }
+  if (command === 'preflight' && positional.length !== 0) {
+    throw new UsageError('preflight takes no positional argument')
+  }
   if (positional.length > 1) throw new UsageError('unexpected positional arguments')
   options.number = positional[0] === undefined ? undefined : Number(positional[0])
   if (options.number !== undefined && (!Number.isInteger(options.number) || options.number < 1)) {
@@ -731,6 +1053,11 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     const root = mainWorktree()
+    if (options.command === 'preflight') {
+      const result = preflight({ root })
+      write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${result.reason ?? 'ready'}\n`)
+      return 0
+    }
     if (options.command === 'state') {
       if (options.cleanup || options.change !== undefined || options.fail !== undefined) {
         const result = withRunLock(root, () => {
@@ -751,10 +1078,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     const result = withRunLock(root, () => {
-      if (options.command === 'poll') {
-        const candidates = pollPullRequests({ root })
-        return { candidates }
-      }
+      if (options.command === 'poll') return pollPullRequests({ root })
       if (options.command === 'prepare') return preparePullRequest({ root, number: options.number })
       if (options.report === undefined) throw new UsageError('comment needs --report <path>')
       return publishComment({ root, number: options.number, reportPath: options.report, apply: options.apply })
@@ -765,10 +1089,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
     }
     if (!options.json) {
       if (options.command === 'poll') {
-        const candidates = result.candidates
-        write(candidates.length === 0
-          ? 'no review candidates\n'
-          : `${candidates.map((candidate) => `PR #${candidate.number} ${candidate.head.slice(0, 12)} ${candidate.change}${candidate.resume ? ' (resume)' : ''}`).join('\n')}\n`)
+        write(pollText(result))
         return 0
       }
       if (options.command === 'prepare') {

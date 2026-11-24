@@ -33,6 +33,14 @@ test('the landed push document names the command, checks and recovery', () => {
     'unmatched',
     'ambiguous',
     'not an ancestor',
+    '--offline',
+    'offline-land record',
+    'offline-lands.json',
+    'landed-offline',
+    'not on `origin/main`',
+    'refs/heads/main',
+    'check-main-push',
+    'DSH_PUSH_LANDED_OFFLINE',
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }
@@ -48,6 +56,8 @@ test('README names the worktree land and the explicit push script', () => {
   const readme = read('README.md')
   assert.ok(readme.includes('openspec_apply_worktree action=land'), 'README names worktree land')
   assert.ok(readme.includes('scripts/push-landed.mjs'), 'README names the push script')
+  assert.ok(readme.includes('offline-land.mjs record'), 'README names the offline-land record')
+  assert.ok(readme.includes('--push --offline'), 'README names the deferred offline push')
   assert.ok(readme.includes('docs/land-push.md'), 'README lists the push document')
 })
 

@@ -61,7 +61,9 @@
     "push:landed": "node scripts/push-landed.mjs",
     "pr-review:poll": "node scripts/pr-review-watch.mjs poll",
     "pr-review:owner-review": "node scripts/pr-review-owner-review.mjs",
-    "pr-review:land": "node scripts/pr-review-land.mjs"
+    "pr-review:land": "node scripts/pr-review-land.mjs",
+    "pr:publish": "node scripts/pr-publish.mjs",
+    "pr:local-land": "node scripts/pr-local-land.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": "2.0.0"
