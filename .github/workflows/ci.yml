@@ -33,7 +33,19 @@ jobs:
       - run: npm ci
       - name: change check
         if: github.event_name == 'pull_request'
-        run: node scripts/check-pr-change.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          arguments=(--base "$PR_BASE_SHA" --head "$PR_HEAD_SHA")
+          if [ "$PR_AUTHOR" = "resec" ] && [ "$PR_HEAD_REPO" = "$REPOSITORY" ]; then
+            arguments+=(--maintainer)
+          fi
+          node scripts/check-pr-change.mjs "${arguments[@]}"
       - name: generated skill check
         if: github.event_name == 'pull_request'
         run: node scripts/check-generated-skills.mjs --base "${{ github.event.pull_request.base.sha }}"

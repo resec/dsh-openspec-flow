@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+
+import { offlineLandsPath } from '../scripts/landed-push-guard.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const SCRIPT = fileURLToPath(new URL('../scripts/push-landed.mjs', import.meta.url))
 
@@ -24,15 +28,16 @@ function write(path, text) {
 }
 
 function makeRepository() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-push-landed-'))
+  const root = tempDir('dsh-push-landed-')
   git(root, ['init', '-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
+  write(join(root, '.gitignore'), '.cache/\n')
   write(join(root, 'openspec', 'changes', 'add-x', 'proposal.md'), '# Add X\n')
   git(root, ['add', '.'])
   git(root, ['commit', '-qm', 'initial'])
   const initial = git(root, ['rev-parse', 'HEAD'])
-  const origin = join(root, '..', `${root.split('/').pop()}-origin.git`)
+  const origin = tempDir('dsh-push-landed-origin-')
   git(root, ['init', '--bare', '-q', origin])
   // A bare repository inherits `init.defaultBranch` for HEAD, so deleting `main`
   // would be refused on a host that defaults to it. Point HEAD at a branch that
@@ -51,7 +56,7 @@ function makeRepository() {
   return { root, origin, initial }
 }
 
-function makeLanded({ change = 'add-x', legacy = false } = {}) {
+function makeLanded({ change = 'add-x', legacy = false, direct = false } = {}) {
   const repository = makeRepository()
   const { root, origin } = repository
   git(root, ['checkout', '-q', '-b', 'feature'])
@@ -66,6 +71,7 @@ function makeLanded({ change = 'add-x', legacy = false } = {}) {
   }
   const landCommit = git(root, ['rev-parse', 'HEAD'])
   const featureTree = git(root, ['rev-parse', `${landCommit}^{tree}`])
+  if (!direct) git(root, ['push', '-q', 'origin', `${landCommit}:refs/heads/main`])
 
   const changeDirectory = join(root, 'openspec', 'changes', change)
   const archiveDirectory = join(root, 'openspec', 'changes', 'archive', `2026-11-20-${change}`)
@@ -109,6 +115,41 @@ function writeManifest(root, manifest) {
   return file
 }
 
+function writeOfflineRecord(repository) {
+  const file = offlineLandsPath(repository.root)
+  mkdirSync(join(file, '..'), { recursive: true })
+  writeFileSync(file, `${JSON.stringify({
+    schemaVersion: 1,
+    lands: {
+      [repository.landCommit]: {
+        change: repository.change,
+        archiveCommit: repository.archiveCommit,
+        featureTree: repository.featureTree,
+        session: 'session-test',
+        recordedAt: '2026-11-20T12:00:00.000Z',
+      },
+    },
+  }, null, 2)}\n`)
+}
+
+function writeLocalPhase(repository, phase = 'landed-offline') {
+  write(join(repository.root, '.cache/pr-review/local-prs.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    prs: {
+      7: {
+        number: 7,
+        change: repository.change,
+        branch: 'pr/add-x',
+        head: repository.featureTree,
+        tree: repository.featureTree,
+        record: 'local#add-x',
+        ownerSession: 'session-test',
+        phase,
+      },
+    },
+  }, null, 2)}\n`)
+}
+
 function remoteMain(repository) {
   return git(repository.root, ['ls-remote', '--heads', 'origin', 'main']).split(/\s+/u)[0]
 }
@@ -127,6 +168,69 @@ test('dry run reports the latest manifest and leaves the remote unchanged', () =
     assert.match(result.stdout, /push-landed: manifest/)
     assert.match(result.stdout, /action: dry-run/)
     assert.equal(remoteMain(repository), before)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('a direct land is refused by both the dry run and --push', () => {
+  const repository = makeLanded({ direct: true })
+  try {
+    const before = remoteMain(repository)
+    const dry = run(repository.root)
+    assert.equal(dry.status, 1)
+    assert.match(dry.stderr, /not on origin\/main/)
+    assert.match(dry.stderr, /node scripts\/push-landed\.mjs --push --offline/)
+    assert.equal(remoteMain(repository), before)
+    const pushed = run(repository.root, ['--push'])
+    assert.equal(pushed.status, 1)
+    assert.match(pushed.stderr, /not on origin\/main/)
+    assert.match(pushed.stderr, /node scripts\/push-landed\.mjs --push --offline/)
+    assert.equal(remoteMain(repository), before)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('a recorded offline land pushes only with --offline and clears the record', () => {
+  const repository = makeLanded({ direct: true })
+  try {
+    writeOfflineRecord(repository)
+    const before = remoteMain(repository)
+    const dry = run(repository.root, ['--offline'])
+    assert.equal(dry.status, 0, dry.stderr)
+    assert.match(dry.stdout, /dry-run/)
+    assert.equal(remoteMain(repository), before)
+
+    const pushed = run(repository.root, ['--push', '--offline'])
+    assert.equal(pushed.status, 0, pushed.stderr)
+    assert.equal(remoteMain(repository), git(repository.root, ['rev-parse', 'HEAD']))
+    const state = JSON.parse(readFileSync(offlineLandsPath(repository.root), 'utf8'))
+    assert.equal(state.lands[repository.landCommit], undefined)
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('offline requires a record or phase, and the flag alone does not authorize', () => {
+  const repository = makeLanded({ direct: true })
+  try {
+    const before = remoteMain(repository)
+    const withoutRecord = run(repository.root, ['--push', '--offline'])
+    assert.equal(withoutRecord.status, 1)
+    assert.match(withoutRecord.stderr, /record the offline land/)
+    assert.equal(remoteMain(repository), before)
+
+    writeOfflineRecord(repository)
+    const withoutFlag = run(repository.root, ['--push'])
+    assert.equal(withoutFlag.status, 1)
+    assert.match(withoutFlag.stderr, /--push --offline/)
+    assert.equal(remoteMain(repository), before)
+
+    writeLocalPhase(repository)
+    const phase = run(repository.root, ['--push', '--offline'])
+    assert.equal(phase.status, 0, phase.stderr)
+    assert.equal(remoteMain(repository), git(repository.root, ['rev-parse', 'HEAD']))
   } finally {
     cleanup(repository)
   }
@@ -273,7 +377,7 @@ test('remote ahead, diverged and missing main are refused', () => {
 
   const diverged = makeLanded()
   try {
-    git(diverged.root, ['checkout', '-q', '-b', 'remote-only', diverged.initial])
+    git(diverged.root, ['checkout', '-q', '-b', 'remote-only', diverged.landCommit])
     write(join(diverged.root, 'remote.txt'), 'remote\n')
     git(diverged.root, ['add', 'remote.txt'])
     git(diverged.root, ['commit', '-qm', 'remote only'])
@@ -320,7 +424,7 @@ test('selection, missing manifests and usage errors are reported', () => {
       assert.equal(selected.status, 0, selected.stderr)
     }
 
-    const empty = mkdtempSync(join(tmpdir(), 'dsh-push-landed-empty-'))
+    const empty = tempDir('dsh-push-landed-empty-')
     try {
       const emptyGit = join(empty, '.git', 'openspec-flow', 'landed')
       mkdirSync(emptyGit, { recursive: true })

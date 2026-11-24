@@ -4,7 +4,9 @@
  *
  * It requires one active change, no unchecked task in that change, and no
  * restricted path. Package.json is allowed to change scripts, but not a
- * dependency, engine or package-manager field.
+ * dependency, engine or package-manager field. A maintainer-authored
+ * same-repository pull request may pass `--maintainer` to skip only the
+ * restricted-path refusal; every other validation still runs.
  */
 
 import { readFileSync } from 'node:fs'
@@ -112,10 +114,10 @@ export function hasDependencyChange(base, head) {
 
 /**
  * Evaluate the pull request facts collected by the CLI.
- * @param input - paths, tasks by change, and package.json snapshots.
+ * @param input - paths, tasks by change, package.json snapshots and the maintainer flag.
  * @returns error messages.
  */
-export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, headPackageJson }) {
+export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, headPackageJson, maintainer = false }) {
   const errors = []
   const names = activeChangeNames(paths)
   if (names.length === 0) {
@@ -136,7 +138,7 @@ export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, hea
     }
   }
   for (const path of paths) {
-    if (isRestrictedPath(path)) {
+    if (!maintainer && isRestrictedPath(path)) {
       errors.push(`restricted path changed: ${path}`)
     }
   }
@@ -213,6 +215,15 @@ export function parseHead(argv) {
   return 'HEAD'
 }
 
+/**
+ * Whether the maintainer same-repository exemption was requested.
+ * @param argv - arguments after the script.
+ * @returns whether `--maintainer` is present.
+ */
+export function parseMaintainer(argv) {
+  return argv.includes('--maintainer')
+}
+
 function parseBase(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -227,13 +238,13 @@ function main() {
   const argv = process.argv.slice(2)
   const base = parseBase(argv)
   if (base === undefined) {
-    console.error('usage: node scripts/check-pr-change.mjs --base <commit> [--head <commit>]')
+    console.error('usage: node scripts/check-pr-change.mjs --base <commit> [--head <commit>] [--maintainer]')
     process.exitCode = 2
     return
   }
   const head = parseHead(argv)
   if (head === null) {
-    console.error('usage: node scripts/check-pr-change.mjs --base <commit> [--head <commit>]')
+    console.error('usage: node scripts/check-pr-change.mjs --base <commit> [--head <commit>] [--maintainer]')
     process.exitCode = 2
     return
   }
@@ -251,6 +262,7 @@ function main() {
     tasksByChange,
     basePackageJson: packageJsonAt(base),
     headPackageJson: headPackageJsonAt(head),
+    maintainer: parseMaintainer(argv),
   })
   if (errors.length > 0) {
     for (const error of errors) console.error(`change check: ${error}`)
