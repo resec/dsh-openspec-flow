@@ -70,7 +70,7 @@ On Linux, the lab doctor also requires a CJK font. If the doctor reports one mis
 --skip-install         Reuse node_modules instead of running npm ci.
 --skip-playwright      Skip the Chromium installation.
 --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
---reset-browsers       Remove the resolved browser directory (PLAYWRIGHT_BROWSERS_PATH or .cache/lab/pw-browsers) before installing Chromium.
+--reset-browsers       Remove the resolved browser directory (PLAYWRIGHT_BROWSERS_PATH or .cache/lab/pw-browsers), only when it is inside this repository, before installing Chromium.
 --force                Continue past the 3 GiB free-disk threshold.
 --node-mirror URL      Use a Node distribution mirror.
 --registry URL         Use an npm registry.

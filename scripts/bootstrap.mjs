@@ -37,7 +37,9 @@ Options:
   --skip-install         Reuse node_modules instead of running npm ci.
   --skip-playwright      Skip the Playwright Chromium installation.
   --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
-  --reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
+  --reset-browsers       Remove the resolved browser directory
+                         (PLAYWRIGHT_BROWSERS_PATH or .cache/lab/pw-browsers), only when
+                         it is inside this repository, before installing Chromium.
   --force                Continue past the free-disk threshold.
   --registry URL         npm registry for npm ci and npx.
   --help                 Show this usage and exit.
@@ -162,6 +164,22 @@ export function completionHint() {
   return 'lab cache: .cache/lab/dsh; reclaim stale DSH installs with npm run lab -- cache prune'
 }
 
+/**
+ * Closing hint for the runtime the run used.
+ *
+ * `scripts/activate.sh` succeeds only with a clone-local runtime, so the step is
+ * offered only when one exists; a host-runtime run gets the conditional wording
+ * `CONTRIBUTING.md` uses instead.
+ * @param options - repository root to inspect.
+ * @returns the hint line.
+ */
+export function runtimeHint({ root = ROOT } = {}) {
+  if (existsSync(join(root, '.cache', 'toolchain', 'node', 'bin', 'node'))) {
+    return 'Next: source scripts/activate.sh to put the clone-local runtime first on PATH, then npm run verify.'
+  }
+  return 'Next: this run used a host Node runtime, so there is nothing to activate; run npm run verify. If bootstrap later downloads a clone-local Node, put it first on PATH as CONTRIBUTING.md describes.'
+}
+
 function log(step, total, message) {
   console.log(`bootstrap [${step}/${total}] ${message}`)
 }
@@ -250,7 +268,7 @@ function main() {
 
   console.log('bootstrap: ready')
   console.log(completionHint())
-  console.log('Next: source scripts/activate.sh to use a clone-local runtime, then npm run verify.')
+  console.log(runtimeHint())
 }
 
 /**

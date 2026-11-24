@@ -26,7 +26,9 @@ Options:
   --skip-install         Reuse node_modules instead of running npm ci.
   --skip-playwright      Skip the Playwright browser installation.
   --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
-  --reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
+  --reset-browsers       Remove the resolved browser directory
+                         (PLAYWRIGHT_BROWSERS_PATH or .cache/lab/pw-browsers), only when
+                         it is inside this repository, before installing Chromium.
   --force                Continue past the free-disk threshold.
   --registry URL         npm registry for npm ci and npx.
 

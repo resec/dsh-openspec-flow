@@ -37,6 +37,7 @@ import {
   playwrightEnv,
   resolvePlan,
   runBrowserStep,
+  runtimeHint,
 } from '../scripts/bootstrap.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -219,6 +220,28 @@ test('the help surfaces name the new options and the non-duplicated full mode', 
   }
 })
 
+test('the help texts describe the resolved browser directory and its confinement', () => {
+  const help = spawnSync(process.execPath, [join(ROOT, 'scripts', 'bootstrap.mjs'), '--help'], {
+    encoding: 'utf8',
+  })
+  assert.equal(help.status, 0, help.stderr)
+  const shellHelp = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh'), '--help'], {
+    encoding: 'utf8',
+  })
+  assert.equal(shellHelp.status, 0, shellHelp.stderr)
+  const surfaces = {
+    'bootstrap.mjs': help.stdout,
+    'bootstrap.sh': shellHelp.stdout,
+    'CONTRIBUTING.md': readFileSync(join(ROOT, 'CONTRIBUTING.md'), 'utf8'),
+  }
+  for (const [name, text] of Object.entries(surfaces)) {
+    assert.match(text, /resolved browser directory/, name)
+    assert.match(text, /PLAYWRIGHT_BROWSERS_PATH or \.cache\/lab\/pw-browsers/, name)
+    assert.match(text, /only when\s+it is inside this repository/, name)
+    assert.doesNotMatch(text, /Remove \.cache\/lab\/pw-browsers/, name)
+  }
+})
+
 test('refuses a browser reset when Playwright is skipped', () => {
   assert.throws(
     () => parseBootstrapArgs(['--reset-browsers', '--skip-playwright']),
@@ -347,4 +370,18 @@ test('the completion hint names the DSH cache and prune command', () => {
   const hint = completionHint()
   assert.match(hint, /\.cache\/lab\/dsh/)
   assert.match(hint, /npm run lab -- cache prune/)
+})
+
+test('the closing hint offers activate.sh only when a clone-local runtime exists', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-hint-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  const hostRun = runtimeHint({ root })
+  assert.doesNotMatch(hostRun, /source scripts\/activate\.sh/)
+  assert.match(hostRun, /host Node runtime/)
+  assert.match(hostRun, /npm run verify/)
+
+  mkdirSync(join(root, '.cache', 'toolchain', 'node', 'bin'), { recursive: true })
+  writeFileSync(join(root, '.cache', 'toolchain', 'node', 'bin', 'node'), '')
+  assert.match(runtimeHint({ root }), /source scripts\/activate\.sh/)
 })
