@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * Land a reviewed pull request: rebase its head onto main, let the session
- * review the rebased branch, merge with `gh pr merge --rebase`, verify the
- * merged tree, and hand the archive/push phases back to the session.
+ * Land a reviewed pull request: update a behind same-repository branch through
+ * GitHub's update-branch API, require the head to contain the latest main,
+ * create the landing branch at the head, let the session review it, merge with
+ * `gh pr merge --rebase`, verify the merged tree, and hand the archive/push
+ * phases back to the session.
  *
  * The script performs git and GitHub work only. It never calls the plugin
  * review or archive tools; the scheduled DSH session owns those calls.
