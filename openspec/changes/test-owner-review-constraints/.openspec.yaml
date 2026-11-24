@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Guard the owner-review constraints that the spec already states but no test
+  pinned, so deleting them turns the suite red.
