@@ -13,5 +13,5 @@
 
 ## 3. Verify
 
-- [ ] 3.1 Run `node --test test/bootstrap.test.mjs`.
-- [ ] 3.2 Run `openspec validate fix-bootstrap-quoting --strict`, `npm run openspec:check` and `npm run verify`, and record the test summary and the coverage verdict.
+- [x] 3.1 Run `node --test test/bootstrap.test.mjs`: 32 tests, 32 pass, 0 fail.
+- [x] 3.2 Run `openspec validate fix-bootstrap-quoting --strict` (valid), `npm run openspec:check` (121 passed, 0 failed), `node scripts/check-requirement-length.mjs` (ok), `node scripts/check-generated-skills.mjs` (ok) and `npm run verify` on Node v24.22.2 (1466 tests, 1466 pass, 0 fail; coverage plugin line 98.64%, branch 93.70%, function 99.21%, no violations).
