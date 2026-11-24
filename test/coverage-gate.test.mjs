@@ -331,6 +331,8 @@ function makePassingGateRepo() {
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   writeFileSync(join(root, 'index.js'), 'export const a = 1\n')
+  writeFileSync(join(root, 'client.js'), 'export const client = 1\n')
+  writeFileSync(join(root, 'reviewer.js'), 'export const reviewer = 1\n')
   writeFileSync(join(root, '.gitignore'), '.cache/\n')
   writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3}\n')
   mkdirSync(join(root, 'lib'), { recursive: true })
@@ -338,7 +340,7 @@ function makePassingGateRepo() {
   mkdirSync(join(root, 'test'), { recursive: true })
   writeFileSync(join(root, 'test', 'fixture.test.mjs'), "import test from 'node:test'\n")
   mkdirSync(join(root, 'scripts'), { recursive: true })
-  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'test-env.mjs', 'node-version.mjs']) {
+  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'test-env.mjs', 'node-version.mjs', 'check-pre-push.mjs']) {
     writeFileSync(join(root, 'scripts', name), '// fixture\n')
   }
   writeJson(join(root, 'package.json'), { engines: { node: '>=24.9.0' } })
