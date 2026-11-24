@@ -418,7 +418,7 @@ export function syncLanding({
   const head = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
   if (head !== pr.headRefOid) throw new Error(`PR #${n} moved from ${pr.headRefOid} to ${head}; retry`)
   if (headContainsMain(root, head)) throw new Error(`PR #${n} already contains origin/main; no sync needed`)
-  if (!apply) return { dryRun: true, number: n, change: change[0], head }
+  if (!apply) return { dryRun: true, number: n, change: change[0], head, branch: pr.headRefName }
   try {
     ghRunner([
       'api', '--method', 'PUT', `repos/{owner}/{repo}/pulls/${n}/update-branch`,
@@ -445,7 +445,7 @@ export function syncLanding({
   syncs[String(n)] = { previousHead: head, newHead, at: new Date().toISOString() }
   lands.syncs = syncs
   saveLandings(root, lands)
-  return { number: n, change: change[0], previousHead: head, newHead }
+  return { number: n, change: change[0], previousHead: head, newHead, branch: pr.headRefName }
 }
 
 /** Resolve the apply review record for one landing. */

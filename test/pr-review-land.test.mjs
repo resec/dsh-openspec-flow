@@ -98,6 +98,7 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
     headRefOid: head,
     baseRefOid: 'b'.repeat(40),
     baseRefName,
+    headRefName: 'pr-branch',
     statusCheckRollup: [{ conclusion: 'SUCCESS' }],
     files: [{ path: 'openspec/changes/widget/proposal.md' }, { path: 'feature.txt' }],
     labels: [{ name: LANDING_LABEL }],
@@ -615,6 +616,7 @@ test('sync is a dry run by default and reports the behind head', () => {
   const result = syncLanding({ root, number: 12, gh })
   assert.equal(result.dryRun, true)
   assert.equal(result.head, head)
+  assert.equal(result.branch, 'pr-branch')
   assert.equal(gh.calls.some((args) => args[0] === 'api' && args[1] !== 'user'), false)
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
 })
