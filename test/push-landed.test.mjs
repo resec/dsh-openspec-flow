@@ -166,10 +166,12 @@ test('a direct land is refused by both the dry run and --push', () => {
     const dry = run(repository.root)
     assert.equal(dry.status, 1)
     assert.match(dry.stderr, /not on origin\/main/)
+    assert.match(dry.stderr, /node scripts\/push-landed\.mjs --push --offline/)
     assert.equal(remoteMain(repository), before)
     const pushed = run(repository.root, ['--push'])
     assert.equal(pushed.status, 1)
     assert.match(pushed.stderr, /not on origin\/main/)
+    assert.match(pushed.stderr, /node scripts\/push-landed\.mjs --push --offline/)
     assert.equal(remoteMain(repository), before)
   } finally {
     cleanup(repository)
@@ -208,7 +210,7 @@ test('offline requires a record or phase, and the flag alone does not authorize'
     writeOfflineRecord(repository)
     const withoutFlag = run(repository.root, ['--push'])
     assert.equal(withoutFlag.status, 1)
-    assert.match(withoutFlag.stderr, /pass --offline/)
+    assert.match(withoutFlag.stderr, /--push --offline/)
     assert.equal(remoteMain(repository), before)
 
     writeLocalPhase(repository)
