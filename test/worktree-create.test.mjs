@@ -14,6 +14,7 @@ import {
 import { applyStatePath, readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { gitCommonDir } from '../lib/review/store.js'
 import { lockPath } from '../lib/worktree/lock.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const roots = []
 
@@ -24,7 +25,7 @@ function git(cwd, args) {
 function repository(change = 'demo') {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-worktree-create-'))
   roots.push(root)
-  git(root, ['init', '-q'])
+  initFixtureRepo(root, ['-q'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   mkdirSync(join(root, 'openspec', 'changes', change), { recursive: true })

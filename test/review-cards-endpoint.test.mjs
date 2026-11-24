@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +6,7 @@ import test from 'node:test'
 import { compareCards, createReviewChannel } from '../lib/review/settings.js'
 import { sessionKeyOf } from '../lib/review/cards.js'
 import { reviewDirectory, reviewRoot, writeJsonAtomic } from '../lib/review/store.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 /** Build a project, a review directory and the channel. */
 function fixture(options = {}) {
@@ -465,7 +465,7 @@ test('legacy cards remain readable until migration and are suppressed after remo
   const root = mkdtempSync(join(tmpdir(), 'dsh-cards-legacy-'))
   const legacy = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(legacy, 'cards'), { recursive: true })
-  execFileSync('git', ['-C', root, 'init', '-q'])
+  initFixtureRepo(root, ['-q'])
   const channel = createReviewChannel({
     ctx: {
       get(name) {
@@ -607,7 +607,7 @@ test('a legacy changer review card is withheld for an independent review', async
   const root = mkdtempSync(join(tmpdir(), 'dsh-cards-legacy-withhold-'))
   const legacy = join(root, 'openspec', '.review', 'local#demo')
   mkdirSync(join(legacy, 'cards'), { recursive: true })
-  execFileSync('git', ['-C', root, 'init', '-q'])
+  initFixtureRepo(root, ['-q'])
   reviewRecord(legacy)
   const path = cardFile(legacy)
   const channel = createReviewChannel({
@@ -633,7 +633,7 @@ test('a legacy changer review card is withheld for an independent review', async
 test('two project roots sharing a review root return each card once', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-cards-shared-'))
   try {
-    execFileSync('git', ['-C', root, 'init', '-q'])
+    initFixtureRepo(root, ['-q'])
     mkdirSync(join(root, 'openspec'), { recursive: true })
     mkdirSync(join(root, 'nested', 'openspec'), { recursive: true })
     const directory = reviewDirectory(root, undefined, 'demo')

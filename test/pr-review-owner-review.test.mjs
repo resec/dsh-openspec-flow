@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 import {
@@ -14,6 +13,7 @@ import {
   syncPullRequest,
 } from '../scripts/pr-review-owner-review.mjs'
 import { loadState, saveState, cleanupClosedPullRequests } from '../scripts/pr-review-watch.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const HEAD = 'a'.repeat(40)
 const OLD = 'b'.repeat(40)
@@ -21,8 +21,7 @@ const LOGIN = 'tester'
 
 function makeRoot() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-owner-review-'))
-  const init = spawnSync('git', ['init', '-q', root], { encoding: 'utf8' })
-  assert.equal(init.status, 0, init.stderr)
+  initFixtureRepo(root, ['-q'])
   mkdirSync(join(root, '.cache', 'pr-review'), { recursive: true })
   return root
 }

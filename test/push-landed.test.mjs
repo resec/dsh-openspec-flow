@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/push-landed.mjs', import.meta.url))
 
@@ -25,7 +26,7 @@ function write(path, text) {
 
 function makeRepository() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-push-landed-'))
-  git(root, ['init', '-q', '-b', 'main'])
+  initFixtureRepo(root, ['-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   write(join(root, 'openspec', 'changes', 'add-x', 'proposal.md'), '# Add X\n')
@@ -313,7 +314,7 @@ test('selection, missing manifests and usage errors are reported', () => {
       const emptyGit = join(empty, '.git', 'openspec-flow', 'landed')
       mkdirSync(emptyGit, { recursive: true })
       write(join(empty, 'openspec', 'changes', 'x', 'proposal.md'), '# X\n')
-      git(empty, ['init', '-q', '-b', 'main'])
+      initFixtureRepo(empty, ['-q', '-b', 'main'])
       git(empty, ['config', 'user.email', 'test@example.com'])
       git(empty, ['config', 'user.name', 'Test'])
       git(empty, ['add', '.'])

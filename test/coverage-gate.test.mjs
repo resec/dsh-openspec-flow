@@ -24,6 +24,7 @@ import {
 } from '../scripts/coverage-gate.mjs'
 import { runVerification } from '../scripts/coverage.mjs'
 import { readStamp as readStampFixture, writeStamp as writeStampFixture } from '../scripts/coverage-stamp.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const isSource = (file) => file === 'lib/a.js'
 
@@ -276,7 +277,7 @@ test('rejects an instrumented run with no lcov', async () => {
 test('report mode exits zero and enforce mode exits one for the same run', async () => {
   const root = mkdtempSync(join(tmpdir(), 'coverage-modes-'))
   try {
-    git(root, ['init', '-b', 'main'])
+    initFixtureRepo(root, ['-b', 'main'])
     git(root, ['config', 'user.email', 'test@example.com'])
     git(root, ['config', 'user.name', 'Test'])
     mkdirSync(join(root, 'lib'), { recursive: true })
@@ -327,7 +328,7 @@ test('report mode exits zero and enforce mode exits one for the same run', async
 
 function makePassingGateRepo() {
   const root = mkdtempSync(join(tmpdir(), 'coverage-pass-'))
-  git(root, ['init', '-b', 'main'])
+  initFixtureRepo(root, ['-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   writeFileSync(join(root, 'index.js'), 'export const a = 1\n')

@@ -25,6 +25,7 @@ import {
   stateCommand,
   withRunLock,
 } from '../scripts/pr-review-watch.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
@@ -37,7 +38,7 @@ function git(cwd, args) {
 
 function makeRepository() {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-pr-review-watch-'))
-  git(directory, ['init', '-q', '-b', 'main'])
+  initFixtureRepo(directory, ['-q', '-b', 'main'])
   git(directory, ['config', 'user.email', 'test@example.com'])
   git(directory, ['config', 'user.name', 'Test'])
   const change = join(directory, 'openspec', 'changes', 'widget')
@@ -52,7 +53,7 @@ function makeRepository() {
 
 function makeOrigin(root) {
   const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-review-remote-'))
-  git(remote, ['init', '--bare', '-q'])
+  initFixtureRepo(remote, ['--bare', '-q'])
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return remote

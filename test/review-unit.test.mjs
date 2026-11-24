@@ -47,6 +47,7 @@ import { closeStaleRound, submitReport } from '../lib/review/submit.js'
 import { anotherChangeInLocation } from '../lib/review/scope.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const CREATED = []
 
@@ -117,7 +118,7 @@ test('the review ignore entry is not written when a repository rule already igno
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   writeFileSync(join(root, '.gitignore'), 'openspec/.review/\n')
@@ -136,7 +137,7 @@ test('a failed ignore check keeps the write', () => {
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   const outside = mkdtempSync(join(tmpdir(), 'openspec-flow-outside-'))
   try {
     ensureReviewIgnored(root, outside)
@@ -852,7 +853,7 @@ test('git review paths are checked and a commit resolves', () => {
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   writeFileSync(join(root, 'README.md'), '# Test\n')
@@ -940,7 +941,7 @@ test('git merge base resolves and fails cleanly', () => {
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   writeFileSync(join(root, 'a'), 'a')
@@ -1038,7 +1039,7 @@ function git(root, args) {
 
 function gitRoot() {
   const root = temp()
-  git(root, ['init', '-b', 'main'])
+  initFixtureRepo(root, ['-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
   return root

@@ -24,6 +24,7 @@ import {
   releaseApplyLocks,
 } from '../lib/review/apply-lock.js'
 import { filterUnrelatedChangeStatus, statusLinePath } from '../lib/review/store.js'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 const CREATED = []
 
@@ -36,7 +37,7 @@ function temporary() {
 
 function gitTemporary() {
   const root = temporary()
-  runGit(root, ['init'])
+  initFixtureRepo(root)
   runGit(root, ['config', 'user.email', 'test@example.com'])
   runGit(root, ['config', 'user.name', 'Test'])
   mkdirSync(join(root, 'openspec', 'changes', 'demo'), { recursive: true })

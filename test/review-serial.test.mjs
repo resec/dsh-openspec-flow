@@ -10,6 +10,7 @@ import { reviewDirectory } from '../lib/review/store.js'
 import {
   CHANGE, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
 } from './review-fixtures.mjs'
+import { initFixtureRepo } from './git-fixture.mjs'
 
 test.after(cleanupFixtures)
 
@@ -170,7 +171,7 @@ test('a nested OpenSpec root seals with worktree-relative paths', async () => {
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   run(['add', 'packages/x/openspec'])
@@ -278,7 +279,7 @@ test('a nested-root seal rejects the worktree-root ignore file', async () => {
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  run(['init'])
+  initFixtureRepo(root)
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'Test'])
   run(['add', 'packages/x/openspec'])
