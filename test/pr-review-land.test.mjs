@@ -526,7 +526,7 @@ test('candidates lists a labeled, commented pull request without writing state',
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
 })
 
-test('candidates skips an unlabeled pull request and refuses a mismatched watch entry', () => {
+test('candidates refuses an unlabeled pull request and a mismatched watch entry', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
   const pr = JSON.parse(prJson(head))
