@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Define the labeled landing duty set once in contributor-workflow and let
+  development-workflow reference it instead of restating a different subset.
