@@ -58,9 +58,10 @@ The JSON output and `check` expose the same path and the observed pnpm version.
 
 `init --browser` and bootstrap's browser step use one lock at `<shared>/.install.lock`. The lock covers the presence check, `--reset-browsers` and the install, so a reset cannot delete a browser another worktree is installing.
 
+- The lock directory appears with its owner record or not at all: the owner is written into a staging directory that is renamed into place.
 - A waiter polls, then rechecks and reuses a browser the holder installed.
-- A timeout reports the owner instead of deleting the lock.
-- A lock whose recorded pid is dead is reclaimed by the next caller.
+- A timeout reports the owner instead of deleting the lock; an ownerless lock is reported as having no owner.
+- A lock whose recorded pid is dead, or a lock with no owner that is older than five seconds, is moved aside and reclaimed by the next caller.
 - `check` reports a held lock and its owner without removing it.
 
 Browser path resolution is: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`. Bootstrap uses the same resolved path for the presence check, `--reset-browsers` and the installer.
