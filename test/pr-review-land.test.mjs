@@ -7,11 +7,14 @@ import test from 'node:test'
 
 import {
   LANDING_LABEL,
+  REVIEW_FAILED_PHASE,
   abandonLanding,
   archiveLanding,
   assertSingleLanding,
+  failLanding,
   finishLanding,
   hasLandingLabel,
+  listLandingCandidates,
   loadLandings,
   main,
   mergeLanding,
@@ -20,6 +23,7 @@ import {
   prepareLanding,
   pushLanding,
   reviewedLanding,
+  saveLandings,
   trustedPass,
 } from '../scripts/pr-review-land.mjs'
 import { resolvePaths, saveState } from '../scripts/pr-review-watch.mjs'
@@ -106,10 +110,11 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
   })
 }
 
-function fakeGh({ pr = {}, onMerge } = {}) {
+function fakeGh({ pr = {}, list = [], onMerge } = {}) {
   return (args, cwd) => {
     if (args[0] === 'api') return LOGIN
     if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(pr)
+    if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify(list)
     if (args[0] === 'pr' && args[1] === 'merge') {
       if (onMerge) onMerge(cwd)
       return 'merged'
@@ -129,19 +134,33 @@ test('help and argument parsing are strict', () => {
   assert.equal(parseArgs(['--help']).command, 'help')
   assert.equal(parseArgs(['plan', '12']).number, 12)
   assert.equal(parseArgs(['archive', '12', '--commit', 'abc', '--apply']).commit, 'abc')
+  assert.equal(parseArgs(['candidates']).command, 'candidates')
+  const failed = parseArgs(['state', '--fail', '12', '--error', 'reviewer gone', '--apply'])
+  assert.equal(failed.fail, 12)
+  assert.equal(failed.error, 'reviewer gone')
+  assert.equal(failed.apply, true)
+  assert.throws(() => parseArgs(['state', '--fail', '12', '--apply']), /non-empty --error/)
+  assert.throws(() => parseArgs(['candidates', '--apply']), /read-only/)
+  assert.throws(() => parseArgs(['plan', '12', '--fail', '3']), /belong to state/)
   assert.throws(() => parseArgs(['plan']), /needs one PR number/)
   assert.throws(() => parseArgs(['wat', '12']), /unknown command/)
   let help = ''
   assert.equal(main(['--help'], (text) => { help += text }), 0)
   assert.match(help, /pr-review-land/)
+  assert.match(help, /candidates/)
 })
 
-test('landing documentation names the label, rebase merge and archive', () => {
+test('landing documentation names the label, candidates, resume and recovery', () => {
   const doc = readFileSync(new URL('../docs/pr-review.md', import.meta.url), 'utf8')
   assert.match(doc, /`mergeable`/)
   assert.match(doc, /gh pr merge <n> --rebase/)
   assert.match(doc, /openspec_archive/)
   assert.match(doc, /tree-mismatch/)
+  assert.match(doc, /pr-review-land\.mjs candidates/)
+  assert.match(doc, /action=resume/)
+  assert.match(doc, /state --fail/)
+  assert.match(doc, /`review-failed`/)
+  assert.match(doc, /every five minutes/)
 })
 
 test('label and trusted pass checks are exact', () => {
@@ -485,4 +504,109 @@ test('archive and push refuse before the prior phase is complete', () => {
   prepareLanding({ root, number: 12, apply: true, gh: fake })
   assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /phase is prepared/)
   assert.throws(() => pushLanding({ root, number: 12, apply: true }), /phase is prepared/)
+})
+
+test('candidates lists a labeled, commented pull request without writing state', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const stateFile = join(resolvePaths(root).cache, 'state.json')
+  const beforeState = readFileSync(stateFile, 'utf8')
+  const fake = fakeGh({
+    pr: JSON.parse(prJson(head)),
+    list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+  })
+  const result = listLandingCandidates({ root, gh: fake })
+  assert.equal(result.blocked, undefined)
+  assert.deepEqual(result.candidates, [{ number: 12, head, change: 'widget', base: 'main' }])
+  assert.deepEqual(result.refused, [])
+  assert.equal(readFileSync(stateFile, 'utf8'), beforeState)
+  assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+})
+
+test('candidates skips an unlabeled pull request and refuses a mismatched watch entry', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const pr = JSON.parse(prJson(head))
+  const unlabeled = listLandingCandidates({
+    root,
+    gh: fakeGh({ pr, list: [{ number: 12, labels: [{ name: 'other' }] }] }),
+  })
+  assert.deepEqual(unlabeled.candidates, [])
+  assert.deepEqual(unlabeled.refused, [])
+
+  const state = JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8'))
+  state.prs['12'].status = 'prepared'
+  saveState(root, state)
+  const stale = listLandingCandidates({
+    root,
+    gh: fakeGh({ pr, list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] }),
+  })
+  assert.equal(stale.candidates.length, 0)
+  assert.match(stale.refused[0].reason, /not commented/)
+})
+
+test('candidates reports a dirty main worktree once and lists nothing', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  writeFileSync(join(root, 'untracked.txt'), 'dirty\n')
+  const result = listLandingCandidates({
+    root,
+    gh: fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] }),
+  })
+  assert.deepEqual(result.candidates, [])
+  assert.match(result.blocked, /clean main worktree/)
+})
+
+test('candidates omits a review-failed landing and another unfinished landing', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({
+    pr: JSON.parse(prJson(head)),
+    list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+  })
+  saveLandings(root, { schemaVersion: 1, lands: { 12: { number: 12, phase: REVIEW_FAILED_PHASE, error: 'reviewer gone' } } })
+  const own = listLandingCandidates({ root, gh: fake })
+  assert.deepEqual(own.candidates, [])
+  assert.match(own.refused[0].reason, /review-failed: reviewer gone/)
+
+  saveLandings(root, { schemaVersion: 1, lands: { 2: { number: 2, phase: 'prepared' } } })
+  const other = listLandingCandidates({ root, gh: fake })
+  assert.deepEqual(other.candidates, [])
+  assert.match(other.refused[0].reason, /already landing in phase prepared/)
+})
+
+test('state --fail records review-failed, keeps the checkout and abandon clears it', () => {
+  const { root, remote } = makeRepo()
+  addPullRequest(root, remote)
+  const worktree = join(resolvePaths(root).worktrees, 'pr-12')
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: {
+      12: {
+        number: 12,
+        phase: 'prepared',
+        worktree,
+        landingBranch: 'pr-land/12',
+        error: null,
+        merged: false,
+        mergedHead: null,
+      },
+    },
+  })
+  const recorded = failLanding({ root, number: 12, error: 'reviewer unavailable', apply: true })
+  assert.equal(recorded.phase, REVIEW_FAILED_PHASE)
+  assert.equal(recorded.error, 'reviewer unavailable')
+  const again = failLanding({ root, number: 12, error: 'still unavailable', apply: true })
+  assert.equal(again.phase, REVIEW_FAILED_PHASE)
+  assert.equal(again.error, 'still unavailable')
+  assert.equal(loadLandings(root).lands['12'].worktree, worktree)
+  assert.deepEqual(abandonLanding({ root, number: 12, apply: true }), { abandoned: 12 })
+  assert.equal(loadLandings(root).lands['12'], undefined)
+})
+
+test('state --fail refuses a landing past the final review', () => {
+  const { root, remote } = makeRepo()
+  addPullRequest(root, remote)
+  saveLandings(root, { schemaVersion: 1, lands: { 12: { number: 12, phase: 'reviewed' } } })
+  assert.throws(() => failLanding({ root, number: 12, error: 'x', apply: true }), /only a prepared landing/)
 })

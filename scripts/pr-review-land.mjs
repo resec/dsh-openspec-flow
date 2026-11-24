@@ -29,6 +29,8 @@ export { trustedPass }
 
 /** Landing label required for authorization. */
 export const LANDING_LABEL = 'mergeable'
+/** Phase recorded when the final review cannot be resumed. */
+export const REVIEW_FAILED_PHASE = 'review-failed'
 /** Landing state file. */
 export const LANDINGS_FILE = 'landings.json'
 /** Landing manifest directory. */
@@ -36,11 +38,11 @@ export const MANIFEST_DIRECTORY = 'landings'
 /** Local landing branch prefix. */
 export const LANDING_BRANCH_PREFIX = 'pr-land/'
 /** Phases that keep a landing open or awaiting a retry. */
-const OPEN_PHASES = new Set(['prepared', 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
+const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
 /** Phases that may be forgotten by the operator. */
 const TERMINAL_PHASES = new Set(['pushed', 'failed', 'blocked', 'tree-mismatch'])
 /** Pre-merge phases that may be abandoned without losing merged work. */
-const ABANDONABLE_PHASES = new Set(['prepared', 'reviewed', 'blocked', 'failed', 'tree-mismatch'])
+const ABANDONABLE_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'blocked', 'failed', 'tree-mismatch'])
 
 /** A usage error, mapped to exit code 2. */
 export class LandUsageError extends UsageError {
@@ -162,11 +164,10 @@ function assertMainReady(root) {
   if (status !== '') throw new Error(`landing needs a clean main worktree:\n${status}`)
 }
 
-/** Evaluate all landing gates. */
-export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh } = {}) {
+/** Evaluate the landing gates for one pull request without checking main. */
+function evaluateLanding({ root, number, gh: ghRunner = gh, state = loadState(root), login }) {
   const n = requireNumber(number)
   const pr = readPullRequest({ root, number: n, gh: ghRunner })
-  const state = loadState(root)
   const entry = state.prs?.[String(n)]
   const change = activeChangeNames(pr.files)
   if (pr.state !== 'OPEN') throw new Error(`PR #${n} is ${String(pr.state).toLowerCase()}`)
@@ -182,12 +183,74 @@ export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh }
   if (entry === undefined) throw new Error(`PR #${n} has no watch state; review it first`)
   if (entry.head !== pr.headRefOid) throw new Error(`PR #${n} head moved from ${entry.head} to ${pr.headRefOid}`)
   if (entry.status !== 'commented') throw new Error(`PR #${n} watch state is ${entry.status}, not commented`)
-  const login = ghLogin(ghRunner, root)
-  if (!trustedPass(pr.comments, login, n, pr.headRefOid)) {
+  const reviewerLogin = login ?? ghLogin(ghRunner, root)
+  if (!trustedPass(pr.comments, reviewerLogin, n, pr.headRefOid)) {
     throw new Error(`PR #${n} has no trusted pass review for ${pr.headRefOid}`)
   }
-  assertMainReady(root)
   return { number: n, change: change[0], head: pr.headRefOid, baseRefName: pr.baseRefName }
+}
+
+/** Evaluate all landing gates. */
+export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh } = {}) {
+  const plan = evaluateLanding({ root, number, gh: ghRunner })
+  assertMainReady(root)
+  return plan
+}
+
+/** List landing candidates without writing watch or landing state. */
+export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh } = {}) {
+  try {
+    assertMainReady(root)
+  } catch (error) {
+    return { candidates: [], refused: [], blocked: error instanceof Error ? error.message : String(error) }
+  }
+  const listed = JSON.parse(ghRunner(['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,labels'], root))
+  const lands = loadLandings(root)
+  const state = loadState(root)
+  const login = ghLogin(ghRunner, root)
+  const candidates = []
+  const refused = []
+  for (const item of Array.isArray(listed) ? listed : []) {
+    const n = Number(item?.number)
+    if (!Number.isInteger(n) || n < 1) continue
+    if (!hasLandingLabel(item)) continue
+    const own = lands.lands?.[String(n)]
+    if (own?.phase === REVIEW_FAILED_PHASE) {
+      refused.push({ number: n, reason: `PR #${n} landing is ${REVIEW_FAILED_PHASE}: ${String(own.error ?? 'no error recorded')}` })
+      continue
+    }
+    if (own !== undefined && OPEN_PHASES.has(own.phase)) {
+      refused.push({ number: n, reason: `PR #${n} is already landing in phase ${own.phase}` })
+      continue
+    }
+    try {
+      const plan = evaluateLanding({ root, number: n, gh: ghRunner, state, login })
+      assertSingleLanding(lands, n)
+      candidates.push({ number: plan.number, head: plan.head, change: plan.change, base: plan.baseRefName })
+    } catch (error) {
+      refused.push({ number: n, reason: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  return { candidates, refused }
+}
+
+/** Record a failed final review without removing the landing checkout. */
+export function failLanding({ root = mainWorktree(), number, error, apply = false } = {}) {
+  const n = requireNumber(number)
+  const text = String(error ?? '').trim()
+  if (text === '') throw new LandUsageError('state --fail needs a non-empty --error')
+  const lands = loadLandings(root)
+  const entry = lands.lands[String(n)]
+  if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
+  if (entry.phase !== 'prepared' && entry.phase !== REVIEW_FAILED_PHASE) {
+    throw new Error(`PR #${n} landing phase is ${entry.phase}; only a prepared landing can record a review failure`)
+  }
+  if (!apply) return { dryRun: true, entry }
+  entry.phase = REVIEW_FAILED_PHASE
+  entry.error = text
+  entry.updatedAt = new Date().toISOString()
+  saveLandings(root, lands)
+  return entry
 }
 
 /** Remove a landing checkout and branch after the PR is not merged. */
@@ -540,6 +603,7 @@ export function usage() {
     'usage: node scripts/pr-review-land.mjs <command> <pr> [options]',
     '',
     'commands:',
+    '  candidates                            list landing candidates without writing',
     '  plan <n>                              check landing gates without writing',
     '  prepare <n> --apply                   create the rebased landing branch',
     '  reviewed <n> --apply                  record the passed review tree',
@@ -548,7 +612,7 @@ export function usage() {
     '  push <n> --apply                      record the pushed main head',
     '  finish <n> --apply                    write the manifest and clean up',
     '  abandon <n> --apply                   remove a pre-merge landing',
-    '  state [--forget <n>] --apply',
+    '  state [--forget <n> | --fail <n> --error <text>] --apply',
     '',
     'The landing command never pushes, archives or merges without --apply.',
   ].join('\n')
@@ -559,27 +623,44 @@ export function parseArgs(argv) {
   const args = [...argv]
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
-  if (!['plan', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
+  if (!['candidates', 'plan', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
     throw new LandUsageError(`unknown command '${command}'`)
   }
-  const options = { command, apply: false, commit: undefined, forget: undefined }
+  const options = { command, apply: false, commit: undefined, forget: undefined, fail: undefined, error: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]
     if (value === '--apply') options.apply = true
-    else if (value === '--commit' || value === '--forget') {
+    else if (value === '--commit' || value === '--forget' || value === '--fail' || value === '--error') {
       const next = args[index + 1]
       if (next === undefined || next === '' || next.startsWith('--')) throw new LandUsageError(`${value} needs a value`)
       if (value === '--commit') options.commit = next
+      else if (value === '--error') options.error = next
+      else if (value === '--fail') options.fail = requireNumber(next)
       else options.forget = next
       index += 1
     } else if (value.startsWith('--')) throw new LandUsageError(`unknown argument '${value}'`)
     else positional.push(value)
   }
-  if (command === 'state') {
-    if (positional.length > 0) throw new LandUsageError('state takes no positional argument')
+  if (command === 'candidates') {
+    if (positional.length > 0) throw new LandUsageError('candidates takes no positional argument')
+    if (options.apply) throw new LandUsageError('candidates is read-only and takes no --apply')
+    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined || options.error !== undefined) {
+      throw new LandUsageError('candidates takes no command options')
+    }
     return options
   }
+  if (command === 'state') {
+    if (positional.length > 0) throw new LandUsageError('state takes no positional argument')
+    if (options.fail !== undefined && options.forget !== undefined) throw new LandUsageError('state takes --forget or --fail, not both')
+    if (options.fail === undefined && options.error !== undefined) throw new LandUsageError('--error needs state --fail')
+    if (options.fail !== undefined && (options.error === undefined || options.error.trim() === '')) {
+      throw new LandUsageError('state --fail needs a non-empty --error')
+    }
+    if (options.commit !== undefined) throw new LandUsageError('state takes no --commit')
+    return options
+  }
+  if (options.fail !== undefined || options.error !== undefined) throw new LandUsageError('--fail and --error belong to state')
   if (positional.length !== 1) throw new LandUsageError(`${command} needs one PR number`)
   options.number = requireNumber(positional[0])
   return options
@@ -594,13 +675,20 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     const root = mainWorktree()
+    if (options.command === 'candidates') {
+      const result = listLandingCandidates({ root })
+      write(`${JSON.stringify(result, null, 2)}\n`)
+      return 0
+    }
     if (options.command === 'state') {
-      const result = stateLanding({
-        root,
-        number: options.forget,
-        forget: options.forget !== undefined,
-        apply: options.apply,
-      })
+      const result = options.fail !== undefined
+        ? failLanding({ root, number: options.fail, error: options.error, apply: options.apply })
+        : stateLanding({
+          root,
+          number: options.forget,
+          forget: options.forget !== undefined,
+          apply: options.apply,
+        })
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
