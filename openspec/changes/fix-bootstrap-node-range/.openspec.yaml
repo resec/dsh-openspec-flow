@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Have bootstrap's host Node verdict read engines.node through one
+  implementation.
