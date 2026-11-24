@@ -9,6 +9,7 @@ import { gitCommonDir } from '../lib/review/store.js'
 import {
   acquireLock, acquireOrdered, inspectLock, isDeadLock, lockPath, recoverLock, releaseLock,
 } from '../lib/worktree/lock.js'
+import { startLockChild } from './fixtures/lock-child-runner.mjs'
 
 const roots = []
 
@@ -289,4 +290,24 @@ test('different changes hold independent change locks', async () => {
   assert.equal(inspectLock(second.path).state, 'alive')
   releaseLock(first)
   releaseLock(second)
+})
+
+test('a change lock held by another process refuses a second acquisition', async (t) => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const releaseFile = join(temporary(), 'release')
+  const child = startLockChild('acquire-change', { commonDir: common, change: 'demo', releaseFile })
+  t.after(() => child.child.kill('SIGKILL'))
+  const ready = await child.ready
+  assert.notEqual(ready.pid, process.pid)
+  await assert.rejects(
+    acquireLock(common, 'change', { change: 'demo', timeoutMs: 300, pollMs: 20 }),
+    (error) => error.message.includes(`pid ${String(ready.pid)}`)
+      && error.message.includes(ready.token),
+  )
+  const path = lockPath(common, 'change', { change: 'demo' })
+  assert.equal(inspectLock(path).owner.pid, ready.pid)
+  writeFileSync(releaseFile, 'release\n')
+  await child.done
+  assert.equal(inspectLock(path).state, 'missing')
 })
