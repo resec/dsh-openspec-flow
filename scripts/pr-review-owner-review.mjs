@@ -248,7 +248,7 @@ export function syncPullRequest({
     }
   }
 
-  if (decision.action === 'adopt' || (decision.action === 'keep' && entry?.ownerReview === undefined)) {
+  if (decision.action === 'adopt') {
     if (recordOwnerReview(state, n, decision.head, now)) {
       saveState(root, state)
       result.actions.push('state-recorded')
