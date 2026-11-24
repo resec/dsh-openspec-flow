@@ -229,6 +229,37 @@ test('a land tree mismatch and an archive path outside the change are refused', 
   }
 })
 
+test('an archive commit that touches only the archived change and specs is accepted', () => {
+  const repository = makeLanded()
+  try {
+    const result = run(repository.root)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, new RegExp(`archive: ${repository.archiveCommit}`))
+  } finally {
+    cleanup(repository)
+  }
+})
+
+test('an archive commit that touches another archived change is refused', () => {
+  const repository = makeLanded()
+  try {
+    write(join(repository.root, 'openspec', 'changes', 'archive', '2026-11-01-other', 'proposal.md'), '# Other\n')
+    write(join(repository.root, 'openspec', 'changes', 'archive', 'notes.md'), 'notes\n')
+    git(repository.root, ['add', '--', 'openspec/changes/archive'])
+    git(repository.root, ['commit', '-q', '--amend', '--no-edit'])
+    repository.manifest.archiveCommit = git(repository.root, ['rev-parse', 'HEAD'])
+    repository.manifest.mainHead = repository.manifest.archiveCommit
+    writeManifest(repository.root, repository.manifest)
+    const result = run(repository.root, ['--push'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /outside the archived change/)
+    assert.match(result.stderr, /openspec\/changes\/archive\/2026-11-01-other\/proposal\.md/)
+    assert.match(result.stderr, /openspec\/changes\/archive\/notes\.md/)
+  } finally {
+    cleanup(repository)
+  }
+})
+
 test('a HEAD beyond the selected archive is refused', () => {
   const repository = makeLanded()
   try {

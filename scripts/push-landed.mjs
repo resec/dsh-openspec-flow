@@ -284,6 +284,21 @@ export function resolveRepository(cwd = process.cwd()) {
   return { root, commonDir: commonDirectory }
 }
 
+/** Directory that holds archived changes. */
+const ARCHIVE_PREFIX = 'openspec/changes/archive/'
+
+/**
+ * Whether a path is inside the archive directory of one change.
+ * @param path - repository-relative path.
+ * @param change - the landed change name.
+ * @returns true for `openspec/changes/archive/<date>-<change>/…`.
+ */
+function isArchivedChangePath(path, change) {
+  if (!path.startsWith(ARCHIVE_PREFIX)) return false
+  const [directory] = path.slice(ARCHIVE_PREFIX.length).split('/')
+  return /^\d{4}-\d{2}-\d{2}-/u.test(directory) && directory.slice(11) === change
+}
+
 /**
  * Check branch, cleanliness and commit facts before the remote is contacted.
  * @param root - main worktree.
@@ -336,7 +351,7 @@ export function validateLocalState(root, manifest) {
     }
     const statusCode = line.slice(0, separator)
     const path = line.slice(separator + 1)
-    if (path.startsWith('openspec/changes/archive/') || path.startsWith('openspec/specs/')) continue
+    if (isArchivedChangePath(path, manifest.change) || path.startsWith('openspec/specs/')) continue
     if (path.startsWith(own) && statusCode === 'D') continue
     unexpected.push(`${statusCode} ${path}`)
   }
