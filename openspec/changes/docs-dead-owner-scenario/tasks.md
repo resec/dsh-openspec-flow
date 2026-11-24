@@ -9,4 +9,5 @@
 ## 2. Verify
 
 - [x] 2.1 Run `npx openspec validate docs-dead-owner-scenario --strict`.
-- [x] 2.2 Run `npm run openspec:check`, `npm run check:requirement-length`, `npm run check:pr`.
+- [x] 2.2 Run `npm run openspec:check` (119 passed), `npm run check:requirement-length` (ok), `npm run check:pr` (ok).
+- [x] 2.3 Run `npm run verify` (Node v24.22.2): 1431 pass, 0 fail, coverage 98.64% line / 93.70% branch / 99.21% function.
