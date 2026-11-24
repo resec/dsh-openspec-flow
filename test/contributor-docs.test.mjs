@@ -139,7 +139,8 @@ test('AGENTS.md states the offline local completion path and the deferred push',
   assert.match(AGENTS, /offline-land/)
   assert.match(AGENTS, /npm run test:lab -- --mock-only/)
   assert.match(AGENTS, /stop at local `main` without a push/)
-  assert.match(AGENTS, /push-landed --push` publishes the deferred land and archive commits/)
+  assert.match(AGENTS, /push-landed --push --offline` publishes the deferred land and archive commits/)
+  assert.match(AGENTS, /offline-land\.mjs record/)
   assert.match(AGENTS, /Local `main` leading `origin\/main` blocks a new online pull request and contributor landing/)
 })
 

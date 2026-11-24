@@ -33,6 +33,14 @@ test('the landed push document names the command, checks and recovery', () => {
     'unmatched',
     'ambiguous',
     'not an ancestor',
+    '--offline',
+    'offline-land record',
+    'offline-lands.json',
+    'landed-offline',
+    'not on `origin/main`',
+    'refs/heads/main',
+    'check-main-push',
+    'DSH_PUSH_LANDED_OFFLINE',
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }

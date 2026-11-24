@@ -32,17 +32,21 @@ function fakeNpm({ failValidation = false } = {}) {
 }
 
 /**
- * Put a fake `node` on PATH that records the stamp check and returns a verdict.
- * @param options - `stampExit` is the exit code the stamp check reports.
+ * Put a fake `node` on PATH that records the landed check and the stamp check.
+ * @param options - exit codes for the landed check and the stamp check.
  * @returns the fake bin directory and the call log path.
  */
-function fakeNode({ stampExit = 1 } = {}) {
+function fakeNode({ stampExit = 1, checkExit = 0 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'openspec-hook-node-'))
   const bin = join(dir, 'node')
   const body = [
     '#!/bin/sh',
     'printf "%s\\n" "$*" >> "$NODE_LOG"',
-    `exit ${stampExit}`,
+    'case "$1" in',
+    `  scripts/check-main-push.mjs) exit ${checkExit} ;;`,
+    `  scripts/coverage-stamp.mjs) exit ${stampExit} ;;`,
+    '  *) exit 1 ;;',
+    'esac',
     '',
   ].join('\n')
   writeFileSync(bin, body)
@@ -55,9 +59,9 @@ function fakeNode({ stampExit = 1 } = {}) {
  * @param options - fake behavior, stdin refs, stdin mode and extra hook environment.
  * @returns the spawn result, the recorded npm calls and the recorded node calls.
  */
-function runHook({ failValidation = false, stampExit = 1, input = '', stdin = 'pipe', env = {} } = {}) {
+function runHook({ failValidation = false, stampExit = 1, checkExit = 0, input = '', stdin = 'pipe', env = {} } = {}) {
   const fake = fakeNpm({ failValidation })
-  const fakeBin = fakeNode({ stampExit })
+  const fakeBin = fakeNode({ stampExit, checkExit })
   const options = {
     cwd: ROOT,
     encoding: 'utf8',
@@ -77,47 +81,63 @@ function runHook({ failValidation = false, stampExit = 1, input = '', stdin = 'p
   return { result, calls: read(fake.log), nodeCalls: read(fakeBin.log) }
 }
 
-const MAIN_REF = 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 2222222222222222222222222222222222222222\n'
+const MAIN_LOCAL = '1111111111111111111111111111111111111111'
+const MAIN_REMOTE = '2222222222222222222222222222222222222222'
+const MAIN_REF = `refs/heads/main ${MAIN_LOCAL} refs/heads/main ${MAIN_REMOTE}\n`
 const BRANCH_REF = 'refs/heads/topic 3333333333333333333333333333333333333333 refs/heads/topic 4444444444444444444444444444444444444444\n'
+const MAIN_CHECK = `scripts/check-main-push.mjs ${MAIN_LOCAL} ${MAIN_REMOTE}`
 
-test('a main-only push runs the scoped gate', () => {
-  const { result, calls } = runHook({ input: MAIN_REF })
+test('a main-only push runs the scoped gate and the landed check', () => {
+  const { result, calls, nodeCalls } = runHook({ input: MAIN_REF })
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check:push', 'run verify'])
+  assert.deepEqual(nodeCalls, [MAIN_CHECK, 'scripts/coverage-stamp.mjs check'])
 })
 
-test('a non-main push keeps the full check', () => {
-  const { result, calls } = runHook({ input: BRANCH_REF })
+test('a non-main push keeps the full check and skips the landed check', () => {
+  const { result, calls, nodeCalls } = runHook({ input: BRANCH_REF })
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('a mixed push keeps the full check', () => {
-  const { result, calls } = runHook({ input: `${MAIN_REF}${BRANCH_REF}` })
+test('a mixed push checks the main line pair, not the last ref', () => {
+  const { result, calls, nodeCalls } = runHook({ input: `${MAIN_REF}${BRANCH_REF}` })
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  assert.equal(nodeCalls[0], MAIN_CHECK)
+  assert.equal(nodeCalls[0].includes('3333333333333333333333333333333333333333'), false)
 })
 
-test('absent stdin keeps the full check', () => {
-  const { result, calls } = runHook()
+test('absent stdin keeps the full check and skips the landed check', () => {
+  const { result, calls, nodeCalls } = runHook()
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('a closed stdin keeps the full check', () => {
-  const { result, calls } = runHook({ stdin: 'ignore' })
+test('a closed stdin keeps the full check and skips the landed check', () => {
+  const { result, calls, nodeCalls } = runHook({ stdin: 'ignore' })
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('a failed scoped validation stops before the stamp check', () => {
+test('a failed scoped validation stops before the landed and stamp checks', () => {
   const { result, calls, nodeCalls } = runHook({ input: MAIN_REF, failValidation: true })
   assert.equal(result.status, 1)
   assert.deepEqual(calls, ['run openspec:check:push'])
   assert.deepEqual(nodeCalls, [])
 })
 
-test('a failing stamp check runs strict validation and then verification', () => {
+test('a failed landed check blocks the push before the stamp and verification', () => {
+  const { result, calls, nodeCalls } = runHook({ input: MAIN_REF, checkExit: 1, stampExit: 0 })
+  assert.equal(result.status, 1)
+  assert.deepEqual(calls, ['run openspec:check:push'])
+  assert.deepEqual(nodeCalls, [MAIN_CHECK])
+})
+
+test('a failing stamp check runs validation, the landed check and verification', () => {
   const { result, calls, nodeCalls } = runHook()
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run verify'])
@@ -131,11 +151,11 @@ test('a matching stamp skips verification after validation', () => {
   assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('COVERAGE_SKIP runs validation without checking the stamp', () => {
-  const { result, calls, nodeCalls } = runHook({ env: { COVERAGE_SKIP: '1' } })
+test('COVERAGE_SKIP still runs the landed check for a main push', () => {
+  const { result, calls, nodeCalls } = runHook({ input: MAIN_REF, env: { COVERAGE_SKIP: '1' } })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check'])
-  assert.deepEqual(nodeCalls, [])
+  assert.deepEqual(calls, ['run openspec:check:push'])
+  assert.deepEqual(nodeCalls, [MAIN_CHECK])
 })
 
 test('the hook does not run the reusable lab scenarios', () => {
@@ -155,7 +175,7 @@ test('the remote lab job guards pull requests and main', () => {
   assert.match(workflow, /npm run test:lab -- --mock-only/u)
 })
 
-test('a failed validation blocks the push before the stamp check and coverage', () => {
+test('a failed validation blocks the push before the landed check and coverage', () => {
   const { result, calls, nodeCalls } = runHook({ failValidation: true, stampExit: 0 })
   assert.equal(result.status, 1)
   assert.deepEqual(calls, ['run openspec:check'])
@@ -174,10 +194,12 @@ test('openspec:check:push runs the scoped main gate', () => {
   assert.equal(manifest.scripts['openspec:check:push'], 'node scripts/check-pre-push.mjs')
 })
 
-test('the hook installer names the ref-aware gate', () => {
+test('the hook installer names the ref-aware gate and the landed check', () => {
   const source = readFileSync(join(ROOT, 'scripts', 'install-hooks.mjs'), 'utf8')
   assert.match(source, /openspec:check:push/)
   assert.match(source, /refs\/heads\/main/)
+  assert.match(source, /scripts\/check-main-push\.mjs/)
+  assert.match(source, /push-landed --offline/)
 })
 
 test('verify and coverage:check run the same command', () => {

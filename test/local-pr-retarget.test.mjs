@@ -170,7 +170,7 @@ test('retarget, land, archive and the explicit push complete the reviewed tree o
   }
 })
 
-test('a land without the retarget diverges and the push is refused', async () => {
+test('a land without the retarget is refused as unmerged before the push', async () => {
   const fixture = await reviewedFixture()
   try {
     const landed = await call(fixture.fake, 'openspec_apply_worktree', {
@@ -185,7 +185,7 @@ test('a land without the retarget diverges and the push is refused', async () =>
     )
     const refused = pushLanded(fixture.root, ['--push'])
     assert.equal(refused.status, 1)
-    assert.match(refused.stderr, /diverged/)
+    assert.match(refused.stderr, /not on origin\/main/)
     assert.equal(fixture.run(['rev-parse', 'origin/main']), fixture.merge)
     forceRelease({ root: fixture.root, reason: 'test cleanup' })
   } finally {

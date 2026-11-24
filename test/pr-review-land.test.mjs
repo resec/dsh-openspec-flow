@@ -1000,7 +1000,7 @@ test('a new landing is refused while local main leads origin/main', () => {
     git(root, ['add', 'local-only.txt'])
     git(root, ['commit', '-qm', 'local main leads'])
     const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
-    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /local main leads origin\/main.*push-landed/)
+    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /local main leads origin\/main.*push-landed.*--offline/)
     assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /push-landed/)
     assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /push-landed/)
     const blocked = listLandingCandidates({ root, gh: fake })

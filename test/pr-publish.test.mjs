@@ -248,7 +248,7 @@ test('the gates refuse local main ahead of origin/main and name push-landed', ()
     mustGit(fixture.root, ['commit', '--allow-empty', '-qm', 'unpushed land'])
     assert.throws(
       () => publishGates({ root: fixture.root, worktree: fixture.worktree, session: 'owner-1', gh: fakeGh().gh, git: runGit }),
-      /push-landed\.mjs --push/,
+      /push-landed\.mjs --push.*--offline/,
     )
     mustGit(fixture.root, ['push', '-q', 'origin', 'main'])
     assert.equal(
