@@ -17,7 +17,7 @@ import { constants } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { assertCurrentNode } from './node-version.mjs'
-import { createRunTempDir, removeRunTempDir, testEnvFor } from './test-env.mjs'
+import { beginRunTempDir, testEnvFor } from './test-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const COVERAGE_ENABLED = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
@@ -126,20 +126,7 @@ async function main() {
   assertCurrentNode()
 
   const scopes = scope === 'all' ? Object.keys(SCOPES) : [scope]
-  const runRoot = createRunTempDir()
-  const keep = process.env.DSH_TEST_KEEP_TMP === '1'
-  const env = runRoot === undefined ? process.env : { ...process.env, TMPDIR: runRoot }
-  const finish = () => {
-    if (keep) {
-      if (runRoot !== undefined) console.error(`test entrypoint: kept the run root at ${runRoot}`)
-      return
-    }
-    try {
-      removeRunTempDir(runRoot)
-    } catch (error) {
-      console.error(`test entrypoint: cannot remove the run root at ${runRoot}: ${error.message}`)
-    }
-  }
+  const { env, finish } = beginRunTempDir(process.env)
   for (const [signal, number] of [['SIGINT', 2], ['SIGTERM', 15]]) {
     process.once(signal, () => {
       const code = 128 + number
