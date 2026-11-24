@@ -13,6 +13,7 @@ import {
   isActiveChangePath,
   isRestrictedPath,
   parseHead,
+  parseMaintainer,
   uncheckedTasks,
 } from '../scripts/check-pr-change.mjs'
 
@@ -89,6 +90,37 @@ test('evaluateChange requires exactly one active change and keeps other diagnost
     tasksByChange: { a: '- [ ] 1.1 Todo' },
   })
   assert.match(unchecked.join('\n'), /unchecked tasks: 1\.1/)
+})
+
+test('the maintainer flag skips only the restricted-path refusal', () => {
+  const paths = ['openspec/changes/a/proposal.md', '.githooks/pre-push']
+  const external = evaluateChange({
+    paths,
+    tasksByChange: { a: '- [x] 1.1 Done' },
+  })
+  assert.match(external.join('\n'), /restricted path changed: \.githooks\/pre-push/)
+  const maintainer = evaluateChange({
+    paths,
+    tasksByChange: { a: '- [x] 1.1 Done' },
+    maintainer: true,
+  })
+  assert.deepEqual(maintainer, [])
+  const unchecked = evaluateChange({
+    paths,
+    tasksByChange: { a: '- [ ] 1.1 Todo' },
+    maintainer: true,
+  })
+  assert.match(unchecked.join('\n'), /unchecked tasks: 1\.1/)
+  const dependency = evaluateChange({
+    paths,
+    tasksByChange: { a: '- [x] 1.1 Done' },
+    basePackageJson: { name: 'widget' },
+    headPackageJson: { name: 'widget', dependencies: { 'left-pad': '1.0.0' } },
+    maintainer: true,
+  })
+  assert.match(dependency.join('\n'), /dependency, engine or package-manager fields changed/)
+  assert.equal(parseMaintainer(['--base', 'x', '--maintainer']), true)
+  assert.equal(parseMaintainer(['--base', 'x']), false)
 })
 
 test('detects a dependency change but allows a scripts-only edit', () => {
@@ -186,6 +218,47 @@ test('a pull request that changes a restricted path still fails', () => {
     assert.match(result.stderr, /restricted path changed: coverage\.baseline\.json/u)
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+
+test('a maintainer pull request skips the restricted path but keeps the other gates', () => {
+  const restricted = makeMergeCheckout({ prFiles: { '.githooks/pre-push': '#!/bin/sh\n' } })
+  try {
+    const refused = spawnCheck(restricted.root, ['--base', restricted.base, '--head', restricted.head])
+    assert.equal(refused.status, 1, refused.stderr)
+    assert.match(refused.stderr, /restricted path changed: \.githooks\/pre-push/u)
+    const allowed = spawnCheck(restricted.root, ['--base', restricted.base, '--head', restricted.head, '--maintainer'])
+    assert.equal(allowed.status, 0, allowed.stderr)
+    assert.match(allowed.stdout, /change check: ok/u)
+  } finally {
+    rmSync(restricted.root, { recursive: true, force: true })
+  }
+  const unchecked = makeMergeCheckout({
+    prFiles: {
+      '.githooks/pre-push': '#!/bin/sh\n',
+      'openspec/changes/widget/tasks.md': '# Tasks\n\n- [ ] 1.1 Todo\n',
+    },
+  })
+  try {
+    const result = spawnCheck(unchecked.root, ['--base', unchecked.base, '--head', unchecked.head, '--maintainer'])
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /unchecked tasks: 1\.1/u)
+  } finally {
+    rmSync(unchecked.root, { recursive: true, force: true })
+  }
+  const dependency = makeMergeCheckout({
+    prFiles: {
+      '.githooks/pre-push': '#!/bin/sh\n',
+      'package.json': '{"name":"widget","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}\n',
+    },
+  })
+  try {
+    const result = spawnCheck(dependency.root, ['--base', dependency.base, '--head', dependency.head, '--maintainer'])
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /dependency, engine or package-manager fields changed/u)
+  } finally {
+    rmSync(dependency.root, { recursive: true, force: true })
   }
 })
 

@@ -30,3 +30,22 @@ test('AGENTS and the README point at the lab gate and documentation', () => {
   assert.match(agents, /apply-worktree-dev\.md/)
   assert.match(readme, /apply-worktree-dev\.md/)
 })
+
+
+test('the remote lab job guards pull requests and main while the offline path runs the lab locally', () => {
+  const doc = read('docs/lab.md')
+  assert.match(doc, /remote `lab` CI job/)
+  assert.match(doc, /pull requests and `main`/)
+  assert.match(doc, /offline/)
+  assert.match(doc, /npm run test:lab -- --mock-only/)
+  assert.doesNotMatch(doc, /hook runs strict OpenSpec validation, then `npm run test:lab/)
+  const agents = read('AGENTS.md')
+  assert.match(agents, /remote `lab` CI job/)
+  assert.match(agents, /local hook does not run the lab/)
+  assert.match(agents, /offline local path runs `npm run test:lab -- --mock-only`/)
+  assert.match(agents, /docs\/local-pr\.md/)
+  const readme = read('README.md')
+  assert.match(readme, /远端 `lab` CI 任务/)
+  assert.match(readme, /pre-push 不再运行 lab/)
+  assert.match(readme, /docs\/local-pr\.md/)
+})

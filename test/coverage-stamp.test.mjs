@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -15,6 +14,9 @@ import {
   writeStamp,
 } from '../scripts/coverage-stamp.mjs'
 import { resolveBase } from '../scripts/coverage-gate.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 /** @param root - git repository root. @param args - git arguments. @returns stdout. */
 function git(root, args) {
@@ -33,7 +35,7 @@ function git(root, args) {
  * @returns the repository root.
  */
 function makeRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'coverage-stamp-'))
+  const root = tempDir('coverage-stamp-')
   git(root, ['init', '-b', 'main'])
   git(root, ['config', 'user.email', 'stamp@example.test'])
   git(root, ['config', 'user.name', 'Stamp Test'])
@@ -260,7 +262,7 @@ test('a missing input path refuses reuse', () => {
 })
 
 test('a directory without git refuses reuse', () => {
-  const root = mkdtempSync(join(tmpdir(), 'coverage-stamp-nogit-'))
+  const root = tempDir('coverage-stamp-nogit-')
   const result = checkStamp({ root })
   assert.equal(result.ok, false)
   assert.match(result.reason, /no stamp is recorded|git /)

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { cpSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import { createInprocSpawner } from './inproc-cli.mjs'
 import { CHANGE, PROBE_ROOT } from './review-fixtures.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 /**
  * Build a spec shaped like the fake context's spawn input.
@@ -321,7 +323,7 @@ test('loads the CLI once across calls', async () => {
 test('reuses the pinned program for awaited real CLI calls', async () => {
   const module = await import('@fission-ai/openspec')
   assert.equal(typeof module.program?.parseAsync, 'function')
-  const root = mkdtempSync(join(tmpdir(), 'inproc-real-'))
+  const root = tempDir('inproc-real-')
   cpSync(PROBE_ROOT, join(root, 'openspec'), { recursive: true })
   try {
     const instance = createInprocSpawner({
@@ -357,7 +359,7 @@ test('reuses the pinned program for awaited real CLI calls', async () => {
 })
 
 test('the fake context runs CLI calls in-process by default', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'inproc-context-'))
+  const root = tempDir('inproc-context-')
   cpSync(PROBE_ROOT, join(root, 'openspec'), { recursive: true })
   try {
     const fake = createFakeContext({ cwd: root })
