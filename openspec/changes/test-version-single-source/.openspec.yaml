@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Bind every CLI version and Node major literal in the skills and the
+  contributor docs to the one source that owns it, so a version bump cannot
+  leave a restatement behind.
