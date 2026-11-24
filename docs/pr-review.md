@@ -105,7 +105,7 @@ Pull-request CI runs the same requirement-description length check the apply pre
 The scheduled session processes candidates one at a time:
 
 1. Run `owner-review --reconcile --apply` to clear stale labels and backfill PRs whose trusted pass predates the signal. This runs before cleanup so a tracked PR that has just closed still has a watch entry from which the label can be removed. A label failure is reported and retried on the next run; it does not stop the review work.
-2. Run `state --cleanup` to remove tracked PRs that `gh pr view --json state,mergedAt` reports as closed or merged.
+2. Run `state --cleanup` to remove tracked PRs that `gh pr view --json state,mergedAt` reports as closed or merged. A tracked PR whose `ownerReview` head is still recorded keeps its entry: the label is still on the PR, so cleanup leaves it for the next reconcile to retry the removal.
 3. Run `poll --json` and take the candidates.
 4. For each candidate, run `prepare <n> --json`. It fetches the PR head and base branch, computes the merge base of the base tip and head, creates or updates `.cache/pr-review/worktrees/pr-<n>`, verifies that the checkout is clean, shares the repository git directory, and contains the change.
 5. Read apply status with `openspec_review action=status review=apply` and the PR worktree:
@@ -138,7 +138,7 @@ The command adds the label only when the PR is open, non-draft, targets `main`, 
 
 A head change removes the stale label and then adds it again in the same run when the new head already qualifies. A branch sync changes the head, so the label is removed and is not re-added while `mergeable` is present. While GitHub reports `mergeable: UNKNOWN`, a tracked label is kept and no new label is added; the next reconcile resolves the state. An open PR carrying the label without a watch state is orphaned and the label is removed.
 
-`--reconcile` scans tracked PRs and open PRs carrying the label, backfills eligible labels, and removes stale or orphaned labels. Every run is a dry run unless `--apply` is passed. With `--apply`, the command writes `owner-review` and records `ownerReview: { head, at }` in `state.json`; it never writes `mergeable`. A label write failure is reported without changing review state, and the next reconcile retries.
+`--reconcile` scans tracked PRs and open PRs carrying the label, backfills eligible labels, and removes stale or orphaned labels. Every run is a dry run unless `--apply` is passed. With `--apply`, the command writes `owner-review` and records `ownerReview: { head, at }` in `state.json`; it never writes `mergeable`. A label write failure is reported without changing review state, and the next reconcile retries; `state --cleanup` keeps a recorded entry so a closed PR stays tracked until its label removal succeeds.
 
 ## Landing
 
