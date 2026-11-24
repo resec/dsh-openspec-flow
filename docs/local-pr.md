@@ -97,6 +97,12 @@ With `--apply` the command pushes the reviewed branch, creates the pull request 
 
 A repeated run with an open pull request updates the entry and marks the pull request ready without creating a second one. A closed or merged pull request is refused and is not reopened. A failure after the entry is written records the `failed` phase.
 
+### Maintainer restricted-path exemption
+
+Pull-request CI runs `scripts/check-pr-change.mjs`. Its external-contribution rules reject a pull request that touches `.githooks/`, `.github/workflows/`, `dist/`, `openspec/changes/archive/`, `coverage.baseline.json` or `package-lock.json`. A maintainer pull request that must carry such a change, such as this tooling change that edits `.githooks/pre-push`, would never reach green CI under the unchanged gate.
+
+The workflow passes `--maintainer` only when the pull-request author is `resec` and `github.event.pull_request.head.repo.full_name` equals `github.repository`, so a fork or another author cannot claim the exemption. The flag skips only the restricted-path refusal. The check still requires exactly one active change, no unchecked tasks, a readable head `package.json`, and no dependency, engine or package-manager field change. Every external pull request still fails on a restricted path, and no label or local state grants the exemption automatically.
+
 ## Online completion
 
 After the apply review passes and the pull request has green CI:

@@ -46,6 +46,10 @@ The watch excludes every PR recorded as local from polling, owner-review reconci
 
 Because the landing lock cannot be held across scheduled deliveries, a ready contributor landing merges, archives and pushes in one run while holding the lock. Prepare and sync still stop the run; a run that reviews does so only when no landing phase advanced or while a local owner holds the lock; archive and push no longer wait for a later run.
 
+### Maintainer restricted-path exemption
+
+The external-contribution change gate rejects restricted repository paths, including `.githooks/` and `.github/workflows/`. A maintainer pull request that changes repository tooling must still reach green CI, because green CI is the online merge gate. The gate therefore takes an explicit `--maintainer` switch, and the workflow supplies it only when the pull-request author is `resec` and the head repository equals `github.repository`. The switch skips only the restricted-path refusal; the exactly-one-active-change, task-completion, head `package.json` and dependency/engine/package-manager checks remain, and every external or fork pull request still refuses the restricted paths. The exemption is never derived from local owner state, a label or the pull-request body, so a fork cannot grant it to itself.
+
 ### Offline completion
 
 The publish preflight reports `offline-land` when GitHub authentication or the API check fails. The maintainer then runs the local lab, lands with user approval, and stops at local `main`; no PR and no push. `push-landed` publishes the deferred commits when GitHub returns. A local `main` leading `origin/main` blocks new online PRs and contributor landing; reviews may continue when GitHub is reachable.

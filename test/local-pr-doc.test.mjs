@@ -135,6 +135,20 @@ test('the README and the lab document route the lab gate to remote CI', () => {
   assert.ok(lab.includes('offline maintainer path'))
 })
 
+test('the local pull-request document scopes the restricted-path exemption to maintainer pull requests', () => {
+  const doc = read('docs/local-pr.md')
+  for (const text of [
+    'scripts/check-pr-change.mjs',
+    '`--maintainer`',
+    '`resec`',
+    '`github.event.pull_request.head.repo.full_name`',
+    'external pull request still fails on a restricted path',
+    'The flag skips only the restricted-path refusal',
+  ]) {
+    assert.ok(doc.includes(text), `local-pr.md names ${text}`)
+  }
+})
+
 test('package.json exposes the publish and local-land commands', () => {
   const manifest = JSON.parse(read('package.json'))
   assert.equal(manifest.scripts['pr:publish'], 'node scripts/pr-publish.mjs')

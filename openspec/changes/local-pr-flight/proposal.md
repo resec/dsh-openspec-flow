@@ -28,7 +28,8 @@ None.
 ## Impact
 
 - New scripts: `scripts/pr-review-lock.mjs`, `scripts/pr-publish.mjs`, `scripts/pr-local-land.mjs`.
-- Changed scripts: `scripts/pr-review-watch.mjs`, `scripts/pr-review-land.mjs`, `scripts/pr-review-owner-review.mjs`, `.githooks/pre-push`, `scripts/install-hooks.mjs`, `package.json`.
+- Changed scripts: `scripts/pr-review-watch.mjs`, `scripts/pr-review-land.mjs`, `scripts/pr-review-owner-review.mjs`, `scripts/check-pr-change.mjs`, `.githooks/pre-push`, `scripts/install-hooks.mjs`, `package.json`.
+- Changed CI: `.github/workflows/ci.yml` passes the maintainer restricted-path exemption only to a same-repository `resec` pull request, so a maintainer pull request that carries `.githooks/` or workflow changes can reach green CI while an external or fork pull request is still refused.
 - New `docs/local-pr.md`; updates to `docs/pr-review.md`, `docs/land-push.md`, `docs/lab.md`, `README.md` and `AGENTS.md`.
-- New tests for the lock, publish, retarget/land, patrol exclusion and ordering, offline routing and the hook; updates to the existing PR review and lab-doc tests.
+- New tests for the lock, publish, retarget/land, patrol exclusion and ordering, offline routing, the hook and the maintainer change-check exemption; updates to the existing PR review, change-gate and lab-doc tests.
 - No plugin runtime changes: no `lib/`, `index.js`, `client.js`, skill, schema or tarball change.

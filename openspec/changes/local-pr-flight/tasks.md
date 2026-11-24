@@ -38,6 +38,10 @@
 
 - [x] 6.3 Update `AGENTS.md` step 7 with the online publish, retarget, land and archive-push path and the offline land and deferred-push path; add the online, retarget and offline assertions to `test/contributor-docs.test.mjs` and verify they pass.
 
+## 8. Maintainer pull-request gate
+
+- [ ] 8.1 Add the maintainer same-repository restricted-path exemption to `scripts/check-pr-change.mjs` and pass `--maintainer` from `.github/workflows/ci.yml` only when the pull-request author is `resec` and the head repository equals `github.repository`; keep the single-change, task-completion, head `package.json` and dependency checks, cover the maintainer and external paths in `test/check-pr-change.test.mjs` and `test/ci-workflow.test.mjs`, and document the exemption and the remaining external refusal in `docs/local-pr.md`.
+
 ## 7. Integration verification
 
 - [x] 7.1 Run `npm run test:affected --` over the touched scripts, hook and docs, and verify the selected tests pass on Node 24.

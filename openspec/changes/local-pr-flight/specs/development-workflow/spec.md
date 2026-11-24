@@ -26,6 +26,21 @@ After apply review, a maintainer-authored change SHALL publish a pull request, w
 - **WHEN** land has archived the change and written the manifest
 - **THEN** `push-landed --push` publishes the archive commit
 
+### Requirement: Maintainer restricted-path exemption
+
+The pull-request change check SHALL exempt a maintainer-authored same-repository pull request from the restricted-path refusal. CI SHALL pass the exemption only when the pull-request author is `resec` and the head repository equals the base repository. The exemption SHALL skip only the restricted-path rule; the exactly-one-active-change, task-completion, head `package.json` and dependency/engine/package-manager checks SHALL run. Every other pull request SHALL still fail on a restricted path.
+
+#### Scenario: A maintainer pull request changes a restricted path
+
+- **WHEN** the pull-request author is `resec`, the head repository equals the base repository, and the change touches `.githooks/pre-push`
+- **THEN** the change check skips the restricted-path refusal
+- **AND** the other change-check rules still run
+
+#### Scenario: An external pull request changes a restricted path
+
+- **WHEN** the pull-request author is not `resec` or its head repository is a fork, and the change touches a restricted path
+- **THEN** the change check refuses the restricted path
+
 ### Requirement: Offline local completion
 
 When GitHub is unreachable, a maintainer-authored change SHALL NOT publish a pull request. After apply review and a passing `npm run test:lab -- --mock-only`, it SHALL run `openspec_apply_worktree action=land` with user approval, archive and stop at local `main` without a push. When GitHub returns, `push-landed` SHALL publish the deferred commits. Local `main` leading `origin/main` SHALL block a new online pull request until the deferred push completes.
