@@ -549,7 +549,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   assertReviewRecord(root, entry)
   const pr = readPullRequest({ root, number: n, gh: ghRunner })
   const sameRepository = pr.isCrossRepository !== true
-  const failLanding = (message) => {
+  const failMergeGate = (message) => {
     entry.phase = 'failed'
     entry.error = message
     entry.updatedAt = new Date().toISOString()
@@ -559,14 +559,14 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   git(root, ['fetch', 'origin', 'main'])
   git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
   const fetched = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
-  if (fetched !== entry.prHead) failLanding(`PR #${n} head moved; prepare and review again`)
+  if (fetched !== entry.prHead) failMergeGate(`PR #${n} head moved; prepare and review again`)
   const originMain = git(root, ['rev-parse', 'origin/main'])
   if (originMain !== entry.preMergeMain) {
-    failLanding(sameRepository ? 'origin/main moved; sync and review again' : 'origin/main moved; the author must update the branch')
+    failMergeGate(sameRepository ? 'origin/main moved; sync and review again' : 'origin/main moved; the author must update the branch')
   }
-  if (!headContainsMain(root, entry.prHead)) failLanding(latestMainMessage(n, sameRepository))
+  if (!headContainsMain(root, entry.prHead)) failMergeGate(latestMainMessage(n, sameRepository))
   const plan = planLanding({ root, number: n, gh: ghRunner })
-  if (plan.head !== entry.prHead) failLanding(`PR #${n} head moved; prepare and review again`)
+  if (plan.head !== entry.prHead) failMergeGate(`PR #${n} head moved; prepare and review again`)
   if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
   try {
     ghRunner(['pr', 'merge', String(n), '--rebase'], root)
