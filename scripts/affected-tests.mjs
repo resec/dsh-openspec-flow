@@ -13,15 +13,19 @@
  * during apply; the full instrumented run still decides completion.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { constants } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
-import { testEnvFor } from './test-env.mjs'
+import { createRunTempDir, removeRunTempDir, testEnvFor } from './test-env.mjs'
 import { DEFAULT_CONCURRENCY } from './run-tests.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+/** The child a run is waiting on, so a signal can stop it before the root goes. */
+let activeChild
 
 /** Entry modules that assemble the plugin; a change to one selects the full suite. */
 const ENTRY_MODULES = new Set(['index.js', 'client.js', 'reviewer.js', 'lib/tools/index.js'])
@@ -187,13 +191,36 @@ function readWorkingTreeChanges(gitStatus) {
 }
 
 /**
+ * Spawn the test runner and resolve with its outcome.
+ *
+ * @param command - executable.
+ * @param args - arguments.
+ * @param options - spawn options.
+ * @returns a promise of the exit status or a spawn error.
+ */
+function spawnChild(command, args, options) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, options)
+    activeChild = child
+    child.once('error', (error) => {
+      activeChild = undefined
+      resolve({ error })
+    })
+    child.once('exit', (code, signal) => {
+      activeChild = undefined
+      resolve({ status: signal === null ? code : 128 + (constants.signals[signal] ?? 0) })
+    })
+  })
+}
+
+/**
  * Run the CLI.
  *
  * @param argv - arguments after the script name.
  * @param options - injectable runtime version, child-process spawner and working-tree listing, for tests.
  * @returns the process exit code.
  */
-export async function main(argv, { version, spawn, gitStatus } = {}) {
+export async function main(argv, { version, spawn: spawner, gitStatus, tmpDir } = {}) {
   const flags = new Set()
   const paths = []
   for (const argument of argv) {
@@ -212,14 +239,50 @@ export async function main(argv, { version, spawn, gitStatus } = {}) {
     return 0
   }
 
-  const runner = spawn ?? spawnSync
-  const result = runner(process.execPath, ['--test', `--test-concurrency=${DEFAULT_CONCURRENCY}`, ...files], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    env: testEnvFor(false),
-  })
-  if (result.error) throw result.error
-  return result.status ?? 1
+  const runner = spawner ?? spawnChild
+  const ownsRoot = tmpDir === undefined
+  const runRoot = ownsRoot ? createRunTempDir() : tmpDir
+  const env = runRoot === undefined ? testEnvFor(false) : testEnvFor(false, { ...process.env, TMPDIR: runRoot })
+  const finish = () => {
+    if (!ownsRoot) return
+    try {
+      removeRunTempDir(runRoot)
+    } catch (error) {
+      console.error(`affected tests: cannot remove the run root at ${runRoot}: ${error.message}`)
+    }
+  }
+  const handlers = []
+  if (ownsRoot && spawner === undefined) {
+    for (const [signal, number] of [['SIGINT', 2], ['SIGTERM', 15]]) {
+      const handler = () => {
+        const code = 128 + number
+        const stop = () => {
+          finish()
+          process.exit(code)
+        }
+        if (activeChild === undefined) {
+          stop()
+          return
+        }
+        activeChild.once('exit', stop)
+        activeChild.kill(signal)
+      }
+      process.on(signal, handler)
+      handlers.push([signal, handler])
+    }
+  }
+  try {
+    const result = await runner(process.execPath, ['--test', `--test-concurrency=${DEFAULT_CONCURRENCY}`, ...files], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env,
+    })
+    if (result.error) throw result.error
+    return result.status ?? 1
+  } finally {
+    for (const [signal, handler] of handlers) process.removeListener(signal, handler)
+    finish()
+  }
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

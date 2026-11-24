@@ -131,7 +131,9 @@ test('a rejected runtime stops before any test starts', async () => {
 
 test('the scoped run forwards the shared plain-run environment', async () => {
   const calls = []
+  const runRoot = '/scoped/run-root'
   const code = await main(['--run', 'test/review-unit.test.mjs'], {
+    tmpDir: runRoot,
     spawn: (command, args, options) => {
       calls.push({ command, args, options })
       return { status: 1 }
@@ -142,6 +144,7 @@ test('the scoped run forwards the shared plain-run environment', async () => {
   assert.deepEqual(calls[0].args, ['--test', `--test-concurrency=${DEFAULT_CONCURRENCY}`, 'test/review-unit.test.mjs'])
   assert.equal(calls[0].options.cwd, ROOT)
   assert.equal(calls[0].options.env.NODE_COMPILE_CACHE, COMPILE_CACHE)
+  assert.equal(calls[0].options.env.TMPDIR, runRoot)
 })
 
 test('--list wins over --run and starts no test process', async () => {

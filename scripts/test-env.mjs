@@ -10,10 +10,10 @@
  * The path stays absolute: a relative value would resolve inside fixtures.
  */
 
-import { mkdirSync, realpathSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -44,6 +44,21 @@ export function coverageTestEnv(env = process.env) {
 }
 
 /**
+ * Resolve the host temporary directory and report whether that resolved.
+ *
+ * @param env - base environment, defaulting to the current process.
+ * @returns the canonical directory and its resolution state.
+ */
+function resolveTempDir(env = process.env) {
+  const value = env.TMPDIR ?? tmpdir()
+  try {
+    return { directory: realpathSync.native(value), resolved: true }
+  } catch {
+    return { directory: value, resolved: false }
+  }
+}
+
+/**
  * Resolve the temporary directory a child test process should inherit.
  *
  * The fixture root and the path a child process reports for the same directory
@@ -56,12 +71,34 @@ export function coverageTestEnv(env = process.env) {
  * @returns the canonical temporary directory.
  */
 function canonicalTempDir(env = process.env) {
-  const value = env.TMPDIR ?? tmpdir()
-  try {
-    return realpathSync.native(value)
-  } catch {
-    return value
-  }
+  return resolveTempDir(env).directory
+}
+
+/**
+ * Create the temporary root that collects one run's fixtures.
+ *
+ * The root sits inside the canonical host temporary directory, so a caller
+ * that chose `TMPDIR` keeps that location while its contents stay isolated
+ * from earlier runs. When the inherited base cannot be resolved the run
+ * proceeds without a root, matching the value the entrypoint always passed on.
+ *
+ * @param env - base environment, defaulting to the current process.
+ * @returns the new root, or undefined when the base cannot be resolved.
+ */
+export function createRunTempDir(env = process.env) {
+  const { directory, resolved } = resolveTempDir(env)
+  if (!resolved) return undefined
+  return mkdtempSync(join(directory, 'openspec-flow-run-'))
+}
+
+/**
+ * Remove a run root. A missing or absent root is not an error.
+ *
+ * @param directory - the root to remove, or undefined.
+ */
+export function removeRunTempDir(directory) {
+  if (directory === undefined) return
+  rmSync(directory, { recursive: true, force: true })
 }
 
 /**
