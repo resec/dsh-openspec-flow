@@ -16,4 +16,4 @@
 - [x] 3.1 Run `node --test --test-name-pattern "ignores later settings" test/review-apply.test.mjs`.
 - [x] 3.2 Run `node --test test/review-apply.test.mjs` and `node --test test/review-serial.test.mjs`.
 - [x] 3.3 Mutate `releaseApplyLocks` to skip removal and confirm the store test fails, then revert it.
-- [ ] 3.4 Run `npm run verify` on Node 24 after the test commit and record the coverage verdict.
+- [x] 3.4 Run `npm run verify` on Node 24 after the test commit: 1446 tests pass, 0 fail; coverage plugin line 98.65%, branch 93.73%, function 99.21%.
