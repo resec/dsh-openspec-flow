@@ -23,12 +23,19 @@ const BASE_REF = 'origin/main'
 /**
  * Every committed input whose change can alter a coverage verdict.
  *
+ * Besides the measured sources and the suite, the list carries the package's
+ * entry points and the scripts that run the gate, the suite and the pre-push
+ * check: the verification run loads them, so a change there can fail the run
+ * the stamp stands for even while the coverage numbers stay put.
+ *
  * `skills/`, `README.md` and `docs/review.md` are deliberately absent: the
  * suite asserts their content, but editing them cannot move a coverage number.
  */
 export const STAMP_INPUTS = [
   'lib',
   'index.js',
+  'client.js',
+  'reviewer.js',
   'test',
   'package.json',
   'package-lock.json',
@@ -40,6 +47,7 @@ export const STAMP_INPUTS = [
   'scripts/run-tests.mjs',
   'scripts/test-env.mjs',
   'scripts/node-version.mjs',
+  'scripts/check-pre-push.mjs',
 ]
 
 export class StampError extends Error {
