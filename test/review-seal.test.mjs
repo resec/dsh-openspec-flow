@@ -16,8 +16,10 @@ import { sealRefName } from '../lib/worktree/seal.js'
 import {
   CHANGE, call, cleanupFixtures, gitFixture, report, reviewDir, setup,
 } from './review-fixtures.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 test.after(cleanupFixtures)
+test.after(cleanupTempDirs)
 
 /**
  * Commit the change directory as the seal and read the seal inputs.
@@ -231,9 +233,7 @@ test('a worktree seal refuses a root whose status cannot be read', async () => {
   const { root } = gitFixture()
   await readyDraft(root)
   const { directory, object } = constructInputs(root)
-  const { mkdtempSync } = await import('node:fs')
-  const { tmpdir } = await import('node:os')
-  const plain = mkdtempSync(join(tmpdir(), 'seal-plain-'))
+  const plain = tempDir('seal-plain-')
   const context = { rootPath: plain, changeRoot: join(plain, 'openspec', 'changes', CHANGE) }
   assert.throws(
     () => sealDraft(context, directory, object, CHANGE, CONSTRUCT),

@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const HOOK = join(ROOT, '.githooks', 'pre-push')
+
+test.after(cleanupTempDirs)
 
 /**
  * Put a fake `npm` on PATH that records each script it is asked to run.
@@ -15,7 +17,7 @@ const HOOK = join(ROOT, '.githooks', 'pre-push')
  * @returns the fake bin directory and the call log path.
  */
 function fakeNpm({ failValidation = false } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'openspec-hook-'))
+  const dir = tempDir('openspec-hook-')
   const bin = join(dir, 'npm')
   const body = [
     '#!/bin/sh',
@@ -37,7 +39,7 @@ function fakeNpm({ failValidation = false } = {}) {
  * @returns the fake bin directory and the call log path.
  */
 function fakeNode({ stampExit = 1, checkExit = 0 } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'openspec-hook-node-'))
+  const dir = tempDir('openspec-hook-node-')
   const bin = join(dir, 'node')
   const body = [
     '#!/bin/sh',

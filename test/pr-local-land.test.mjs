@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -17,6 +16,9 @@ import {
 } from '../scripts/pr-local-land.mjs'
 import { loadLocalState, resolvePaths, saveLocalState, updateLocalEntry } from '../scripts/pr-review-watch.mjs'
 import { acquireLock, forceRelease, lockStatus } from '../scripts/pr-review-lock.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const CHANGE = 'widget'
 const BRANCH = 'openspec/apply/local-widget-12345678'
@@ -36,8 +38,8 @@ function mustGit(cwd, args) {
 }
 
 function makeFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-local-land-'))
-  const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-local-land-remote-'))
+  const root = tempDir('dsh-pr-local-land-')
+  const remote = tempDir('dsh-pr-local-land-remote-')
   mustGit(remote, ['init', '--bare', '-q'])
   mustGit(root, ['init', '-q', '-b', 'main'])
   mustGit(root, ['config', 'user.email', 'test@example.com'])

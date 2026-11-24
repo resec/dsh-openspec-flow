@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { main } from '../scripts/check-pre-push.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const SCRIPT = fileURLToPath(new URL('../scripts/check-pre-push.mjs', import.meta.url))
 const PURPOSE = 'Defines the capability behavior that the pre-push validation test needs.'
@@ -28,7 +30,7 @@ function writeFile(root, path, text) {
  * @returns the temporary project root.
  */
 function makeProject({ tasks = '# Tasks\n\n## 1. Work\n\n- [ ] 1.1 Do it\n' } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-'))
+  const root = tempDir('dsh-check-pre-push-')
   writeFile(root, 'openspec/config.yaml', 'schema: spec-driven\n')
   writeFile(root, 'openspec/specs/cap/spec.md', [
     '# cap',
@@ -69,7 +71,7 @@ function runScript(root) {
  * @returns the fake CLI path and its call log.
  */
 function makeFakeCli({ list = { changes: [] }, listRaw, specsExit = 0, archivedExit = 0, listExit = 0 } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-cli-'))
+  const dir = tempDir('dsh-check-pre-push-cli-')
   const log = join(dir, 'calls.log')
   const projection = listRaw ?? JSON.stringify(list)
   const file = join(dir, 'fake-openspec.mjs')
@@ -155,7 +157,7 @@ test('the real bundled CLI blocks a task-less change', () => {
 })
 
 test('the gate runs the exact validations before listing active changes', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-empty-'))
+  const root = tempDir('dsh-check-pre-push-empty-')
   const fake = makeFakeCli()
   try {
     const result = runMain({ cli: fake.file, root })
@@ -172,7 +174,7 @@ test('the gate runs the exact validations before listing active changes', () => 
 })
 
 test('a complete active change blocks with its name and archive-or-land correction', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-complete-'))
+  const root = tempDir('dsh-check-pre-push-complete-')
   const fake = makeFakeCli({ list: { changes: [{ name: 'widget', status: 'complete' }] } })
   try {
     const result = runMain({ cli: fake.file, root })
@@ -185,7 +187,7 @@ test('a complete active change blocks with its name and archive-or-land correcti
 })
 
 test('a task-less active change blocks and says which task state is required', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-no-tasks-'))
+  const root = tempDir('dsh-check-pre-push-no-tasks-')
   const fake = makeFakeCli({ list: { changes: [{ name: 'widget', status: 'no-tasks' }] } })
   try {
     const result = runMain({ cli: fake.file, root })
@@ -198,7 +200,7 @@ test('a task-less active change blocks and says which task state is required', (
 })
 
 test('an unknown status blocks and is named', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-unknown-'))
+  const root = tempDir('dsh-check-pre-push-unknown-')
   const fake = makeFakeCli({ list: { changes: [{ name: 'widget', status: 'paused' }] } })
   try {
     const result = runMain({ cli: fake.file, root })
@@ -211,7 +213,7 @@ test('an unknown status blocks and is named', () => {
 })
 
 test('a failed spec validation stops before archived validation and listing', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-specs-'))
+  const root = tempDir('dsh-check-pre-push-specs-')
   const fake = makeFakeCli({ specsExit: 1 })
   try {
     const result = runMain({ cli: fake.file, root })
@@ -224,7 +226,7 @@ test('a failed spec validation stops before archived validation and listing', ()
 })
 
 test('a failed archived validation stops before listing', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-archived-'))
+  const root = tempDir('dsh-check-pre-push-archived-')
   const fake = makeFakeCli({ archivedExit: 2 })
   try {
     const result = runMain({ cli: fake.file, root })
@@ -237,7 +239,7 @@ test('a failed archived validation stops before listing', () => {
 })
 
 test('a failed listing is reported before any status decision', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-list-'))
+  const root = tempDir('dsh-check-pre-push-list-')
   const fake = makeFakeCli({ listExit: 3 })
   try {
     const result = runMain({ cli: fake.file, root })
@@ -250,7 +252,7 @@ test('a failed listing is reported before any status decision', () => {
 })
 
 test('invalid JSON and a missing changes array fail closed', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-json-'))
+  const root = tempDir('dsh-check-pre-push-json-')
   const malformed = makeFakeCli({ listRaw: 'not json' })
   const missing = makeFakeCli({ list: {} })
   const invalid = makeFakeCli({ list: { changes: [{ status: 'in-progress' }] } })
@@ -272,7 +274,7 @@ test('invalid JSON and a missing changes array fail closed', () => {
 })
 
 test('a resolver failure reports the missing bundled CLI before spawning', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-check-pre-push-resolver-'))
+  const root = tempDir('dsh-check-pre-push-resolver-')
   try {
     const result = runMain({ root, resolveCli: () => { throw new Error('the pinned package is missing') } })
     assert.equal(result.code, 1)

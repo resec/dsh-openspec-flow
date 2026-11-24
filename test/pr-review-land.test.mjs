@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -33,6 +32,9 @@ import {
 } from '../scripts/pr-review-land.mjs'
 import { loadState, resolvePaths, saveLocalState, saveState } from '../scripts/pr-review-watch.mjs'
 import { acquireLock, forceRelease } from '../scripts/pr-review-lock.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const HEAD = 'a'.repeat(40)
 const LOGIN = 'maintainer'
@@ -44,7 +46,7 @@ function git(cwd, args) {
 }
 
 function makeRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-review-land-'))
+  const root = tempDir('dsh-pr-review-land-')
   git(root, ['init', '-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'test@example.com'])
   git(root, ['config', 'user.name', 'Test'])
@@ -57,7 +59,7 @@ function makeRepo() {
   writeFileSync(join(root, 'README.md'), 'base\n')
   git(root, ['add', '.'])
   git(root, ['commit', '-qm', 'initial'])
-  const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-review-land-remote-'))
+  const remote = tempDir('dsh-pr-review-land-remote-')
   git(remote, ['init', '--bare', '-q'])
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
@@ -1541,7 +1543,7 @@ test('sync-batch reports an unavailable open list without writing state', () => 
 
 test('the sync-batch command exits successfully when the open list is unavailable', () => {
   const { root, remote } = makeRepo()
-  const bin = mkdtempSync(join(tmpdir(), 'dsh-fake-gh-'))
+  const bin = tempDir('dsh-fake-gh-')
   try {
     writeFileSync(join(bin, 'gh'), '#!/bin/sh\necho "HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)" >&2\nexit 1\n', { mode: 0o755 })
     const result = spawnSync(

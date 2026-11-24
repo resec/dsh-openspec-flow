@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +11,7 @@ import { manifestPath } from '../lib/worktree/land.js'
 import { finishLocal, retargetLocal, verifyLocal } from '../scripts/pr-local-land.mjs'
 import { saveLocalState } from '../scripts/pr-review-watch.mjs'
 import { acquireLock, forceRelease, lockStatus } from '../scripts/pr-review-lock.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const PUSH_LANDED = join(ROOT, 'scripts', 'push-landed.mjs')
@@ -20,6 +20,7 @@ const TOKEN = 'token-1'
 const NUMBER = 12
 
 test.after(cleanupFixtures)
+test.after(cleanupTempDirs)
 
 function git(cwd, args) {
   const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -28,7 +29,7 @@ function git(cwd, args) {
 }
 
 function makeOrigin(root) {
-  const remote = mkdtempSync(join(tmpdir(), 'dsh-local-pr-origin-'))
+  const remote = tempDir('dsh-local-pr-origin-')
   git(remote, ['init', '--bare', '-q'])
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])

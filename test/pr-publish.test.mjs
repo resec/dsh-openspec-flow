@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
@@ -17,6 +16,9 @@ import {
 import { loadLocalState, resolvePaths } from '../scripts/pr-review-watch.mjs'
 import { ghText } from '../scripts/pr-local-shared.mjs'
 import { acquireLock, forceRelease } from '../scripts/pr-review-lock.mjs'
+import { cleanupTempDirs, tempDir } from './temp.mjs'
+
+test.after(cleanupTempDirs)
 
 const CHANGE = 'widget'
 const BRANCH = 'openspec/apply/local-widget-12345678'
@@ -34,8 +36,8 @@ function mustGit(cwd, args) {
 }
 
 function makeFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pr-publish-'))
-  const remote = mkdtempSync(join(tmpdir(), 'dsh-pr-publish-remote-'))
+  const root = tempDir('dsh-pr-publish-')
+  const remote = tempDir('dsh-pr-publish-remote-')
   mustGit(remote, ['init', '--bare', '-q'])
   mustGit(root, ['init', '-q', '-b', 'main'])
   mustGit(root, ['config', 'user.email', 'test@example.com'])
@@ -554,8 +556,8 @@ test('listBranchPullRequests rejects a failed gh call', () => {
 
 test('a missing gh binary routes the publish gates to offline-land and other spawn errors throw', () => {
   const fixture = makeFixture()
-  const bin = mkdtempSync(join(tmpdir(), 'dsh-pr-publish-bin-'))
-  const blocked = mkdtempSync(join(tmpdir(), 'dsh-pr-publish-blocked-'))
+  const bin = tempDir('dsh-pr-publish-bin-')
+  const blocked = tempDir('dsh-pr-publish-blocked-')
   const saved = process.env.PATH
   try {
     writeReview(fixture.root, fixture.tree)
