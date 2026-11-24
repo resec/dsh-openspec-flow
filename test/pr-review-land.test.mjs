@@ -7,6 +7,7 @@ import test from 'node:test'
 
 import {
   LANDING_LABEL,
+  PR_LIST_LIMIT,
   REVIEW_FAILED_PHASE,
   abandonLanding,
   assertLandingLockFree,
@@ -606,6 +607,39 @@ test('candidates lists a labeled, commented pull request without writing state',
   assert.deepEqual(result.refused, [])
   assert.equal(readFileSync(stateFile, 'utf8'), beforeState)
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+})
+
+test('candidates asks gh for mergeable-labeled pull requests within one cap', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const inner = fakeGh({
+    pr: JSON.parse(prJson(head)),
+    list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+  })
+  const calls = []
+  const fake = (args, cwd) => {
+    calls.push(args)
+    return inner(args, cwd)
+  }
+  const result = listLandingCandidates({ root, gh: fake })
+  const listing = calls.find((args) => args[0] === 'pr' && args[1] === 'list')
+  assert.deepEqual(listing, [
+    'pr', 'list', '--state', 'open', '--label', LANDING_LABEL, '--limit', String(PR_LIST_LIMIT), '--json', 'number,labels',
+  ])
+  assert.equal(listing.includes('--search'), false)
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.truncated, undefined)
+})
+
+test('candidates reports the listing cap instead of dropping older pull requests', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const list = Array.from({ length: PR_LIST_LIMIT }, (_, index) => ({ number: 100 + index, labels: [{ name: 'other' }] }))
+  const result = listLandingCandidates({ root, gh: fakeGh({ pr: JSON.parse(prJson(head)), list }) })
+  assert.deepEqual(result.candidates, [])
+  assert.equal(result.refused.length, PR_LIST_LIMIT)
+  assert.match(result.truncated, new RegExp(`returned ${PR_LIST_LIMIT} open pull requests labeled ${LANDING_LABEL}`))
+  assert.match(result.truncated, /older labeled pull requests may be missing/)
 })
 
 test('candidates refuses a behind fork entry for author update', () => {

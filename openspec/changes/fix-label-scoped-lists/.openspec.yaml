@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Make landing candidates and owner-review reconcile ask GitHub for the
+  labeled open pull requests instead of filtering a recent window, and report
+  a listing that reaches its fixed entry cap instead of dropping older labeled
+  pull requests silently.

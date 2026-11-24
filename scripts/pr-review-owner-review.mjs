@@ -26,6 +26,8 @@ import {
 export const OWNER_REVIEW_LABEL = 'owner-review'
 /** Maintainer authorization label, never written by this command. */
 export const MERGEABLE_LABEL = 'mergeable'
+/** Maximum open labeled pull requests one listing returns. */
+export const PR_LIST_LIMIT = 200
 /** Fields read from one pull request. */
 const PR_FIELDS = [
   'number',
@@ -283,9 +285,17 @@ export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh =
   const numbers = new Set(Object.keys(state.prs))
   const local = localPullRequestNumbers(root)
   for (const key of local) numbers.delete(key)
-  const text = gh(['pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,labels'], { cwd: root })
+  const text = gh([
+    'pr', 'list',
+    '--state', 'open',
+    '--label', OWNER_REVIEW_LABEL,
+    '--limit', String(PR_LIST_LIMIT),
+    '--json', 'number,labels',
+  ], { cwd: root })
   if (text === undefined) throw new Error('gh pr list failed')
-  for (const pr of JSON.parse(text)) {
+  const listed = JSON.parse(text)
+  const entries = Array.isArray(listed) ? listed : []
+  for (const pr of entries) {
     if (local.has(String(pr.number))) continue
     if (hasLabel(pr, OWNER_REVIEW_LABEL)) numbers.add(String(pr.number))
   }
@@ -300,7 +310,12 @@ export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh =
       errors.push({ number: Number(key), error: error instanceof Error ? error.message : String(error) })
     }
   }
-  return { dryRun: !apply, results, errors }
+  return { dryRun: !apply, results, errors, ...(entries.length >= PR_LIST_LIMIT ? { truncated: truncationNote(entries.length) } : {}) }
+}
+
+/** Report a listing that may have hidden older labeled pull requests. */
+function truncationNote(count) {
+  return `gh pr list returned ${count} open pull requests labeled ${OWNER_REVIEW_LABEL}, the ${PR_LIST_LIMIT}-entry limit; older labeled pull requests may be missing`
 }
 
 /** Render usage. */
@@ -365,6 +380,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
         `PR #${entry.number}: ${actionText(entry.action, result.dryRun)} owner-review (${entry.reason})`
       ))
       for (const failure of result.errors) lines.push(`PR #${failure.number}: error: ${failure.error}`)
+      if (result.truncated !== undefined) lines.push(`warning: ${result.truncated}`)
       write(`${lines.length === 0 ? 'no tracked or labeled pull requests\n' : `${lines.join('\n')}\n`}`)
       return 0
     }

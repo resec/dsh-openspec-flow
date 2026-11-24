@@ -34,6 +34,8 @@ export { trustedPass }
 
 /** Landing label required for authorization. */
 export const LANDING_LABEL = 'mergeable'
+/** Maximum open labeled pull requests one listing returns. */
+export const PR_LIST_LIMIT = 200
 /** Phase recorded when the final review cannot be resumed. */
 export const REVIEW_FAILED_PHASE = 'review-failed'
 /** Landing state file. */
@@ -294,13 +296,20 @@ export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh
   } catch (error) {
     return { candidates: [], refused: [], blocked: error instanceof Error ? error.message : String(error) }
   }
-  const listed = JSON.parse(ghRunner(['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,labels'], root))
+  const listed = JSON.parse(ghRunner([
+    'pr', 'list',
+    '--state', 'open',
+    '--label', LANDING_LABEL,
+    '--limit', String(PR_LIST_LIMIT),
+    '--json', 'number,labels',
+  ], root))
+  const entries = Array.isArray(listed) ? listed : []
   const lands = loadLandings(root)
   const state = loadState(root)
   const login = ghLogin(ghRunner, root)
   const candidates = []
   const refused = []
-  for (const item of Array.isArray(listed) ? listed : []) {
+  for (const item of entries) {
     const n = Number(item?.number)
     if (!Number.isInteger(n) || n < 1) continue
     if (!hasLandingLabel(item)) {
@@ -336,7 +345,14 @@ export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh
       refused.push({ number: n, reason: error instanceof Error ? error.message : String(error) })
     }
   }
-  return { candidates, refused }
+  const result = { candidates, refused }
+  if (entries.length >= PR_LIST_LIMIT) result.truncated = truncationNote(LANDING_LABEL, entries.length)
+  return result
+}
+
+/** Report a listing that may have hidden older labeled pull requests. */
+function truncationNote(label, count) {
+  return `gh pr list returned ${count} open pull requests labeled ${label}, the ${PR_LIST_LIMIT}-entry limit; older labeled pull requests may be missing`
 }
 
 /** Record a failed final review without removing the landing checkout. */
