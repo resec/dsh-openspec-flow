@@ -1099,7 +1099,7 @@ function batchRows(entries) {
   }))
 }
 
-function batchGh(rows, { failNumbers = [], newHead = 'e'.repeat(40) } = {}) {
+function batchGh(rows, { failNumbers = [], newHead = 'e'.repeat(40), stuckHeads = false } = {}) {
   const calls = []
   const updated = new Set()
   const runner = (args) => {
@@ -1120,7 +1120,7 @@ function batchGh(rows, { failNumbers = [], newHead = 'e'.repeat(40) } = {}) {
       const number = Number(args[2])
       const row = rows.find((entry) => Number(entry.number) === number)
       if (args.includes('headRefOid')) {
-        return JSON.stringify({ headRefOid: updated.has(number) ? newHead : row.headRefOid })
+        return JSON.stringify({ headRefOid: stuckHeads ? row.headRefOid : (updated.has(number) ? newHead : row.headRefOid) })
       }
       return JSON.stringify({
         number,
@@ -1162,11 +1162,15 @@ test('sync-batch updates every eligible branch and records the new heads', () =>
   assert.equal(dry.locked, false)
   assert.equal(dry.changed, false)
   assert.deepEqual(dry.results.map((entry) => entry.status), ['planned', 'planned', 'planned'])
+  assert.equal(dry.results[0].previousHead, heads[12])
+  assert.equal(dry.results[0].newHead, null)
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
   const applied = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
   assert.equal(applied.changed, true)
   assert.equal(applied.updated, 3)
   assert.deepEqual(applied.results.map((entry) => entry.number), [12, 13, 14])
+  assert.equal(applied.results[0].previousHead, heads[12])
+  assert.equal(applied.results[0].newHead, newHead)
   const landings = loadLandings(root)
   assert.equal(landings.lands['12'], undefined)
   assert.deepEqual(Object.keys(landings.syncs).sort(), ['12', '13', '14'])
@@ -1175,7 +1179,7 @@ test('sync-batch updates every eligible branch and records the new heads', () =>
   assert.equal(gh.calls.some((args) => args.includes('--force') || args.includes('--admin')), false)
 })
 
-test('sync-batch continues after a refusal and skips a fork branch', () => {
+test('sync-batch reports a refused update, a fork and a conflict and continues', () => {
   const { root, remote } = makeRepo()
   const heads = {
     12: addBatchPullRequest(root, remote, 12),
@@ -1188,25 +1192,32 @@ test('sync-batch continues after a refusal and skips a fork branch', () => {
     { number: 12, head: heads[12] },
     { number: 13, head: heads[13] },
     { number: 14, head: heads[14], crossRepository: true },
+    { number: 16, head: '9'.repeat(40), mergeStateStatus: 'DIRTY' },
     { number: 15, head: heads[15] },
   ])
   const gh = batchGh(rows, { failNumbers: [13], newHead: 'f'.repeat(40) })
   const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
   assert.equal(result.updated, 2)
-  assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced', '13:refused', '15:synced'])
+  assert.deepEqual(
+    result.results.map((entry) => `${entry.number}:${entry.status}`),
+    ['12:synced', '13:refused', '14:refused', '16:refused', '15:synced'],
+  )
   assert.match(result.results[1].reason, /update rejected for 13/)
+  assert.match(result.results[2].reason, /cross-repository/)
+  assert.match(result.results[3].reason, /merge state is DIRTY/)
+  assert.equal(result.results[1].previousHead, heads[13])
   assert.equal(loadLandings(root).lands['12'], undefined)
   assert.deepEqual(Object.keys(loadLandings(root).syncs).sort(), ['12', '15'])
 })
 
-test('sync-batch refuses while a landing lock is held and leaves branches unchanged', () => {
+test('sync-batch refuses a landing lock even for the same session', () => {
   const { root, remote } = makeRepo()
   const heads = { 12: addBatchPullRequest(root, remote, 12) }
   advanceMain(root)
   const rows = batchRows([{ number: 12, head: heads[12] }])
   const gh = batchGh(rows)
   acquireLock({ root, session: 'local-owner', token: 'local-token', pr: 99 })
-  const result = syncBatch({ root, gh, apply: true })
+  const result = syncBatch({ root, gh, apply: true, session: 'local-owner', token: 'local-token' })
   assert.equal(result.locked, true)
   assert.deepEqual(result.results, [])
   assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
@@ -1279,4 +1290,64 @@ test('sync-batch reports an empty and an all-refused batch without stopping', ()
   assert.equal(refused.changed, false)
   assert.equal(refused.updated, 0)
   assert.deepEqual(refused.results.map((entry) => entry.status), ['refused'])
+})
+
+test('sync-batch applies the default 20-update limit and reports the remainder', () => {
+  const { root, remote } = makeRepo()
+  const entries = []
+  for (let number = 100; number < 121; number += 1) {
+    entries.push({ number, head: addBatchPullRequest(root, remote, number) })
+  }
+  advanceMain(root)
+  const rows = batchRows(entries)
+  const gh = batchGh(rows, { newHead: 'c'.repeat(40) })
+  const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+  assert.equal(result.updated, 20)
+  assert.equal(result.eligible, 21)
+  assert.equal(result.remaining, 1)
+  assert.equal(result.results.length, 20)
+  assert.equal(Object.keys(loadLandings(root).syncs).length, 20)
+})
+
+test('sync-batch reports a head that never changes and continues', () => {
+  const { root, remote } = makeRepo()
+  const heads = {
+    12: addBatchPullRequest(root, remote, 12),
+    13: addBatchPullRequest(root, remote, 13),
+  }
+  advanceMain(root)
+  const rows = batchRows([
+    { number: 12, head: heads[12] },
+    { number: 13, head: heads[13] },
+  ])
+  const result = syncBatch({
+    root,
+    gh: batchGh(rows, { stuckHeads: true }),
+    apply: true,
+    pollAttempts: 1,
+    pollIntervalMs: 0,
+  })
+  assert.equal(result.updated, 0)
+  assert.equal(result.changed, false)
+  assert.deepEqual(result.results.map((entry) => entry.status), ['refused', 'refused'])
+  assert.match(result.results[0].reason, /did not change within 1 polls/)
+  assert.equal(result.results[0].previousHead, heads[12])
+})
+
+test('sync-batch skips an up-to-date branch and reports the previous head', () => {
+  const { root, remote } = makeRepo()
+  advanceMain(root)
+  const head = addBatchPullRequest(root, remote, 12)
+  const rows = batchRows([{ number: 12, head }])
+  const result = syncBatch({
+    root,
+    gh: batchGh(rows),
+    apply: true,
+    pollAttempts: 1,
+    pollIntervalMs: 0,
+  })
+  assert.equal(result.changed, false)
+  assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:skipped'])
+  assert.match(result.results[0].reason, /already contains origin\/main/)
+  assert.equal(result.results[0].previousHead, head)
 })

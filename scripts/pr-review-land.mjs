@@ -528,7 +528,7 @@ export function syncBatch({
 } = {}) {
   assertMainReady(root)
   try {
-    assertLandingLockFree(root, { session, token })
+    assertLandingLockFree(root)
   } catch (error) {
     return {
       locked: true,
@@ -548,9 +548,7 @@ export function syncBatch({
   const eligible = rows.filter((row) => {
     if (row?.isDraft === true) return false
     if (String(row?.baseRefName ?? '') !== 'main') return false
-    if (row?.isCrossRepository === true) return false
     if (!Array.isArray(row?.labels) || !row.labels.some((label) => label?.name === LANDING_LABEL)) return false
-    if (!['BEHIND', 'UNKNOWN'].includes(String(row?.mergeStateStatus))) return false
     return activeChangeNames(row?.files).length === 1
   })
   const results = []
@@ -560,18 +558,19 @@ export function syncBatch({
     const n = Number(row.number)
     try {
       const result = syncLanding({
-        root, number: n, gh: ghRunner, apply, session, token,
+        root, number: n, gh: ghRunner, apply,
         pollAttempts, pollIntervalMs, sleep,
       })
       if (apply) updated += 1
       results.push(apply
-        ? { number: n, status: 'synced', previousHead: result.previousHead, newHead: result.newHead }
-        : { number: n, status: 'planned', previousHead: result.head, newHead: null })
+        ? { number: n, status: 'synced', previousHead: row.headRefOid, newHead: result.newHead }
+        : { number: n, status: 'planned', previousHead: row.headRefOid, newHead: null })
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       results.push({
         number: n,
         status: reason.includes('already contains origin/main') ? 'skipped' : 'refused',
+        previousHead: row.headRefOid,
         reason,
       })
     }
