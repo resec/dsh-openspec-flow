@@ -9,6 +9,8 @@ import {
   LANDING_LABEL,
   REVIEW_FAILED_PHASE,
   abandonLanding,
+  assertLandingLockFree,
+  assertNotLocal,
   archiveLanding,
   assertSingleLanding,
   failLanding,
@@ -27,7 +29,8 @@ import {
   syncLanding,
   trustedPass,
 } from '../scripts/pr-review-land.mjs'
-import { resolvePaths, saveState } from '../scripts/pr-review-watch.mjs'
+import { loadState, resolvePaths, saveLocalState, saveState } from '../scripts/pr-review-watch.mjs'
+import { acquireLock, forceRelease } from '../scripts/pr-review-lock.mjs'
 
 const HEAD = 'a'.repeat(40)
 const LOGIN = 'maintainer'
@@ -877,4 +880,140 @@ test('state --fail refuses a landing past the final review', () => {
   addPullRequest(root, remote)
   saveLandings(root, { schemaVersion: 1, lands: { 12: { number: 12, phase: 'reviewed' } } })
   assert.throws(() => failLanding({ root, number: 12, error: 'x', apply: true }), /only a prepared landing/)
+})
+
+
+
+function cleanup(...directories) {
+  for (const directory of directories) rmSync(directory, { recursive: true, force: true })
+}
+
+test('a local landing lock refuses every contributor landing command', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
+    acquireLock({ root, session: 'local-owner', token: 'local-token', pr: 99 })
+    assert.throws(() => assertLandingLockFree(root), /held by session local-owner for PR #99/)
+    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /landing lock is held by session local-owner/)
+    assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /landing lock is held/)
+    assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /landing lock is held/)
+    for (const run of [
+      () => reviewedLanding({ root, number: 12, apply: true }),
+      () => mergeLanding({ root, number: 12, gh: fake, apply: true }),
+      () => archiveLanding({ root, number: 12, apply: true }),
+      () => pushLanding({ root, number: 12, apply: true }),
+      () => finishLanding({ root, number: 12, apply: true }),
+      () => abandonLanding({ root, number: 12, apply: true }),
+    ]) {
+      assert.throws(run, /landing lock is held by session local-owner/)
+    }
+    const blocked = listLandingCandidates({ root, gh: fake })
+    assert.deepEqual(blocked.candidates, [])
+    assert.match(blocked.blocked, /landing lock is held by session local-owner/)
+    forceRelease({ root, reason: 'test' })
+    assert.equal(planLanding({ root, number: 12, gh: fake }).change, 'widget')
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('contributor landing excludes an owner-managed local pull request', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    saveLocalState(root, {
+      schemaVersion: 1,
+      prs: {
+        12: {
+          number: 12,
+          change: 'widget',
+          branch: 'openspec/apply/local-widget-12345678',
+          head,
+          tree: 'f'.repeat(40),
+          record: 'local#widget',
+          ownerSession: 'owner-1',
+          phase: 'published',
+        },
+      },
+    })
+    const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
+    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /owner-managed locally/)
+    assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /owner-managed locally/)
+    assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /owner-managed locally/)
+    const result = listLandingCandidates({ root, gh: fake })
+    assert.deepEqual(result.candidates, [])
+    assert.match(result.refused[0].reason, /owner-managed locally/)
+    assert.doesNotThrow(() => assertNotLocal(root, 13))
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a corrupt local owner state refuses contributor landing', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const file = join(resolvePaths(root).cache, 'local-prs.json')
+    writeFileSync(file, '{not json')
+    const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
+    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /corrupt/)
+    const result = listLandingCandidates({ root, gh: fake })
+    assert.deepEqual(result.candidates, [])
+    assert.match(result.refused[0].reason, /corrupt/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a new landing is refused while local main leads origin/main', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    writeFileSync(join(root, 'local-only.txt'), 'local\n')
+    git(root, ['add', 'local-only.txt'])
+    git(root, ['commit', '-qm', 'local main leads'])
+    const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
+    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /local main leads origin\/main.*push-landed/)
+    assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /push-landed/)
+    assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /push-landed/)
+    const blocked = listLandingCandidates({ root, gh: fake })
+    assert.deepEqual(blocked.candidates, [])
+    assert.match(blocked.blocked, /local main leads origin\/main/)
+    git(root, ['push', '-q', 'origin', 'main'])
+    assert.throws(() => planLanding({ root, number: 12, gh: fake }), /behind origin\/main; run sync 12/)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a ready contributor landing merges, archives, pushes and finishes in one run', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const { head } = addPullRequest(root, remote)
+    const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+    const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+    const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+    reviewRecord(root, tree)
+    reviewedLanding({ root, number: 12, apply: true })
+    const onMerge = () => {
+      git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+    }
+    const merged = mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+    assert.equal(merged.phase, 'archive-pending')
+    git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
+    git(root, ['commit', '-qm', 'archive widget'])
+    const archived = archiveLanding({ root, number: 12, apply: true })
+    assert.equal(archived.phase, 'archived')
+    git(root, ['push', '-q', 'origin', 'main'])
+    const pushed = pushLanding({ root, number: 12, apply: true })
+    assert.equal(pushed.phase, 'pushed')
+    const manifest = finishLanding({ root, number: 12, apply: true })
+    assert.equal(manifest.change, 'widget')
+    assert.equal(loadLandings(root).lands['12'], undefined)
+    assert.equal(existsSync(prepared.worktree), false)
+    assert.equal(loadState(root).prs['12'], undefined)
+  } finally {
+    cleanup(root, remote)
+  }
 })

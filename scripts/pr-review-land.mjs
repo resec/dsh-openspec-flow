@@ -20,12 +20,14 @@ import {
   checksGreen,
   forgetPullRequest,
   loadState,
+  localPullRequestNumbers,
   mainWorktree,
   resolvePaths,
   trustedPass,
   UsageError,
   withRunLock,
 } from './pr-review-watch.mjs'
+import { readLockOwner } from './pr-review-lock.mjs'
 
 export { trustedPass }
 
@@ -158,6 +160,21 @@ function ghLogin(ghRunner, root) {
   return ghRunner(['api', 'user', '--jq', '.login'], root)
 }
 
+/** Refuse a landing command while a local owner holds the landing lock. */
+export function assertLandingLockFree(root) {
+  const owner = readLockOwner(root)
+  if (owner === undefined) return undefined
+  throw new Error(`the landing lock is held by session ${owner.ownerSession} for PR #${owner.pr}; wait for the local owner to release it`)
+}
+
+/** Refuse a contributor landing for an owner-managed local PR. */
+export function assertNotLocal(root, number) {
+  const n = Number(number)
+  if (localPullRequestNumbers(root).has(String(n))) {
+    throw new Error(`PR #${n} is owner-managed locally; use pr-local-land, not the contributor landing commands`)
+  }
+}
+
 /** Verify the main worktree is clean and on main. */
 function assertMainReady(root) {
   const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])
@@ -166,9 +183,22 @@ function assertMainReady(root) {
   if (status !== '') throw new Error(`landing needs a clean main worktree:\n${status}`)
 }
 
+/** Refuse a new landing while local main carries commits origin/main does not. */
+function assertLocalMainNotAhead(root) {
+  gitMaybe(root, ['fetch', 'origin', 'main'])
+  const main = gitMaybe(root, ['rev-parse', 'main'])
+  const originMain = gitMaybe(root, ['rev-parse', 'origin/main'])
+  if (main === undefined || originMain === undefined) return
+  const ahead = gitMaybe(root, ['rev-list', '--count', 'origin/main..main'])
+  if (ahead !== undefined && Number(ahead) > 0) {
+    throw new Error(`local main leads origin/main by ${ahead} commit(s); run node scripts/push-landed.mjs --push before landing another pull request`)
+  }
+}
+
 /** Evaluate the landing gates for one pull request without checking main. */
 function evaluateLanding({ root, number, gh: ghRunner = gh, state = loadState(root), login }) {
   const n = requireNumber(number)
+  assertNotLocal(root, n)
   const pr = readPullRequest({ root, number: n, gh: ghRunner })
   const entry = state.prs?.[String(n)]
   const change = activeChangeNames(pr.files)
@@ -222,17 +252,25 @@ function assertLatestMain(root, plan) {
 }
 
 /** Evaluate all landing gates. */
-export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh } = {}) {
+function planLandingChecked({ root, number, gh: ghRunner, checkAhead }) {
+  assertLandingLockFree(root)
   const plan = evaluateLanding({ root, number, gh: ghRunner })
   assertMainReady(root)
+  if (checkAhead) assertLocalMainNotAhead(root)
   assertLatestMain(root, plan)
   return plan
+}
+
+export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh } = {}) {
+  return planLandingChecked({ root, number, gh: ghRunner, checkAhead: true })
 }
 
 /** List landing candidates without writing watch or landing state. */
 export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh } = {}) {
   try {
     assertMainReady(root)
+    assertLandingLockFree(root)
+    assertLocalMainNotAhead(root)
   } catch (error) {
     return { candidates: [], refused: [], blocked: error instanceof Error ? error.message : String(error) }
   }
@@ -395,7 +433,10 @@ export function syncLanding({
   sleep = sleepSync,
 } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
+  assertNotLocal(root, n)
   assertMainReady(root)
+  assertLocalMainNotAhead(root)
   const pr = readPullRequest({ root, number: n, gh: ghRunner })
   if (pr.state !== 'OPEN') throw new Error(`PR #${n} is ${String(pr.state).toLowerCase()}`)
   if (pr.isDraft === true) throw new Error(`PR #${n} is a draft`)
@@ -480,6 +521,7 @@ function assertReviewRecord(root, entry, expectedTree = entry.reviewedTree) {
 /** Verify the reviewed tree and advance to reviewed. */
 export function reviewedLanding({ root = mainWorktree(), number, apply = false } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state; run prepare first`)
@@ -535,6 +577,7 @@ function completeMergedLanding(root, lands, entry) {
 /** Merge the reviewed pull request with gh rebase. */
 export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -565,7 +608,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
     failMergeGate(sameRepository ? 'origin/main moved; sync and review again' : 'origin/main moved; the author must update the branch')
   }
   if (!headContainsMain(root, entry.prHead)) failMergeGate(latestMainMessage(n, sameRepository))
-  const plan = planLanding({ root, number: n, gh: ghRunner })
+  const plan = planLandingChecked({ root, number: n, gh: ghRunner, checkAhead: false })
   if (plan.head !== entry.prHead) failMergeGate(`PR #${n} head moved; prepare and review again`)
   if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
   try {
@@ -586,6 +629,7 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
 /** Record the archive commit after the session archived on main. */
 export function archiveLanding({ root = mainWorktree(), number, commit, apply = false } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -621,6 +665,7 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
 /** Record the pushed head after the session pushes main. */
 export function pushLanding({ root = mainWorktree(), number, apply = false } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -652,6 +697,7 @@ export function pushLanding({ root = mainWorktree(), number, apply = false } = {
 /** Finish a pushed landing and clean its checkout. */
 export function finishLanding({ root = mainWorktree(), number, apply = false } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -683,6 +729,7 @@ export function finishLanding({ root = mainWorktree(), number, apply = false } =
 /** Abandon a pre-merge landing and remove its checkout. */
 export function abandonLanding({ root = mainWorktree(), number, apply = false } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root)
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
