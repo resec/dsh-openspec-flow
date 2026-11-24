@@ -524,3 +524,15 @@ test('the review document states the cross-change finding boundary', () => {
   }
   assert.doesNotMatch(text, /任一结构错误都会拒绝整份报告/)
 })
+
+test('the review document states the per-change lifecycle guard', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    'lifecycle 锁的进程内顺序守卫按 change 记账',
+    '另一个 change 的 archive、land、清理重试与 remove 照常获取',
+    '不带 change 的 lifecycle 请求在同仓库仍持有任一 change lock 时被拒绝',
+    '释放一把 change lock 只删除它自己的登记',
+  ]) {
+    assert.ok(text.includes(phrase), `the document states ${phrase}`)
+  }
+})

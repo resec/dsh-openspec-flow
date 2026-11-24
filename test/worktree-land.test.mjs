@@ -7,7 +7,8 @@ import test from 'node:test'
 
 import { CHANGE, cleanupFixtures, gitFixture, passDraft, passDraftConstructing, report, reviewDir, setup, call } from './review-fixtures.mjs'
 import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
-import { sha256 } from '../lib/review/store.js'
+import { gitCommonDir, sha256 } from '../lib/review/store.js'
+import { acquireLock, lockPath, releaseLock } from '../lib/worktree/lock.js'
 import { manifestPath } from '../lib/worktree/land.js'
 import { removeSealRef, sealRefName } from '../lib/worktree/seal.js'
 
@@ -31,6 +32,15 @@ async function readyLand({ feature = false } = {}) {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
   return { root, run, fake, state }
+}
+
+async function withOtherChangeLock(root, body) {
+  const lock = await acquireLock(gitCommonDir(root), 'change', { change: 'other-change', timeoutMs: 1000 })
+  try {
+    return await body()
+  } finally {
+    releaseLock(lock)
+  }
 }
 
 async function withGitRace(root, mode, run) {
@@ -189,6 +199,51 @@ test('remove is idempotent after land cleanup', async () => {
   assert.equal(removed.branch, state.branch)
   assert.equal(existsSync(state.worktree), false)
   assert.notEqual(readApplyState(root, null, CHANGE), undefined)
+})
+
+test("land proceeds while this process holds another change's lock", async () => {
+  const { root, fake } = await readyLand()
+  const landed = await withOtherChangeLock(root, () => call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  }))
+  assert.equal(landed.change, CHANGE)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+})
+
+test("a cleanup retry proceeds while this process holds another change's lock", async () => {
+  const { root, run, fake, state } = await readyLand()
+  const common = gitCommonDir(root)
+  releaseLock({
+    path: lockPath(common, 'change', { store: null, change: CHANGE }),
+    owner: { token: state.lockToken },
+    scope: 'change',
+    commonDir: common,
+  })
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  run(['merge', '--ff-only', state.branch])
+  const fakeLand = 'd'.repeat(40)
+  const path = manifestPath(root, fakeLand)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify({ change: CHANGE, store: null, landCommit: fakeLand, landMode: 'fast-forward', archiveCommit: 'e'.repeat(40) })}\n`)
+  writeApplyState(root, null, CHANGE, {
+    ...state, status: 'archived', cleanup: { worktreeRemoved: false, branchRemoved: false },
+  })
+  const retried = await withOtherChangeLock(root, () => call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  }))
+  assert.equal(retried.cleanup.complete, true)
+  assert.equal(existsSync(state.worktree), false)
+})
+
+test("remove proceeds while this process holds another change's lock", async () => {
+  const { root, fake, state } = await readyLand()
+  await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
+  const removed = await withOtherChangeLock(root, () => call(fake, 'openspec_apply_worktree', {
+    action: 'remove', change: CHANGE,
+  }))
+  assert.equal(removed.removed, false)
+  assert.equal(removed.branch, state.branch)
 })
 
 test('land works when apply review is disabled', async () => {

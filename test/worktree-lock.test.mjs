@@ -80,6 +80,62 @@ test('the lifecycle lock cannot be acquired after a change lock', async () => {
   releaseLock(change)
 })
 
+test('a lifecycle request is refused only for the change lock it names', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const other = await acquireLock(common, 'change', { change: 'other', timeoutMs: 1000 })
+  const lifecycle = await acquireLock(common, 'lifecycle', { change: 'mine', timeoutMs: 1000 })
+  assert.equal(inspectLock(lockPath(common, 'lifecycle')).state, 'alive')
+  releaseLock(lifecycle)
+  await assert.rejects(
+    acquireLock(common, 'lifecycle', { change: 'other', timeoutMs: 1000 }),
+    /lifecycle lock must be acquired before a change lock/,
+  )
+  assert.equal(inspectLock(lockPath(common, 'lifecycle')).state, 'missing')
+  releaseLock(other)
+})
+
+test('a lifecycle request without a change is refused while a change lock is held', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const held = await acquireLock(common, 'change', { change: 'mine', timeoutMs: 1000 })
+  await assert.rejects(
+    acquireLock(common, 'lifecycle', { timeoutMs: 1000 }),
+    /lifecycle lock must be acquired before a change lock/,
+  )
+  await assert.rejects(
+    acquireLock(common, 'lifecycle', { store: 'team', timeoutMs: 1000 }),
+    /lifecycle lock must be acquired before a change lock/,
+  )
+  assert.equal(inspectLock(lockPath(common, 'lifecycle')).state, 'missing')
+  releaseLock(held)
+})
+
+test("another repository's change lock does not refuse an unnamed lifecycle request", async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const otherCommon = gitCommonDir(repository())
+  const other = await acquireLock(otherCommon, 'change', { change: 'mine', timeoutMs: 1000 })
+  const lifecycle = await acquireLock(common, 'lifecycle', { timeoutMs: 1000 })
+  releaseLock(lifecycle)
+  releaseLock(other)
+})
+
+test('releasing one change lock keeps the other change lock registered', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const first = await acquireLock(common, 'change', { change: 'one', timeoutMs: 1000 })
+  const second = await acquireLock(common, 'change', { change: 'two', timeoutMs: 1000 })
+  assert.deepEqual(releaseLock(first), { released: true })
+  await assert.rejects(
+    acquireLock(common, 'lifecycle', { change: 'two', timeoutMs: 1000 }),
+    /lifecycle lock must be acquired before a change lock/,
+  )
+  const lifecycle = await acquireLock(common, 'lifecycle', { change: 'one', timeoutMs: 1000 })
+  releaseLock(lifecycle)
+  releaseLock(second)
+})
+
 test('ordered acquisition takes lifecycle then change', async () => {
   const root = repository()
   const common = gitCommonDir(root)

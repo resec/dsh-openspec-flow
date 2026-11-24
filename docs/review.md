@@ -53,6 +53,7 @@ git worktree apply 中，draft review 就绪后首次 `openspec_apply_next` 由�
 apply 锁按实现域与 store 域区分：
 
 - git worktree apply 用 `<git common dir>/openspec-flow/changes/<store>#<change>.lock.d` 串行同一 change；不同 change 的 change lock 相互独立，可以并行。实现域的项目级 apply 锁不再获取。
+- lifecycle 锁的进程内顺序守卫按 change 记账：本进程持有某个 change 的 lock 时，只为该 change 的 lifecycle 请求拒绝；另一个 change 的 archive、land、清理重试与 remove 照常获取。不带 change 的 lifecycle 请求在同仓库仍持有任一 change lock 时被拒绝。释放一把 change lock 只删除它自己的登记。
 - store-backed change 仍获取 store 域的项目级 apply 锁，保证同一 store change 不会从两个项目同时 apply；store 锁比较 `implementationRoot`，第二个项目被拒绝。
 - 非 git 项目和关闭 `worktree.enabled` 的兼容路径继续使用项目级 apply 锁。
 - 项目级锁位置：git 域为 `<git dir>/openspec-flow/apply.lock.json`；非 git 域为 `<domain>/openspec/.review/apply.lock.json`。锁记录 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt`。
