@@ -199,12 +199,16 @@ function checkIdentity(entry) {
 }
 
 /**
- * A check entry's usable start time.
+ * A check entry's usable start time: its `startedAt`, or a status context's `createdAt`.
  * @param entry - one `statusCheckRollup` entry.
  * @returns milliseconds since the epoch, or NaN when the entry has no usable start time.
  */
 function checkStartedAt(entry) {
-  const value = typeof entry?.startedAt === 'string' ? entry.startedAt : ''
+  const value = typeof entry?.startedAt === 'string' && entry.startedAt !== ''
+    ? entry.startedAt
+    : typeof entry?.createdAt === 'string'
+      ? entry.createdAt
+      : ''
   if (value === '' || value === ZERO_TIMESTAMP) return NaN
   const time = Date.parse(value)
   return Number.isFinite(time) && time > 0 ? time : NaN

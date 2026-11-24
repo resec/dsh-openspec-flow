@@ -143,8 +143,8 @@ test('checksGreen judges each check by its newest run', () => {
     entry('verify', 'FAILURE', older, { workflowName: 'nightly' }),
   ]), false)
   assert.equal(checksGreen([
-    { context: 'ci/verify', state: 'FAILURE', startedAt: older },
-    { context: 'ci/verify', state: 'SUCCESS', startedAt: newer },
+    { context: 'ci/verify', state: 'FAILURE', createdAt: older },
+    { context: 'ci/verify', state: 'SUCCESS', createdAt: newer },
   ]), true)
   assert.equal(checksGreen([
     { name: 'verify', conclusion: 'SUCCESS' },

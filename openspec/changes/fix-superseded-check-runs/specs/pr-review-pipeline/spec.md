@@ -28,7 +28,7 @@
 
 ### Requirement: Superseded check entry
 
-Checks SHALL be grouped by workflow name and check name, or by status context name. An absent `startedAt`, or `0001-01-01T00:00:00Z`, SHALL NOT be usable. A group whose entries all carry a usable `startedAt` is green only when every entry with the latest `startedAt` succeeded; entries with an earlier `startedAt` are superseded and ignored. A group containing an entry without a usable `startedAt` is green only when every entry in it succeeded.
+Checks SHALL be grouped by workflow name and check name, or by status context name. A usable start time is an entry's `startedAt` or, without one, its `createdAt`; an absent or `0001-01-01T00:00:00Z` value SHALL NOT be usable. A group whose entries all carry a usable start time is green only when every entry at the latest such time succeeded; earlier entries are superseded and ignored. A group containing an entry without a usable start time is green only when every entry in it succeeded.
 
 #### Scenario: Superseded entry
 
@@ -37,7 +37,7 @@ Checks SHALL be grouped by workflow name and check name, or by status context na
 
 #### Scenario: Same start time
 
-- **WHEN** several entries of one check share the latest usable `startedAt` and one of them failed
+- **WHEN** several entries of one check share the latest usable start time and one of them failed
 - **THEN** the check is not green
 
 #### Scenario: Queued entry with zero start time
