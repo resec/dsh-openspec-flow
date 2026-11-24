@@ -17,5 +17,5 @@
 
 ## 4. Verify
 
-- [x] 4.1 Run `openspec validate fix-bare-origin-main --strict`, `npm run openspec:check`, `node scripts/check-requirement-length.mjs`, `node scripts/check-generated-skills.mjs --base <main>` and `node scripts/check-pr-change.mjs --base <main>`.
+- [x] 4.1 Run `openspec validate fix-bare-origin-main --strict`, `npm run openspec:check`, `node scripts/check-requirement-length.mjs`, `node scripts/check-generated-skills.mjs --base refs/remotes/origin/main` and `node scripts/check-pr-change.mjs --base refs/remotes/origin/main`.
 - [x] 4.2 Run `npm run verify`.
