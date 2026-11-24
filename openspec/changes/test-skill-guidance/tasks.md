@@ -19,5 +19,5 @@
 ## 4. Verify
 
 - [x] 4.1 Run `node --test test/skills.test.mjs` on Node 24.
-- [x] 4.2 Run `npm run verify`: 1448 tests pass, plugin coverage line 98.60%, branch 93.70%, function 99.21%, new code `n/a`.
+- [x] 4.2 Run `npm run verify`: 1448 tests pass, plugin coverage line 98.63%, branch 93.68%, function 99.21%, new code `n/a`.
 - [x] 4.3 Run `npx openspec validate test-skill-guidance --strict`, `npm run openspec:check` and `node scripts/check-pr-change.mjs --base origin/main`.
