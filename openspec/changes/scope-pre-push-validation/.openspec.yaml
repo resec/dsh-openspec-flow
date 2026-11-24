@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Let main pushes proceed with unrelated in-progress changes while
+  preserving full validation for pull-request branches and CI, and keep the
+  pre-push hook's lab and coverage order intact.
