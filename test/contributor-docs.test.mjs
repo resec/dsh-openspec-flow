@@ -132,6 +132,8 @@ test('AGENTS.md states the online local completion path and the retarget step', 
   assert.match(AGENTS, /releases the landing lock/)
   assert.match(AGENTS, /openspec_apply_worktree action=land/)
   assert.match(AGENTS, /publish only the archive commit/)
+  assert.match(AGENTS, /check-main-push\.mjs/)
+  assert.match(AGENTS, /push-landed --offline/)
   assert.match(AGENTS, /docs\/local-pr\.md/)
 })
 
