@@ -618,6 +618,55 @@ test('land treats a missing change lock as free', async () => {
   assert.equal(landed.change, CHANGE)
 })
 
+/** Leave the lifecycle lock to a dead process, as an interrupted land or archive would. */
+function leaveDeadLifecycleLock(root) {
+  const path = join(root, '.git', 'openspec-flow', 'lifecycle.lock.d')
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 999999, at: new Date().toISOString() })}\n`)
+  return path
+}
+
+test('land puts the released change lock back when the lifecycle lock cannot be taken', async () => {
+  const { root, run, fake } = await readyLand()
+  const changeLock = join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d')
+  const before = readApplyState(root, null, CHANGE)
+  assert.equal(existsSync(changeLock), true)
+  const mainHead = run(['rev-parse', 'HEAD'])
+  const lifecycle = leaveDeadLifecycleLock(root)
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /dead process|recover/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']), mainHead)
+  const after = readApplyState(root, null, CHANGE)
+  assert.equal(after.status, 'active')
+  assert.equal(after.lockToken, before.lockToken)
+  assert.equal(after.lockPid, before.lockPid)
+  assert.equal(existsSync(changeLock), true, 'the change lock is back on disk')
+  const owner = JSON.parse(readFileSync(join(changeLock, 'owner'), 'utf8'))
+  assert.equal(owner.token, after.lockToken)
+  assert.equal(owner.pid, after.lockPid)
+  rmSync(lifecycle, { recursive: true, force: true })
+  const landed = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
+  assert.equal(landed.change, CHANGE)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+})
+
+test('land leaves a change lock that was missing before the handover missing', async () => {
+  const { root, fake } = await readyLand()
+  const changeLock = join(root, '.git', 'openspec-flow', 'changes', 'local#add-dark-mode.lock.d')
+  const before = readApplyState(root, null, CHANGE)
+  rmSync(changeLock, { recursive: true, force: true })
+  const lifecycle = leaveDeadLifecycleLock(root)
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /dead process|recover/,
+  )
+  assert.deepEqual(readApplyState(root, null, CHANGE), before)
+  assert.equal(existsSync(changeLock), false)
+  rmSync(lifecycle, { recursive: true, force: true })
+})
+
 test('land refuses when strict validation fails', async () => {
   const { fake } = await readyLand()
   const original = fake.ctx.subprocess.spawn
