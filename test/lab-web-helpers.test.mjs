@@ -63,6 +63,8 @@ function fakePage({ present = () => true, onScreenshot } = {}) {
 function pickerPage({
   chip = true,
   picker = true,
+  menu = false,
+  addOpens = true,
   editor = true,
   enters = true,
   crumbs = true,
@@ -71,7 +73,7 @@ function pickerPage({
   adopts = true,
 } = {}) {
   const calls = []
-  const state = { dialog: false, editing: false, draft: '', label: 'Choose workspace', crumbs: [] }
+  const state = { dialog: false, menu: false, editing: false, draft: '', label: 'Choose workspace', crumbs: [] }
   const waiter = (attached, label) => async ({ state: want = 'visible' } = {}) => {
     const present = await attached()
     if (want === 'detached' ? present : !present) throw new Error(`${label} never reached ${want}`)
@@ -81,15 +83,19 @@ function pickerPage({
     count: async () => (chip ? 1 : 0),
     click: async () => {
       calls.push('click:Choose workspace')
-      state.dialog = picker
+      state.dialog = picker && !menu
+      state.menu = picker && menu
     },
     first() {
       return this
     },
-    getByText: (text) => ({
-      count: async () => (state.label === text ? 1 : 0),
-      waitFor: waiter(async () => state.label === text, 'chip placeholder'),
-    }),
+    getByText: (text, options) => {
+      const matches = () => (options?.exact === true ? state.label === text : state.label.includes(text))
+      return {
+        count: async () => (matches() ? 1 : 0),
+        waitFor: waiter(matches, 'chip label'),
+      }
+    },
   }
   const editLocator = {
     count: async () => (editor ? 1 : 0),
@@ -118,6 +124,18 @@ function pickerPage({
       return this
     },
     waitFor: waiter(async () => state.editing, 'Edit path field'),
+  }
+  const addLocator = {
+    count: async () => (state.menu ? 1 : 0),
+    click: async () => {
+      calls.push('click:Add workspace…')
+      state.menu = false
+      state.dialog = addOpens
+    },
+    first() {
+      return this
+    },
+    waitFor: waiter(async () => state.menu, 'Add workspace…'),
   }
   const crumbLocator = {
     getByText: (text) => ({ count: async () => (state.crumbs.includes(text) ? 1 : 0) }),
@@ -148,6 +166,7 @@ function pickerPage({
       return chipLocator
     },
     getByLabel: () => editLocator,
+    getByText: (text) => (text === 'Add workspace…' ? addLocator : { count: async () => 0, first() { return this } }),
     waitForTimeout: async () => {},
   }
   return { page, calls }
@@ -233,8 +252,31 @@ test('chooseWorkspace enters the directory through the path editor and requires 
     'wait:detached:Edit path field',
     'click:Open',
     'wait:detached:dialog',
-    'wait:detached:chip placeholder',
+    'wait:visible:chip label',
   ])
+})
+
+test('chooseWorkspace opens the directory picker from the workspace menu', async () => {
+  const { page, calls } = pickerPage({ menu: true })
+  await chooseWorkspace(page, TARGET)
+  assert.deepEqual(calls, [
+    'click:Choose workspace',
+    'wait:visible:Add workspace…',
+    'click:Add workspace…',
+    'wait:visible:dialog',
+    'click:Edit path',
+    `fill:${TARGET}`,
+    'press:Enter',
+    'wait:detached:Edit path field',
+    'click:Open',
+    'wait:detached:dialog',
+    'wait:visible:chip label',
+  ])
+})
+
+test('chooseWorkspace throws when the add entry opens nothing', async () => {
+  const { page } = pickerPage({ menu: true, addOpens: false })
+  await assert.rejects(chooseWorkspace(page, TARGET), /"Add workspace…" entry did not open/)
 })
 
 test('chooseWorkspace throws when the page offers no workspace picker', async () => {

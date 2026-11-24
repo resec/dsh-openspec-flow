@@ -126,10 +126,18 @@ export async function chooseWorkspace(page, directory) {
   await chip.click({ force: true, timeout: 20_000 })
 
   const dialog = page.getByRole('dialog')
+  // The chip's gesture opens the browser directly when no workspace is listed,
+  // and opens the workspace menu once at least one is; its add entry opens the
+  // browser.
+  const add = page.getByText('Add workspace…', { exact: true })
+  const menuShown = await add.waitFor({ timeout: 5_000 }).then(() => true, () => false)
+  if (menuShown) await add.click()
   try {
     await dialog.waitFor({ timeout: 15_000 })
   } catch {
-    throw new Error('the workspace picker did not open')
+    throw new Error(menuShown
+      ? 'the "Add workspace…" entry did not open the directory picker'
+      : 'the workspace picker did not open')
   }
   const edit = page.getByLabel('Edit path', { exact: true })
   if ((await edit.count()) === 0) throw new Error('the workspace picker shows no "Edit path" field')
@@ -155,7 +163,7 @@ export async function chooseWorkspace(page, directory) {
     throw new Error('the workspace picker stayed open after Open')
   }
   try {
-    await chip.getByText('Choose workspace', { exact: true }).waitFor({ state: 'detached', timeout: 15_000 })
+    await chip.getByText(name).waitFor({ timeout: 15_000 })
   } catch {
     throw new Error(`the page does not show the workspace ${name} after selection`)
   }
