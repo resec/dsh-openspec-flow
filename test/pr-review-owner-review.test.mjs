@@ -395,30 +395,45 @@ test('reconcile then per-PR add follows the scheduled label order', () => {
   }
 })
 
-test('the scheduled cleanup then reconcile and per-PR add sequence runs in order', () => {
+test('the scheduled reconcile then cleanup and per-PR add sequence runs in order', () => {
   const root = makeRoot()
   try {
     saveState(root, {
       schemaVersion: 1,
       prs: {
         12: makeEntry(),
-        13: makeEntry({ number: 13, change: 'widget', worktree: join(root, '.cache', 'pr-review', 'worktrees', 'pr-13') }),
+        13: makeEntry({
+          number: 13,
+          change: 'widget',
+          worktree: join(root, '.cache', 'pr-review', 'worktrees', 'pr-13'),
+          ownerReview: { head: HEAD, at: 't' },
+        }),
       },
     })
+    const edits = []
     const { gh } = fakeGh((args) => {
       if (args[0] === 'api') return LOGIN
-      if (args[0] === 'pr' && args[1] === 'view' && args[2] === '13') return JSON.stringify({ state: 'CLOSED', mergedAt: null })
+      if (args[0] === 'pr' && args[1] === 'view' && args[2] === '13') {
+        return JSON.stringify({ number: 13, state: 'CLOSED', labels: [{ name: OWNER_REVIEW_LABEL }] })
+      }
       if (args[0] === 'pr' && args[1] === 'view' && args[2] === '12') return JSON.stringify(makePr())
       if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify([{ number: 12, labels: [] }])
-      if (args[0] === 'pr' && args[1] === 'edit') return 'ok'
+      if (args[0] === 'pr' && args[1] === 'edit') {
+        edits.push(args)
+        return 'ok'
+      }
       throw new Error(`unexpected gh call: ${args.join(' ')}`)
     })
+    const reconciled = reconcileOwnerReview({ root, apply: true, gh, now: 'after-reconcile' })
+    assert.equal(reconciled.results.some((entry) => entry.number === 13 && entry.action === 'remove'), true)
+    assert.equal(edits.some((args) => args[2] === '13' && args[3] === '--remove-label'), true)
+    assert.equal(loadState(root).prs['13'].ownerReview, undefined)
+    assert.equal(reconciled.results.some((entry) => entry.number === 12 && entry.action === 'add'), true)
+    assert.deepEqual(loadState(root).prs['12'].ownerReview, { head: HEAD, at: 'after-reconcile' })
+
     const cleaned = cleanupClosedPullRequests({ root, gh })
     assert.equal(cleaned.length, 1)
     assert.equal(loadState(root).prs['13'], undefined)
-    const reconciled = reconcileOwnerReview({ root, apply: true, gh, now: 'after-cleanup' })
-    assert.equal(reconciled.results.some((entry) => entry.number === 12 && entry.action === 'add'), true)
-    assert.deepEqual(loadState(root).prs['12'].ownerReview, { head: HEAD, at: 'after-cleanup' })
   } finally {
     cleanup(root)
   }

@@ -77,8 +77,8 @@ Pull-request CI runs the same requirement-description length check the apply pre
 
 The scheduled session processes candidates one at a time:
 
-1. Run `state --cleanup` to remove tracked PRs that `gh pr view --json state,mergedAt` reports as closed or merged.
-2. Run `owner-review --reconcile --apply` to clear stale labels and backfill PRs whose trusted pass predates the signal. A label failure is reported and retried on the next run; it does not stop the review work.
+1. Run `owner-review --reconcile --apply` to clear stale labels and backfill PRs whose trusted pass predates the signal. This runs before cleanup so a tracked PR that has just closed still has a watch entry from which the label can be removed. A label failure is reported and retried on the next run; it does not stop the review work.
+2. Run `state --cleanup` to remove tracked PRs that `gh pr view --json state,mergedAt` reports as closed or merged.
 3. Run `poll --json` and take the candidates.
 4. For each candidate, run `prepare <n> --json`. It fetches the PR head and base branch, computes the merge base of the base tip and head, creates or updates `.cache/pr-review/worktrees/pr-<n>`, verifies that the checkout is clean, shares the repository git directory, and contains the change.
 5. Read apply status with `openspec_review action=status review=apply` and the PR worktree:
@@ -133,8 +133,8 @@ Create a DSH scheduled session every ten minutes. Each run is a new session so t
 
 ```text
 Run the PR review watch for this repository:
-1. node scripts/pr-review-watch.mjs state --cleanup
-2. node scripts/pr-review-owner-review.mjs --reconcile --apply
+1. node scripts/pr-review-owner-review.mjs --reconcile --apply
+2. node scripts/pr-review-watch.mjs state --cleanup
 3. node scripts/pr-review-watch.mjs poll --json
 4. For each candidate: prepare it, check openspec_review apply status and mode,
    start or resume the apply review with the prepared merge-base base,
