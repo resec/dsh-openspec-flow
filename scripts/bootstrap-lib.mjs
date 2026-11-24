@@ -1,16 +1,23 @@
 /**
- * Pure helpers for the Node bootstrap and tests.
+ * Pure helpers for the Node bootstrap, its `qualifies` command and tests.
  *
  * The shell mirrors the same baseline, asset and candidate rules; its
  * --print-asset and --print-candidate-paths modes expose those values so the
- * suite can compare the shipped shell behaviour with this module. Nothing here
- * downloads, spawns a process or reads the environment.
+ * suite can compare the shipped shell behaviour with this module. The runtime
+ * verdict has one implementation: `qualifiesHostVersion` below backs the
+ * `qualifies` command the shell runs for every host candidate, and the
+ * bootstrap.mjs preflight enforces the same requirements through
+ * node-version.mjs. Nothing here downloads, spawns a process or reads the
+ * environment.
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
-import { parseVersion, satisfies } from './node-version.mjs'
+import { parseVersion, readNodeRequirements, satisfies } from './node-version.mjs'
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /** Default Node distribution root. */
 export const DEFAULT_MIRROR = 'https://nodejs.org/dist'
@@ -64,30 +71,14 @@ export function readBaselineNodeVersion(root) {
 }
 
 /**
- * Select the highest host candidate that satisfies the declared runtime.
- * @param candidates - `{ version, path }` entries.
+ * Whether one concrete version meets the primary major and declared range.
+ * @param version - concrete version with or without the v prefix.
  * @param requirements - `{ primaryMajor, range }`.
- * @returns the selected candidate, or undefined.
+ * @returns whether the runtime qualifies.
  */
-export function selectNodeCandidate(candidates, requirements) {
-  const valid = []
-  for (const candidate of candidates) {
-    try {
-      const parsed = parseVersion(candidate.version)
-      if (parsed.major !== requirements.primaryMajor) continue
-      if (!satisfies(parsed, requirements.range)) continue
-      valid.push({ candidate, parsed })
-    } catch {
-      // A malformed version is not a candidate.
-    }
-  }
-  valid.sort((left, right) => {
-    for (const key of ['major', 'minor', 'patch']) {
-      if (left.parsed[key] !== right.parsed[key]) return right.parsed[key] - left.parsed[key]
-    }
-    return 0
-  })
-  return valid[0]?.candidate
+export function qualifiesHostVersion(version, requirements) {
+  const parsed = parseVersion(version)
+  return parsed.major === requirements.primaryMajor && satisfies(parsed, requirements.range)
 }
 
 /**
@@ -164,4 +155,45 @@ export function globalCandidateRoots({ home = homedir(), platform = process.plat
     asdf: join(home, '.asdf/installs/nodejs'),
     brew,
   }
+}
+
+/**
+ * Answer whether one version satisfies the repository's Node requirements.
+ * @param argv - command and version, as `qualifies <version>`.
+ * @param root - repository root holding package.json and coverage.config.json.
+ * @returns process exit code: 0 satisfies, 1 does not, 2 unusable input.
+ */
+export function runQualifiesCommand(argv, root = ROOT) {
+  const [command, version] = argv
+  if (command !== 'qualifies' || version === undefined) {
+    process.stderr.write('usage: bootstrap-lib.mjs qualifies <version>\n')
+    return 2
+  }
+  try {
+    return qualifiesHostVersion(version, readNodeRequirements(root)) ? 0 : 1
+  } catch (error) {
+    process.stderr.write(`bootstrap: ${error.message}\n`)
+    return 2
+  }
+}
+
+/**
+ * Whether this module is the script the process was started with.
+ *
+ * `import.meta.url` is the real path while `process.argv[1]` keeps the spelling
+ * the caller used, so a symlinked invocation is resolved on the argv side
+ * before the comparison; the shell calls this file through `$ROOT`.
+ * @returns true when the module is the entry point.
+ */
+function isEntryPoint() {
+  if (process.argv[1] === undefined) return false
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+  } catch {
+    return import.meta.url === pathToFileURL(process.argv[1]).href
+  }
+}
+
+if (isEntryPoint()) {
+  process.exitCode = runQualifiesCommand(process.argv.slice(2))
 }

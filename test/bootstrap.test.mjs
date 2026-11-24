@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -21,7 +22,6 @@ import {
   parseBaselineNodeVersion,
   parseShasum,
   readBaselineNodeVersion,
-  selectNodeCandidate,
   shasumsUrl,
 } from '../scripts/bootstrap-lib.mjs'
 import {
@@ -42,6 +42,59 @@ import {
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BASELINE = JSON.parse(readFileSync(join(ROOT, 'coverage.baseline.json'), 'utf8')).node.version.replace(/^v/, '')
 
+/**
+ * Build a bootstrap root with a chosen `engines.node`, a fake host `node` that
+ * reports `hostVersion` and forwards every other call to the running Node, and
+ * a `curl` that records the download instead of touching the network.
+ * @param options - the declared range and the version the host reports.
+ * @returns the temp root, a shell runner and the recorded download calls.
+ */
+function shellFixture({ engines, hostVersion }) {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-shell-'))
+  const home = join(root, 'home')
+  const bin = join(root, 'bin')
+  const scripts = join(root, 'scripts')
+  for (const directory of [home, bin, scripts]) mkdirSync(directory, { recursive: true })
+  for (const name of ['bootstrap.sh', 'bootstrap-lib.mjs', 'node-version.mjs']) {
+    writeFileSync(join(scripts, name), readFileSync(join(ROOT, 'scripts', name)))
+  }
+  writeFileSync(join(scripts, 'bootstrap.mjs'), "process.stdout.write('bootstrap.mjs')\n")
+  for (const name of ['coverage.baseline.json', 'coverage.config.json']) {
+    writeFileSync(join(root, name), readFileSync(join(ROOT, name)))
+  }
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  manifest.engines = { ...manifest.engines, node: engines }
+  writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+  const hostNode = join(bin, 'node')
+  writeFileSync(hostNode, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then',
+    `  echo "v${hostVersion}"`,
+    '  exit 0',
+    'fi',
+    `exec "${process.execPath}" "$@"`,
+    '',
+  ].join('\n'))
+  chmodSync(hostNode, 0o755)
+  const downloadLog = join(root, 'curl.log')
+  const curl = join(bin, 'curl')
+  writeFileSync(curl, ['#!/bin/sh', 'printf "%s\\n" "$*" >> "$CURL_LOG"', 'exit 22', ''].join('\n'))
+  chmodSync(curl, 0o755)
+  const qualify = (version) =>
+    spawnSync(process.execPath, [join(scripts, 'bootstrap-lib.mjs'), 'qualifies', version], { encoding: 'utf8' })
+  return {
+    root,
+    qualify,
+    shell: (args = []) =>
+      spawnSync('bash', ['-c', 'sh "$0" "$@"', join(scripts, 'bootstrap.sh'), ...args], {
+        encoding: 'utf8',
+        cwd: root,
+        env: { HOME: home, PATH: `${bin}:/usr/bin:/bin`, CURL_LOG: downloadLog },
+      }),
+    downloads: () => (existsSync(downloadLog) ? readFileSync(downloadLog, 'utf8').trim().split('\n') : []),
+  }
+}
+
 test('reads the baseline Node version from coverage.baseline.json', () => {
   assert.equal(readBaselineNodeVersion(ROOT), BASELINE)
   assert.equal(parseBaselineNodeVersion('{"node":{"version":"v24.9.0"}}'), '24.9.0')
@@ -56,29 +109,6 @@ test('normalizes a version with or without the v prefix', () => {
   assert.equal(normalizeVersion('v24.22.2'), '24.22.2')
   assert.equal(normalizeVersion('24.22.2'), '24.22.2')
   assert.throws(() => normalizeVersion('24'), /unsupported Node version/)
-})
-
-test('selects the highest qualifying host runtime', () => {
-  const selected = selectNodeCandidate(
-    [
-      { version: 'v26.13.1', path: '/host/26' },
-      { version: 'v24.8.0', path: '/host/24.8' },
-      { version: 'v24.9.0', path: '/host/24.9' },
-      { version: 'v24.22.2', path: '/host/24.22.2' },
-    ],
-    { primaryMajor: 24, range: '>=24.9.0' },
-  )
-  assert.equal(selected.path, '/host/24.22.2')
-})
-
-test('selects nothing when no candidate qualifies', () => {
-  assert.equal(
-    selectNodeCandidate(
-      [{ version: 'v26.13.1', path: '/host/26' }, { version: 'v24.8.0', path: '/host/24.8' }],
-      { primaryMajor: 24, range: '>=24.9.0' },
-    ),
-    undefined,
-  )
 })
 
 test('names the platform asset and URL', () => {
@@ -165,6 +195,48 @@ test('the shell lists the documented candidate roots', (t) => {
   for (const value of [roots.fnm, roots.nvm, roots.volta, roots.asdf]) {
     assert.ok(result.stdout.includes(value), value)
   }
+})
+
+test('the shell downloads the pinned Node when the host misses engines.node', (t) => {
+  const fixture = shellFixture({ engines: '>=24.99.0', hostVersion: '24.9.0' })
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }))
+  const result = fixture.shell(['--node-mirror', 'https://mirror.test/node'])
+  assert.equal(result.status, 22, result.stderr)
+  assert.ok(
+    result.stdout.includes(`downloading Node ${BASELINE} from https://mirror.test/node/v${BASELINE}/`),
+    result.stdout,
+  )
+  assert.equal(fixture.downloads().length, 1)
+  assert.ok(fixture.downloads()[0].includes(`https://mirror.test/node/v${BASELINE}/`), fixture.downloads()[0])
+  assert.ok(!result.stdout.includes('bootstrap.mjs'), result.stdout)
+})
+
+test('the shell reuses a host runtime that satisfies engines.node', (t) => {
+  // 24.99.99 outranks any published 24.x, so the probe wins the highest-candidate rule.
+  const fixture = shellFixture({ engines: '>=24.9.0', hostVersion: '24.99.99' })
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }))
+  const result = fixture.shell(['--node-mirror', 'https://mirror.test/node'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), 'bootstrap.mjs')
+  assert.deepEqual(fixture.downloads(), [])
+})
+
+test('the qualifies command reports the engines.node verdict', (t) => {
+  const fixture = shellFixture({ engines: '>=24.9.0', hostVersion: '24.9.0' })
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }))
+  assert.equal(fixture.qualify('v24.9.0').status, 0)
+  assert.equal(fixture.qualify('v24.8.0').status, 1)
+  const malformed = fixture.qualify('24.9')
+  assert.equal(malformed.status, 2)
+  assert.match(malformed.stderr, /unsupported Node version/)
+})
+
+test('the qualifies command refuses a range node-version cannot parse', (t) => {
+  const fixture = shellFixture({ engines: '^24.9.0', hostVersion: '24.9.0' })
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }))
+  const result = fixture.qualify('v24.22.2')
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /unsupported engines\.node comparator/)
 })
 
 test('the shell forwards options after the separator', () => {

@@ -80,16 +80,11 @@ node_version() {
   "$1" --version 2>/dev/null || true
 }
 
-# True for a 24.x runtime at or above 24.9.0. The Node preflight in
-# bootstrap.mjs enforces the exact engines.node range.
+# Whether the candidate runtime meets the primary major and engines.node range
+# declared in package.json. bootstrap-lib.mjs owns that comparison so this shell
+# and the bootstrap.mjs preflight cannot drift; the candidate runs the check.
 qualifies() {
-  version=${1#v}
-  major=${version%%.*}
-  rest=${version#*.}
-  minor=${rest%%.*}
-  [ "$major" = 24 ] || return 1
-  [ "$minor" -ge 9 ] || return 1
-  return 0
+  "$1" "$ROOT/scripts/bootstrap-lib.mjs" qualifies "$2" >/dev/null 2>&1
 }
 
 version_gt() {
@@ -110,7 +105,7 @@ consider() {
   [ -x "$candidate" ] || return 0
   version=$(node_version "$candidate")
   [ -n "$version" ] || return 0
-  qualifies "$version" || return 0
+  qualifies "$candidate" "$version" || return 0
   if [ -z "$BEST_VERSION" ] || version_gt "$version" "$BEST_VERSION"; then
     BEST_PATH=$candidate
     BEST_VERSION=$version
