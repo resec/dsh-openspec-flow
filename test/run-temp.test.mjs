@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { basename, join, sep } from 'node:path'
 import test from 'node:test'
-import { createRunTempDir, removeRunTempDir } from '../scripts/test-env.mjs'
+import { beginRunTempDir, createRunTempDir, removeRunTempDir } from '../scripts/test-env.mjs'
 
 /** Create a scratch base directory that the test removes afterwards. */
 function scratch(t) {
@@ -60,4 +60,41 @@ test('an unresolvable base yields no run root', (t) => {
   const base = scratch(t)
   const root = createRunTempDir({ ...process.env, TMPDIR: join(base, 'missing') })
   assert.equal(root, undefined)
+})
+
+test('a run lifecycle exposes the root as TMPDIR and removes it', (t) => {
+  const base = scratch(t)
+  const lifecycle = beginRunTempDir({ ...process.env, TMPDIR: base }, { keep: false })
+  t.after(lifecycle.finish)
+  assert.notEqual(lifecycle.root, undefined)
+  assert.equal(lifecycle.env.TMPDIR, lifecycle.root)
+  lifecycle.finish()
+  assert.equal(existsSync(lifecycle.root), false)
+})
+
+test('a kept lifecycle leaves the root and reports its path', (t) => {
+  const base = scratch(t)
+  const lifecycle = beginRunTempDir({ ...process.env, TMPDIR: base }, { keep: true })
+  assert.notEqual(lifecycle.root, undefined)
+  assert.ok(existsSync(lifecycle.root))
+  t.after(() => removeRunTempDir(lifecycle.root))
+  const reported = []
+  const original = console.error
+  console.error = (message) => reported.push(message)
+  try {
+    lifecycle.finish()
+  } finally {
+    console.error = original
+  }
+  assert.ok(existsSync(lifecycle.root))
+  assert.ok(reported.some((message) => message.includes(lifecycle.root)))
+})
+
+test('a lifecycle without a root keeps the inherited TMPDIR and cleans nothing', (t) => {
+  const base = scratch(t)
+  const missing = join(base, 'missing')
+  const lifecycle = beginRunTempDir({ ...process.env, TMPDIR: missing })
+  assert.equal(lifecycle.root, undefined)
+  assert.equal(lifecycle.env.TMPDIR, missing)
+  assert.doesNotThrow(() => lifecycle.finish())
 })

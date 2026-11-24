@@ -102,6 +102,34 @@ export function removeRunTempDir(directory) {
 }
 
 /**
+ * Begin a run's temporary root and the cleanup that ends it.
+ *
+ * The child environment carries the root as `TMPDIR`. Cleanup is best-effort:
+ * a failure reports the path without changing the run's outcome, and the keep
+ * switch leaves the root in place and reports where it is.
+ *
+ * @param env - base environment, defaulting to the current process.
+ * @param options - `keep` overrides the switch, defaulting to `DSH_TEST_KEEP_TMP=1`.
+ * @returns the root, the child environment and the cleanup callback.
+ */
+export function beginRunTempDir(env = process.env, { keep = env.DSH_TEST_KEEP_TMP === '1' } = {}) {
+  const root = createRunTempDir(env)
+  const childEnv = root === undefined ? env : { ...env, TMPDIR: root }
+  const finish = () => {
+    if (keep) {
+      if (root !== undefined) console.error(`test entrypoint: kept the run root at ${root}`)
+      return
+    }
+    try {
+      removeRunTempDir(root)
+    } catch (error) {
+      console.error(`test entrypoint: cannot remove the run root at ${root}: ${error.message}`)
+    }
+  }
+  return { root, env: childEnv, finish }
+}
+
+/**
  * Pick the environment for a run.
  *
  * @param coverage - whether the run collects coverage.

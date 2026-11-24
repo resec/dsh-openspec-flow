@@ -19,7 +19,7 @@ import { constants } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
-import { createRunTempDir, removeRunTempDir, testEnvFor } from './test-env.mjs'
+import { beginRunTempDir, testEnvFor } from './test-env.mjs'
 import { DEFAULT_CONCURRENCY } from './run-tests.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -241,16 +241,11 @@ export async function main(argv, { version, spawn: spawner, gitStatus, tmpDir } 
 
   const runner = spawner ?? spawnChild
   const ownsRoot = tmpDir === undefined
-  const runRoot = ownsRoot ? createRunTempDir() : tmpDir
-  const env = runRoot === undefined ? testEnvFor(false) : testEnvFor(false, { ...process.env, TMPDIR: runRoot })
-  const finish = () => {
-    if (!ownsRoot) return
-    try {
-      removeRunTempDir(runRoot)
-    } catch (error) {
-      console.error(`affected tests: cannot remove the run root at ${runRoot}: ${error.message}`)
-    }
-  }
+  const lifecycle = ownsRoot
+    ? beginRunTempDir(process.env)
+    : { env: { ...process.env, TMPDIR: tmpDir }, finish: () => {} }
+  const env = testEnvFor(false, lifecycle.env)
+  const finish = lifecycle.finish
   const handlers = []
   if (ownsRoot && spawner === undefined) {
     for (const [signal, number] of [['SIGINT', 2], ['SIGTERM', 15]]) {
