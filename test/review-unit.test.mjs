@@ -278,6 +278,9 @@ test('another change is detected in a finding location', () => {
     'lib/review/scope.js:1',
     '## Requirement: Scope',
     'openspec/changes/demo/proposal.md:12',
+    'openspec/changes/Demo/proposal.md:12',
+    'OPENSPEC/CHANGES/DEMO/specs/theme/spec.md:3',
+    '../Demo/tasks.md:12',
     'apps/web/openspec/changes/demo/specs/theme/spec.md:3',
     'openspec/changes',
     'openspec/changes/',
@@ -287,7 +290,10 @@ test('another change is detected in a finding location', () => {
   }
   assert.equal(anotherChangeInLocation('openspec/changes/other/tasks.md:12', own), 'other')
   assert.equal(anotherChangeInLocation('openspec/changes/other', own), 'other')
+  assert.equal(anotherChangeInLocation('openspec/changes/Other/tasks.md:12', own), 'Other')
+  assert.equal(anotherChangeInLocation('OPENSPEC/CHANGES/other/x.md', own), 'other')
   assert.equal(anotherChangeInLocation('openspec/changes/archive/2026-01-01-other/tasks.md', own), 'archive/2026-01-01-other')
+  assert.equal(anotherChangeInLocation('openspec/changes/Archive/2026-01-01-other/tasks.md', own), 'Archive/2026-01-01-other')
   assert.equal(anotherChangeInLocation('../other/tasks.md:12', own), 'other')
   assert.equal(anotherChangeInLocation('./../other/tasks.md', own), 'other')
   assert.equal(anotherChangeInLocation('specs/../../other/tasks.md', own), 'other')
@@ -303,11 +309,21 @@ test('another change is detected in a finding location', () => {
 test('report validation refuses a finding located in another change', () => {
   const scope = { change: 'demo' }
   const ownChange = finding({ location: 'openspec/changes/demo/proposal.md:12' })
+  const ownChangeOtherCase = finding({ location: 'openspec/changes/Demo/proposal.md:12' })
   assert.doesNotThrow(() => assertReport(
     { verdict: 'changes-requested', summary: 'ok', findings: [ownChange] },
     { round: 1, findings: [], scope },
   ))
+  assert.doesNotThrow(() => assertReport(
+    { verdict: 'changes-requested', summary: 'ok', findings: [ownChangeOtherCase] },
+    { round: 1, findings: [], scope },
+  ))
   const other = finding({ location: 'openspec/changes/other/tasks.md:12' })
+  const otherRootCase = finding({ location: 'OPENSPEC/CHANGES/other/x.md:12' })
+  assert.throws(() => assertReport(
+    { verdict: 'changes-requested', summary: 'ok', findings: [otherRootCase] },
+    { round: 1, findings: [], scope },
+  ), /another change.*outOfScope/)
   assert.throws(() => assertReport(
     { verdict: 'changes-requested', summary: 'ok', findings: [other] },
     { round: 1, findings: [], scope },
