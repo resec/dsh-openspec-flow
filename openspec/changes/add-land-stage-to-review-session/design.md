@@ -28,7 +28,7 @@ The command writes no state. It does not call `prepare` or any landing phase.
 
 ### One fixed session, one phase per run
 
-The schedule keeps its five-minute recurrence and its fixed target session. Each run performs at most one phase: cleanup, review one candidate, prepare one landing, start the final review, record and merge, or archive and push. The landing entry records every phase except the final review itself: while that review is in flight the entry stays `prepared`, so the prompt infers the sub-step from the apply review record. A missed delivery only delays the next phase.
+The schedule keeps its five-minute recurrence and its fixed target session. Each run runs cleanup and then performs at most one of: review one candidate, prepare one landing, start the final review, record and merge, or archive and push. The landing entry records every phase except the final review itself: while that review is in flight the entry stays `prepared`, so the prompt infers the sub-step from the apply review record. A missed delivery only delays the next phase.
 
 A new session per run was the documented alternative, but it breaks reviewer reuse: the reviewer subagent lives in the changer session's tree and `resume` cannot address it from another tree. The fixed session is the constraint the landing stage must satisfy.
 
