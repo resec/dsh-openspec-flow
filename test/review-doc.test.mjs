@@ -215,6 +215,8 @@ test('the review document and README state the requirement length gate', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [
     '500 字符上限',
+    '按 UTF-16 码元',
+    '一个 emoji',
     'ADDED',
     'MODIFIED',
     '历史既有超长',

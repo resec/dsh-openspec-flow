@@ -123,7 +123,7 @@ finding 的处置：
 
 就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。
 
-draft review 还会检查 requirement description（`### Requirement:` 到第一个 scenario 之间的文本）的 500 字符上限。ADDED description 超过上限，或 MODIFIED description 超过上限且比主规格中的原文更长，会让 draft 未就绪并阻止 apply；历史既有超长但本次未增长或缩短的 description 不阻塞。长度阻塞且有报告、没有 open finding 时，下一步是 `openspec_review action=resume review=draft`，不是 `dispose`；还没有报告时仍是 `wait`（reviewer 模式）或 `self-report`（self 模式）。首次 `openspec_apply_next` 与 apply review 的 `start`/`resume` 会重查当前主规格；apply 启动后冻结的 draft 不再用该结果拦截，由 apply review 负责。apply review 被禁用或不可用时，没有 apply 启动后的长度复查。
+draft review 还会检查 requirement description（`### Requirement:` 到第一个 scenario 之间的文本）的 500 字符上限。计数按 UTF-16 码元（JavaScript 字符串长度），一个 emoji 等增补平面字符算 2。ADDED description 超过上限，或 MODIFIED description 超过上限且比主规格中的原文更长，会让 draft 未就绪并阻止 apply；历史既有超长但本次未增长或缩短的 description 不阻塞。长度阻塞且有报告、没有 open finding 时，下一步是 `openspec_review action=resume review=draft`，不是 `dispose`；还没有报告时仍是 `wait`（reviewer 模式）或 `self-report`（self 模式）。首次 `openspec_apply_next` 与 apply review 的 `start`/`resume` 会重查当前主规格；apply 启动后冻结的 draft 不再用该结果拦截，由 apply review 负责。apply review 被禁用或不可用时，没有 apply 启动后的长度复查。
 
 官方处理建议：
 

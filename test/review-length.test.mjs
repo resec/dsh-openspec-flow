@@ -84,6 +84,25 @@ test('a nested capability keeps its full path', () => {
   assert.equal(result.issues[0].path, 'specs/identity/notes/spec.md')
 })
 
+test('the limit counts UTF-16 code units, so an astral character counts as two', () => {
+  const bmpAtLimit = 'x'.repeat(MAX_REQUIREMENT_DESCRIPTION)
+  const atLimit = classifyRequirementLength(
+    [delta('notes', 'ADDED', [{ name: 'Stored notes', text: bmpAtLimit }])],
+    new Map(),
+  )
+  assert.equal(atLimit.blocking, false)
+  assert.deepEqual(atLimit.issues, [])
+
+  const astralTail = 'x'.repeat(MAX_REQUIREMENT_DESCRIPTION - 1) + '\u{1F600}'
+  assert.equal([...astralTail].length, MAX_REQUIREMENT_DESCRIPTION, 'the sample is at the limit in code points')
+  const over = classifyRequirementLength(
+    [delta('notes', 'ADDED', [{ name: 'Stored notes', text: astralTail }])],
+    new Map(),
+  )
+  assert.equal(over.blocking, true)
+  assert.equal(over.issues[0].length, MAX_REQUIREMENT_DESCRIPTION + 1)
+})
+
 test('missing baselines and non-requirement operations are ignored', () => {
   const result = classifyRequirementLength(
     [
