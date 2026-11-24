@@ -359,9 +359,12 @@ test('merge refuses when origin/main moved after prepare', () => {
   writeFileSync(join(root, 'README.md'), 'main moved after prepare\n')
   git(root, ['add', 'README.md'])
   git(root, ['commit', '-qm', 'main moved after prepare'])
-  // Pushing by URL leaves refs/remotes/origin/main untouched, like a merge
-  // made elsewhere: only GitHub knows that main moved.
   git(root, ['push', '-q', remote, 'main'])
+  // A URL push moves refs/remotes/origin/main on some git versions and not on
+  // others, so pin the tracking ref to the prepared tip. That keeps the ref
+  // stale on every version, like a merge made elsewhere: only GitHub knows
+  // that main moved.
+  git(root, ['update-ref', 'refs/remotes/origin/main', prepared.preMergeMain])
   assert.equal(git(root, ['rev-parse', 'refs/remotes/origin/main']), prepared.preMergeMain)
   const moved = fakeGh({ pr: prAtBase(head, git(root, ['rev-parse', 'HEAD'])) })
   assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: moved }), /origin\/main moved.*prepare and review again/)
