@@ -8,12 +8,16 @@
 # and never the lab gate. Requires node on PATH; no version manager is invoked.
 saw_ref=0
 only_main=1
-while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
-  saw_ref=1
-  if [ "$remote_ref" != "refs/heads/main" ]; then
-    only_main=0
-  fi
-done
+# Git supplies the refs on a pipe. A terminal stdin has no refs, so it takes
+# the fallback instead of waiting for a line.
+if [ ! -t 0 ]; then
+  while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    saw_ref=1
+    if [ "$remote_ref" != "refs/heads/main" ]; then
+      only_main=0
+    fi
+  done
+fi
 if [ "$saw_ref" = "1" ] && [ "$only_main" = "1" ]; then
   npm run openspec:check:push || exit $?
 else

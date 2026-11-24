@@ -55,16 +55,15 @@ function fakeNode({ stampExit = 1 } = {}) {
 
 /**
  * Run the hook with a fake npm and a fake node.
- * @param options - fake behavior, stdin refs and extra hook environment.
+ * @param options - fake behavior, stdin refs, stdin mode and extra hook environment.
  * @returns the spawn result, the recorded npm calls and the recorded node calls.
  */
-function runHook({ failValidation = false, failLab = false, stampExit = 1, input = '', env = {} } = {}) {
+function runHook({ failValidation = false, failLab = false, stampExit = 1, input = '', stdin = 'pipe', env = {} } = {}) {
   const fake = fakeNpm({ failValidation, failLab })
   const fakeBin = fakeNode({ stampExit })
-  const result = spawnSync('sh', [HOOK], {
+  const options = {
     cwd: ROOT,
     encoding: 'utf8',
-    input,
     env: {
       ...process.env,
       PATH: `${fakeBin.dir}:${fake.dir}:${process.env.PATH}`,
@@ -72,7 +71,10 @@ function runHook({ failValidation = false, failLab = false, stampExit = 1, input
       NODE_LOG: fakeBin.log,
       ...env,
     },
-  })
+  }
+  if (stdin === 'ignore') options.stdio = ['ignore', 'pipe', 'pipe']
+  else options.input = input
+  const result = spawnSync('sh', [HOOK], options)
   const read = (path) =>
     existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').filter((line) => line !== '') : []
   return { result, calls: read(fake.log), nodeCalls: read(fakeBin.log) }
@@ -101,6 +103,12 @@ test('a mixed push keeps the full check', () => {
 
 test('absent stdin keeps the full check', () => {
   const { result, calls } = runHook()
+  assert.equal(result.status, 0)
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+})
+
+test('a closed stdin keeps the full check', () => {
+  const { result, calls } = runHook({ stdin: 'ignore' })
   assert.equal(result.status, 0)
   assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
 })
