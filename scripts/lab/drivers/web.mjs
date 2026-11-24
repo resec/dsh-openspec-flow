@@ -7,8 +7,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { basename, join, relative } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 /**
  * Load Playwright from the repository's development dependencies.
@@ -108,40 +107,57 @@ export async function dismissOnboarding(page) {
 }
 
 /**
- * Select a workspace through the directory picker and wait until the page shows it.
+ * Select a workspace through the directory picker and require the page to adopt it.
+ *
+ * The picker opens at the project level, so walking from `Home` fails as soon as
+ * the project lives outside the home directory; the path editor names the exact
+ * directory instead. The picker reports where it landed in its breadcrumb, and
+ * the page reports the adoption by replacing the chip's placeholder label.
  * @param page - Playwright page.
  * @param directory - absolute project directory.
  * @returns nothing.
  */
 export async function chooseWorkspace(page, directory) {
-  const name = basename(directory)
-  const choose = page.getByRole('button', { name: 'Choose workspace', exact: true })
-  if ((await choose.count()) === 0) throw new Error('the page shows no "Choose workspace" button')
+  const target = resolve(directory)
+  const name = basename(target)
+  const chip = page.getByRole('button', { name: 'Choose workspace', exact: true })
+  if ((await chip.count()) === 0) throw new Error('the page shows no "Choose workspace" button')
   await page.waitForTimeout(800)
-  await choose.click({ force: true, timeout: 20_000 })
-  await page.waitForTimeout(800)
-  const hidden = page.getByRole('button', { name: 'Show hidden files', exact: true })
-  if ((await hidden.count()) > 0) await hidden.click()
-  const segments = relative(homedir(), directory).split(/[\\/]/).filter(Boolean)
+  await chip.click({ force: true, timeout: 20_000 })
+
   const dialog = page.getByRole('dialog')
-  const home = page.getByRole('button', { name: 'Home', exact: true })
-  if ((await home.count()) > 0) await home.click()
-  let parent = 'Home'
-  for (const segment of segments) {
-    const item = dialog.getByText(segment, { exact: true }).first()
-    if ((await item.count()) === 0) throw new Error(`the directory picker shows no ${segment} under ${parent}`)
-    await item.click()
-    parent = segment
-    await page.waitForTimeout(350)
-  }
-  const open = page.getByRole('button', { name: 'Open', exact: true })
-  if ((await open.count()) === 0) throw new Error('the directory picker shows no "Open" button')
-  await open.click({ force: true })
-  await page.waitForTimeout(1_500)
   try {
-    await page.getByText(name, { exact: true }).first().waitFor({ timeout: 15_000 })
+    await dialog.waitFor({ timeout: 15_000 })
   } catch {
-    throw new Error(`the page does not show the selected workspace ${name}`)
+    throw new Error('the workspace picker did not open')
+  }
+  const edit = page.getByLabel('Edit path', { exact: true })
+  if ((await edit.count()) === 0) throw new Error('the workspace picker shows no "Edit path" field')
+  await edit.click()
+  const input = page.getByRole('textbox', { name: 'Edit path', exact: true })
+  if ((await input.count()) === 0) throw new Error('the workspace picker shows no "Edit path" field')
+  await input.fill(target)
+  await input.press('Enter')
+  try {
+    await input.waitFor({ state: 'detached', timeout: 15_000 })
+  } catch {
+    throw new Error(`the workspace picker did not enter ${target}`)
+  }
+  const crumb = dialog.getByRole('navigation').getByText(name, { exact: true })
+  if ((await crumb.count()) === 0) throw new Error(`the workspace picker shows no ${name} after entering ${target}`)
+
+  const open = page.getByRole('button', { name: 'Open', exact: true })
+  if ((await open.count()) === 0) throw new Error('the workspace picker shows no "Open" button')
+  await open.click({ force: true })
+  try {
+    await dialog.waitFor({ state: 'detached', timeout: 20_000 })
+  } catch {
+    throw new Error('the workspace picker stayed open after Open')
+  }
+  try {
+    await chip.getByText('Choose workspace', { exact: true }).waitFor({ state: 'detached', timeout: 15_000 })
+  } catch {
+    throw new Error(`the page does not show the workspace ${name} after selection`)
   }
 }
 
