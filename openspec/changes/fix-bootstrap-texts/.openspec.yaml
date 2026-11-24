@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Make the bootstrap help texts and the closing hint describe the browser
+  reset and the clone-local runtime as the scripts actually behave.
