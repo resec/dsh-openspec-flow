@@ -204,6 +204,18 @@ test('decideOwnerReview rejects untrusted, red, draft and multi-change states', 
     entry: makeEntry({ head: OLD, ownerReview: { head: OLD, at: 't' } }),
     login,
   }).action, 'remove')
+  assert.deepEqual(
+    decideOwnerReview({ pr: makePr({ baseRefName: 'release' }), entry: makeEntry(), login }),
+    { action: 'none', reason: 'base', head: HEAD, number: 12 },
+  )
+  assert.deepEqual(
+    decideOwnerReview({ pr: makePr({ labels: [{ name: 'mergeable' }] }), entry: makeEntry(), login }),
+    { action: 'none', reason: 'mergeable-label', head: HEAD, number: 12 },
+  )
+  assert.deepEqual(
+    decideOwnerReview({ pr: makePr(), entry: makeEntry({ status: 'prepared' }), login }),
+    { action: 'none', reason: 'state-status', head: HEAD, number: 12 },
+  )
 })
 
 test('syncPullRequest dry-run reports without writing labels or state', () => {
