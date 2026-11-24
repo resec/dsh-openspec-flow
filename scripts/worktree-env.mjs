@@ -7,7 +7,7 @@
  * or writes plugin worktree state, review records, locks or landed manifests.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -19,6 +19,8 @@ export const SHARED_ROOT_ENV = 'OPENSPEC_FLOW_SHARED_ROOT'
 export const INSTALL_LOCK_NAME = '.install.lock'
 /** Default wait for a Chromium preparation lock. */
 export const INSTALL_LOCK_TIMEOUT_MS = 10 * 60_000
+/** How long an ownerless lock directory may exist before it is reclaimed. */
+const INSTALL_LOCK_GRACE_MS = 5_000
 
 /**
  * Run git with a working directory.
@@ -203,6 +205,22 @@ export function inspectInstallLock(lockPath, isAlive = processAlive) {
 let tokenCounter = 0
 
 /**
+ * Move one stale lock aside and delete it there, so a lock another process has
+ * just created is never removed in place.
+ * @param lockPath - lock directory to reclaim.
+ * @returns nothing.
+ */
+function reclaimInstallLock(lockPath) {
+  const trash = `${lockPath}.stale-${String(process.pid)}-${String(++tokenCounter)}`
+  try {
+    renameSync(lockPath, trash)
+  } catch {
+    return
+  }
+  rmSync(trash, { recursive: true, force: true })
+}
+
+/**
  * Acquire the install lock synchronously.
  * @param lockPath - lock directory.
  * @param what - operation label.
@@ -220,23 +238,24 @@ export function acquireInstallLockSync(lockPath, what, options = {}) {
   const deadline = now() + timeoutMs
   mkdirSync(dirname(lockPath), { recursive: true })
   for (;;) {
-    try {
-      mkdirSync(lockPath)
+    if (!existsSync(lockPath)) {
       const token = `${String(process.pid)}-${now().toString(36)}-${String(++tokenCounter)}`
-      const owner = { schema: 1, token, pid: process.pid, at: new Date(now()).toISOString(), what }
-      writeFileSync(join(lockPath, 'owner.json'), `${JSON.stringify(owner)}\n`, { flag: 'wx' })
-      return { lockPath, token }
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
+      const staging = `${lockPath}.tmp-${token}`
+      try {
+        mkdirSync(staging)
+        const owner = { schema: 1, token, pid: process.pid, at: new Date(now()).toISOString(), what }
+        writeFileSync(join(staging, 'owner.json'), `${JSON.stringify(owner)}\n`, { flag: 'wx' })
+        renameSync(staging, lockPath)
+        return { lockPath, token }
+      } catch (error) {
+        rmSync(staging, { recursive: true, force: true })
+        if (error?.code !== 'EEXIST' && error?.code !== 'ENOTEMPTY') throw error
+      }
     }
     const text = readOwnerText(lockPath)
     const inspection = inspectInstallLock(lockPath, isAlive)
     if (inspection.state === 'dead') {
-      const before = readOwnerText(lockPath)
-      if (before === text) {
-        rmSync(lockPath, { recursive: true, force: true })
-        continue
-      }
+      if (readOwnerText(lockPath) === text) reclaimInstallLock(lockPath)
       continue
     }
     if (inspection.state === 'unusable') {
@@ -246,17 +265,17 @@ export function acquireInstallLockSync(lockPath, what, options = {}) {
       } catch {
         continue
       }
-      if (age > 30 * 60_000) {
-        const before = readOwnerText(lockPath)
-        if (before === text) {
-          rmSync(lockPath, { recursive: true, force: true })
-          continue
-        }
+      if (age > INSTALL_LOCK_GRACE_MS) {
+        if (readOwnerText(lockPath) === undefined) reclaimInstallLock(lockPath)
+        continue
       }
     }
     if (now() >= deadline) {
       const owner = inspection.owner
-      throw new Error(`timed out waiting for ${lockPath}${owner === undefined ? '' : ` held by pid ${String(owner.pid)} (${String(owner.what ?? 'unknown')})`}`)
+      const holder = owner === undefined || !Number.isInteger(owner.pid)
+        ? ` (no owner; an ownerless lock is reclaimed after ${String(INSTALL_LOCK_GRACE_MS / 1_000)}s)`
+        : ` held by pid ${String(owner.pid)} (${String(owner.what ?? 'unknown')})`
+      throw new Error(`timed out waiting for ${lockPath}${holder}`)
     }
     sleep(pollMs)
   }

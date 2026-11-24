@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
@@ -148,14 +148,57 @@ test('a stale install lock is reclaimed and a live lock times out with the owner
       assert.equal(inspectInstallLock(lock).held, true)
       assert.throws(
         () => prepareChromium({ browsersPath: browsers, install: () => {}, timeoutMs: 30, pollMs: 5 }),
-        /timed out waiting/,
+        (error) => error.message.includes('timed out waiting for') &&
+          error.message.includes(`held by pid ${String(process.pid)} (test)`),
       )
+      assert.equal(existsSync(join(lock, 'owner.json')), true, 'a live lock is not removed on timeout')
     } finally {
       releaseInstallLock(held)
     }
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('an ownerless install lock is reclaimed only after the grace period', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lock-ownerless-'))
+  const lock = join(root, '.install.lock')
+  mkdirSync(lock)
+  try {
+    assert.throws(
+      () => acquireInstallLockSync(lock, 'test', { timeoutMs: 30, pollMs: 5 }),
+      (error) => error.message.includes('no owner') && error.message.includes('reclaimed after 5s'),
+      'a freshly created ownerless lock is treated as still being created',
+    )
+    assert.equal(existsSync(lock), true, 'a young ownerless lock is left alone')
+    const old = new Date(Date.now() - 60_000)
+    utimesSync(lock, old, old)
+    const handle = acquireInstallLockSync(lock, 'test', { timeoutMs: 1000 })
+    try {
+      const owner = JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8'))
+      assert.equal(owner.what, 'test')
+      assert.equal(owner.pid, process.pid)
+      assert.deepEqual(readdirSync(root), ['.install.lock'], 'the staging directory is gone')
+    } finally {
+      releaseInstallLock(handle)
+    }
+    assert.equal(existsSync(lock), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('acquiring the install lock publishes the owner with the lock directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lock-atomic-'))
+  const lock = join(root, '.install.lock')
+  const handle = acquireInstallLockSync(lock, 'atomic', { timeoutMs: 1000 })
+  try {
+    assert.equal(JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8')).what, 'atomic')
+    assert.deepEqual(readdirSync(root), ['.install.lock'], 'no staging or stale directory is left behind')
+  } finally {
+    releaseInstallLock(handle)
+  }
+  rmSync(root, { recursive: true, force: true })
 })
 
 test('two worktree preparations serialize and one Chromium install wins', async () => {
