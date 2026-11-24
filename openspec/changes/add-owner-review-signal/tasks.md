@@ -17,7 +17,7 @@
 
 - [x] 3.1 Run `openspec_inspect` with `action: "validate"` and `strict: true`; verify no warnings.
 - [x] 3.2 Run `npm run test:affected -- scripts/pr-review-owner-review.mjs scripts/pr-review-watch.mjs scripts/pr-review-land.mjs` and `npm run verify` on Node 24; verify the suite and coverage pass.
-- [ ] 3.3 Commit the implementation, run the apply review and fix every blocker; verify the review is ready before landing.
+- [x] 3.3 Commit the implementation, run the apply review and fix every blocker; verify the review is ready before landing.
 
 ## Workflow follow-up
 
