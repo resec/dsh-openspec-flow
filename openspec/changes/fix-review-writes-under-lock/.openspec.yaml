@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-25
+skip_specs: true
+goal: Hold the review-directory lock before the draft start and resume write
+  policy.json or migrate the reviewer model, and recompute the resume intent and
+  self-report hashes under that lock.
