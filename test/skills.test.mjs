@@ -134,6 +134,17 @@ test('the propose and apply skills dispose findings in one batch', () => {
   assert.match(apply, /not `dispositions`/)
 })
 
+test('the skills cover a landed worktree and a waived reviewer', () => {
+  const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
+  assert.match(archive, /already archived/)
+  assert.match(archive, /`repair\.action: "cleanup"`/)
+  for (const name of ['openspec-propose', 'openspec-apply-change']) {
+    const raw = readFileSync(packagedSkillPath(name), 'utf8')
+    assert.match(raw, /`action: "waive-reviewer"`/, name)
+    assert.match(raw, /continue with the returned `nextAction`/, name)
+  }
+})
+
 test('the apply and archive skills run the apply review', () => {
   const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
   assert.match(apply, /## Apply review/)
