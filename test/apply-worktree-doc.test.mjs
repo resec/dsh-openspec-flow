@@ -39,6 +39,8 @@ test('the apply worktree document names the land cleanup and rebase marker', () 
     'legacy-merge',
     'never resets or rewinds main',
     'linear rebase',
+    'the commit after the branch tip is not an archive commit',
+    'never repairs main',
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }

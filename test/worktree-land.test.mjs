@@ -172,6 +172,28 @@ test('land resumes a legacy merge whose archive commit already exists', async ()
   assert.equal(manifest.archiveCommit, archiveCommit)
 })
 
+test('land refuses a landing retry when the commit after the branch tip is not an archive commit', async () => {
+  const { root, run, fake, state } = await readyLand({ feature: true })
+  const changePath = `openspec/changes/${CHANGE}`
+  rmSync(join(root, changePath), { recursive: true, force: true })
+  run(['merge', '--ff-only', state.branch])
+  assert.notEqual(run(['ls-tree', '-r', '--name-only', 'HEAD', '--', changePath]), '')
+  writeFileSync(join(root, 'unrelated.txt'), 'unrelated\n')
+  run(['add', 'unrelated.txt'])
+  run(['commit', '-m', 'unrelated user commit'])
+  const movedHead = run(['rev-parse', 'HEAD'])
+  writeApplyState(root, null, CHANGE, { ...readApplyState(root, null, CHANGE), status: 'landing' })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /after the branch tip is not an archive commit/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']), movedHead)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  assert.equal(existsSync(state.worktree), true)
+  assert.notEqual(run(['branch', '--list', state.branch]), '')
+  assert.notEqual(run(['ls-tree', '-r', '--name-only', 'HEAD', '--', changePath]), '')
+})
+
 test('land refuses without user approval', async () => {
   const { fake } = await readyLand()
   await assert.rejects(
