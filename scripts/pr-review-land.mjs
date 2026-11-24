@@ -184,7 +184,7 @@ export function assertLandingLockFree(root, { session, token } = {}) {
     }
     return owner
   }
-  throw new Error(`the landing lock belongs to another session (${owner.ownerSession}, PR #${owner.pr}); wait for it to release it, or force-release it as that owner`)
+  throw new Error(`the landing lock belongs to another session (${owner.ownerSession}, PR #${owner.pr}); wait for that owner to release it; force-release only a stale lock`)
 }
 
 /** Refuse a contributor landing for an owner-managed local PR. */
