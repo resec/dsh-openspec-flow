@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Release the draft round watch handles so a non-Host process whose only
+  remaining work is an armed watch exits before a report, an abandon or an
+  unload, while the watch stays closable.
