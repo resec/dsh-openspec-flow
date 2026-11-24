@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Prove the apply worktree change lock excludes another process, lets
+  another change proceed during a creation, replaces the state token and
+  pid after a dead owner, and rolls a creation back when the session move
+  fails for a real filesystem reason.
