@@ -131,6 +131,47 @@ test('maps a rename to its new path', () => {
   assert.deepEqual([...parseUnifiedDiff(diff).get('lib/new.js')], [1, 2])
 })
 
+test('keeps added lines that look like a file header', () => {
+  const diff = [
+    'diff --git a/lib/a.js b/lib/a.js',
+    '--- a/lib/a.js',
+    '+++ b/lib/a.js',
+    '@@ -1,0 +2,4 @@',
+    '+one',
+    '+++ two',
+    '+ ++ three',
+    '+four',
+    '@@ -20,0 +30,1 @@',
+    '+five',
+    '',
+  ].join('\n')
+  const added = parseUnifiedDiff(diff)
+  assert.equal(added.size, 1)
+  assert.deepEqual([...added.get('lib/a.js')], [2, 3, 4, 5, 30])
+})
+
+test('starts a new file only at a diff header', () => {
+  const diff = [
+    'diff --git a/lib/a.js b/lib/a.js',
+    '--- a/lib/a.js',
+    '+++ b/lib/a.js',
+    '@@ -1,0 +2,2 @@',
+    '+alpha',
+    '+++ not-a-header',
+    'diff --git a/lib/b.js b/lib/b.js',
+    '--- a/lib/b.js',
+    '+++ b/lib/b.js',
+    '@@ -1,0 +1,2 @@',
+    '+beta',
+    '+gamma',
+    '',
+  ].join('\n')
+  const added = parseUnifiedDiff(diff)
+  assert.deepEqual([...added.keys()], ['lib/a.js', 'lib/b.js'])
+  assert.deepEqual([...added.get('lib/a.js')], [2, 3])
+  assert.deepEqual([...added.get('lib/b.js')], [1, 2])
+})
+
 test('marks untracked source files as fully new and skips other files', () => {
   const added = new Map()
   mergeUntrackedFiles(added, ['lib/new.js', 'test/new.test.mjs', 'README.md'], (file) => file.startsWith('lib/'))
