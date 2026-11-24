@@ -18,4 +18,4 @@
 - [x] 3.1 Run `node --test test/coverage-stamp.test.mjs` and `node --test test/coverage-gate.test.mjs`: 26/26 and 47/47 pass.
 - [x] 3.2 Run `openspec validate fix-coverage-stamp-fingerprint --strict`: Change 'fix-coverage-stamp-fingerprint' is valid.
 - [x] 3.3 Revert `scripts/coverage-stamp.mjs` with `git stash push -- scripts/coverage-stamp.mjs` and rerun the stamp test: the list case and the three new invalidation cases fail, the outside-list case still passes.
-- [x] 3.4 Run `/tmp/b3/gates.sh fix-coverage-stamp-fingerprint`: strict validation, `openspec:check` (119 passed), the length gate, the generated-skill check, `check:pr` and `npm run verify` (1435 pass, 0 fail; line 98.63%, branch 93.70%, function 99.21%; no new-code violation) all pass.
+- [x] 3.4 Run `/tmp/b3/gates.sh fix-coverage-stamp-fingerprint`: strict validation, `openspec:check` (119 passed), the length gate, the generated-skill check, `check:pr` and `npm run verify` (1435 pass, 0 fail; line 98.64%, branch 93.68%, function 99.21%; no new-code violation) all pass.
