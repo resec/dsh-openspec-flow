@@ -183,9 +183,11 @@ Run the PR review watch for this repository in this fixed session:
 2. node scripts/pr-review-watch.mjs state --cleanup
 3. node scripts/pr-review-watch.mjs preflight --json and stop the run when
    GitHub is unreachable (offline-land: no pull-request work) or local main
-   leads origin/main (no landing; reviews may continue). Report any local
-   pull request that is merged but not landed/pushed, and never retarget,
-   land or merge it here.
+   leads origin/main (no landing; reviews may continue). Run
+   node scripts/pr-local-land.mjs status and report any local pull request
+   whose entry phase is merged, retargeted, landed or landed-offline, or whose
+   pull request is merged but not pushed; never retarget, land or merge a
+   local pull request here.
 4. Resume one phase of an unfinished contributor landing, then stop:
    - prepared: read the apply record with
      openspec_review action=status review=apply change=<change>

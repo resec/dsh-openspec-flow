@@ -98,7 +98,8 @@ test('the review document excludes local pull requests and documents the lock an
     'never becomes a review candidate',
     'refuses while a local owner holds `landing.lock`',
     'merges, archives, pushes and finishes in one locked run',
-    'merged but not landed',
+    'node scripts/pr-local-land.mjs status',
+    'phase is merged, retargeted, landed or landed-offline',
     'docs/local-pr.md',
   ]) {
     assert.ok(doc.includes(text), `pr-review.md names ${text}`)
