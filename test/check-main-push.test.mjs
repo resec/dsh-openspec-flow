@@ -133,7 +133,7 @@ test('a raw offline push is refused and the marker allows it', () => {
   try {
     const raw = check({ root: fixture.root, local: fixture.archive, remote: fixture.base })
     assert.equal(raw.code, 1)
-    assert.match(raw.stderr, /pass --offline/)
+    assert.match(raw.stderr, /node scripts\/push-landed\.mjs --push --offline/)
     const marked = check({ root: fixture.root, local: fixture.archive, remote: fixture.base, offline: true })
     assert.equal(marked.code, 0)
   } finally {
