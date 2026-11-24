@@ -168,7 +168,7 @@ The script SHALL use the repository's `origin` remote. Before deciding, it SHALL
 
 ### Requirement: Offline local completion
 
-When GitHub is unreachable, a maintainer change SHALL NOT publish a pull request. After apply review and a passing `npm run test:lab -- --mock-only`, it SHALL run `openspec_apply_worktree action=land` with user approval, archive and stop at local `main` without a push. When GitHub returns, `push-landed --push --offline` SHALL publish the deferred commits after the offline land is recorded. Local `main` leading `origin/main` SHALL block a new online pull request until the deferred push completes.
+When GitHub is unreachable, a maintainer-authored change SHALL NOT publish a pull request. After apply review and passing `npm run test:lab -- --mock-only`, it SHALL run `openspec_apply_worktree action=land` with user approval, archive and stop at local `main` without a push. When GitHub returns, `push-landed --push --offline` SHALL publish the deferred commits after the offline land is recorded. Local `main` leading `origin/main` SHALL block a new online pull request until that push completes.
 
 #### Scenario: Offline land completes at local main
 
