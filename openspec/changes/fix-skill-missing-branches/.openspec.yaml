@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Tell the archive skill that a landed worktree is already archived, and
+  tell the propose and apply skills to continue once the user waives the
+  reviewer, as the skill-adaptation spec already requires.
