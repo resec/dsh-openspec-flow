@@ -9,6 +9,7 @@ const CONFIG = JSON.parse(readFileSync(join(ROOT, 'coverage.config.json'), 'utf8
 const CONTRIBUTING = readFileSync(join(ROOT, 'CONTRIBUTING.md'), 'utf8')
 const AGENTS = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8')
 const README = readFileSync(join(ROOT, 'README.md'), 'utf8')
+const SCRIPTS = Object.keys(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).scripts)
 
 const ROWS = {
   'Absolute floor': 'absolute',
@@ -56,8 +57,36 @@ function assertCoverageRows(rows, config) {
   }
 }
 
+/**
+ * Collect the npm scripts a document names.
+ * @param markdown - document contents.
+ * @returns script names in first-seen order.
+ */
+function documentedScripts(markdown) {
+  const names = []
+  for (const match of markdown.matchAll(/npm run ([a-z][\w:-]*)/gu)) {
+    if (!names.includes(match[1])) names.push(match[1])
+  }
+  return names
+}
+
 test('CONTRIBUTING.md states the coverage floors from coverage.config.json', () => {
   assertCoverageRows(parseCoverageTable(CONTRIBUTING), CONFIG)
+})
+
+test('CONTRIBUTING.md documents check:pr with a base commit', () => {
+  assert.match(CONTRIBUTING, /npm run check:pr/)
+  assert.match(CONTRIBUTING, /npm run check:pr -- --base origin\/main/)
+})
+
+test('every npm run command in CONTRIBUTING.md exists in package.json', () => {
+  const documented = documentedScripts(CONTRIBUTING)
+  assert.ok(documented.includes('check:pr'), 'CONTRIBUTING.md does not document check:pr')
+  assert.deepEqual(
+    documented.filter((name) => !SCRIPTS.includes(name)),
+    [],
+    'CONTRIBUTING.md names a script that package.json does not define',
+  )
 })
 
 test('a mislabelled or drifted row fails with the row and metric', () => {
