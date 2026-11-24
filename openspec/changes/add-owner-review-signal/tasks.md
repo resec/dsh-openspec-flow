@@ -11,7 +11,7 @@
 
 - [x] 2.1 Add `pr-review:owner-review` to `package.json` and update `docs/pr-review.md` with the commands, eligibility, invalidation, reconcile step, state field, revised non-goal and label-existence check (`gh label list --search owner-review`). Verify every documented command parses, the label check succeeds, and the owner-review test suite passes.
 - [x] 2.2 Update `CONTRIBUTING.md` and `AGENTS.md` to describe the advisory queue label, its automatic removal and the unchanged `mergeable` authorization; extend `test/contributor-docs.test.mjs` to assert the signal and the authorization split. Verify that test file passes.
-- [x] 2.3 Extend the owner-review integration tests for a head push with remove-then-add, a main-induced conflict, a `mergeable` arrival, a CI regression, an `UNKNOWN` reconcile and a reconcile-only backfill. Verify the tests exercise the scheduled order `state --cleanup`, reconcile, review, per-PR add.
+- [x] 2.3 Extend the owner-review integration tests for a head push with remove-then-add, a main-induced conflict, a `mergeable` arrival, a CI regression, an `UNKNOWN` reconcile and a reconcile-only backfill. Verify the tests exercise the scheduled order `owner-review --reconcile`, `state --cleanup`, review, per-PR add.
 
 ## 3. Verification
 

@@ -71,7 +71,7 @@ A head change removes the label even when the new head already has a trusted pas
 
 `owner-review <n>` handles one PR. `owner-review --reconcile` lists open PRs and fetches tracked PRs. It removes labels that fail a gate other than `mergeable: UNKNOWN`, adds labels to open tracked PRs that qualify, and removes `owner-review` from open PRs that carry it without a watch state. Processing one PR at a time keeps a failure localized; a failed label write is reported and leaves state untouched for the next reconcile.
 
-The scheduled session runs `state --cleanup`, then `owner-review --reconcile --apply`, then polls and reviews candidates. After a published `pass`, it runs `owner-review <n> --apply` for that PR. The reconcile pass clears stale labels before review work and backfills PRs whose pass was published before this feature existed; the per-PR call makes a new pass visible without waiting for the next ten-minute tick.
+The scheduled session runs `owner-review --reconcile --apply`, then `state --cleanup`, then polls and reviews candidates. Reconcile runs first so a tracked PR that has just closed still has a watch entry from which the label can be removed; cleanup then drops the closed entry. After a published `pass`, it runs `owner-review <n> --apply` for that PR. The reconcile pass clears stale labels before review work and backfills PRs whose pass was published before this feature existed; the per-PR call makes a new pass visible without waiting for the next ten-minute tick.
 
 ### State and failure behavior
 
