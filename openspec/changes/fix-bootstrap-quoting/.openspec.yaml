@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Forward every bootstrap argument as one word, so a value containing
+  spaces reaches scripts/bootstrap.mjs intact.
