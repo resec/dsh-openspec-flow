@@ -1,11 +1,13 @@
 #!/bin/sh
-# Local gates: strict OpenSpec validation, then the reusable DSH lab scenarios,
-# then the verification entrypoint. A push whose only destination is main
-# validates main specs and archived tasks and requires every active change to
-# be in progress; a push to another or a mixed set of refs keeps the full check.
+# Local gates: strict OpenSpec validation, then the verification entrypoint.
+# A push whose only destination is main validates main specs and archived tasks
+# and requires every active change to be in progress; a push to another or a
+# mixed set of refs keeps the full check.
 # The coverage stamp may skip a repeat of the verification entrypoint when the
-# same committed inputs already passed it; COVERAGE_SKIP=1 skips only coverage
-# and never the lab gate. Requires node on PATH; no version manager is invoked.
+# same committed inputs already passed it; COVERAGE_SKIP=1 skips only coverage.
+# The reusable DSH lab scenarios run in the remote lab CI job, not here; the
+# offline local path runs them before landing. Requires node on PATH; no
+# version manager is invoked.
 saw_ref=0
 only_main=1
 # Git supplies the refs on a pipe. A terminal stdin has no refs, so it takes
@@ -23,7 +25,6 @@ if [ "$saw_ref" = "1" ] && [ "$only_main" = "1" ]; then
 else
   npm run openspec:check || exit $?
 fi
-npm run test:lab -- --mock-only || exit $?
 if [ "${COVERAGE_SKIP:-}" = "1" ]; then
   echo "coverage gate: skipped because COVERAGE_SKIP=1" >&2
   exit 0

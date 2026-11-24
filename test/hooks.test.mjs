@@ -14,7 +14,7 @@ const HOOK = join(ROOT, '.githooks', 'pre-push')
  * @param options - `failValidation` exits nonzero for the validation step.
  * @returns the fake bin directory and the call log path.
  */
-function fakeNpm({ failValidation = false, failLab = false } = {}) {
+function fakeNpm({ failValidation = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'openspec-hook-'))
   const bin = join(dir, 'npm')
   const body = [
@@ -22,9 +22,6 @@ function fakeNpm({ failValidation = false, failLab = false } = {}) {
     'printf "%s\\n" "$*" >> "$HOOK_LOG"',
     failValidation
       ? 'case "$*" in *openspec:check*) exit 1 ;; esac'
-      : '',
-    failLab
-      ? 'case "$*" in *test:lab*) exit 1 ;; esac'
       : '',
     'exit 0',
     '',
@@ -58,8 +55,8 @@ function fakeNode({ stampExit = 1 } = {}) {
  * @param options - fake behavior, stdin refs, stdin mode and extra hook environment.
  * @returns the spawn result, the recorded npm calls and the recorded node calls.
  */
-function runHook({ failValidation = false, failLab = false, stampExit = 1, input = '', stdin = 'pipe', env = {} } = {}) {
-  const fake = fakeNpm({ failValidation, failLab })
+function runHook({ failValidation = false, stampExit = 1, input = '', stdin = 'pipe', env = {} } = {}) {
+  const fake = fakeNpm({ failValidation })
   const fakeBin = fakeNode({ stampExit })
   const options = {
     cwd: ROOT,
@@ -86,34 +83,34 @@ const BRANCH_REF = 'refs/heads/topic 3333333333333333333333333333333333333333 re
 test('a main-only push runs the scoped gate', () => {
   const { result, calls } = runHook({ input: MAIN_REF })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check:push', 'run test:lab -- --mock-only', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check:push', 'run verify'])
 })
 
 test('a non-main push keeps the full check', () => {
   const { result, calls } = runHook({ input: BRANCH_REF })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
 })
 
 test('a mixed push keeps the full check', () => {
   const { result, calls } = runHook({ input: `${MAIN_REF}${BRANCH_REF}` })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
 })
 
 test('absent stdin keeps the full check', () => {
   const { result, calls } = runHook()
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
 })
 
 test('a closed stdin keeps the full check', () => {
   const { result, calls } = runHook({ stdin: 'ignore' })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
 })
 
-test('a failed scoped validation stops before the lab gate', () => {
+test('a failed scoped validation stops before the stamp check', () => {
   const { result, calls, nodeCalls } = runHook({ input: MAIN_REF, failValidation: true })
   assert.equal(result.status, 1)
   assert.deepEqual(calls, ['run openspec:check:push'])
@@ -123,35 +120,39 @@ test('a failed scoped validation stops before the lab gate', () => {
 test('a failing stamp check runs strict validation and then verification', () => {
   const { result, calls, nodeCalls } = runHook()
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
   assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
 test('a matching stamp skips verification after validation', () => {
   const { result, calls, nodeCalls } = runHook({ stampExit: 0 })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
+  assert.deepEqual(calls, ['run openspec:check'])
   assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('COVERAGE_SKIP still runs validation and the lab gate without checking the stamp', () => {
+test('COVERAGE_SKIP runs validation without checking the stamp', () => {
   const { result, calls, nodeCalls } = runHook({ env: { COVERAGE_SKIP: '1' } })
   assert.equal(result.status, 0)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
+  assert.deepEqual(calls, ['run openspec:check'])
   assert.deepEqual(nodeCalls, [])
 })
 
-test('a failed lab gate blocks the push before the stamp check', () => {
-  const { result, calls, nodeCalls } = runHook({ failLab: true, stampExit: 0 })
-  assert.equal(result.status, 1)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
-  assert.deepEqual(nodeCalls, [])
+test('the hook does not run the reusable lab scenarios', () => {
+  const source = readFileSync(join(ROOT, '.githooks', 'pre-push'), 'utf8')
+  assert.doesNotMatch(source, /test:lab/)
+  const { result, calls, nodeCalls } = runHook({ stampExit: 0 })
+  assert.equal(result.status, 0)
+  assert.equal(calls.some((call) => call.includes('test:lab')), false)
+  assert.deepEqual(calls, ['run openspec:check'])
+  assert.deepEqual(nodeCalls, ['scripts/coverage-stamp.mjs check'])
 })
 
-test('COVERAGE_SKIP does not hide a failed lab gate', () => {
-  const { result, calls } = runHook({ failLab: true, env: { COVERAGE_SKIP: '1' } })
-  assert.equal(result.status, 1)
-  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only'])
+test('the remote lab job guards pull requests and main', () => {
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')
+  assert.match(workflow, /^\s{2}lab:/mu)
+  assert.match(workflow, /on:\n  pull_request:\n  push:\n    branches:\n      - main/u)
+  assert.match(workflow, /npm run test:lab -- --mock-only/u)
 })
 
 test('a failed validation blocks the push before the stamp check and coverage', () => {
@@ -195,5 +196,8 @@ test('the hook installer names the stamp file and every invalidator', () => {
   assert.match(source, /fingerprint mismatch/)
   assert.match(source, /merge base/)
   assert.match(source, /different Node version/)
+  assert.match(source, /remote lab CI job for pull requests and main/)
+  assert.match(source, /offline local path runs npm run test:lab -- --mock-only/)
+  assert.doesNotMatch(source, /never the lab gate/)
   assert.doesNotMatch(source, /coverage:check/)
 })
