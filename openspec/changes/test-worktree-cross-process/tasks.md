@@ -20,4 +20,4 @@
 
 - [x] 4.1 Run `node --test test/worktree-lock.test.mjs test/worktree-create.test.mjs`: 37 tests pass, 0 fail.
 - [x] 4.2 Confirm the new assertions fail when the corresponding guard is removed: a foreign-pid steal in `acquireLock` fails the cross-process lock test, dropping the `updated !== existing` state write fails the dead-owner test, and skipping the created worktree/branch cleanup fails the session-move test.
-- [x] 4.3 Run `npm run verify` and `/tmp/b3/gates.sh test-worktree-cross-process` after the implementation commit.
+- [x] 4.3 Run `/tmp/b3/gates.sh test-worktree-cross-process` after the implementation commit: strict validate, `openspec:check` (119 items), requirement length, generated skills and `check:pr` pass; `npm run verify` passes 1434 tests on Node v24.22.2 with coverage 98.63% line, 93.70% branch, 99.21% function and no violations.
