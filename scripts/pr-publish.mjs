@@ -149,7 +149,7 @@ export function publishGates({
   const localMain = readLocalMain({ root, git })
   if (!localMain.fetched) return { offline: true, reason: 'origin-unreachable', change: name }
   if (localMain.ahead !== 0) {
-    throw new Error(`local main leads origin/main by ${localMain.ahead} commit(s); run node scripts/push-landed.mjs --push before publishing`)
+    throw new Error(`local main leads origin/main by ${localMain.ahead} commit(s); run node scripts/push-landed.mjs --push (or --push --offline for a recorded offline land) before publishing`)
   }
   assertNoOpenLanding(root)
   const pullRequests = listBranchPullRequests({ root, branch: state.branch, gh })

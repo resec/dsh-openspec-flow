@@ -212,7 +212,7 @@ function assertLocalMainNotAhead(root) {
   if (main === undefined || originMain === undefined) return
   const ahead = gitMaybe(root, ['rev-list', '--count', 'origin/main..main'])
   if (ahead !== undefined && Number(ahead) > 0) {
-    throw new Error(`local main leads origin/main by ${ahead} commit(s); run node scripts/push-landed.mjs --push before landing another pull request`)
+    throw new Error(`local main leads origin/main by ${ahead} commit(s); run node scripts/push-landed.mjs --push (or --push --offline for a recorded offline land) before landing another pull request`)
   }
 }
 

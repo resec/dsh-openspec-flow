@@ -67,7 +67,7 @@ node scripts/pr-review-watch.mjs preflight
 node scripts/pr-review-watch.mjs preflight --json
 ```
 
-The JSON result carries `online`, `reason`, `offlineLand`, `command`, `localMain` (`main`, `originMain`, `ahead`, `behind`), `lock` and `landings`. When GitHub authentication or the API check fails, the result routes to `offline-land` and prints the offline command. When local `main` leads `origin/main`, the reason is `local-main-ahead` and `node scripts/push-landed.mjs --push` is the required step.
+The JSON result carries `online`, `reason`, `offlineLand`, `command`, `localMain` (`main`, `originMain`, `ahead`, `behind`), `lock` and `landings`. When GitHub authentication or the API check fails, the result routes to `offline-land` and prints the offline command. When local `main` leads `origin/main`, the reason is `local-main-ahead` and `node scripts/push-landed.mjs --push` is the required step; add `--offline` when the lead is a recorded offline land.
 
 ## Publishing a local pull request
 
@@ -190,21 +190,28 @@ When `preflight` or `pr-publish` reports `offline-land`, no branch, pull request
    openspec_apply_worktree action=land change=<change> approvedBy=user
    ```
 
-3. Record the offline phase and stop at local `main`; do not push:
+3. Record the offline land and stop at local `main`; do not push. Use `offline-land` when there is no local owner entry; use the recorded `landed-offline` phase when a published pull request already has an entry:
+
+   ```sh
+   node scripts/offline-land.mjs record --change <change> --land <sha> --apply
+   ```
+
+   For a published but unmerged local pull request that has a local owner entry:
 
    ```sh
    node scripts/pr-local-land.mjs finish <n> --phase landed-offline --session <id> --apply
    ```
 
-When GitHub returns, `node scripts/push-landed.mjs --push` publishes the deferred land and archive commits, and `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <id> --apply` records `pushed`. Until that push completes, local `main` leads `origin/main`, which blocks a new online pull request and contributor landing; both refuse and name `push-landed`.
+When GitHub returns, `node scripts/push-landed.mjs --push --offline` publishes the deferred land and archive commits and removes the matching offline record; when a local entry exists, `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <id> --apply` records `pushed`. Until that push completes, local `main` leads `origin/main`, which blocks a new online pull request and contributor landing; both refuse and name `push-landed`.
 
-A published but unmerged local pull request may fall back to the offline land because its worktree still exists: land the same reviewed worktree locally, record `landed-offline`, and leave the open pull request for reconciliation. If its head is in the deferred commits, the later push closes it as merged; otherwise close it manually.
+A published but unmerged local pull request may fall back to the offline land because its worktree still exists: land the same reviewed worktree locally, record `landed-offline`, and leave the open pull request for reconciliation. If its head is in the deferred commits, the later `push-landed --push --offline` closes it as merged; otherwise close it manually.
 
 ## State and reports
 
 ```text
 .cache/pr-review/
   local-prs.json             local owner entries (resolved against the main worktree)
+  offline-lands.json         pre-publish offline land records (keyed by land commit)
   landing.lock/owner.json    cross-session landing lock owner
 ```
 

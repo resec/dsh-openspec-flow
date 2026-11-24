@@ -314,7 +314,7 @@ export function finishLocal({
     const originMain = git(root, ['rev-parse', 'origin/main'])
     if (phase === 'pushed') {
       if (originMain !== main) {
-        throw new Error(`local main ${main} is not pushed; run node scripts/push-landed.mjs --push before recording pushed`)
+        throw new Error(`local main ${main} is not pushed; run node scripts/push-landed.mjs --push (or --push --offline for a recorded offline land) before recording pushed`)
       }
     } else {
       if (originMain === main) {
