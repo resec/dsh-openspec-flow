@@ -174,7 +174,7 @@ export function createInprocSpawner({
               terminated,
             })
             if (result === 'terminated') explicitExit = 143
-            else if (result === 'deadline') explicitExit = 124
+            else if (result === 'deadline' && explicitExit === undefined) explicitExit = 124
             else if (explicitExit === undefined && process.exitCode !== savedExitCode) {
               assignedExit = process.exitCode
             }

@@ -114,6 +114,25 @@ test('reports the deadline when an awaitable command never settles', async () =>
   assert.equal(process.cwd(), beforeCwd)
 })
 
+test('keeps an explicit exit code when an awaitable call reaches the deadline', async () => {
+  const instance = createInprocSpawner({
+    load: () => Promise.resolve({
+      runCli: () => {
+        throw new Error('the fallback must not run')
+      },
+      program: {
+        parseAsync() {
+          process.exit(7)
+          return new Promise(() => {})
+        },
+      },
+    }),
+    deadlineMs: 50,
+  })
+  const result = await instance.spawn(spec()).done
+  assert.equal(result.exitCode, 7)
+})
+
 test('releases the queue when an awaitable command is aborted', async () => {
   const originalLog = console.log
   const beforeExitCode = process.exitCode
