@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Let a started apply resync from the main root without reading the
+  planning copy, as the tool-surface spec requires.
