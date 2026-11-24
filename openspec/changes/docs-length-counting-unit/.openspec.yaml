@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: State the counting unit the requirement length gate already uses, so a
+  draft that mixes astral characters with BMP text can predict the verdict.
