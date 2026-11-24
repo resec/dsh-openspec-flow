@@ -16,7 +16,20 @@ test('the lab document states the commands, POC location and browser install', (
   assert.match(doc, /PLAYWRIGHT_BROWSERS_PATH/)
   assert.match(doc, /apply-worktree-dev\.md/)
   assert.match(doc, /otherwise `\.cache\/lab\/pw-browsers`/)
-  assert.match(doc, /COVERAGE_SKIP=1/)
+  assert.match(doc, /`COVERAGE_SKIP=1` skips the whole `npm run verify` run, tests and coverage alike/)
+  assert.doesNotMatch(doc, /skips only coverage/)
+})
+
+test('the documents say COVERAGE_SKIP skips the whole verification run', () => {
+  const agents = read('AGENTS.md')
+  assert.match(agents, /`COVERAGE_SKIP=1` skips the whole `npm run verify` run, tests and coverage alike/)
+  assert.doesNotMatch(agents, /skips only coverage/)
+  const readme = read('README.md')
+  assert.match(readme, /`COVERAGE_SKIP=1` 跳过整个 `npm run verify`（单测与覆盖率一并跳过）/)
+  assert.doesNotMatch(readme, /只跳过覆盖率/)
+  const installer = read('scripts/install-hooks.mjs')
+  assert.match(installer, /COVERAGE_SKIP=1 skips the whole npm run verify run, tests and coverage alike/)
+  assert.doesNotMatch(installer, /skips only coverage/)
 })
 
 test('AGENTS and the README point at the lab gate and documentation', () => {
