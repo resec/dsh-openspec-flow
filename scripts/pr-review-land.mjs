@@ -37,6 +37,8 @@ export const LANDINGS_FILE = 'landings.json'
 export const MANIFEST_DIRECTORY = 'landings'
 /** Local landing branch prefix. */
 export const LANDING_BRANCH_PREFIX = 'pr-land/'
+/** Suffix of the landing checkout directory under the worktree directory. */
+export const LANDING_WORKTREE_SUFFIX = '-land'
 /** Phases that keep a landing open or awaiting a retry. */
 const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
 /** Phases that may be forgotten by the operator. */
@@ -256,10 +258,26 @@ export function failLanding({ root = mainWorktree(), number, error, apply = fals
   return entry
 }
 
-/** Remove a landing checkout and branch after the PR is not merged. */
+/** Resolve the landing checkout of one pull request. */
+function landingWorktree(root, number) {
+  return join(landPaths(root).worktrees, `pr-${number}${LANDING_WORKTREE_SUFFIX}`)
+}
+
+/** Whether the landing entry owns the checkout it names. */
+function ownsLandingWorktree(root, entry) {
+  return entry.worktree === landingWorktree(root, entry.number)
+}
+
+/** Remove a landing checkout and branch, leaving a shared watch checkout in place. */
 function removeLandingCheckout(root, entry) {
-  if (existsSync(entry.worktree)) {
-    spawnSync('git', ['-C', root, 'worktree', 'remove', '--force', entry.worktree], { encoding: 'utf8' })
+  const checkout = String(entry.worktree ?? '')
+  if (ownsLandingWorktree(root, entry)) {
+    spawnSync('git', ['-C', root, 'worktree', 'remove', '--force', checkout], { encoding: 'utf8' })
+  } else if (existsSync(checkout)) {
+    if (gitMaybe(checkout, ['status', '--porcelain']) !== '') {
+      throw new Error(`the previous landing checkout ${checkout} has local changes; clean it and retry`)
+    }
+    git(checkout, ['switch', '--detach'])
   }
   spawnSync('git', ['-C', root, 'branch', '-D', entry.landingBranch], { encoding: 'utf8' })
 }
@@ -280,20 +298,20 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
   if (!apply) return { dryRun: true, ...plan }
   const lands = loadLandings(root)
   assertSingleLanding(lands, n)
+  const paths = landPaths(root)
+  const worktree = landingWorktree(root, n)
   const existing = lands.lands[String(n)]
   if (existing !== undefined) {
     if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(existing.phase)) {
       throw new Error(`PR #${n} is already past the merge phase (${existing.phase}); finish or inspect it`)
     }
-    if (existing.prHead === plan.head && (existing.phase === 'prepared' || existing.phase === 'reviewed')) {
+    if (existing.worktree === worktree && existing.prHead === plan.head && (existing.phase === 'prepared' || existing.phase === 'reviewed')) {
       return existing
     }
     removeLandingCheckout(root, existing)
     delete lands.lands[String(n)]
     saveLandings(root, lands)
   }
-  const paths = landPaths(root)
-  const worktree = join(paths.worktrees, `pr-${n}`)
   git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
   git(root, ['fetch', 'origin', 'main'])
   const fetched = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
@@ -559,9 +577,11 @@ export function finishLanding({ root = mainWorktree(), number, apply = false } =
     finishedAt: new Date().toISOString(),
   }
   writeJson(join(landPaths(root).manifests, `pr-${n}-${entry.mergedHead}.json`), manifest)
-  if (existsSync(entry.worktree)) git(root, ['worktree', 'remove', '--force', entry.worktree])
+  if (ownsLandingWorktree(root, entry) && existsSync(entry.worktree)) {
+    git(root, ['worktree', 'remove', '--force', entry.worktree])
+  }
   spawnSync('git', ['-C', root, 'branch', '-D', entry.landingBranch], { encoding: 'utf8' })
-  forgetPullRequest({ root, number: n, change: entry.change, worktree: entry.worktree })
+  forgetPullRequest({ root, number: n, change: entry.change })
   delete lands.lands[String(n)]
   saveLandings(root, lands)
   return manifest
@@ -593,7 +613,9 @@ export function stateLanding({ root = mainWorktree(), number, forget = false, ap
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
   if (!apply) return { dryRun: true, entry }
   if (!TERMINAL_PHASES.has(entry.phase)) throw new Error(`PR #${n} is still ${entry.phase}; finish or abandon it first`)
-  if (existsSync(entry.worktree)) spawnSync('git', ['-C', root, 'worktree', 'remove', '--force', entry.worktree], { encoding: 'utf8' })
+  if (ownsLandingWorktree(root, entry) && existsSync(entry.worktree)) {
+    spawnSync('git', ['-C', root, 'worktree', 'remove', '--force', entry.worktree], { encoding: 'utf8' })
+  }
   spawnSync('git', ['-C', root, 'branch', '-D', entry.landingBranch], { encoding: 'utf8' })
   delete lands.lands[String(n)]
   saveLandings(root, lands)

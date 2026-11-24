@@ -24,6 +24,7 @@ import {
   pushLanding,
   reviewedLanding,
   saveLandings,
+  stateLanding,
   trustedPass,
 } from '../scripts/pr-review-land.mjs'
 import { resolvePaths, saveState } from '../scripts/pr-review-watch.mjs'
@@ -166,6 +167,7 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /without disposing a finding/)
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
+  assert.match(doc, /pr-<n>-land/)
   assert.match(doc, /every five minutes/)
 })
 
@@ -245,6 +247,8 @@ test('prepare rebases the local landing branch and reviewed checks the record tr
   const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
   const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
   assert.equal(prepared.phase, 'prepared')
+  assert.equal(prepared.worktree, join(resolvePaths(root).worktrees, 'pr-12-land'))
+  assert.equal(existsSync(join(resolvePaths(root).worktrees, 'pr-12')), false)
   assert.notEqual(prepared.landingHead, head)
   const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
   assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /apply review record/)
@@ -353,17 +357,144 @@ test('merge refuses when origin/main moved after prepare', () => {
   assert.equal(loadLandings(root).lands['12'].phase, 'failed')
 })
 
-test('abandon clears a pre-merge landing without touching the watch entry', () => {
+test('abandon removes only the landing checkout and keeps the watch checkout', () => {
   const { root, remote } = makeRepo()
-  const { head } = addPullRequest(root, remote)
+  const { head, worktree: watchWorktree } = addPullRequest(root, remote)
+  mkdirSync(resolvePaths(root).worktrees, { recursive: true })
+  git(root, ['worktree', 'add', '--detach', watchWorktree, head])
   const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
   const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  assert.equal(prepared.worktree, join(resolvePaths(root).worktrees, 'pr-12-land'))
   assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /apply review record/)
   const result = abandonLanding({ root, number: 12, apply: true })
   assert.equal(result.abandoned, 12)
   assert.equal(loadLandings(root).lands['12'], undefined)
   assert.equal(existsSync(prepared.worktree), false)
-  assert.ok(JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8')).prs['12'])
+  const watch = JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8')).prs['12']
+  assert.equal(watch.worktree, watchWorktree)
+  assert.equal(watch.status, 'commented')
+  assert.equal(existsSync(watchWorktree), true)
+  assert.equal(git(watchWorktree, ['rev-parse', 'HEAD']), head)
+  const again = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  assert.equal(again.worktree, prepared.worktree)
+  assert.equal(again.phase, 'prepared')
+  assert.equal(existsSync(again.worktree), true)
+})
+
+test('prepare rebuilds a landing recorded on the watch checkout without deleting it', () => {
+  const { root, remote } = makeRepo()
+  const { head, worktree } = addPullRequest(root, remote)
+  mkdirSync(resolvePaths(root).worktrees, { recursive: true })
+  git(root, ['worktree', 'add', '--detach', worktree, head])
+  git(worktree, ['switch', '-C', 'pr-land/12', head])
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: {
+      12: {
+        number: 12,
+        change: 'widget',
+        prHead: head,
+        landingBranch: 'pr-land/12',
+        worktree,
+        landingHead: head,
+        phase: 'prepared',
+        merged: false,
+        mergedHead: null,
+      },
+    },
+  })
+  const rebuilt = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+  assert.equal(rebuilt.worktree, join(resolvePaths(root).worktrees, 'pr-12-land'))
+  assert.equal(loadLandings(root).lands['12'].worktree, rebuilt.worktree)
+  assert.equal(existsSync(worktree), true)
+  assert.equal(git(worktree, ['rev-parse', '--abbrev-ref', 'HEAD']), 'HEAD')
+  assert.equal(git(rebuilt.worktree, ['rev-parse', '--abbrev-ref', 'HEAD']), 'pr-land/12')
+})
+
+test('prepare refuses a previous landing checkout with local changes', () => {
+  const { root, remote } = makeRepo()
+  const { head, worktree } = addPullRequest(root, remote)
+  mkdirSync(resolvePaths(root).worktrees, { recursive: true })
+  git(root, ['worktree', 'add', '--detach', worktree, head])
+  git(worktree, ['switch', '-C', 'pr-land/12', head])
+  writeFileSync(join(worktree, 'dirty.txt'), 'dirty\n')
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: { 12: { number: 12, change: 'widget', prHead: head, landingBranch: 'pr-land/12', worktree, landingHead: head, phase: 'prepared', merged: false, mergedHead: null } },
+  })
+  assert.throws(
+    () => prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) }),
+    /has local changes/,
+  )
+  assert.equal(loadLandings(root).lands['12'].worktree, worktree)
+  assert.equal(existsSync(join(worktree, 'dirty.txt')), true)
+  assert.equal(existsSync(join(resolvePaths(root).worktrees, 'pr-12-land')), false)
+})
+
+test('abandon drops a landing whose previous checkout is gone', () => {
+  const { root, remote } = makeRepo()
+  const { head, worktree } = addPullRequest(root, remote)
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: { 12: { number: 12, change: 'widget', prHead: head, landingBranch: 'pr-land/12', worktree, landingHead: head, phase: 'prepared', merged: false, mergedHead: null } },
+  })
+  assert.deepEqual(abandonLanding({ root, number: 12, apply: true }), { abandoned: 12 })
+  assert.equal(loadLandings(root).lands['12'], undefined)
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+  git(root, ['worktree', 'remove', '--force', prepared.worktree])
+  assert.deepEqual(abandonLanding({ root, number: 12, apply: true }), { abandoned: 12 })
+  assert.equal(loadLandings(root).lands['12'], undefined)
+})
+
+test('state --forget keeps a shared checkout an older landing recorded', () => {
+  const { root, remote } = makeRepo()
+  const { head, worktree } = addPullRequest(root, remote)
+  mkdirSync(resolvePaths(root).worktrees, { recursive: true })
+  git(root, ['worktree', 'add', '--detach', worktree, head])
+  git(worktree, ['switch', '-C', 'pr-land/12', head])
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: { 12: { number: 12, change: 'widget', prHead: head, landingBranch: 'pr-land/12', worktree, landingHead: head, phase: 'blocked', merged: false, mergedHead: null } },
+  })
+  assert.deepEqual(stateLanding({ root, number: 12, forget: true, apply: true }), { forgotten: 12 })
+  assert.equal(loadLandings(root).lands['12'], undefined)
+  assert.equal(existsSync(worktree), true)
+})
+
+test('finish removes a shared checkout only after the merge', () => {
+  const { root, remote } = makeRepo()
+  const { head, worktree } = addPullRequest(root, remote)
+  git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
+  git(root, ['commit', '-qm', 'archive widget'])
+  const mainHead = git(root, ['rev-parse', 'HEAD'])
+  mkdirSync(resolvePaths(root).worktrees, { recursive: true })
+  git(root, ['worktree', 'add', '--detach', worktree, head])
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: {
+      12: {
+        number: 12,
+        change: 'widget',
+        prHead: head,
+        preMergeMain: head,
+        landingBranch: 'pr-land/12',
+        worktree,
+        landingHead: head,
+        reviewedTree: null,
+        mergedHead: head,
+        archiveCommit: mainHead,
+        pushedHead: mainHead,
+        merged: true,
+        phase: 'pushed',
+        error: null,
+        attempts: 0,
+      },
+    },
+  })
+  const manifest = finishLanding({ root, number: 12, apply: true })
+  assert.equal(manifest.pushedHead, mainHead)
+  assert.equal(existsSync(worktree), false)
+  assert.equal(loadLandings(root).lands['12'], undefined)
 })
 
 
@@ -584,7 +715,7 @@ test('candidates omits a review-failed landing and another unfinished landing', 
 test('state --fail records review-failed, keeps the checkout and abandon clears it', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
-  const worktree = join(resolvePaths(root).worktrees, 'pr-12')
+  const worktree = join(resolvePaths(root).worktrees, 'pr-12-land')
   mkdirSync(worktree, { recursive: true })
   saveLandings(root, {
     schemaVersion: 1,
