@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Allow the landing loop to update a same-repository PR branch that is
+  behind main through GitHub's update-branch API when the mergeable label
+  authorizes landing, leave fork branches untouched, verify the head contains
+  the latest main before prepare and merge, and run the final review and merge
+  in the same scheduled run.
