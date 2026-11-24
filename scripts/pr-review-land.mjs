@@ -583,6 +583,21 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   return completeMergedLanding(root, lands, entry)
 }
 
+/** Prefix that archiving prepends to a change directory name. */
+const ARCHIVE_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}-/
+
+/**
+ * True when an archive directory name holds exactly `change`.
+ *
+ * Archiving stores a change as `<date>-<change>`, so the name is compared with
+ * that prefix removed; a longer change name that merely ends with `change` is a
+ * different change and never matches.
+ */
+function archivedChange(name, change) {
+  const prefix = ARCHIVE_DATE_PREFIX.exec(name)
+  return (prefix === null ? name : name.slice(prefix[0].length)) === change
+}
+
 /** Record the archive commit after the session archived on main. */
 export function archiveLanding({ root = mainWorktree(), number, commit, apply = false } = {}) {
   const n = requireNumber(number)
@@ -598,7 +613,9 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
     if (existsSync(join(root, 'openspec', 'changes', entry.change))) {
       throw new Error(`the change ${entry.change} is still active; archive it first`)
     }
-    const archived = readdirSync(join(root, 'openspec', 'changes', 'archive')).some((name) => name.endsWith(`-${entry.change}`))
+    const archiveRoot = join(root, 'openspec', 'changes', 'archive')
+    const archived = existsSync(archiveRoot)
+      && readdirSync(archiveRoot).some((name) => archivedChange(name, entry.change))
     if (!archived) throw new Error(`the change ${entry.change} has no archive directory`)
     const head = commit ?? git(root, ['rev-parse', 'HEAD'])
     if (head !== git(root, ['rev-parse', 'HEAD'])) throw new Error(`the archive commit ${head} is not HEAD`)

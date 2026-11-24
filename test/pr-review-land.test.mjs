@@ -452,6 +452,57 @@ test('abandon refuses a post-merge landing and keeps its checkout', () => {
   assert.equal(existsSync(prepared.worktree), true)
 })
 
+/** Prepare, review and merge PR 12, leaving the landing at archive-pending. */
+function mergedLanding(root, remote) {
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  reviewRecord(root, git(prepared.worktree, ['rev-parse', 'HEAD^{tree}']))
+  reviewedLanding({ root, number: 12, apply: true })
+  const onMerge = () => {
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  return loadLandings(root).lands['12']
+}
+
+test('archive matches the change name exactly instead of by suffix', () => {
+  const { root, remote } = makeRepo()
+  assert.equal(mergedLanding(root, remote).phase, 'archive-pending')
+  const archive = join(root, 'openspec', 'changes', 'archive')
+  git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget-extra'])
+  git(root, ['commit', '-qm', 'archive a longer name'])
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /no archive directory/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+  mkdirSync(join(archive, '2026-01-01-extra-widget'), { recursive: true })
+  writeFileSync(join(archive, '2026-01-01-extra-widget', 'proposal.md'), '# Other\n')
+  git(root, ['add', 'openspec/changes/archive'])
+  git(root, ['commit', '-qm', 'archive a name that ends with the change'])
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /no archive directory/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+  mkdirSync(join(archive, 'widget-extra'), { recursive: true })
+  writeFileSync(join(archive, 'widget-extra', 'proposal.md'), '# Undated\n')
+  git(root, ['add', 'openspec/changes/archive'])
+  git(root, ['commit', '-qm', 'archive an undated name'])
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /no archive directory/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+  git(root, ['mv', 'openspec/changes/archive/2026-01-01-widget-extra', 'openspec/changes/archive/2026-01-01-widget'])
+  git(root, ['commit', '-qm', 'archive widget'])
+  const archived = archiveLanding({ root, number: 12, apply: true })
+  assert.equal(archived.phase, 'archived')
+  assert.equal(archived.archiveCommit, git(root, ['rev-parse', 'HEAD']))
+})
+
+test('archive refuses a landing when the archive directory is missing', () => {
+  const { root, remote } = makeRepo()
+  mergedLanding(root, remote)
+  git(root, ['rm', '-rq', 'openspec/changes/widget'])
+  git(root, ['commit', '-qm', 'drop the active change'])
+  rmSync(join(root, 'openspec', 'changes', 'archive'), { recursive: true, force: true })
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /no archive directory/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
 test('archive and push failures keep retryable phases', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
