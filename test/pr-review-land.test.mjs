@@ -178,6 +178,17 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /every five minutes/)
 })
 
+test('the prerequisites name the main-worktree landing and the advisory label', () => {
+  const doc = readFileSync(new URL('../docs/pr-review.md', import.meta.url), 'utf8')
+  assert.ok(doc.includes('fast-forwards local `main` to `origin/main`'), 'pr-review.md names the landing fast-forward')
+  assert.ok(
+    doc.includes('queue signal only, not a landing authorization; mergeable is the only landing authorization'),
+    'pr-review.md describes owner-review as advisory',
+  )
+  assert.doesNotMatch(doc, /The script creates its own checkout under `\.cache\/pr-review\/worktrees\/` and never writes the main worktree\./)
+  assert.doesNotMatch(doc, /require owner review before auto merge/)
+})
+
 test('label and trusted pass checks are exact', () => {
   assert.equal(hasLandingLabel({ labels: [{ name: LANDING_LABEL }] }), true)
   assert.equal(hasLandingLabel({ labels: [{ name: 'merge' }] }), false)
