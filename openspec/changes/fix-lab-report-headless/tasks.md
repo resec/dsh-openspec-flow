@@ -18,4 +18,4 @@
 ## 4. Verify
 
 - [x] 4.1 Run `node --test test/lab-headless.test.mjs test/lab-runner.test.mjs test/lab-doc.test.mjs`.
-- [ ] 4.2 Run `/tmp/b3/gates.sh fix-lab-report-headless` and record the summary here.
+- [x] 4.2 Run `/tmp/b3/gates.sh fix-lab-report-headless`: 1433 tests pass, coverage 98.63% line / 93.72% branch / 99.21% function, no violations.
