@@ -111,16 +111,26 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
 }
 
 function fakeGh({ pr = {}, list = [], onMerge } = {}) {
-  return (args, cwd) => {
+  // Every `gh pr merge` argument list, so a test can assert the merge flags.
+  const merges = []
+  const run = (args, cwd) => {
     if (args[0] === 'api') return LOGIN
     if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(pr)
     if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify(list)
     if (args[0] === 'pr' && args[1] === 'merge') {
+      merges.push(args)
       if (onMerge) onMerge(cwd)
       return 'merged'
     }
     throw new Error(`unexpected gh ${args.join(' ')}`)
   }
+  run.merges = merges
+  return run
+}
+
+/** A PR view that reports `base` as the base branch tip GitHub holds. */
+function prAtBase(head, base, overrides = {}) {
+  return JSON.parse(prJson(head, 'main', { baseRefOid: base, ...overrides }))
 }
 
 function reviewRecord(root, tree, state = 'passed') {
@@ -154,6 +164,8 @@ test('landing documentation names the label, candidates, resume and recovery', (
   const doc = readFileSync(new URL('../docs/pr-review.md', import.meta.url), 'utf8')
   assert.match(doc, /`mergeable`/)
   assert.match(doc, /gh pr merge <n> --rebase/)
+  assert.match(doc, /--match-head-commit <head>/)
+  assert.match(doc, /`baseRefOid`/)
   assert.match(doc, /openspec_archive/)
   assert.match(doc, /tree-mismatch/)
   assert.match(doc, /pr-review-land\.mjs candidates/)
@@ -330,7 +342,7 @@ test('merge records failed on a gh merge failure', () => {
     root,
     number: 12,
     apply: true,
-    gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge: () => { throw new Error('merge refused') } }),
+    gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain), onMerge: () => { throw new Error('merge refused') } }),
   }), /gh pr merge failed/)
   assert.equal(loadLandings(root).lands['12'].phase, 'failed')
 })
@@ -347,10 +359,32 @@ test('merge refuses when origin/main moved after prepare', () => {
   writeFileSync(join(root, 'README.md'), 'main moved after prepare\n')
   git(root, ['add', 'README.md'])
   git(root, ['commit', '-qm', 'main moved after prepare'])
-  git(root, ['push', '-q', 'origin', 'main'])
-  git(root, ['fetch', 'origin', 'main'])
-  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /origin\/main moved/)
+  git(root, ['push', '-q', remote, 'main'])
+  // A URL push moves refs/remotes/origin/main on some git versions and not on
+  // others, so pin the tracking ref to the prepared tip. That keeps the ref
+  // stale on every version, like a merge made elsewhere: only GitHub knows
+  // that main moved.
+  git(root, ['update-ref', 'refs/remotes/origin/main', prepared.preMergeMain])
+  assert.equal(git(root, ['rev-parse', 'refs/remotes/origin/main']), prepared.preMergeMain)
+  const moved = fakeGh({ pr: prAtBase(head, git(root, ['rev-parse', 'HEAD'])) })
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: moved }), /origin\/main moved.*prepare and review again/)
+  assert.equal(moved.merges.length, 0)
   assert.equal(loadLandings(root).lands['12'].phase, 'failed')
+})
+
+test('merge passes --match-head-commit with the reviewed pull request head', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)) }) })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  const onMerge = () => {
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  const gh = fakeGh({ pr: prAtBase(head, prepared.preMergeMain), onMerge })
+  mergeLanding({ root, number: 12, apply: true, gh })
+  assert.deepEqual(gh.merges, [['pr', 'merge', '12', '--rebase', '--match-head-commit', head]])
 })
 
 test('abandon clears a pre-merge landing without touching the watch entry', () => {
@@ -378,7 +412,7 @@ test('abandon refuses a post-merge landing and keeps its checkout', () => {
   const onMerge = () => {
     git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
   }
-  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain), onMerge }) })
   assert.throws(() => abandonLanding({ root, number: 12, apply: true }), /already merged|pre-merge|archive-pending/)
   assert.equal(loadLandings(root).lands['12'].phase, 'archive-pending')
   assert.equal(existsSync(prepared.worktree), true)
@@ -395,7 +429,7 @@ test('archive and push failures keep retryable phases', () => {
   const onMerge = () => {
     git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
   }
-  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain), onMerge }) })
   assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /archive failed/)
   assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
   git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
@@ -428,7 +462,7 @@ test('a diverged local main keeps the merged landing retryable without a second 
     root,
     number: 12,
     apply: true,
-    gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }),
+    gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain), onMerge }),
   }), /fast-forward|not possible/)
   const entry = loadLandings(root).lands['12']
   assert.equal(entry.phase, 'archive-pending')
@@ -451,7 +485,7 @@ test('a tree-mismatch landing rethrows without a second merge', () => {
   const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
   reviewRecord(root, tree)
   reviewedLanding({ root, number: 12, apply: true })
-  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /tree|differs/)
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain) }) }), /tree|differs/)
   assert.throws(() => mergeLanding({
     root,
     number: 12,
@@ -472,7 +506,7 @@ test('merge verifies the merged tree and archive/push/finish complete the landin
   const onMerge = () => {
     git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
   }
-  const merged = mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  const merged = mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain), onMerge }) })
   assert.equal(merged.phase, 'archive-pending')
   assert.equal(merged.reviewedTree, tree)
   assert.equal(mergeLanding({ root, number: 12, apply: true, gh: () => { throw new Error('must not merge twice') } }).phase, 'archive-pending')
@@ -499,7 +533,7 @@ test('merge refuses a tree mismatch after the PR is merged', () => {
   const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
   reviewRecord(root, tree)
   reviewedLanding({ root, number: 12, apply: true })
-  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fake }), /tree|differs/)
+  assert.throws(() => mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: prAtBase(head, prepared.preMergeMain) }) }), /tree|differs/)
   assert.equal(loadLandings(root).lands['12'].phase, 'tree-mismatch')
 })
 

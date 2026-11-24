@@ -187,7 +187,7 @@ function evaluateLanding({ root, number, gh: ghRunner = gh, state = loadState(ro
   if (!trustedPass(pr.comments, reviewerLogin, n, pr.headRefOid)) {
     throw new Error(`PR #${n} has no trusted pass review for ${pr.headRefOid}`)
   }
-  return { number: n, change: change[0], head: pr.headRefOid, baseRefName: pr.baseRefName }
+  return { number: n, change: change[0], head: pr.headRefOid, baseRefName: pr.baseRefName, baseRefOid: pr.baseRefOid }
 }
 
 /** Evaluate all landing gates. */
@@ -448,15 +448,15 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   const plan = planLanding({ root, number: n, gh: ghRunner })
   if (plan.head !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
   if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
-  const originMain = git(root, ['rev-parse', 'origin/main'])
-  if (originMain !== entry.preMergeMain) {
+  // GitHub reports the base tip it will merge onto; the local tracking ref may be stale.
+  if (plan.baseRefOid !== entry.preMergeMain) {
     entry.phase = 'failed'
-    entry.error = 'origin/main moved; prepare and review again'
+    entry.error = `origin/main moved from ${entry.preMergeMain} to ${String(plan.baseRefOid)} on GitHub; prepare and review again`
     saveLandings(root, lands)
     throw new Error(entry.error)
   }
   try {
-    ghRunner(['pr', 'merge', String(n), '--rebase'], root)
+    ghRunner(['pr', 'merge', String(n), '--rebase', '--match-head-commit', plan.head], root)
   } catch (error) {
     entry.phase = 'failed'
     entry.error = `gh pr merge failed: ${error instanceof Error ? error.message : String(error)}`
