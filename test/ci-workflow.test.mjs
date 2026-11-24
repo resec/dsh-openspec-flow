@@ -22,7 +22,7 @@ test('both jobs derive Node from the baseline file', () => {
 test('the verify job runs the change, skill and verification gates', () => {
   for (const command of [
     'npm ci',
-    'check-pr-change.mjs --base',
+    'check-pr-change.mjs',
     'check-generated-skills.mjs --base',
     'npm run openspec:check',
     'npm run check:requirement-length',
@@ -42,9 +42,23 @@ test('the requirement length gate runs after strict validation and before verifi
 })
 
 test('the change check compares the base with the pull-request head', () => {
-  assert.match(WORKFLOW, /check-pr-change\.mjs --base "\$\{\{ github\.event\.pull_request\.base\.sha \}\}" --head "\$\{\{ github\.event\.pull_request\.head\.sha \}\}"/u)
   const verify = WORKFLOW.slice(WORKFLOW.indexOf('\n  verify:\n'), WORKFLOW.indexOf('\n  lab:\n'))
+  assert.match(verify, /PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/u)
+  assert.match(verify, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/u)
+  assert.match(verify, /check-pr-change\.mjs "\$\{arguments\[@\]\}"/u)
   assert.match(verify, /fetch-depth: 0/u)
+})
+
+test('the change check grants the maintainer exemption only to a same-repository maintainer pull request', () => {
+  const verify = WORKFLOW.slice(WORKFLOW.indexOf('\n  verify:\n'), WORKFLOW.indexOf('\n  lab:\n'))
+  assert.match(verify, /PR_AUTHOR: \$\{\{ github\.event\.pull_request\.user\.login \}\}/u)
+  assert.match(verify, /PR_HEAD_REPO: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name \}\}/u)
+  assert.match(verify, /REPOSITORY: \$\{\{ github\.repository \}\}/u)
+  assert.match(verify, /if \[ "\$PR_AUTHOR" = "resec" \] && \[ "\$PR_HEAD_REPO" = "\$REPOSITORY" \]; then/u)
+  assert.match(verify, /arguments\+=\(--maintainer\)/u)
+  const step = verify.slice(verify.indexOf('- name: change check'), verify.indexOf('- name: generated skill check'))
+  const run = step.slice(step.indexOf('run: |'))
+  assert.doesNotMatch(run, /\$\{\{/u)
 })
 
 test('the lab job installs the browser where the doctor looks', () => {

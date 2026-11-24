@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * Land a reviewed pull request: rebase its head onto main, let the session
- * review the rebased branch, merge with `gh pr merge --rebase`, verify the
- * merged tree, and hand the archive/push phases back to the session.
+ * Land a reviewed pull request: update a behind same-repository branch through
+ * GitHub's update-branch API, require the head to contain the latest main,
+ * create the landing branch at the head, let the session review it, merge with
+ * `gh pr merge --rebase`, verify the merged tree, and hand the archive/push
+ * phases back to the session.
  *
  * The script performs git and GitHub work only. It never calls the plugin
  * review or archive tools; the scheduled DSH session owns those calls.
@@ -17,13 +19,17 @@ import {
   activeChangeNames,
   checksGreen,
   forgetPullRequest,
+  loadLocalState,
   loadState,
+  localPullRequestNumbers,
   mainWorktree,
   resolvePaths,
   trustedPass,
   UsageError,
   withRunLock,
 } from './pr-review-watch.mjs'
+import { readLockOwner, releaseLock } from './pr-review-lock.mjs'
+import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
 
 export { trustedPass }
 
@@ -140,7 +146,7 @@ export function readPullRequest({ root, number, gh: ghRunner = gh } = {}) {
   const n = requireNumber(number)
   const text = ghRunner([
     'pr', 'view', String(n), '--json',
-    'number,state,isDraft,headRefOid,baseRefOid,baseRefName,statusCheckRollup,files,labels,mergeable,mergeStateStatus,comments',
+    'number,state,isDraft,headRefOid,baseRefOid,baseRefName,isCrossRepository,headRefName,statusCheckRollup,files,labels,mergeable,mergeStateStatus,comments',
   ], root)
   return JSON.parse(text)
 }
@@ -156,6 +162,40 @@ function ghLogin(ghRunner, root) {
   return ghRunner(['api', 'user', '--jq', '.login'], root)
 }
 
+/**
+ * Refuse a landing command while another session holds the landing lock.
+ *
+ * A contributor landing run may hold the lock itself: when `session` matches
+ * the recorded owner, the command proceeds. A supplied token must match.
+ * @returns the lock owner, or undefined when free.
+ */
+export function assertLandingLockFree(root, { session, token } = {}) {
+  if (typeof session === 'string' && session !== '') {
+    for (const entry of Object.values(loadLocalState(root).prs)) {
+      if (entry.ownerSession === session) {
+        throw new Error(`session ${session} owns local PR #${entry.number}; contributor landing commands cannot use a local owner session`)
+      }
+    }
+  }
+  const owner = readLockOwner(root)
+  if (owner === undefined) return undefined
+  if (typeof session === 'string' && session !== '' && owner.ownerSession === session) {
+    if (typeof token === 'string' && token !== '' && token !== owner.token) {
+      throw new Error(`the landing lock token does not match the token recorded for session ${session}`)
+    }
+    return owner
+  }
+  throw new Error(`the landing lock belongs to another session (${owner.ownerSession}, PR #${owner.pr}); wait for that owner to release it; force-release only a stale lock`)
+}
+
+/** Refuse a contributor landing for an owner-managed local PR. */
+export function assertNotLocal(root, number) {
+  const n = Number(number)
+  if (localPullRequestNumbers(root).has(String(n))) {
+    throw new Error(`PR #${n} is owner-managed locally; use pr-local-land, not the contributor landing commands`)
+  }
+}
+
 /** Verify the main worktree is clean and on main. */
 function assertMainReady(root) {
   const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])
@@ -164,9 +204,22 @@ function assertMainReady(root) {
   if (status !== '') throw new Error(`landing needs a clean main worktree:\n${status}`)
 }
 
+/** Refuse a new landing while local main carries commits origin/main does not. */
+function assertLocalMainNotAhead(root) {
+  gitMaybe(root, ['fetch', 'origin', 'main'])
+  const main = gitMaybe(root, ['rev-parse', 'main'])
+  const originMain = gitMaybe(root, ['rev-parse', 'origin/main'])
+  if (main === undefined || originMain === undefined) return
+  const ahead = gitMaybe(root, ['rev-list', '--count', 'origin/main..main'])
+  if (ahead !== undefined && Number(ahead) > 0) {
+    throw new Error(`local main leads origin/main by ${ahead} commit(s); run node scripts/push-landed.mjs --push (or --push --offline for a recorded offline land) before landing another pull request`)
+  }
+}
+
 /** Evaluate the landing gates for one pull request without checking main. */
 function evaluateLanding({ root, number, gh: ghRunner = gh, state = loadState(root), login }) {
   const n = requireNumber(number)
+  assertNotLocal(root, n)
   const pr = readPullRequest({ root, number: n, gh: ghRunner })
   const entry = state.prs?.[String(n)]
   const change = activeChangeNames(pr.files)
@@ -187,24 +240,62 @@ function evaluateLanding({ root, number, gh: ghRunner = gh, state = loadState(ro
   if (!trustedPass(pr.comments, reviewerLogin, n, pr.headRefOid)) {
     throw new Error(`PR #${n} has no trusted pass review for ${pr.headRefOid}`)
   }
-  return { number: n, change: change[0], head: pr.headRefOid, baseRefName: pr.baseRefName }
+  return {
+    number: n,
+    change: change[0],
+    head: pr.headRefOid,
+    baseRefName: pr.baseRefName,
+    behind: String(pr.mergeStateStatus) === 'BEHIND',
+    sameRepository: pr.isCrossRepository !== true,
+  }
+}
+
+/** Whether the fetched main commit is an ancestor of the given revision. */
+function headContainsMain(root, revision) {
+  const result = spawnSync('git', ['-C', root, 'merge-base', '--is-ancestor', 'origin/main', revision], { encoding: 'utf8' })
+  return result.status === 0
+}
+
+/** The guidance for a head that does not contain the fetched main. */
+function latestMainMessage(number, sameRepository) {
+  return sameRepository
+    ? `PR #${number} is behind origin/main; run sync ${number}`
+    : `PR #${number} is behind origin/main; the author must update the branch`
+}
+
+/** Fetch origin/main and require the pull-request head to contain it. */
+function assertLatestMain(root, plan) {
+  git(root, ['fetch', 'origin', 'main'])
+  if (gitMaybe(root, ['cat-file', '-e', plan.head]) === undefined) {
+    git(root, ['fetch', 'origin', `+pull/${plan.number}/head:refs/pr-review/pr-${plan.number}`])
+  }
+  if (!headContainsMain(root, plan.head)) throw new Error(latestMainMessage(plan.number, plan.sameRepository))
 }
 
 /** Evaluate all landing gates. */
-export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh } = {}) {
+function planLandingChecked({ root, number, gh: ghRunner, checkAhead, session, token }) {
+  assertLandingLockFree(root, { session, token })
   const plan = evaluateLanding({ root, number, gh: ghRunner })
   assertMainReady(root)
+  if (checkAhead) assertLocalMainNotAhead(root)
+  assertLatestMain(root, plan)
   return plan
+}
+
+export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh, session, token } = {}) {
+  return planLandingChecked({ root, number, gh: ghRunner, checkAhead: true, session, token })
 }
 
 /** List landing candidates without writing watch or landing state. */
 export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh } = {}) {
   try {
     assertMainReady(root)
+    assertLandingLockFree(root)
+    assertLocalMainNotAhead(root)
   } catch (error) {
     return { candidates: [], refused: [], blocked: error instanceof Error ? error.message : String(error) }
   }
-  const listed = JSON.parse(ghRunner(['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,labels'], root))
+  const listed = JSON.parse(ghRunner(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,labels'], root))
   const lands = loadLandings(root)
   const state = loadState(root)
   const login = ghLogin(ghRunner, root)
@@ -229,7 +320,19 @@ export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh
     try {
       const plan = evaluateLanding({ root, number: n, gh: ghRunner, state, login })
       assertSingleLanding(lands, n)
-      candidates.push({ number: plan.number, head: plan.head, change: plan.change, base: plan.baseRefName })
+      if (plan.behind && !plan.sameRepository) {
+        refused.push({ number: n, reason: `PR #${n} is behind main; the author must update the branch` })
+        continue
+      }
+      candidates.push({
+        number: plan.number,
+        head: plan.head,
+        change: plan.change,
+        base: plan.baseRefName,
+        behind: plan.behind,
+        sameRepository: plan.sameRepository,
+        syncable: plan.behind && plan.sameRepository,
+      })
     } catch (error) {
       refused.push({ number: n, reason: error instanceof Error ? error.message : String(error) })
     }
@@ -274,9 +377,9 @@ export function assertSingleLanding(lands, number) {
 }
 
 /** Prepare the local landing branch and state. */
-export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false } = {}) {
+export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false, session, token } = {}) {
   const n = requireNumber(number)
-  const plan = planLanding({ root, number: n, gh: ghRunner })
+  const plan = planLanding({ root, number: n, gh: ghRunner, session, token })
   if (!apply) return { dryRun: true, ...plan }
   const lands = loadLandings(root)
   assertSingleLanding(lands, n)
@@ -298,6 +401,7 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
   git(root, ['fetch', 'origin', 'main'])
   const fetched = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
   if (fetched !== plan.head) throw new Error(`PR #${n} moved from ${plan.head} to ${fetched}; retry`)
+  if (!headContainsMain(root, fetched)) throw new Error(latestMainMessage(n, plan.sameRepository))
   mkdirSync(paths.worktrees, { recursive: true })
   if (existsSync(worktree)) {
     if (gitMaybe(worktree, ['status', '--porcelain']) !== '') throw new Error(`the PR worktree ${worktree} is not clean`)
@@ -308,17 +412,6 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
   const branch = `${LANDING_BRANCH_PREFIX}${n}`
   git(worktree, ['switch', '-C', branch, plan.head])
   const preMergeMain = git(root, ['rev-parse', 'origin/main'])
-  let phase = 'prepared'
-  let error = null
-  const ancestor = spawnSync('git', ['-C', worktree, 'merge-base', '--is-ancestor', 'origin/main', 'HEAD'], { encoding: 'utf8' })
-  if (ancestor.status !== 0) {
-    const rebase = spawnSync('git', ['-C', worktree, 'rebase', 'origin/main'], { encoding: 'utf8' })
-    if (rebase.status !== 0) {
-      spawnSync('git', ['-C', worktree, 'rebase', '--abort'], { encoding: 'utf8' })
-      phase = 'blocked'
-      error = `rebase conflict: ${String(rebase.stderr ?? '').trim() || 'git rebase failed'}`
-    }
-  }
   const landingHead = gitMaybe(worktree, ['rev-parse', 'HEAD'])
   if (landingHead === undefined) throw new Error(`PR #${n} landing branch has no head`)
   const entry = {
@@ -334,16 +427,206 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
     archiveCommit: null,
     pushedHead: null,
     merged: false,
-    phase,
-    error,
+    phase: 'prepared',
+    error: null,
     attempts: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
   lands.lands[String(n)] = entry
   saveLandings(root, lands)
-  if (phase === 'blocked') throw new Error(error)
   return entry
+}
+
+/** Block synchronously for a poll interval. */
+function sleepSync(milliseconds) {
+  if (milliseconds > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+/** Update a behind same-repository branch through GitHub's update-branch API. */
+export function syncLanding({
+  root = mainWorktree(),
+  number,
+  gh: ghRunner = gh,
+  apply = false,
+  pollAttempts = 60,
+  pollIntervalMs = 1000,
+  sleep = sleepSync,
+  session,
+  token,
+} = {}) {
+  const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
+  assertNotLocal(root, n)
+  assertMainReady(root)
+  assertLocalMainNotAhead(root)
+  const pr = readPullRequest({ root, number: n, gh: ghRunner })
+  if (pr.state !== 'OPEN') throw new Error(`PR #${n} is ${String(pr.state).toLowerCase()}`)
+  if (pr.isDraft === true) throw new Error(`PR #${n} is a draft`)
+  if (String(pr.baseRefName ?? '') !== 'main') throw new Error(`PR #${n} targets ${String(pr.baseRefName)}, not main`)
+  const change = activeChangeNames(pr.files)
+  if (change.length !== 1) throw new Error(`PR #${n} must change exactly one active change; found ${change.join(', ') || 'none'}`)
+  if (!hasLandingLabel(pr)) throw new Error(`PR #${n} has no ${LANDING_LABEL} label`)
+  if (pr.isCrossRepository === true) throw new Error(`PR #${n} is cross-repository; the author must update the branch`)
+  if (pr.mergeable !== 'MERGEABLE') throw new Error(`PR #${n} is not mergeable: ${String(pr.mergeable)}`)
+  if (['DIRTY', 'CONFLICTING', 'BLOCKED'].includes(String(pr.mergeStateStatus))) {
+    throw new Error(`PR #${n} merge state is ${String(pr.mergeStateStatus)}`)
+  }
+  const lands = loadLandings(root)
+  const existing = lands.lands?.[String(n)]
+  if (existing !== undefined && OPEN_PHASES.has(existing.phase)) {
+    throw new Error(`PR #${n} is already landing in phase ${existing.phase}`)
+  }
+  git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
+  git(root, ['fetch', 'origin', 'main'])
+  const head = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
+  if (head !== pr.headRefOid) throw new Error(`PR #${n} moved from ${pr.headRefOid} to ${head}; retry`)
+  if (headContainsMain(root, head)) throw new Error(`PR #${n} already contains origin/main; no sync needed`)
+  if (!apply) return { dryRun: true, number: n, change: change[0], head, branch: pr.headRefName }
+  try {
+    ghRunner([
+      'api', '--method', 'PUT', `repos/{owner}/{repo}/pulls/${n}/update-branch`,
+      '-f', `expected_head_sha=${head}`,
+    ], root)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`update-branch failed for PR #${n}: ${detail}`)
+  }
+  let newHead = head
+  for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
+    sleep(pollIntervalMs)
+    const text = ghRunner(['pr', 'view', String(n), '--json', 'headRefOid'], root)
+    const parsed = JSON.parse(text)
+    if (typeof parsed?.headRefOid === 'string' && parsed.headRefOid !== head) {
+      newHead = parsed.headRefOid
+      break
+    }
+  }
+  if (newHead === head) {
+    throw new Error(`the update-branch request for PR #${n} was accepted but the head did not change within ${pollAttempts} polls; recheck the head on the next run`)
+  }
+  const syncs = lands.syncs !== null && typeof lands.syncs === 'object' && !Array.isArray(lands.syncs) ? lands.syncs : {}
+  syncs[String(n)] = { previousHead: head, newHead, at: new Date().toISOString() }
+  lands.syncs = syncs
+  saveLandings(root, lands)
+  return { number: n, change: change[0], previousHead: head, newHead, branch: pr.headRefName }
+}
+
+/**
+ * Sync every eligible same-repository behind branch in one bounded batch.
+ * Read-only unless `apply`; reports one outcome per attempted pull request,
+ * a refusal for a candidate whose changed paths could not be read, or an
+ * unavailable outcome when the open list stays unavailable.
+ */
+export function syncBatch({
+  root = mainWorktree(),
+  gh: ghRunner = gh,
+  apply = false,
+  limit = 20,
+  pollAttempts = 10,
+  pollIntervalMs = 1000,
+  retryDelayMs = 2000,
+  sleep = sleepSync,
+  session,
+  token,
+} = {}) {
+  assertMainReady(root)
+  try {
+    assertLandingLockFree(root)
+  } catch (error) {
+    return {
+      apply,
+      locked: true,
+      error: error instanceof Error ? error.message : String(error),
+      checked: 0,
+      eligible: 0,
+      changed: false,
+      results: [],
+    }
+  }
+  assertLocalMainNotAhead(root)
+  let listed
+  try {
+    listed = JSON.parse(withGhRetry(() => ghRunner([
+      'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
+      'number,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,labels',
+    ], root), { delayMs: retryDelayMs, sleep }))
+  } catch (error) {
+    if (!isTransientGhFailure(error)) throw error
+    return {
+      apply,
+      unavailable: true,
+      locked: false,
+      checked: 0,
+      eligible: 0,
+      updated: 0,
+      changed: false,
+      results: [],
+      remaining: 0,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+  const rows = Array.isArray(listed) ? listed : []
+  const results = []
+  let updated = 0
+  let planned = 0
+  let eligible = 0
+  let attempted = 0
+  for (const row of rows) {
+    if (row?.isDraft === true) continue
+    if (String(row?.baseRefName ?? '') !== 'main') continue
+    if (!Array.isArray(row?.labels) || !row.labels.some((label) => label?.name === LANDING_LABEL)) continue
+    const n = Number(row.number)
+    let files
+    try {
+      files = JSON.parse(withGhRetry(
+        () => ghRunner(['pr', 'view', String(n), '--json', 'files'], root),
+        { delayMs: retryDelayMs, sleep },
+      )).files
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      results.push({
+        number: n,
+        status: 'refused',
+        previousHead: row.headRefOid,
+        reason: `the changed paths of PR #${n} could not be read: ${reason}`,
+      })
+      continue
+    }
+    if (activeChangeNames(files).length !== 1) continue
+    eligible += 1
+    if (apply ? updated >= limit : planned >= limit) continue
+    attempted += 1
+    try {
+      const result = syncLanding({
+        root, number: n, gh: ghRunner, apply,
+        pollAttempts, pollIntervalMs, sleep,
+      })
+      if (apply) updated += 1
+      else planned += 1
+      results.push(apply
+        ? { number: n, status: 'synced', previousHead: result.previousHead, newHead: result.newHead }
+        : { number: n, status: 'planned', previousHead: result.head, newHead: null })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      results.push({
+        number: n,
+        status: reason.includes('already contains origin/main') ? 'skipped' : 'refused',
+        previousHead: row.headRefOid,
+        reason,
+      })
+    }
+  }
+  return {
+    apply,
+    locked: false,
+    checked: rows.length,
+    eligible,
+    updated,
+    changed: results.some((entry) => entry.status === 'synced'),
+    results,
+    remaining: Math.max(0, eligible - attempted),
+  }
 }
 
 /** Resolve the apply review record for one landing. */
@@ -376,8 +659,9 @@ function assertReviewRecord(root, entry, expectedTree = entry.reviewedTree) {
 }
 
 /** Verify the reviewed tree and advance to reviewed. */
-export function reviewedLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function reviewedLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state; run prepare first`)
@@ -431,8 +715,9 @@ function completeMergedLanding(root, lands, entry) {
 }
 
 /** Merge the reviewed pull request with gh rebase. */
-export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false } = {}) {
+export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -445,16 +730,27 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'reviewed') throw new Error(`PR #${n} landing phase is ${entry.phase}, not reviewed`)
   assertReviewRecord(root, entry)
-  const plan = planLanding({ root, number: n, gh: ghRunner })
-  if (plan.head !== entry.prHead) throw new Error(`PR #${n} head moved; prepare and review again`)
-  if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
+  const pr = readPullRequest({ root, number: n, gh: ghRunner })
+  const sameRepository = pr.isCrossRepository !== true
+  const failMergeGate = (message) => {
+    entry.phase = 'failed'
+    entry.error = message
+    entry.updatedAt = new Date().toISOString()
+    saveLandings(root, lands)
+    throw new Error(message)
+  }
+  git(root, ['fetch', 'origin', 'main'])
+  git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
+  const fetched = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
+  if (fetched !== entry.prHead) failMergeGate(`PR #${n} head moved; prepare and review again`)
   const originMain = git(root, ['rev-parse', 'origin/main'])
   if (originMain !== entry.preMergeMain) {
-    entry.phase = 'failed'
-    entry.error = 'origin/main moved; prepare and review again'
-    saveLandings(root, lands)
-    throw new Error(entry.error)
+    failMergeGate(sameRepository ? 'origin/main moved; sync and review again' : 'origin/main moved; the author must update the branch')
   }
+  if (!headContainsMain(root, entry.prHead)) failMergeGate(latestMainMessage(n, sameRepository))
+  const plan = planLandingChecked({ root, number: n, gh: ghRunner, checkAhead: false, session, token })
+  if (plan.head !== entry.prHead) failMergeGate(`PR #${n} head moved; prepare and review again`)
+  if (plan.change !== entry.change) throw new Error(`PR #${n} change changed from ${entry.change} to ${plan.change}`)
   try {
     ghRunner(['pr', 'merge', String(n), '--rebase'], root)
   } catch (error) {
@@ -471,8 +767,9 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
 }
 
 /** Record the archive commit after the session archived on main. */
-export function archiveLanding({ root = mainWorktree(), number, commit, apply = false } = {}) {
+export function archiveLanding({ root = mainWorktree(), number, commit, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -506,8 +803,9 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
 }
 
 /** Record the pushed head after the session pushes main. */
-export function pushLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function pushLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -537,8 +835,9 @@ export function pushLanding({ root = mainWorktree(), number, apply = false } = {
 }
 
 /** Finish a pushed landing and clean its checkout. */
-export function finishLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function finishLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -564,12 +863,17 @@ export function finishLanding({ root = mainWorktree(), number, apply = false } =
   forgetPullRequest({ root, number: n, change: entry.change, worktree: entry.worktree })
   delete lands.lands[String(n)]
   saveLandings(root, lands)
+  const lock = readLockOwner(root)
+  if (lock !== undefined && typeof session === 'string' && lock.ownerSession === session) {
+    releaseLock({ root, session, token: lock.token })
+  }
   return manifest
 }
 
 /** Abandon a pre-merge landing and remove its checkout. */
-export function abandonLanding({ root = mainWorktree(), number, apply = false } = {}) {
+export function abandonLanding({ root = mainWorktree(), number, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state`)
@@ -608,7 +912,9 @@ export function usage() {
     'commands:',
     '  candidates                            list landing candidates without writing',
     '  plan <n>                              check landing gates without writing',
-    '  prepare <n> --apply                   create the rebased landing branch',
+    '  sync <n> --apply                      update a behind same-repository branch',
+    '  sync-batch                            update every eligible labeled behind branch',
+    '  prepare <n> --apply                   create the landing branch at the head',
     '  reviewed <n> --apply                  record the passed review tree',
     '  merge <n> --apply                     merge with gh pr merge --rebase',
     '  archive <n> [--commit <sha>] --apply  record the archive commit',
@@ -618,6 +924,8 @@ export function usage() {
     '  state [--forget <n> | --fail <n> --error <text>] --apply',
     '',
     'The landing command never pushes, archives or merges without --apply.',
+    'A contributor landing run may pass --session <id> so its own landing.lock is accepted;',
+    '--token is optional and must match when supplied.',
   ].join('\n')
 }
 
@@ -626,20 +934,22 @@ export function parseArgs(argv) {
   const args = [...argv]
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
-  if (!['candidates', 'plan', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
+  if (!['candidates', 'sync-batch', 'plan', 'sync', 'prepare', 'reviewed', 'merge', 'archive', 'push', 'finish', 'abandon', 'state'].includes(command)) {
     throw new LandUsageError(`unknown command '${command}'`)
   }
-  const options = { command, apply: false, commit: undefined, forget: undefined, fail: undefined, error: undefined }
+  const options = { command, apply: false, commit: undefined, forget: undefined, fail: undefined, error: undefined, session: undefined, token: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]
     if (value === '--apply') options.apply = true
-    else if (value === '--commit' || value === '--forget' || value === '--fail' || value === '--error') {
+    else if (value === '--commit' || value === '--forget' || value === '--fail' || value === '--error' || value === '--session' || value === '--token') {
       const next = args[index + 1]
       if (next === undefined || next === '' || next.startsWith('--')) throw new LandUsageError(`${value} needs a value`)
       if (value === '--commit') options.commit = next
       else if (value === '--error') options.error = next
       else if (value === '--fail') options.fail = requireNumber(next)
+      else if (value === '--session') options.session = next
+      else if (value === '--token') options.token = next
       else options.forget = next
       index += 1
     } else if (value.startsWith('--')) throw new LandUsageError(`unknown argument '${value}'`)
@@ -648,8 +958,17 @@ export function parseArgs(argv) {
   if (command === 'candidates') {
     if (positional.length > 0) throw new LandUsageError('candidates takes no positional argument')
     if (options.apply) throw new LandUsageError('candidates is read-only and takes no --apply')
-    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined || options.error !== undefined) {
+    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined
+      || options.error !== undefined || options.session !== undefined || options.token !== undefined) {
       throw new LandUsageError('candidates takes no command options')
+    }
+    return options
+  }
+  if (command === 'sync-batch') {
+    if (positional.length > 0) throw new LandUsageError('sync-batch takes no positional argument')
+    if (options.commit !== undefined || options.forget !== undefined || options.fail !== undefined
+      || options.error !== undefined) {
+      throw new LandUsageError('sync-batch takes no --commit, --forget, --fail or --error')
     }
     return options
   }
@@ -661,6 +980,7 @@ export function parseArgs(argv) {
       throw new LandUsageError('state --fail needs a non-empty --error')
     }
     if (options.commit !== undefined) throw new LandUsageError('state takes no --commit')
+    if (options.session !== undefined || options.token !== undefined) throw new LandUsageError('state takes no --session or --token')
     return options
   }
   if (options.fail !== undefined || options.error !== undefined) throw new LandUsageError('--fail and --error belong to state')
@@ -683,6 +1003,13 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
+    if (options.command === 'sync-batch') {
+      const result = withRunLock(root, () => syncBatch({
+        root, apply: options.apply, session: options.session, token: options.token,
+      }))
+      write(`${JSON.stringify(result, null, 2)}\n`)
+      return 0
+    }
     if (options.command === 'state') {
       const result = options.fail !== undefined
         ? failLanding({ root, number: options.fail, error: options.error, apply: options.apply })
@@ -696,16 +1023,18 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     const result = withRunLock(root, () => {
-      if (options.command === 'plan') return planLanding({ root, number: options.number })
-      if (options.command === 'prepare') return prepareLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'reviewed') return reviewedLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'merge') return mergeLanding({ root, number: options.number, apply: options.apply })
+      const shared = { root, number: options.number, apply: options.apply, session: options.session, token: options.token }
+      if (options.command === 'plan') return planLanding(shared)
+      if (options.command === 'sync') return syncLanding(shared)
+      if (options.command === 'prepare') return prepareLanding(shared)
+      if (options.command === 'reviewed') return reviewedLanding(shared)
+      if (options.command === 'merge') return mergeLanding(shared)
       if (options.command === 'archive') {
-        return archiveLanding({ root, number: options.number, commit: options.commit, apply: options.apply })
+        return archiveLanding({ ...shared, commit: options.commit })
       }
-      if (options.command === 'push') return pushLanding({ root, number: options.number, apply: options.apply })
-      if (options.command === 'abandon') return abandonLanding({ root, number: options.number, apply: options.apply })
-      return finishLanding({ root, number: options.number, apply: options.apply })
+      if (options.command === 'push') return pushLanding(shared)
+      if (options.command === 'abandon') return abandonLanding(shared)
+      return finishLanding(shared)
     })
     write(`${JSON.stringify(result, null, 2)}\n`)
     return 0

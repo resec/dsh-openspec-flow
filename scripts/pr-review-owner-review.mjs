@@ -14,6 +14,7 @@ import {
   activeChangeNames,
   checksGreen,
   loadState,
+  localPullRequestNumbers,
   mainWorktree,
   saveState,
   trustedPass,
@@ -216,6 +217,16 @@ export function syncPullRequest({
   const n = Number(number)
   if (!Number.isInteger(n) || n < 1) throw new UsageError('the PR number must be a positive integer')
   const pr = readPullRequest({ root, number: n, gh })
+  if (localPullRequestNumbers(root).has(String(n))) {
+    return {
+      number: n,
+      head: String(pr.headRefOid ?? ''),
+      action: 'none',
+      reason: 'local-owner',
+      dryRun: !apply,
+      actions: [],
+    }
+  }
   const login = ghLogin(root, gh)
   const state = loadState(root)
   const entry = state.prs[String(n)]
@@ -270,9 +281,12 @@ export function syncPullRequest({
 export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh = ghText, now = new Date().toISOString() } = {}) {
   const state = loadState(root)
   const numbers = new Set(Object.keys(state.prs))
+  const local = localPullRequestNumbers(root)
+  for (const key of local) numbers.delete(key)
   const text = gh(['pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,labels'], { cwd: root })
   if (text === undefined) throw new Error('gh pr list failed')
   for (const pr of JSON.parse(text)) {
+    if (local.has(String(pr.number))) continue
     if (hasLabel(pr, OWNER_REVIEW_LABEL)) numbers.add(String(pr.number))
   }
 
