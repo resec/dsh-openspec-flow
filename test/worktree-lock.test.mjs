@@ -188,6 +188,24 @@ test('a live recovery mutex still refuses recovery and is left in place', () => 
   assert.equal(existsSync(path), true)
 })
 
+test('recovery surfaces a mutex creation failure', () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const directory = dirname(path)
+  mkdirSync(directory, { recursive: true })
+  chmodSync(directory, 0o555)
+  try {
+    assert.throws(
+      () => recoverLock(common, 'change', { change: 'demo', expectedOwner: 'x' }),
+      /EACCES|EPERM|EROFS/,
+    )
+  } finally {
+    chmodSync(directory, 0o755)
+  }
+  assert.equal(existsSync(`${path}.recover.d`), false)
+})
+
 test('a reclaim puts back a mutex whose owner changed after the observation', () => {
   const root = repository()
   const common = gitCommonDir(root)
