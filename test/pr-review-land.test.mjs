@@ -160,7 +160,7 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /action=resume/)
   assert.match(doc, /state=passed/)
   assert.match(doc, /treeSha/)
-  assert.match(doc, /landing HEAD tree/)
+  assert.match(doc, /landing tree/)
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
   assert.match(doc, /every five minutes/)
