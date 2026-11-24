@@ -10,6 +10,8 @@
 # version manager is invoked.
 saw_ref=0
 only_main=1
+main_local_sha=
+main_remote_sha=
 # Git supplies the refs on a pipe. A terminal stdin has no refs, so it takes
 # the fallback instead of waiting for a line.
 if [ ! -t 0 ]; then
@@ -17,6 +19,9 @@ if [ ! -t 0 ]; then
     saw_ref=1
     if [ "$remote_ref" != "refs/heads/main" ]; then
       only_main=0
+    else
+      main_local_sha=$local_sha
+      main_remote_sha=$remote_sha
     fi
   done
 fi
@@ -24,6 +29,12 @@ if [ "$saw_ref" = "1" ] && [ "$only_main" = "1" ]; then
   npm run openspec:check:push || exit $?
 else
   npm run openspec:check || exit $?
+fi
+if [ "$saw_ref" = "1" ] && [ -n "$main_local_sha" ]; then
+  case "$main_local_sha" in
+    0000000000000000000000000000000000000000) : ;;
+    *) node scripts/check-main-push.mjs "$main_local_sha" "$main_remote_sha" || exit $? ;;
+  esac
 fi
 if [ "${COVERAGE_SKIP:-}" = "1" ]; then
   echo "coverage gate: skipped because COVERAGE_SKIP=1" >&2

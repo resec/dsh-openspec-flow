@@ -296,7 +296,7 @@ test('finish records landed-offline, releases the lock and then records pushed',
       () => finishLocal({
         root: fixture.root, number: 12, phase: 'pushed', session: SESSION, token: TOKEN, apply: true, gh, git: runGit,
       }),
-      /not pushed/,
+      /not pushed.*--offline/,
     )
     assert.equal(loadLocalState(fixture.root).prs['12'].phase, 'failed')
     mustGit(fixture.root, ['push', '-q', 'origin', 'main'])

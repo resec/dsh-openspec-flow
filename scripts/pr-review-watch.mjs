@@ -32,7 +32,7 @@ export const LANDING_LOCK_DIRECTORY = 'landing.lock'
 /** Age after which a landing lock is reported stale. */
 export const LANDING_LOCK_TTL_MINUTES = 120
 /** The offline route when GitHub or the origin remote is unreachable. */
-export const OFFLINE_LAND_COMMAND = 'run npm run test:lab -- --mock-only, then openspec_apply_worktree action=land with approvedBy "user", archive and stop at local main without a push; run node scripts/push-landed.mjs --push when GitHub returns'
+export const OFFLINE_LAND_COMMAND = 'run npm run test:lab -- --mock-only, then openspec_apply_worktree action=land with approvedBy "user", archive, record the offline land with node scripts/offline-land.mjs record --change <change> --land <sha> --apply (or pr-local-land finish --phase landed-offline when a local entry exists), and stop at local main without a push; run node scripts/push-landed.mjs --push --offline when GitHub returns; the matching record is removed'
 /** Marker pattern for a trusted report comment. */
 const MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+) -->/u
 /** Active change path pattern. */
