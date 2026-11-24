@@ -577,8 +577,9 @@ test('candidates omits a review-failed landing and another unfinished landing', 
 
 test('state --fail records review-failed, keeps the checkout and abandon clears it', () => {
   const { root, remote } = makeRepo()
-  addPullRequest(root, remote)
+  const { head } = addPullRequest(root, remote)
   const worktree = join(resolvePaths(root).worktrees, 'pr-12')
+  mkdirSync(worktree, { recursive: true })
   saveLandings(root, {
     schemaVersion: 1,
     lands: {
@@ -600,8 +601,18 @@ test('state --fail records review-failed, keeps the checkout and abandon clears 
   assert.equal(again.phase, REVIEW_FAILED_PHASE)
   assert.equal(again.error, 'still unavailable')
   assert.equal(loadLandings(root).lands['12'].worktree, worktree)
+  assert.equal(existsSync(worktree), true)
   assert.deepEqual(abandonLanding({ root, number: 12, apply: true }), { abandoned: 12 })
   assert.equal(loadLandings(root).lands['12'], undefined)
+  const readmitted = listLandingCandidates({
+    root,
+    gh: fakeGh({
+      pr: JSON.parse(prJson(head)),
+      list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+    }),
+  })
+  assert.equal(readmitted.candidates.length, 1)
+  assert.equal(readmitted.candidates[0].number, 12)
 })
 
 test('state --fail refuses a landing past the final review', () => {
