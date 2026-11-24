@@ -32,6 +32,7 @@ test('the apply worktree document names the land cleanup and rebase marker', () 
     'worktreeRemoved',
     'branchRemoved',
     'cleanup.error',
+    'keeps its state file, seal ref and cleanup record',
     'fast-forward',
     '--ff-only',
     'landCommit',
