@@ -28,6 +28,13 @@ test('apply creates a worktree, moves the session and routes task marking', asyn
   assert.equal(applied.worktree.path, `.cache/openspec-flow/worktrees/local#${CHANGE}`)
   assert.equal(applied.root.path, root)
 
+  const inspectedWorktree = await call(fake, 'openspec_inspect', { action: 'worktree', change: CHANGE })
+  assert.equal(inspectedWorktree.root.path, root)
+  assert.equal(inspectedWorktree.root.source, 'nearest')
+  assert.equal(inspectedWorktree.worktree.path, `.cache/openspec-flow/worktrees/local#${CHANGE}`)
+  assert.equal(inspectedWorktree.state.worktree, `.cache/openspec-flow/worktrees/local#${CHANGE}`)
+  assert.equal(existsSync(join(root, inspectedWorktree.state.path)), true, 'the state path is relative to the root')
+
   const mainTasks = readFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), 'utf8')
   const worktreeTasksPath = join(state.worktree, 'openspec', 'changes', CHANGE, 'tasks.md')
   appendFileSync(worktreeTasksPath, '\n- [ ] 9.1 Worktree-only task\n')
@@ -112,7 +119,10 @@ test('an explicit user-created worktree gets a review-only state', async () => {
     assert.equal(state.lockToken, null)
     assert.equal(state.lockPid, null)
     const inspected = await call(fake, 'openspec_inspect', { action: 'worktree', change: CHANGE })
+    assert.equal(inspected.root.path, root)
+    // A checkout outside the root stays absolute and is not rewritten with `..`.
     assert.equal(inspected.state.worktree, pr)
+    assert.equal(inspected.worktree.path, pr)
     assert.equal(existsSync(pr), true)
     const reported = await call(fake, 'openspec_review', {
       action: 'self-report', change: CHANGE, review: 'apply', report: report(),

@@ -85,7 +85,26 @@ test('worktree inspection is read-only and reports ready state', async () => {
   assert.equal('cache' in result, false)
   assert.equal('profile' in result, false)
   assert.equal('port' in result, false)
+  assert.equal('root' in result, false, 'no OpenSpec root means no path base')
+  assert.equal(existsSync(result.state.path), true, 'the state path stays absolute without a root')
   assert.equal(readFileSync(applyStatePath(root, null, 'demo'), 'utf8'), before)
+})
+
+test('inspection resolves the root above the session directory', async () => {
+  const root = repository()
+  mkdirSync(join(root, 'openspec', 'changes'), { recursive: true })
+  mkdirSync(join(root, 'worktree'))
+  writeApplyState(root, null, 'demo', state(root))
+  const session = join(root, 'src')
+  mkdirSync(session)
+  const fake = setup(session)
+  const result = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(result.root.path, root, 'the root is resolved, not the session directory')
+  assert.equal(result.root.source, 'nearest')
+  assert.equal(result.state.worktree, 'worktree')
+  assert.equal(result.worktree.path, 'worktree')
+  assert.equal(existsSync(join(root, result.state.path)), true, 'the state path is relative to the root')
+  for (const lock of result.locks) assert.equal(lock.path.startsWith('/'), false, 'lock paths are relative to the root')
 })
 
 test('a missing worktree is a manual repair and writes nothing', async () => {

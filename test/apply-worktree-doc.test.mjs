@@ -44,6 +44,19 @@ test('the apply worktree document names the land cleanup and rebase marker', () 
   }
 })
 
+test('the apply worktree document names the root of every reported path', () => {
+  const doc = readFileSync(join(ROOT, 'docs', 'apply-worktree.md'), 'utf8')
+  for (const text of [
+    'root: { path, source }',
+    'locks[].path',
+    'stays absolute and is not rewritten with `..`',
+    'carries no `root`',
+    'relative to `root.path`, or absolute when they fall outside it',
+  ]) {
+    assert.ok(doc.includes(text), `document names ${text}`)
+  }
+})
+
 test('the apply worktree document names the seal, the ref and the land copy handling', () => {
   const doc = readFileSync(join(ROOT, 'docs', 'apply-worktree.md'), 'utf8')
   for (const text of [

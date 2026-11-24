@@ -106,6 +106,9 @@ test('land fast-forwards, archives, writes the manifest and marks archived', asy
   assert.equal(landed.change, CHANGE)
   assert.equal(landed.landCommit, run(['rev-parse', `${landed.archiveCommit}^1`]))
   assert.equal(landed.mergeCommit, landed.landCommit)
+  assert.equal(landed.root.path, root)
+  assert.equal(landed.worktree, `.cache/openspec-flow/worktrees/local#${CHANGE}`)
+  assert.equal(existsSync(join(root, landed.manifest)), true, 'the manifest path is relative to the root')
   assert.equal(run(['log', '-1', '--format=%P', landed.landCommit]).split(' ').length, 1)
   assert.equal(run(['rev-list', '--merges', `${state.baseCommit}..HEAD`]), '')
   assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
@@ -187,8 +190,40 @@ test('remove is idempotent after land cleanup', async () => {
   const removed = await call(fake, 'openspec_apply_worktree', { action: 'remove', change: CHANGE })
   assert.equal(removed.removed, false)
   assert.equal(removed.branch, state.branch)
+  assert.equal(removed.root.path, root)
+  assert.equal(removed.path, `.cache/openspec-flow/worktrees/local#${CHANGE}`)
   assert.equal(existsSync(state.worktree), false)
   assert.notEqual(readApplyState(root, null, CHANGE), undefined)
+})
+
+test('remove without an OpenSpec root keeps absolute paths and carries no root', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-land-no-root-'))
+  try {
+    spawnSync('git', ['-C', root, 'init', '-q'])
+    const worktree = join(root, '.cache', 'openspec-flow', 'worktrees', `local#${CHANGE}`)
+    writeApplyState(root, null, CHANGE, {
+      schemaVersion: 1,
+      change: CHANGE,
+      store: null,
+      mainRoot: root,
+      worktree,
+      branch: `openspec/apply/${CHANGE}`,
+      baseCommit: 'a'.repeat(40),
+      sealedCommit: null,
+      status: 'archived',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      lastUsedAt: '2026-01-01T00:00:00.000Z',
+      lockToken: null,
+      lockPid: null,
+    })
+    const fake = setup(root)
+    const removed = await call(fake, 'openspec_apply_worktree', { action: 'remove', change: CHANGE })
+    assert.equal(removed.removed, true)
+    assert.equal('root' in removed, false)
+    assert.equal(removed.path, worktree)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('land works when apply review is disabled', async () => {
