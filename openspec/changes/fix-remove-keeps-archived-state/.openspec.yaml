@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Keep an archived apply state, its seal ref and its cleanup record when
+  remove finds the recorded checkout or branch already gone.
