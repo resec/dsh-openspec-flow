@@ -6,9 +6,61 @@ import test from 'node:test'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CONFIG = JSON.parse(readFileSync(join(ROOT, 'coverage.config.json'), 'utf8'))
+const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const CONTRIBUTING = readFileSync(join(ROOT, 'CONTRIBUTING.md'), 'utf8')
 const AGENTS = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8')
 const README = readFileSync(join(ROOT, 'README.md'), 'utf8')
+
+/** Documents that restate the CLI pin and the Node baseline for readers. */
+const VERSION_DOCS = [
+  ['README.md', README],
+  ['AGENTS.md', AGENTS],
+]
+
+/** Phrases that introduce the bundled OpenSpec CLI version. */
+const CLI_VERSION_CUES = [
+  /OpenSpec (\d+\.\d+\.\d+)/g,
+  /openspec@(\d+\.\d+\.\d+)/g,
+  /OpenSpec\/blob\/v(\d+\.\d+\.\d+)/g,
+  /精确版本 `(\d+\.\d+\.\d+)`/g,
+  /`version` 为 `(\d+\.\d+\.\d+)`/g,
+  /`@fission-ai\/openspec` (\d+\.\d+\.\d+)/g,
+]
+
+/** Phrases that introduce the primary Node major. */
+const NODE_MAJOR_CUES = [
+  /Node (\d{1,2})(?:\.\d+){0,2}/g,
+  /主版本 (\d{1,2})/g,
+  /大版本 (\d{1,2})/g,
+  /Node major (\d{1,2})/g,
+  /`node` 不是 (\d{1,2})/g,
+]
+
+/**
+ * Drop lines that describe the environment a measurement was taken in.
+ *
+ * A measured Node patch or an older CLI used for a past benchmark is a record
+ * of that run, not a statement of the supported baseline.
+ * @param markdown - document contents.
+ * @returns the remaining lines.
+ */
+function versionClaims(markdown) {
+  return markdown
+    .split('\n')
+    .filter((line) => !/测得|实测|measured/i.test(line))
+    .join('\n')
+}
+
+/**
+ * Collect the literal captured by every cue.
+ * @param text - text to scan.
+ * @param cues - patterns whose first group is the version literal.
+ * @returns the captured literals in source order.
+ */
+function captures(text, cues) {
+  return cues.flatMap((cue) => [...text.matchAll(cue)].map((match) => match[1]))
+}
+
 
 const ROWS = {
   'Absolute floor': 'absolute',
@@ -150,3 +202,50 @@ test('AGENTS.md excludes local pull requests from the scheduled watch', () => {
   assert.match(AGENTS, /`poll` reports its number as owner-managed/)
   assert.match(AGENTS, /never reviews, prepares, comments on, retargets, lands or merges it/)
 })
+
+test('README and AGENTS state the pinned CLI version', () => {
+  const pinned = MANIFEST.dependencies['@fission-ai/openspec']
+  assert.match(pinned, /^\d+\.\d+\.\d+$/)
+  for (const [name, markdown] of VERSION_DOCS) {
+    const stated = captures(versionClaims(markdown), CLI_VERSION_CUES)
+    assert.ok(stated.length > 0, `${name} must state the OpenSpec CLI version`)
+    for (const version of stated) {
+      assert.equal(version, pinned, `${name} states OpenSpec ${version}; package.json pins ${pinned}`)
+    }
+  }
+})
+
+test('README and AGENTS state the primary Node major', () => {
+  const major = CONFIG.primaryNodeMajor
+  const rangeMajor = /^>=(\d+)\./.exec(MANIFEST.engines.node)
+  assert.ok(rangeMajor, 'package.json engines.node must be a >= range')
+  assert.equal(
+    Number(rangeMajor[1]),
+    major,
+    'coverage.config.json primaryNodeMajor must match the engines.node major',
+  )
+  for (const [name, markdown] of VERSION_DOCS) {
+    const stated = captures(versionClaims(markdown), NODE_MAJOR_CUES)
+    assert.ok(stated.length > 0, `${name} must state the primary Node major`)
+    for (const found of stated) {
+      assert.equal(
+        Number(found),
+        major,
+        `${name} states Node ${found}; coverage.config.json targets major ${major}`,
+      )
+    }
+  }
+})
+
+test('README states the engines.node range', () => {
+  const stated = captures(versionClaims(README), [/>=\s*(\d+\.\d+\.\d+)/g])
+  assert.ok(stated.length > 0, 'README.md must state the engines.node range')
+  for (const range of stated) {
+    assert.equal(
+      `>=${range}`,
+      MANIFEST.engines.node,
+      `README.md states >=${range}; package.json requires ${MANIFEST.engines.node}`,
+    )
+  }
+})
+

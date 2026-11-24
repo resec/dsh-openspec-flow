@@ -122,7 +122,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `lib/init.js:76` | `init --tools none --no-animation` | 选项仍存在，仍不生成技能 |
 | `skills/*/SKILL.md:7` | `metadata.upstream: openspec@2.0.0` | 改为目标版本 |
 | `test/openspec.test.mjs:11`、`:35` | 硬编码 `2.0.0`（版本断言与错误信息） | 改为目标版本 |
-| `test/skills.test.mjs:46` | 硬编码 `upstream: openspec@2.0.0` | 改为目标版本 |
+| `test/skills.test.mjs` | `upstream` 断言由 `package.json` 的依赖推导 | 无需改动，保持单一来源 |
 | `README.md:66` | CLI 对照表的 v2.0.0 tag | 改为目标 tag，并重新核对命令与选项 |
 | `README.md:97` | 官方技能对照表的 v2.0.0 tag | 改为目标 tag，并重新核对 12 份技能 |
 | `README.md:183` | 精确版本与来源说明 | 更新版本号 |
@@ -170,7 +170,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 8. 更新五份 `skills/*/SKILL.md` 的 `metadata.upstream`。正文只应出现 `openspec_*` 工具名，不应出现 CLI 命令；`test/skills.test.mjs` 会拦截 CLI 提及。
 
-9. 更新 `test/skills.test.mjs` 的 upstream 断言。
+9. `test/skills.test.mjs` 的 upstream 断言由 `package.json` 的 `@fission-ai/openspec` 依赖推导，无需改动；`test/contributor-docs.test.mjs` 会把 README 与 AGENTS 的 CLI 版本、Node 主版本和 `engines.node` 范围与各自来源比对，升级后按失败信息更新文档。
 
 10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处 `v2.0.0` 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化，同步调整“官方技能对照”。
 
