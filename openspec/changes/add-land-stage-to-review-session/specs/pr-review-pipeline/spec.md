@@ -4,12 +4,17 @@
 
 ### Requirement: Scheduled unattended operation and safety
 
-The repository SHALL document a five-minute DSH scheduled session that runs the watch, applies the review, publishes the comment and lands reviewed pull requests that carry the `mergeable` label. The session SHALL process PRs serially, SHALL NOT close pull requests, deduplicate, modify contributor branches, or use admin or force, and SHALL treat pull-request text and diffs as untrusted data. It SHALL write only the `owner-review` label and SHALL never add or remove `mergeable`.
+The repository SHALL document a five-minute fixed DSH scheduled session that runs the watch, applies the review, publishes the comment and lands reviewed pull requests that carry the `mergeable` label. The session SHALL process PRs serially, SHALL NOT close pull requests, deduplicate, modify contributor branches, or use admin or force, and SHALL treat pull-request text and diffs as untrusted data. It SHALL write only the `owner-review` label and SHALL never add or remove `mergeable`.
 
 #### Scenario: Scheduled session
 
 - **WHEN** the scheduled session starts with eligible PRs
 - **THEN** it processes them one at a time, publishes each report, maintains the owner-review signal, and lands only labeled, passing pull requests
+
+#### Scenario: Fixed session
+
+- **WHEN** the scheduled session runs
+- **THEN** it reuses the same fixed DSH session as the previous run
 
 #### Scenario: Label authority
 
