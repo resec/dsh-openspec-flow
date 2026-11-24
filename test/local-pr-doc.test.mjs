@@ -101,6 +101,7 @@ test('the review document excludes local pull requests and documents the lock an
     'never becomes a review candidate',
     '`ownerManaged`',
     'owner-managed (skipped)',
+    'same scheduled',
     'refuses while a local owner holds `landing.lock`',
     'pr-review-lock.mjs acquire',
     'force-release',
@@ -159,6 +160,7 @@ test('the landing lock documents the contributor run lifecycle and stale release
   const doc = read('docs/local-pr.md')
   for (const text of [
     'A contributor landing run takes the same lock',
+    'The same owner session re-enters its existing lock',
     '--owner-session <scheduled-session>',
     '`finish` releases the lock',
     'a stale lock, the operator force-releases it',

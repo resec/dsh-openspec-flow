@@ -97,7 +97,8 @@ test('the lock is exclusive and only the recorded owner retries', () => {
   try {
     acquireLock({ root, session: 'owner-1', token: 'token-1', pr: 12 })
     assert.throws(() => acquireLock({ root, session: 'owner-2', pr: 13 }), /held by session owner-1 for PR #12/)
-    assert.throws(() => acquireLock({ root, session: 'owner-1', token: 'token-2', pr: 12 }), /held by session owner-1/)
+    const reentered = acquireLock({ root, session: 'owner-1', token: 'token-2', pr: 12 })
+    assert.equal(reentered.token, 'token-1')
     const same = acquireLock({ root, session: 'owner-1', token: 'token-1', pr: 12 })
     assert.equal(same.token, 'token-1')
     assert.equal(assertLockOwnerOrFree({ root, session: 'owner-1', token: 'token-1' }).pr, 12)
@@ -161,6 +162,22 @@ test('the lock resolves against the main worktree from a linked checkout', () =>
     acquireLock({ root: mainWorktree(linked), session: 'linked-owner', pr: 12 })
     assert.equal(readLockOwner(root).ownerSession, 'linked-owner')
     assert.equal(existsSync(join(linked, '.cache', 'pr-review', 'landing.lock')), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a crashed same-session acquire re-enters without the earlier token', () => {
+  const root = makeRepository()
+  try {
+    const first = acquireLock({ root, session: 'scheduled-session', pr: 12 })
+    const second = acquireLock({ root, session: 'scheduled-session', pr: 12 })
+    assert.deepEqual(second, first)
+    assert.equal(second.token, first.token)
+    assert.throws(
+      () => acquireLock({ root, session: 'another-session', pr: 12 }),
+      /held by session scheduled-session for PR #12/,
+    )
   } finally {
     cleanup(root)
   }

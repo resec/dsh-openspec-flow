@@ -193,9 +193,11 @@ Run the PR review watch for this repository in this fixed session:
    start a contributor landing.
 4. Before the first contributor landing command in the run, acquire the
    landing lock: node scripts/pr-review-lock.mjs acquire
-   --owner-session <scheduled-session> --pr <n> --json. Keep the token and
-   pass --session <scheduled-session> to every pr-review-land.mjs landing
-   command. finish releases the lock; when the run stops without finish, run
+   --owner-session <scheduled-session> --pr <n> --json. The same scheduled
+   session re-enters a lock left by an earlier delivery, so a crash does not
+   wait for the TTL. Keep the token and pass
+   --session <scheduled-session> to every pr-review-land.mjs landing command.
+   finish releases the lock; when the run stops without finish, run
    node scripts/pr-review-lock.mjs release --session <scheduled-session>
    --token <token>.
 5. Resume one phase of an unfinished contributor landing, then stop:

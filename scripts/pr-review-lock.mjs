@@ -58,6 +58,10 @@ export function readLockOwner(root) {
 
 /**
  * Acquire the lock for one owner session.
+ *
+ * The same owner session re-enters its existing lock even without the earlier
+ * token, so a crashed scheduled run resumes instead of waiting for the lock to
+ * go stale. Another session is always refused.
  * @param options - root, session, token, pr and optional now.
  * @returns the owner record.
  */
@@ -73,7 +77,7 @@ export function acquireLock({ root = mainWorktree(), session, token, pr, now = n
     if (error?.code !== 'EEXIST') throw error
     const existing = readLockOwner(root)
     if (existing === undefined) throw new Error(`the landing lock at ${directory} is corrupt`)
-    if (existing.ownerSession === session && existing.token === ownerToken) return existing
+    if (existing.ownerSession === session) return existing
     throw new Error(`the landing lock is held by session ${existing.ownerSession} for PR #${String(existing.pr)}`)
   }
   const record = {
