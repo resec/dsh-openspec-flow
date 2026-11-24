@@ -66,7 +66,7 @@ The script does not pass `--no-verify`. Install the repository hook once:
 npm run hooks:install
 ```
 
-The hook runs `npm run openspec:check`, the lab gate and the coverage decision before the push. Another active change with a strict-validation warning will block the push through the hook even when the landed manifest is valid; finish or stash that change's artifacts, or fix the warning, then retry. A fresh clone without the hook pushes unguarded, so install it before the first push.
+The hook reads the pushed remote refs. A push targeting only `refs/heads/main` runs `npm run openspec:check:push`: it validates main specs and archived task completion and requires every active change to be `in-progress`. An in-progress parallel change is ignored; a `complete` or `no-tasks` change blocks the push even when the landed manifest is valid. A `tasks.md` written as plain bullets parses as `no-tasks`, and an uncommitted parallel change directory is still read by this gate. Finish or archive the change, or add tracked checkbox tasks, then retry. A push targeting another ref or a mixed set runs the full `npm run openspec:check`. Then the lab gate and the coverage decision run as before. A fresh clone without the hook pushes unguarded, so install it before the first push.
 
 ## Recovery
 

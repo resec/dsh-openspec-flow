@@ -52,6 +52,7 @@
     "coverage:baseline": "node scripts/coverage.mjs --update-baseline",
     "contract:check": "node scripts/check-cli-contract.mjs",
     "openspec:check": "openspec validate --all --strict && openspec validate --archived --strict",
+    "openspec:check:push": "node scripts/check-pre-push.mjs",
     "check:requirement-length": "node scripts/check-requirement-length.mjs",
     "hooks:install": "node scripts/install-hooks.mjs",
     "bundle:pack": "node scripts/bundle-pack.mjs",

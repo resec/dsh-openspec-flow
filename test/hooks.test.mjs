@@ -55,15 +55,16 @@ function fakeNode({ stampExit = 1 } = {}) {
 
 /**
  * Run the hook with a fake npm and a fake node.
- * @param options - fake behavior and extra hook environment.
+ * @param options - fake behavior, stdin refs and extra hook environment.
  * @returns the spawn result, the recorded npm calls and the recorded node calls.
  */
-function runHook({ failValidation = false, failLab = false, stampExit = 1, env = {} } = {}) {
+function runHook({ failValidation = false, failLab = false, stampExit = 1, input = '', env = {} } = {}) {
   const fake = fakeNpm({ failValidation, failLab })
   const fakeBin = fakeNode({ stampExit })
   const result = spawnSync('sh', [HOOK], {
     cwd: ROOT,
     encoding: 'utf8',
+    input,
     env: {
       ...process.env,
       PATH: `${fakeBin.dir}:${fake.dir}:${process.env.PATH}`,
@@ -76,6 +77,40 @@ function runHook({ failValidation = false, failLab = false, stampExit = 1, env =
     existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').filter((line) => line !== '') : []
   return { result, calls: read(fake.log), nodeCalls: read(fakeBin.log) }
 }
+
+const MAIN_REF = 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 2222222222222222222222222222222222222222\n'
+const BRANCH_REF = 'refs/heads/topic 3333333333333333333333333333333333333333 refs/heads/topic 4444444444444444444444444444444444444444\n'
+
+test('a main-only push runs the scoped gate', () => {
+  const { result, calls } = runHook({ input: MAIN_REF })
+  assert.equal(result.status, 0)
+  assert.deepEqual(calls, ['run openspec:check:push', 'run test:lab -- --mock-only', 'run verify'])
+})
+
+test('a non-main push keeps the full check', () => {
+  const { result, calls } = runHook({ input: BRANCH_REF })
+  assert.equal(result.status, 0)
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+})
+
+test('a mixed push keeps the full check', () => {
+  const { result, calls } = runHook({ input: `${MAIN_REF}${BRANCH_REF}` })
+  assert.equal(result.status, 0)
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+})
+
+test('absent stdin keeps the full check', () => {
+  const { result, calls } = runHook()
+  assert.equal(result.status, 0)
+  assert.deepEqual(calls, ['run openspec:check', 'run test:lab -- --mock-only', 'run verify'])
+})
+
+test('a failed scoped validation stops before the lab gate', () => {
+  const { result, calls, nodeCalls } = runHook({ input: MAIN_REF, failValidation: true })
+  assert.equal(result.status, 1)
+  assert.deepEqual(calls, ['run openspec:check:push'])
+  assert.deepEqual(nodeCalls, [])
+})
 
 test('a failing stamp check runs strict validation and then verification', () => {
   const { result, calls, nodeCalls } = runHook()
@@ -123,6 +158,17 @@ test('openspec:check validates active artifacts and archived task state', () => 
   const script = manifest.scripts['openspec:check']
   assert.match(script, /validate --all --strict/)
   assert.match(script, /validate --archived --strict/)
+})
+
+test('openspec:check:push runs the scoped main gate', () => {
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(manifest.scripts['openspec:check:push'], 'node scripts/check-pre-push.mjs')
+})
+
+test('the hook installer names the ref-aware gate', () => {
+  const source = readFileSync(join(ROOT, 'scripts', 'install-hooks.mjs'), 'utf8')
+  assert.match(source, /openspec:check:push/)
+  assert.match(source, /refs\/heads\/main/)
 })
 
 test('verify and coverage:check run the same command', () => {
