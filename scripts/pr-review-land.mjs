@@ -514,7 +514,9 @@ export function syncLanding({
 
 /**
  * Sync every eligible same-repository behind branch in one bounded batch.
- * Read-only unless `apply`; reports one outcome per attempted pull request.
+ * Read-only unless `apply`; reports one outcome per attempted pull request,
+ * a refusal for a candidate whose changed paths could not be read, or an
+ * unavailable outcome when the open list stays unavailable.
  */
 export function syncBatch({
   root = mainWorktree(),
