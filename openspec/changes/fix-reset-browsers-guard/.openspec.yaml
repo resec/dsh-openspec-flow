@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Confine --reset-browsers to a browser cache inside the repository, and
+  refuse a shared path with a message naming the path and the manual cleanup.
