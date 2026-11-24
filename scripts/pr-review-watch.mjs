@@ -227,9 +227,10 @@ function checkSucceeded(entry) {
  * Whether every check's newest entry is successful and at least one check exists.
  *
  * Checks are grouped by workflow and name, or by status context. When every
- * entry of a group has a usable `startedAt`, only the entries at the latest
- * start time decide the group; earlier entries are superseded. A group with any
- * unusable start time requires every entry in it to succeed.
+ * entry of a group has a usable start time (a check run's `startedAt` or a
+ * status context's `createdAt`), only the entries at the latest start time
+ * decide the group; earlier entries are superseded. A group with any entry
+ * without a usable start time requires every entry in it to succeed.
  *
  * @param rollup - `statusCheckRollup`.
  * @returns true only for a non-empty rollup with every newest check entry successful.
