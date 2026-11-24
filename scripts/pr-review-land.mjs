@@ -553,8 +553,9 @@ export function syncBatch({
   })
   const results = []
   let updated = 0
+  let planned = 0
   for (const row of eligible) {
-    if (apply ? updated >= limit : results.length >= limit) break
+    if (apply ? updated >= limit : planned >= limit) break
     const n = Number(row.number)
     try {
       const result = syncLanding({
@@ -562,9 +563,10 @@ export function syncBatch({
         pollAttempts, pollIntervalMs, sleep,
       })
       if (apply) updated += 1
+      else planned += 1
       results.push(apply
-        ? { number: n, status: 'synced', previousHead: row.headRefOid, newHead: result.newHead }
-        : { number: n, status: 'planned', previousHead: row.headRefOid, newHead: null })
+        ? { number: n, status: 'synced', previousHead: result.previousHead, newHead: result.newHead }
+        : { number: n, status: 'planned', previousHead: result.head, newHead: null })
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       results.push({
