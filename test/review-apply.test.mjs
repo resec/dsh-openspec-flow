@@ -10,7 +10,7 @@ import {
   CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, passDraftConstructing, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
 import { reviewDirectory } from '../lib/review/store.js'
-import { readApplyState } from '../lib/worktree/state.js'
+import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/worktree/seal.js'
 
 test.after(cleanupFixtures)
@@ -1959,11 +1959,60 @@ test('a changed plan leaves no seal ref or branch', async () => {
 test('a resync tolerates a missing main planning copy', async () => {
   const { root } = gitFixture()
   const fake = sealWorktreeApply(root)
-  await passDraftConstructing(fake, root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+  const inside = await call(fake, 'openspec_apply_next', { change: CHANGE })
   rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  await fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
   const resync = await call(fake, 'openspec_apply_next', { change: CHANGE })
   assert.equal(resync.change, CHANGE)
   assert.equal(typeof resync.state, 'string')
+  assert.deepEqual(resync.state, inside.state)
+  assert.deepEqual(resync.progress, inside.progress)
+  assert.deepEqual(resync.next, inside.next)
+  assert.deepEqual(resync.worktree, inside.worktree)
+  assert.equal(fake.ctx.workingDirectory.get({ id: 'review-test' }), join(root, resync.worktree.path))
+})
+
+test('a not-started resync still requires the main planning copy', async () => {
+  const { root } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() })
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    new RegExp(`Change '${CHANGE}' not found`),
+  )
+  assert.equal(readApplyState(root, null, CHANGE), undefined)
+})
+
+test('a landing apply refuses the resync without reading the planning copy', async () => {
+  const { root } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  writeApplyState(root, null, CHANGE, { ...state, status: 'landing' })
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  await fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /is landing; wait for land to finish/,
+  )
+})
+
+test('a resync with a missing worktree still checks readiness', async () => {
+  const { root } = gitFixture()
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  rmSync(state.worktree, { recursive: true, force: true })
+  rmSync(join(root, 'openspec', 'changes', CHANGE), { recursive: true, force: true })
+  await fake.ctx.workingDirectory.set({ id: 'review-test' }, root)
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    new RegExp(`Change '${CHANGE}' not found`),
+  )
 })
 
 test('a rebase rewrites the branch seal and keeps the recorded base', async () => {
