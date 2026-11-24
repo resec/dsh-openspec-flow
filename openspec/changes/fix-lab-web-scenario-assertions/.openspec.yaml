@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Make the Web GUI driver enforce the open, screenshot and workspace pass
+  conditions the lab-harness spec already states.

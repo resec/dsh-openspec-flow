@@ -18,6 +18,7 @@ import { runHeadless } from './drivers/headless.mjs'
 import { parseStartupUrl } from './drivers/http.mjs'
 import {
   chooseWorkspace,
+  confirmPageLoaded,
   dismissOnboarding,
   expectText,
   openPage,
@@ -147,7 +148,7 @@ export async function createLab({
     throw error
   }
   const labEnv = labEnvironmentForRun({ root, run, env })
-  const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false }
+  const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false, screenshots: [] }
   const output = { run, dsh, mock, env: labEnv, version, plugin: pluginTarball, results: [] }
   writeJson(join(run.artifacts, 'manifest.json'), {
     schemaVersion: 1,
@@ -206,6 +207,12 @@ export async function createLab({
       if (url === undefined) throw new Error('the web startup line carried no URL')
       opened = await openPage({ url, headless, browsersPath: labEnv.PLAYWRIGHT_BROWSERS_PATH, fontConfig: labEnv.FONTCONFIG_FILE })
       await waitForShell(opened.page)
+      await confirmPageLoaded({
+        page: opened.page,
+        pageErrors: opened.pageErrors,
+        path: join(run.artifacts, 'web.png'),
+        screenshots: state.screenshots,
+      })
     } catch (error) {
       await opened?.browser?.close().catch(() => {})
       await processHandle?.stop().catch(() => {})
@@ -226,7 +233,10 @@ export async function createLab({
       openSession: (text) => openSession(opened.page, text),
       send: (text) => send(opened.page, text),
       expectText: (text, timeout) => expectText(opened.page, text, timeout),
-      screenshot: (path) => screenshot(opened.page, path),
+      screenshot: async (path) => {
+        await screenshot(opened.page, path)
+        state.screenshots.push(path)
+      },
       reload: () => opened.page.reload({ waitUntil: 'domcontentloaded' }),
       close: async () => {
         await opened.browser.close().catch(() => {})
@@ -374,6 +384,13 @@ export async function createLab({
         },
         error: failure === undefined ? undefined : String(failure?.stack ?? failure),
         packageStore: state.store,
+        screenshots: state.screenshots,
+        // Only counts: a failed request URL can carry the startup token.
+        web: state.web === undefined ? undefined : {
+          consoleErrors: state.web.errors.length,
+          pageErrors: state.web.pageErrors.length,
+          failedRequests: state.web.failures.length,
+        },
         checks: [
           ...state.checks,
           { name: 'host-guard', status: hostOk ? 'ok' : 'fail', detail: hostOk ? 'host unchanged' : String(failure?.message ?? failure) },

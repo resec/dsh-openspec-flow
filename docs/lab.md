@@ -77,6 +77,8 @@ export default defineScenario({
 
 The plain test entrypoint only collects top-level `test/*.test.mjs`, so `test/lab/*.scenario.mjs` does not slow down `npm test` or `test:affected`. Framework unit tests live at `test/lab-*.test.mjs` and do run in `npm test`.
 
+The web driver enforces the open conditions instead of leaving them to the scenario. `waitForShell` is followed by a page-error check: a page that raised an uncaught error fails the run with that error named. A clean page is screenshotted to `artifacts/web.png`, and `report.json` lists that path in `screenshots` together with every path a scenario passes to `web.screenshot`. `chooseWorkspace` names the scenario's absolute directory in the picker's `Edit path` field — the picker opens at the project level, so walking from `Home` only worked while the project sat under the home directory — and throws when the picker does not open, offers no `Edit path` field or no `Open` button, does not enter the directory, or does not name it in the breadcrumb. When a workspace is already listed, the chip opens the workspace menu and the driver takes its `Add workspace…` entry to reach the picker. After `Open` it requires the picker to close and the workspace chip to show that directory's name, so a scenario never sends a message against an unselected page.
+
 ## POCs
 
 One-off experiments belong under `.cache/lab/experiments/`. They are ignored by git, never discovered by `test:lab` and never part of pre-push. Import the lab API directly or call the CLI; the isolated home is the only state they touch.
@@ -107,7 +109,7 @@ The offline maintainer path has no remote CI before its deferred push, so it run
 
 Each run writes under `.cache/lab/runs/<id>/artifacts/`:
 
-- `report.json` — versions, cache source, plugin sha512 and dirty paths, checks, verdict and evidence paths
+- `report.json` — versions, cache source, plugin sha512 and dirty paths, checks, screenshot paths, page-event counts, verdict and evidence paths
 - `manifest.json` — DSH and run metadata
 - one `dump-config-<mode>.yml` per composed profile, `headless.ndjson`, `headless.stderr.log`, `web.log`, `mock.log`
 - `init-<mode>.log` — the untouched output of a profile initialization that failed; the failure message names it

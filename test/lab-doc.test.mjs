@@ -17,6 +17,10 @@ test('the lab document states the commands, POC location and browser install', (
   assert.match(doc, /apply-worktree-dev\.md/)
   assert.match(doc, /otherwise `\.cache\/lab\/pw-browsers`/)
   assert.match(doc, /COVERAGE_SKIP=1/)
+  assert.match(doc, /uncaught error fails the run/)
+  assert.match(doc, /`screenshots`/)
+  assert.match(doc, /`chooseWorkspace` names the scenario's absolute directory/)
+  assert.match(doc, /workspace chip to show that directory's name/)
 })
 
 test('AGENTS and the README point at the lab gate and documentation', () => {
