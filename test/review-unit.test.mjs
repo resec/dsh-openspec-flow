@@ -393,6 +393,18 @@ test('finding dispositions follow the lifecycle', () => {
   assert.equal(fixed.status, 'fixed')
 })
 
+test('a closed finding cannot be disposed again', () => {
+  const waived = finding({ status: 'waived', approvedBy: 'user', waiver: 'accepted', waivedAt: '2026-11-24T00:00:00.000Z' })
+  const beforeWaived = structuredClone(waived)
+  assert.throws(() => disposeFinding(waived, { status: 'fixed', note: 'again' }), /^Error: finding R1-01 is already waived and closed, so it cannot be disposed again$/u)
+  assert.deepEqual(waived, beforeWaived)
+
+  const verified = finding({ status: 'verified', verifiedInRound: 2, verifiedAt: '2026-11-24T00:00:00.000Z' })
+  const beforeVerified = structuredClone(verified)
+  assert.throws(() => disposeFinding(verified, { status: 'waived', approvedBy: 'user', waiver: 'accepted' }), /^Error: finding R1-01 is already verified and closed, so it cannot be disposed again$/u)
+  assert.deepEqual(verified, beforeVerified)
+})
+
 test('readiness accounts for verdict, blockers and stale hashes', () => {
   const base = {
     state: 'in-review',

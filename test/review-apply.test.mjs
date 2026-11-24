@@ -832,6 +832,62 @@ test('an apply review disposes a dispositions batch', async () => {
   assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'deferred')
 })
 
+test('an apply review refuses a disposition of a closed finding and writes nothing', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({
+      verdict: 'changes-requested',
+      findings: [majorFinding(), minorFinding(), minorFinding({ id: 'R1-03' })],
+    }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive', review: 'apply', change: CHANGE, id: 'R1-01',
+    approvedBy: 'user', waiver: 'The user accepted the risk.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply',
+    dispositions: [
+      { id: 'R1-02', status: 'fixed', note: 'Rewrote the sentence.' },
+      { id: 'R1-03', status: 'deferred', note: 'Follow up in ISS-8.' },
+    ],
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  const passed = await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', round: 2,
+    report: report({ verifications: [{ id: 'R1-02', status: 'verified-fixed', evidence: 'Checked the sentence.' }] }),
+  })
+  assert.equal(passed.state, 'passed')
+  const path = join(reviewDir(root), 'apply-review.json')
+  const before = readFileSync(path, 'utf8')
+
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, review: 'apply',
+      dispositions: [
+        { id: 'R1-03', status: 'fixed', note: 'Closed the follow-up.' },
+        { id: 'R1-01', status: 'fixed', note: 'Added the missing task.' },
+      ],
+    }),
+    /^Error: dispositions\[1\] R1-01: finding R1-01 is already waived and closed, so it cannot be disposed again$/u,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', change: CHANGE, review: 'apply', id: 'R1-02', status: 'fixed', note: 'Again.',
+    }),
+    /^Error: finding R1-02 is already verified and closed, so it cannot be disposed again$/u,
+  )
+  assert.equal(readFileSync(path, 'utf8'), before)
+  const record = JSON.parse(before)
+  assert.equal(record.state, 'passed')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-03').status, 'deferred')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-01').status, 'waived')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'verified')
+})
+
 test('archive refuses before an apply review and after dirtying the tree', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
