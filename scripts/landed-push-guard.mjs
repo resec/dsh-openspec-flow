@@ -235,10 +235,11 @@ export function assertPushRange({ root, base, tip, allowOffline = false } = {}) 
     if (isAncestor(root, manifest.landCommit, base)) continue
     const offline = hasOfflineLand(root, manifest)
     if (allowOffline && offline) continue
+    const command = 'node scripts/push-landed.mjs --push --offline'
     const detail = offline
-      ? 'the change is recorded as an offline land; pass --offline to publish the deferred push'
-      : 'publish it through pr-publish and merge the pull request, or record the offline land and pass --offline'
-    failures.push(`land commit ${manifest.landCommit} for change ${manifest.change} is not on origin/main; ${detail} (see docs/local-pr.md)`)
+      ? `the change has a recorded offline land; run \`${command}\` to publish the deferred push`
+      : `publish it through pr-publish and merge the pull request, or record the offline land and run \`${command}\``
+    failures.push(`land commit ${manifest.landCommit} for change ${manifest.change} (manifest ${manifest.file}) is not on origin/main; ${detail} (see docs/local-pr.md)`)
   }
   if (failures.length > 0) throw new LandedPushError(failures.join('\n'))
   return { checked, allowed: true }

@@ -193,7 +193,7 @@ test('an offline record without the flag is refused', () => {
     writeOfflineRecord(fixture.root, { land: fixture.land, archive: fixture.archive, tree: fixture.tree })
     assert.throws(
       () => assertPushRange({ root: fixture.root, base: fixture.base, tip: fixture.archive }),
-      /recorded as an offline land; pass --offline/,
+      /has a recorded offline land; run `node scripts\/push-landed\.mjs --push --offline`/,
     )
   } finally {
     cleanup(fixture.root)
@@ -230,7 +230,7 @@ test('an earlier direct land in the range is refused even when the selected land
     const merge = git(fixture.root, ['rev-parse', 'HEAD'])
     assert.throws(
       () => assertPushRange({ root: fixture.root, base: selected, tip: merge }),
-      /land commit .* for change side is not on origin\/main/,
+      /land commit .* for change side \(manifest .*\) is not on origin\/main/,
     )
   } finally {
     cleanup(fixture.root)
