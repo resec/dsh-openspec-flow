@@ -7,6 +7,7 @@ import test from 'node:test'
 
 import {
   LANDING_LABEL,
+  OPEN_PHASES,
   REVIEW_FAILED_PHASE,
   abandonLanding,
   archiveLanding,
@@ -150,7 +151,7 @@ test('help and argument parsing are strict', () => {
   assert.match(help, /candidates/)
 })
 
-test('landing documentation names the label, candidates, resume and recovery', () => {
+test('landing documentation names the label, candidates, resume and every phase', () => {
   const doc = readFileSync(new URL('../docs/pr-review.md', import.meta.url), 'utf8')
   assert.match(doc, /`mergeable`/)
   assert.match(doc, /gh pr merge <n> --rebase/)
@@ -167,6 +168,18 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
   assert.match(doc, /every five minutes/)
+
+  const start = doc.indexOf('Run the PR review watch for this repository')
+  assert.notEqual(start, -1)
+  const prompt = doc.slice(start, doc.indexOf('\n```', start))
+  const documented = [...prompt.matchAll(/^ {3}- ([a-z-]+):/gm)].map((match) => match[1])
+  assert.deepEqual(new Set(documented), OPEN_PHASES)
+  for (const phase of OPEN_PHASES) {
+    const at = prompt.indexOf(`   - ${phase}:`)
+    const next = prompt.indexOf('\n   - ', at + 1)
+    const instruction = prompt.slice(at, next === -1 ? undefined : next)
+    assert.match(instruction, /then stop/, `the ${phase} phase must stop the run`)
+  }
 })
 
 test('label and trusted pass checks are exact', () => {
