@@ -1,0 +1,8 @@
+schema: spec-driven
+created: 2026-11-24
+goal: When a pull request satisfies every landing gate except the
+  maintainer-applied mergeable label, add owner-review as an advisory queue
+  signal; remove it when the author changes the head, main advancement causes a
+  conflict, CI fails, the trusted pass no longer covers the head, mergeable
+  appears, or another non-label gate fails. The label must never gate landing or
+  replace mergeable.
