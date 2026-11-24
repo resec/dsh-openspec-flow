@@ -50,9 +50,9 @@ npm run test:lab -- [scenario paths...] [--mock-only] [--include-real-model] [--
 
 `up --mode web` prints the startup URL and keeps the isolated web instance running until `down` or SIGINT. `up --mode headless` prepares an instance for `exec` but does not keep a process. `run` is the one-shot headless path and uses a fresh sandbox.
 
-`test:lab` with no paths discovers every `test/lab/**/*.scenario.mjs`. There is no `--all` flag. The default is `--mock-only`; a real-model scenario is skipped unless `--include-real-model` is passed in an interactive local run. `--cleanup` removes the whole run directory after a pass; `--keep` keeps the isolated home, profile and project. A failure always keeps the full directory.
+`test:lab` with no paths discovers every `test/lab/**/*.scenario.mjs`. There is no `--all` flag for `test:lab`; `inspect` has one. The default is `--mock-only`; a real-model scenario is skipped unless `--include-real-model` is passed in an interactive local run. `--cleanup` removes the whole run directory after a pass; `--keep` keeps the isolated home, profile and project. A failure always keeps the full directory.
 
-Switches take no value. `--offline`, `--fresh-dsh`, `--mock-only`, `--include-real-model`, `--cleanup` and `--keep` are boolean, so the token after one of them is a positional argument: `--offline test/lab/x.scenario.mjs` is offline mode plus that one scenario. Only `--name`, `--mode`, `--plugin` and `cache prune --keep` take a value.
+Switches take no value. `--offline`, `--fresh-dsh`, `--mock-only`, `--include-real-model`, `--cleanup` and `--keep` are boolean, and so is `inspect --all`, so the token after one of them is a positional argument: `--offline test/lab/x.scenario.mjs` is offline mode plus that one scenario. Only `--name`, `--mode`, `--plugin` and `cache prune --keep` take a value.
 
 ## Reusable scenarios
 
