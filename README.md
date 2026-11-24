@@ -159,7 +159,7 @@ npm run bundle:pack
 
 ### DSH 场景测试
 
-可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、pnpm、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。pre-push 在覆盖率检查前运行 mock 场景。完整用法见 [docs/lab.md](docs/lab.md)。
+可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、pnpm、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。远端 `lab` CI 任务是 pull request 与 `main` 的 lab 门禁；pre-push 不再运行 lab，离线本地路径在 land 前运行 `npm run test:lab -- --mock-only`。完整用法见 [docs/lab.md](docs/lab.md)。
 
 ## 不变量
 
@@ -253,6 +253,8 @@ npm test
 
 测试入口为普通运行设置 `NODE_COMPILE_CACHE` 指向仓库内绝对路径 `.cache/node-compile`，供测试进程复用；覆盖率运行会删除继承的该变量，因为 Node 文档说明反序列化字节码会降低 V8 覆盖率精度。`.cache/` 已被忽略。
 
+测试入口还会在宿主临时目录（继承的 `TMPDIR`）下为每次运行创建一个 `openspec-flow-run-*` 根，把它作为子进程的 `TMPDIR`，并在运行结束、失败或收到 `SIGINT`/`SIGTERM` 时整体删除；设置 `DSH_TEST_KEEP_TMP=1` 会保留该根并打印其路径。覆盖率入口与 `test:affected` 通过各自的测试入口获得同样的行为。
+
 测试默认通过进程内执行器调用真实 `@fission-ai/openspec` CLI：fake Host context 的 `spawnMode` 默认为 `inproc`，一次 CLI 调用不再启动 Node 子进程；`integration` 与 `e2e` 显式使用 `spawnMode: 'process'`，`test/spawn-contract.test.mjs` 保留真实子进程的退出码、取消与输出边界覆盖。测试文件并发默认 8，可用 `node scripts/run-tests.mjs plugin -- --test-concurrency=<n>` 覆盖；覆盖率入口与 `test:affected` 共用同一默认值。当前全量实测约 22 秒、`npm run verify` 约 27 秒（Node 24.22.2、4 核）。
 
 ### 覆盖率
@@ -293,9 +295,9 @@ npm test
 发布顺序：
 
 1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm run verify` 与 `npm run openspec:check` 通过。
-2. worktree apply 用 `openspec_apply_worktree action=land` 在同一 lifecycle 内 fast-forward main 并归档；非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
+2. 维护者变更走本地 PR：apply review 通过后由 `scripts/pr-publish.mjs` 发布 pull request，CI 变绿且 head 包含最新 `origin/main` 后执行 `gh pr merge --rebase`；用 `scripts/pr-local-land.mjs retarget` 把 reviewed worktree 重置到 merge commit，再执行 `openspec_apply_worktree action=land` 在同一 lifecycle 内 fast-forward main 并归档。GitHub 不可达时改为离线路径：先跑 `npm run test:lab -- --mock-only`，再本地 land、用 `node scripts/offline-land.mjs record` 记录离线 land，并停在本地 `main`。非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
 3. worktree land 已提交归档结果；非 worktree 提交归档结果、文档更新与合并后的 specs。
-4. 维护者先运行 `node scripts/push-landed.mjs` 做 dry run，再运行 `--push` 校验 landed manifest 与远端并推送到 `origin/main`；外部贡献止于 pull request。详见 [docs/land-push.md](docs/land-push.md)。
+4. 维护者先运行 `node scripts/push-landed.mjs` 做 dry run，再运行 `--push` 校验 landed manifest 与远端并推送到 `origin/main`；在线路径只推送 archive commit，并用 `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <id> --apply` 记录 `pushed` 并释放 landing 锁（session 匹配时可不带 `--token`）；离线路径在 GitHub 恢复后运行 `node scripts/push-landed.mjs --push --offline` 推送延迟的 land 与 archive commit，并移除对应记录。外部贡献止于 pull request。详见 [docs/land-push.md](docs/land-push.md) 与 [docs/local-pr.md](docs/local-pr.md)。
 ## 限制
 
 - CLI 固定为 `@fission-ai/openspec` 2.0.0；升级 OpenSpec 需要发布新插件。
@@ -353,11 +355,12 @@ docs/apply-worktree.md   apply worktree 创建、会话路由、状态/锁、检
 docs/apply-worktree-dev.md  仓库侧 apply worktree 开发环境：共享缓存、DSH home、浏览器锁与文档（不进入发布包）
 docs/land-push.md        land 后推送：manifest 校验、dry run、远端校对与恢复（不进入发布包）
 docs/pr-review.md        PR 评审监听：轮询、PR worktree、apply review 评论、状态清理（不进入发布包）
+docs/local-pr.md         本地 PR 完成：owner 状态、landing 锁、发布、retarget/land 与离线路径（不进入发布包）
 docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```
 
-apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)；land 后的推送见 [docs/land-push.md](docs/land-push.md)；PR 评审监听见 [docs/pr-review.md](docs/pr-review.md)。
+apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)；land 后的推送见 [docs/land-push.md](docs/land-push.md)；PR 评审监听见 [docs/pr-review.md](docs/pr-review.md)；本地 PR 完成路径见 [docs/local-pr.md](docs/local-pr.md)。
 
 ## 许可
 
