@@ -2,6 +2,8 @@
 
 This is the repository-side step after a plugin worktree land. The plugin's `openspec_apply_worktree action=land` fast-forwards main to the reviewed feature head, archives the change and writes a landed manifest under `<git common dir>/openspec-flow/landed/`; it never pushes. This page owns the verified push to `origin/main`. The plugin behavior and manifest format are documented in [`apply-worktree.md`](apply-worktree.md).
 
+A maintainer change that completes through a local pull request follows the same land and push. The reviewed worktree is retargeted to the pull-request merge commit before land, so the land commit is already on `origin/main` and the push carries only the archive commit. The local path, including the offline fallback, is documented in [`local-pr.md`](local-pr.md).
+
 ## Commands
 
 From the main worktree:
@@ -46,6 +48,17 @@ A dry run prints the selected manifest and the `origin/main..HEAD` range. The ra
 
 New manifests use `landCommit` and `landMode` (`fast-forward`, or `legacy-merge` when a retry completes a pre-existing merge). Manifests written before fast-forward land carry `mergeCommit`; the script resolves the commit from `landCommit`, falling back to `mergeCommit`, and reports it as `land`.
 
+## Online and offline local completion
+
+After the apply review passes, a maintainer change is published as a local pull request, merged with `gh pr merge --rebase` and completed as follows:
+
+1. The owner verifies that `origin/main` is the merge commit and that the merge tree equals the reviewed tree.
+2. The plugin worktree branch is reset to the merge commit; `openspec_apply_worktree action=land` fast-forwards `main` to it, archives, commits the archive and writes the manifest.
+3. `node scripts/push-landed.mjs` reports the range and `--push` publishes only the archive commit, because the merge (land) commit is already on `origin/main`.
+4. `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <id> --apply` records the local entry as `pushed`.
+
+When GitHub is unreachable, the pull request is not published and no push runs. The maintainer runs the local lab (`npm run test:lab -- --mock-only`), lands and archives locally, and stops at local `main`; the land and archive commits stay local until `push-landed --push` runs after GitHub returns. The local entry records `landed-offline` through `pr-local-land finish`, then `pushed` after the deferred push. While local `main` leads `origin/main`, a new online pull request and contributor landing refuse and name `push-landed`.
+
 ## Remote states
 
 | Remote state | Behavior |
@@ -66,7 +79,7 @@ The script does not pass `--no-verify`. Install the repository hook once:
 npm run hooks:install
 ```
 
-The hook reads the pushed remote refs. A push targeting only `refs/heads/main` runs `npm run openspec:check:push`: it validates main specs and archived task completion and requires every active change to be `in-progress`. An in-progress parallel change is ignored; a `complete` or `no-tasks` change blocks the push even when the landed manifest is valid. A `tasks.md` written as plain bullets parses as `no-tasks`, and an uncommitted parallel change directory is still read by this gate. Finish or archive the change, or add tracked checkbox tasks, then retry. A push targeting another ref or a mixed set runs the full `npm run openspec:check`. Then the lab gate and the coverage decision run as before. A fresh clone without the hook pushes unguarded, so install it before the first push.
+The hook reads the pushed remote refs. A push targeting only `refs/heads/main` runs `npm run openspec:check:push`: it validates main specs and archived task completion and requires every active change to be `in-progress`. An in-progress parallel change is ignored; a `complete` or `no-tasks` change blocks the push even when the landed manifest is valid. A `tasks.md` written as plain bullets parses as `no-tasks`, and an uncommitted parallel change directory is still read by this gate. Finish or archive the change, or add tracked checkbox tasks, then retry. A push targeting another ref or a mixed set runs the full `npm run openspec:check`. Then the coverage decision runs. The reusable lab scenarios are not run by the local hook; the remote `lab` CI job guards pull requests and `main`, and the offline local path runs them before its land. A fresh clone without the hook pushes unguarded, so install it before the first push.
 
 ## Recovery
 

@@ -159,7 +159,7 @@ npm run bundle:pack
 
 ### DSH 场景测试
 
-可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、pnpm、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。pre-push 在覆盖率检查前运行 mock 场景。完整用法见 [docs/lab.md](docs/lab.md)。
+可复用的 DSH 场景位于 `test/lab/`，用 `npm run test:lab -- --mock-only` 运行；一次性 POC 放在 `.cache/lab/experiments/`，不进入测试门禁。`npm run lab -- doctor` 检查 Node、pnpm、DSH 缓存、Playwright 浏览器、共享库、CJK 字体与磁盘。远端 `lab` CI 任务是 pull request 与 `main` 的 lab 门禁；pre-push 不再运行 lab，离线本地路径在 land 前运行 `npm run test:lab -- --mock-only`。完整用法见 [docs/lab.md](docs/lab.md)。
 
 ## 不变量
 
@@ -293,9 +293,9 @@ npm test
 发布顺序：
 
 1. 变更的全部任务完成，`openspec_inspect`（`action: "validate"`）传 `strict: true`、`npm run verify` 与 `npm run openspec:check` 通过。
-2. worktree apply 用 `openspec_apply_worktree action=land` 在同一 lifecycle 内 fast-forward main 并归档；非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
+2. 维护者变更走本地 PR：apply review 通过后由 `scripts/pr-publish.mjs` 发布 pull request，CI 变绿且 head 包含最新 `origin/main` 后执行 `gh pr merge --rebase`；用 `scripts/pr-local-land.mjs retarget` 把 reviewed worktree 重置到 merge commit，再执行 `openspec_apply_worktree action=land` 在同一 lifecycle 内 fast-forward main 并归档。GitHub 不可达时改为离线路径：先跑 `npm run test:lab -- --mock-only`，再本地 land 并停在本地 `main`。非 worktree 用 `openspec_archive <name>` 归档：变更移入 `openspec/changes/archive/`，delta specs 并入 `openspec/specs/`。
 3. worktree land 已提交归档结果；非 worktree 提交归档结果、文档更新与合并后的 specs。
-4. 维护者先运行 `node scripts/push-landed.mjs` 做 dry run，再运行 `--push` 校验 landed manifest 与远端并推送到 `origin/main`；外部贡献止于 pull request。详见 [docs/land-push.md](docs/land-push.md)。
+4. 维护者先运行 `node scripts/push-landed.mjs` 做 dry run，再运行 `--push` 校验 landed manifest 与远端并推送到 `origin/main`；在线路径只推送 archive commit，离线路径在 GitHub 恢复后推送延迟的 land 与 archive commit。外部贡献止于 pull request。详见 [docs/land-push.md](docs/land-push.md) 与 [docs/local-pr.md](docs/local-pr.md)。
 ## 限制
 
 - CLI 固定为 `@fission-ai/openspec` 2.0.0；升级 OpenSpec 需要发布新插件。
@@ -353,11 +353,12 @@ docs/apply-worktree.md   apply worktree 创建、会话路由、状态/锁、检
 docs/apply-worktree-dev.md  仓库侧 apply worktree 开发环境：共享缓存、DSH home、浏览器锁与文档（不进入发布包）
 docs/land-push.md        land 后推送：manifest 校验、dry run、远端校对与恢复（不进入发布包）
 docs/pr-review.md        PR 评审监听：轮询、PR worktree、apply review 评论、状态清理（不进入发布包）
+docs/local-pr.md         本地 PR 完成：owner 状态、landing 锁、发布、retarget/land 与离线路径（不进入发布包）
 docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试
 ```
 
-apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)；land 后的推送见 [docs/land-push.md](docs/land-push.md)；PR 评审监听见 [docs/pr-review.md](docs/pr-review.md)。
+apply worktree 的仓库侧开发环境见 [docs/apply-worktree-dev.md](docs/apply-worktree-dev.md)；land 后的推送见 [docs/land-push.md](docs/land-push.md)；PR 评审监听见 [docs/pr-review.md](docs/pr-review.md)；本地 PR 完成路径见 [docs/local-pr.md](docs/local-pr.md)。
 
 ## 许可
 

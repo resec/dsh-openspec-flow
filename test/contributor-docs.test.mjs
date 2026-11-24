@@ -120,3 +120,29 @@ test('the README publish order names the maintainer', () => {
   assert.ok(publishLine, 'README.md has no publish step naming origin/main')
   assert.match(publishLine, /维护者/)
 })
+
+
+test('AGENTS.md states the online local completion path and the retarget step', () => {
+  assert.match(AGENTS, /scripts\/pr-publish\.mjs --session <id> --apply/)
+  assert.match(AGENTS, /gh pr merge --rebase/)
+  assert.match(AGENTS, /scripts\/pr-local-land\.mjs verify <n> --session <id>/)
+  assert.match(AGENTS, /retarget <n> --session <id> --apply/)
+  assert.match(AGENTS, /openspec_apply_worktree action=land/)
+  assert.match(AGENTS, /publish only the archive commit/)
+  assert.match(AGENTS, /docs\/local-pr\.md/)
+})
+
+test('AGENTS.md states the offline local completion path and the deferred push', () => {
+  assert.match(AGENTS, /offline-land/)
+  assert.match(AGENTS, /npm run test:lab -- --mock-only/)
+  assert.match(AGENTS, /stop at local `main` without a push/)
+  assert.match(AGENTS, /push-landed --push` publishes the deferred land and archive commits/)
+  assert.match(AGENTS, /Local `main` leading `origin\/main` blocks a new online pull request and contributor landing/)
+})
+
+test('AGENTS.md excludes local pull requests from the scheduled watch', () => {
+  assert.match(AGENTS, /local-prs\.json/)
+  assert.match(AGENTS, /owner-managed/)
+  assert.match(AGENTS, /landing\.lock/)
+  assert.match(AGENTS, /never polls, prepares, comments on, retargets, lands or merges it/)
+})

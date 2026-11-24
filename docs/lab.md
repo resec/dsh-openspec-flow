@@ -97,9 +97,11 @@ try {
 }
 ```
 
-## Pre-push
+## Remote lab and pre-push
 
-The hook runs strict OpenSpec validation, then `npm run test:lab -- --mock-only`, then the coverage stamp or `npm run verify`. `COVERAGE_SKIP=1` skips only coverage; a failing lab scenario still blocks the push. A missing prerequisite is a gate failure, not a reason to skip the gate.
+The remote `lab` CI job is the lab gate for pull requests and `main`; it runs the same `npm run test:lab -- --mock-only` scenarios. The local pre-push hook no longer runs them: it runs strict OpenSpec validation, then the coverage stamp or `npm run verify`. `COVERAGE_SKIP=1` skips only coverage.
+
+The offline maintainer path has no remote CI before its deferred push, so it runs `npm run test:lab -- --mock-only` locally before the local land. A missing prerequisite is a gate failure, not a reason to skip the gate.
 
 ## Artifacts
 
