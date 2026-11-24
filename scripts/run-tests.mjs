@@ -5,19 +5,26 @@
  * Node 24 treats a directory passed to `--test` as a module, so the wrapper
  * enumerates test files itself. It also owns coverage argument order: on
  * Node 24 coverage flags must precede the test file paths.
+ *
+ * The wrapper collects one run's fixtures in a single temporary root under the
+ * canonical host temporary directory and removes it when the run ends, so a
+ * failing run cannot accumulate fixture directories across runs.
  */
 
 import { mkdirSync, readdirSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { constants } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { assertCurrentNode } from './node-version.mjs'
-import { testEnvFor } from './test-env.mjs'
+import { createRunTempDir, removeRunTempDir, testEnvFor } from './test-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const COVERAGE_ENABLED = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
 /** The test-file concurrency a plain run uses when the caller supplies none. */
 export const DEFAULT_CONCURRENCY = 8
+/** The child a run is waiting on, so a signal can stop it before the root goes. */
+let activeChild
 
 const SCOPES = {
   plugin: {
@@ -76,21 +83,32 @@ export function buildTestArgs({ scope = 'plugin', coverage = false, extra = [] }
  * @param scope - scope name from `SCOPES`.
  * @param coverage - whether this run collects coverage.
  * @param extra - extra arguments forwarded after the test paths.
- * @returns the child exit status.
+ * @param env - base environment carrying the run root.
+ * @returns a promise of the child exit status.
  */
-function runScope(scope, coverage, extra = []) {
+function runScope(scope, coverage, extra, env) {
   if (coverage) mkdirSync(join(ROOT, '.coverage'), { recursive: true })
   const args = buildTestArgs({ scope, coverage, extra })
-  const result = spawnSync(process.execPath, args, {
-    cwd: ROOT,
-    stdio: 'inherit',
-    env: testEnvFor(coverage),
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: testEnvFor(coverage, env),
+    })
+    activeChild = child
+    child.once('error', (error) => {
+      activeChild = undefined
+      reject(error)
+    })
+    child.once('exit', (code, signal) => {
+      activeChild = undefined
+      if (signal !== null) resolve(128 + (constants.signals[signal] ?? 0))
+      else resolve(code ?? 1)
+    })
   })
-  if (result.error) throw result.error
-  return result.status ?? 1
 }
 
-function main() {
+async function main() {
   const raw = process.argv.slice(2)
   const separator = raw.indexOf('--')
   const own = separator === -1 ? raw : raw.slice(0, separator)
@@ -108,20 +126,51 @@ function main() {
   assertCurrentNode()
 
   const scopes = scope === 'all' ? Object.keys(SCOPES) : [scope]
-  let failed = false
-  for (const name of scopes) {
-    const status = runScope(name, coverage, extra)
-    if (status !== 0) failed = true
+  const runRoot = createRunTempDir()
+  const keep = process.env.DSH_TEST_KEEP_TMP === '1'
+  const env = runRoot === undefined ? process.env : { ...process.env, TMPDIR: runRoot }
+  const finish = () => {
+    if (keep) {
+      if (runRoot !== undefined) console.error(`test entrypoint: kept the run root at ${runRoot}`)
+      return
+    }
+    try {
+      removeRunTempDir(runRoot)
+    } catch (error) {
+      console.error(`test entrypoint: cannot remove the run root at ${runRoot}: ${error.message}`)
+    }
   }
-  process.exitCode = failed ? 1 : 0
+  for (const [signal, number] of [['SIGINT', 2], ['SIGTERM', 15]]) {
+    process.once(signal, () => {
+      const code = 128 + number
+      const stop = () => {
+        finish()
+        process.exit(code)
+      }
+      if (activeChild === undefined) {
+        stop()
+        return
+      }
+      activeChild.once('exit', stop)
+      activeChild.kill(signal)
+    })
+  }
+  try {
+    let failed = false
+    for (const name of scopes) {
+      const status = await runScope(name, coverage, extra, env)
+      if (status !== 0) failed = true
+    }
+    process.exitCode = failed ? 1 : 0
+  } finally {
+    finish()
+  }
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  try {
-    main()
-  } catch (error) {
+  main().catch((error) => {
     console.error(`test entrypoint: ${error.message}`)
     console.error('Activate a Node 24 runtime that satisfies engines.node and retry; no version manager is invoked automatically.')
     process.exit(error.exitCode ?? 2)
-  }
+  })
 }
