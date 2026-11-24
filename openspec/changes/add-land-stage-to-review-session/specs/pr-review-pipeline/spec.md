@@ -59,7 +59,7 @@ The repository SHALL document a five-minute DSH scheduled session that reuses on
 
 ### Requirement: One phase per run
 
-The session SHALL perform at most one phase per run: cleanup, review one candidate, prepare one landing, start the final review, record and merge, or archive and push. After preparing a landing, starting the final review, recording the merge, or archiving and pushing, the next scheduled run SHALL resume from the recorded landing phase; after a cleanup or a review-one-candidate phase the next run SHALL poll again.
+The session SHALL run cleanup every run and then perform at most one of: review one candidate, prepare one landing, start the final review, record and merge, or archive and push. After preparing a landing, starting the final review, recording the merge, or archiving and pushing, the next scheduled run SHALL resume from the recorded landing phase; after a review-one-candidate phase the next run SHALL poll again and run cleanup first.
 
 #### Scenario: A run stops after one landing phase
 
@@ -68,8 +68,13 @@ The session SHALL perform at most one phase per run: cleanup, review one candida
 
 #### Scenario: A polling run
 
-- **WHEN** a run completes a cleanup or review-one-candidate phase
-- **THEN** it stops and the next run polls again without resuming a landing
+- **WHEN** a run runs cleanup and reviews one candidate
+- **THEN** it stops and the next run polls again after cleanup without resuming a landing
+
+#### Scenario: A cleanup-only run
+
+- **WHEN** no candidate and no unfinished landing exist
+- **THEN** the run runs cleanup and stops
 
 ### Requirement: Fixed-session reviewer reuse
 
