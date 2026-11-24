@@ -619,7 +619,11 @@ export function shouldRecordStamp({ mode, updateBaseline, code, violations }) {
   )
 }
 
-function parseArgs(argv) {
+/**
+ * @param argv - command-line arguments.
+ * @returns parsed options, with the base defaulting to the remote-tracking ref.
+ */
+export function parseArgs(argv) {
   const options = { mode: undefined, base: 'refs/remotes/origin/main', updateBaseline: false, allowLower: false, reason: null }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
