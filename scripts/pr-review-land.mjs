@@ -31,6 +31,8 @@ export { trustedPass }
 export const LANDING_LABEL = 'mergeable'
 /** Phase recorded when the final review cannot be resumed. */
 export const REVIEW_FAILED_PHASE = 'review-failed'
+/** Phase recorded when GitHub merged the pull request but local main is not synced. */
+export const MAIN_SYNC_FAILED_PHASE = 'main-sync-failed'
 /** Landing state file. */
 export const LANDINGS_FILE = 'landings.json'
 /** Landing manifest directory. */
@@ -38,10 +40,10 @@ export const MANIFEST_DIRECTORY = 'landings'
 /** Local landing branch prefix. */
 export const LANDING_BRANCH_PREFIX = 'pr-land/'
 /** Phases that keep a landing open or awaiting a retry. */
-const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'])
+const OPEN_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'archive-pending', 'archive-failed', MAIN_SYNC_FAILED_PHASE, 'archived', 'push-pending', 'pushed'])
 /** Phases that may be forgotten by the operator. */
 const TERMINAL_PHASES = new Set(['pushed', 'failed', 'blocked', 'tree-mismatch'])
-/** Pre-merge phases that may be abandoned without losing merged work. */
+/** Pre-merge phases that may be abandoned without losing merged work; a merged landing never is. */
 const ABANDONABLE_PHASES = new Set(['prepared', REVIEW_FAILED_PHASE, 'reviewed', 'blocked', 'failed', 'tree-mismatch'])
 
 /** A usage error, mapped to exit code 2. */
@@ -282,7 +284,7 @@ export function prepareLanding({ root = mainWorktree(), number, gh: ghRunner = g
   assertSingleLanding(lands, n)
   const existing = lands.lands[String(n)]
   if (existing !== undefined) {
-    if (['archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(existing.phase)) {
+    if (['archive-pending', 'archive-failed', MAIN_SYNC_FAILED_PHASE, 'archived', 'push-pending', 'pushed'].includes(existing.phase)) {
       throw new Error(`PR #${n} is already past the merge phase (${existing.phase}); finish or inspect it`)
     }
     if (existing.prHead === plan.head && (existing.phase === 'prepared' || existing.phase === 'reviewed')) {
@@ -381,7 +383,7 @@ export function reviewedLanding({ root = mainWorktree(), number, apply = false }
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
   if (entry === undefined) throw new Error(`PR #${n} has no landing state; run prepare first`)
-  if (['reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
+  if (['reviewed', 'archive-pending', 'archive-failed', MAIN_SYNC_FAILED_PHASE, 'archived', 'push-pending', 'pushed'].includes(entry.phase)) return entry
   if (entry.phase !== 'prepared') throw new Error(`PR #${n} landing phase is ${entry.phase}, not prepared`)
   if (!apply) return { dryRun: true, entry }
   const watch = loadState(root)
@@ -421,10 +423,12 @@ function completeMergedLanding(root, lands, entry) {
     return entry
   } catch (error) {
     if (entry.phase !== 'tree-mismatch') {
-      entry.phase = 'archive-pending'
-      entry.error = error instanceof Error ? error.message : String(error)
+      const detail = error instanceof Error ? error.message : String(error)
+      entry.phase = MAIN_SYNC_FAILED_PHASE
+      entry.error = `PR #${entry.number} is merged on GitHub but local main does not contain the merge: ${detail}. Align local main with origin/main, then run merge again so the merged tree is checked; do not review again.`
       entry.updatedAt = new Date().toISOString()
       saveLandings(root, lands)
+      throw new Error(entry.error)
     }
     throw error instanceof Error ? error : new Error(String(error))
   }
@@ -464,8 +468,8 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
     throw new Error(entry.error)
   }
   entry.merged = true
-  entry.phase = 'archive-pending'
-  entry.error = null
+  entry.phase = MAIN_SYNC_FAILED_PHASE
+  entry.error = `PR #${n} is merged on GitHub; local main is not synced with origin/main yet`
   saveLandings(root, lands)
   return completeMergedLanding(root, lands, entry)
 }

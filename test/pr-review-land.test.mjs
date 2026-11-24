@@ -156,6 +156,7 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /gh pr merge <n> --rebase/)
   assert.match(doc, /openspec_archive/)
   assert.match(doc, /tree-mismatch/)
+  assert.match(doc, /main-sync-failed/)
   assert.match(doc, /pr-review-land\.mjs candidates/)
   assert.match(doc, /action=resume/)
   assert.match(doc, /state=passed/)
@@ -408,7 +409,7 @@ test('archive and push failures keep retryable phases', () => {
 })
 
 
-test('a diverged local main keeps the merged landing retryable without a second merge', () => {
+test('a diverged local main records main-sync-failed without a second merge', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
   const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
@@ -429,18 +430,64 @@ test('a diverged local main keeps the merged landing retryable without a second 
     number: 12,
     apply: true,
     gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }),
-  }), /fast-forward|not possible/)
+  }), /merged on GitHub but local main|Align local main/)
   const entry = loadLandings(root).lands['12']
-  assert.equal(entry.phase, 'archive-pending')
-  assert.ok(entry.error)
+  assert.equal(entry.phase, 'main-sync-failed')
+  assert.equal(entry.merged, true)
+  assert.match(entry.error, /Align local main with origin\/main/)
+  assert.match(entry.error, /do not review again/)
   assert.throws(() => mergeLanding({
     root,
     number: 12,
     apply: true,
     gh: () => { throw new Error('gh must not be called') },
-  }), /fast-forward|not possible/)
+  }), /merged on GitHub but local main|Align local main/)
   assert.equal(merges, 1)
-  assert.equal(loadLandings(root).lands['12'].phase, 'archive-pending')
+  assert.equal(loadLandings(root).lands['12'].phase, 'main-sync-failed')
+})
+
+test('an unpushed local main commit blocks archive, abandon and candidates until main is synced', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  writeFileSync(join(root, 'unpushed.txt'), 'unpushed local work\n')
+  git(root, ['add', 'unpushed.txt'])
+  git(root, ['commit', '-qm', 'unpushed local main commit'])
+  let merges = 0
+  const onMerge = () => {
+    merges += 1
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  assert.throws(() => mergeLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }),
+  }), /merged on GitHub but local main/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'main-sync-failed')
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /main-sync-failed, not archive-pending/)
+  assert.throws(() => abandonLanding({ root, number: 12, apply: true }), /only a pre-merge landing/)
+  const listed = listLandingCandidates({
+    root,
+    gh: fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] }),
+  })
+  assert.deepEqual(listed.candidates, [])
+  assert.match(listed.refused[0].reason, /already landing in phase main-sync-failed/)
+  git(root, ['fetch', '-q', 'origin', 'main'])
+  git(root, ['reset', '-q', '--hard', 'origin/main'])
+  const merged = mergeLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: () => { throw new Error('gh must not be called') },
+  })
+  assert.equal(merged.phase, 'archive-pending')
+  assert.equal(merged.mergedHead, git(remote, ['rev-parse', 'refs/heads/main']))
+  assert.equal(merges, 1)
 })
 
 test('a tree-mismatch landing rethrows without a second merge', () => {
