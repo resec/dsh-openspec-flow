@@ -40,19 +40,43 @@ test('no tool description names the CLI', () => {
   }
 })
 
-test('store parameter description is uniform', () => {
+test('shared parameter descriptions are uniform', () => {
   const fake = createFakeContext({ cwd: process.cwd() })
-  apply(fake.ctx, { timeoutMs: 30_000 })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: true }, apply: { enabled: true } } })
 
-  const exposed = []
+  // Derive the shared set instead of naming it: a parameter exposed by more
+  // than three tools is shared. Three is the count where per-tool enums such
+  // as action and scope differ in meaning, so they stay out of the set.
+  const exposed = new Map()
   for (const [name, tool] of fake.tools) {
-    const store = tool.parameters?.properties?.store
-    if (store === undefined) continue
-    exposed.push({ name, description: store.description })
+    for (const [param, schema] of Object.entries(tool.parameters?.properties ?? {})) {
+      if (!exposed.has(param)) exposed.set(param, new Map())
+      exposed.get(param).set(name, schema.description)
+    }
   }
-  assert.ok(exposed.length > 0, 'at least one tool accepts store')
-  for (const entry of exposed) {
-    assert.equal(entry.description, 'Registered store id.', `${entry.name}.parameters.store`)
+
+  const shared = [...exposed].filter(([, tools]) => tools.size > 3)
+  const names = shared.map(([param]) => param)
+  assert.ok(names.includes('change'), 'change is a shared parameter')
+  assert.ok(names.includes('store'), 'store is a shared parameter')
+
+  for (const [param, tools] of shared) {
+    const [[firstTool, firstDescription]] = tools
+    for (const [toolName, description] of tools) {
+      assert.equal(description, firstDescription, `${toolName}.parameters.${param} differs from ${firstTool}.parameters.${param}`)
+    }
+  }
+  assert.equal(exposed.get('store').values().next().value, 'Registered store id.')
+})
+
+test('tool descriptions do not repeat store usage guidance', () => {
+  const fake = createFakeContext({ cwd: process.cwd() })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: true }, apply: { enabled: true } } })
+  assert.ok(fake.tools.size > 0, 'the plugin registers tools')
+
+  for (const [name, tool] of fake.tools) {
+    assert.doesNotMatch(tool.description, /Pass store/i, `${name}.description must not repeat store usage`)
+    assert.doesNotMatch(tool.description, /Use it before asking for a store id/i, `${name}.description must not repeat store usage`)
   }
 })
 
