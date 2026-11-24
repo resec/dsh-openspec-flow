@@ -135,6 +135,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `AGENTS.md:28` | 精确版本 | 更新版本号 |
 | `cordis.patch.yml:3` | 注释中的精确版本 | 更新版本号 |
 | `package-lock.json` | `@fission-ai/openspec` 的版本与 integrity | 用 `npm install` 更新，不手改 |
+| `test/inproc-cli.mjs:165` | CLI 导出的 `program` 与 Commander 的 `parseAsync`；缺失时回退到 `runCli` 轮询 | 确认 `program.parseAsync` 仍可调用；若缺失，核对回退路径与相关测试，必要时更新夹具 |
 
 ## 修改顺序
 

@@ -6,7 +6,7 @@ import test from 'node:test'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import { createInprocSpawner } from './inproc-cli.mjs'
-import { PROBE_ROOT } from './review-fixtures.mjs'
+import { CHANGE, PROBE_ROOT } from './review-fixtures.mjs'
 
 /**
  * Build a spec shaped like the fake context's spawn input.
@@ -56,6 +56,156 @@ test('serializes calls and keeps their outputs apart', async () => {
   assert.match(first.collected.stdout.readFrom(0).text, /out:one/)
   assert.match(second.collected.stdout.readFrom(0).text, /out:two/)
   assert.doesNotMatch(first.collected.stdout.readFrom(0).text, /out:two/)
+})
+
+test('waits for an awaitable command action after output starts', async () => {
+  let runCliCalls = 0
+  const instance = createInprocSpawner({
+    load: () => Promise.resolve({
+      runCli: () => {
+        runCliCalls += 1
+        console.log('runCli')
+      },
+      program: {
+        async parseAsync() {
+          console.log('first')
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          console.log('second')
+        },
+      },
+    }),
+    quietMs: 5,
+    noOutputGraceMs: 5,
+    deadlineMs: 1_000,
+  })
+  const handle = instance.spawn(spec())
+  const result = await handle.done
+  assert.equal(result.exitCode, 0)
+  assert.equal(runCliCalls, 0)
+  assert.equal(handle.collected.stdout.readFrom(0).text, 'first\nsecond\n')
+})
+
+test('reports the deadline when an awaitable command never settles', async () => {
+  const originalLog = console.log
+  const beforeExitCode = process.exitCode
+  const beforeCwd = process.cwd()
+  const instance = createInprocSpawner({
+    load: () => Promise.resolve({
+      runCli: () => {
+        throw new Error('the fallback must not run')
+      },
+      program: {
+        parseAsync() {
+          return new Promise(() => {})
+        },
+      },
+    }),
+    deadlineMs: 50,
+  })
+  const started = Date.now()
+  const handle = instance.spawn(spec())
+  const result = await handle.done
+  const elapsed = Date.now() - started
+  assert.equal(result.exitCode, 124)
+  assert.ok(elapsed >= 40, `expected the deadline, got ${elapsed} ms`)
+  assert.ok(elapsed < 500, `expected a bounded wait, got ${elapsed} ms`)
+  assert.equal(console.log, originalLog)
+  assert.equal(process.exitCode, beforeExitCode)
+  assert.equal(process.cwd(), beforeCwd)
+})
+
+test('releases the queue when an awaitable command is aborted', async () => {
+  const originalLog = console.log
+  const beforeExitCode = process.exitCode
+  const beforeCwd = process.cwd()
+  const controller = new AbortController()
+  let started
+  const parseStarted = new Promise((resolve) => {
+    started = resolve
+  })
+  let calls = 0
+  const instance = createInprocSpawner({
+    load: () => Promise.resolve({
+      runCli: () => {
+        throw new Error('the fallback must not run')
+      },
+      program: {
+        parseAsync() {
+          calls += 1
+          if (calls === 1) {
+            started()
+            return new Promise(() => {})
+          }
+          console.log('next')
+          return Promise.resolve()
+        },
+      },
+    }),
+    deadlineMs: 10_000,
+  })
+  const first = instance.spawn(spec({ signal: controller.signal }))
+  await parseStarted
+  controller.abort()
+  await assert.rejects(first.done, /aborted/)
+  const second = instance.spawn(spec())
+  const result = await second.done
+  assert.equal(result.exitCode, 0)
+  assert.equal(second.collected.stdout.readFrom(0).text, 'next\n')
+  assert.equal(console.log, originalLog)
+  assert.equal(process.exitCode, beforeExitCode)
+  assert.equal(process.cwd(), beforeCwd)
+})
+
+test('falls back to runCli when no awaitable entry is exposed', async () => {
+  let calls = 0
+  const instance = spawner((argv) => {
+    calls += 1
+    assert.equal(argv[3], 'one')
+  }, { quietMs: 5 })
+  const handle = instance.spawn(spec())
+  const result = await handle.done
+  assert.equal(result.exitCode, 0)
+  assert.equal(calls, 1)
+})
+
+test('reports an explicit process.exit code from an awaitable command', async () => {
+  const instance = createInprocSpawner({
+    load: () => Promise.resolve({
+      runCli: () => {
+        throw new Error('the fallback must not run')
+      },
+      program: {
+        parseAsync() {
+          process.exit(9)
+        },
+      },
+    }),
+    deadlineMs: 1_000,
+  })
+  const result = await instance.spawn(spec()).done
+  assert.equal(result.exitCode, 9)
+})
+
+test('reports a process.exitCode assignment from an awaitable command', async () => {
+  const before = process.exitCode
+  const instance = createInprocSpawner({
+    load: () => Promise.resolve({
+      runCli: () => {
+        throw new Error('the fallback must not run')
+      },
+      program: {
+        parseAsync() {
+          console.log('validation failed')
+          process.exitCode = 3
+        },
+      },
+    }),
+    deadlineMs: 1_000,
+  })
+  const handle = instance.spawn(spec())
+  const result = await handle.done
+  assert.equal(result.exitCode, 3)
+  assert.equal(process.exitCode, before)
 })
 
 test('captures stdout and stderr separately', async () => {
@@ -147,6 +297,44 @@ test('loads the CLI once across calls', async () => {
   await instance.spawn(spec()).done
   await instance.spawn(spec()).done
   assert.equal(loads, 1)
+})
+
+test('reuses the pinned program for awaited real CLI calls', async () => {
+  const module = await import('@fission-ai/openspec')
+  assert.equal(typeof module.program?.parseAsync, 'function')
+  const root = mkdtempSync(join(tmpdir(), 'inproc-real-'))
+  cpSync(PROBE_ROOT, join(root, 'openspec'), { recursive: true })
+  try {
+    const instance = createInprocSpawner({
+      load: () => Promise.resolve({
+        program: module.program,
+        runCli: () => {
+          throw new Error('the polling fallback must not run')
+        },
+      }),
+    })
+    const first = instance.spawn(spec({
+      argv: ['node', 'openspec', 'list', '--json'],
+      cwd: root,
+    }))
+    const second = instance.spawn(spec({
+      argv: ['node', 'openspec', 'status', '--change', CHANGE, '--json'],
+      cwd: root,
+    }))
+    const [firstResult, secondResult] = await Promise.all([first.done, second.done])
+    assert.equal(firstResult.exitCode, 0)
+    assert.equal(secondResult.exitCode, 0)
+    const firstText = first.collected.stdout.readFrom(0).text
+    const secondText = second.collected.stdout.readFrom(0).text
+    const listed = JSON.parse(firstText)
+    const status = JSON.parse(secondText)
+    assert.equal(listed.changes[0].name, CHANGE)
+    assert.equal(status.changeName, CHANGE)
+    assert.doesNotMatch(firstText, /"changeName"/)
+    assert.doesNotMatch(secondText, /"changes"/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('the fake context runs CLI calls in-process by default', async () => {

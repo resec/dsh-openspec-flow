@@ -24,6 +24,34 @@ const POLL_MS = 5
 const CONSOLE_METHODS = ['log', 'error', 'warn', 'info', 'debug']
 
 /**
+ * Await one command promise with the call's deadline and abort signal.
+ * @param promise - the CLI's awaitable command.
+ * @param options - `deadlineMs` and the call's abort `signal`.
+ * @returns `'done'` or `'deadline'`; rejects on abort or a command error.
+ */
+async function awaitCommand(promise, { deadlineMs, signal }) {
+  let timer
+  let onAbort
+  try {
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve('deadline'), deadlineMs)
+    })
+    const aborted = new Promise((resolve, reject) => {
+      if (signal === undefined) return
+      onAbort = () => reject(new Error('the OpenSpec CLI was aborted'))
+      if (signal.aborted) onAbort()
+      else signal.addEventListener('abort', onAbort, { once: true })
+    })
+    const completion = Promise.resolve(promise).then(() => 'done')
+    completion.catch(() => {})
+    return await Promise.race([completion, timeout, aborted])
+  } finally {
+    clearTimeout(timer)
+    if (signal !== undefined) signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/**
  * Set or delete one environment variable.
  * @param key - variable name.
  * @param value - value, or undefined to delete.
@@ -133,23 +161,34 @@ export function createInprocSpawner({
           setEnv('FORCE_COLOR', '0')
           for (const [key, value] of Object.entries(spec.env ?? {})) setEnv(key, value)
           const module = await loadOnce()
-          module.runCli(spec.argv)
-          const startedAt = Date.now()
-          let sawOutput = false
-          for (;;) {
-            await new Promise((resolve) => setTimeout(resolve, POLL_MS))
-            if (aborted) return
-            if (explicitExit !== undefined) break
-            if (process.exitCode !== savedExitCode) {
+          if (typeof module.program?.parseAsync === 'function') {
+            const result = await awaitCommand(module.program.parseAsync(spec.argv), {
+              deadlineMs,
+              signal: spec.signal,
+            })
+            if (result === 'deadline') explicitExit = 124
+            else if (explicitExit === undefined && process.exitCode !== savedExitCode) {
               assignedExit = process.exitCode
-              break
             }
-            if (stdout.length > 0 || stderr.length > 0) sawOutput = true
-            if (sawOutput && Date.now() - lastActivity >= quietMs) break
-            if (!sawOutput && Date.now() - startedAt >= noOutputGraceMs) break
-            if (Date.now() - startedAt >= deadlineMs) {
-              explicitExit = 124
-              break
+          } else {
+            module.runCli(spec.argv)
+            const startedAt = Date.now()
+            let sawOutput = false
+            for (;;) {
+              await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+              if (aborted) return
+              if (explicitExit !== undefined) break
+              if (process.exitCode !== savedExitCode) {
+                assignedExit = process.exitCode
+                break
+              }
+              if (stdout.length > 0 || stderr.length > 0) sawOutput = true
+              if (sawOutput && Date.now() - lastActivity >= quietMs) break
+              if (!sawOutput && Date.now() - startedAt >= noOutputGraceMs) break
+              if (Date.now() - startedAt >= deadlineMs) {
+                explicitExit = 124
+                break
+              }
             }
           }
           resolveDone({ exitCode: explicitExit ?? assignedExit ?? 0, signal: null })
