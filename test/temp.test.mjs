@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import test from 'node:test'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
@@ -35,5 +35,25 @@ test('a root a test removed on its own is skipped by cleanup', (t) => {
   t.after(cleanupTempDirs)
   const directory = tempDir('dsh-temp-manual-')
   rmSync(directory, { recursive: true, force: true })
+  assert.doesNotThrow(() => cleanupTempDirs())
+})
+
+test('an undeletable root is reported without failing cleanup', (t) => {
+  const directory = tempDir('dsh-temp-perm-')
+  mkdirSync(join(directory, 'child'))
+  writeFileSync(join(directory, 'child', 'file.txt'), 'content\n')
+  chmodSync(directory, 0o500)
+  t.after(() => {
+    try {
+      chmodSync(directory, 0o700)
+    } catch {
+      // the directory may already be gone
+    }
+    try {
+      rmSync(directory, { recursive: true, force: true })
+    } catch {
+      // best-effort cleanup for a directory the permission case left behind
+    }
+  })
   assert.doesNotThrow(() => cleanupTempDirs())
 })
