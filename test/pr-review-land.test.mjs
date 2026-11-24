@@ -645,23 +645,67 @@ test('sync refuses a fork branch, a missing label, a conflict and an open landin
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
   advanceMain(root)
+  const landingsFile = join(resolvePaths(root).cache, 'landings.json')
   assert.throws(() => syncLanding({
     root,
     number: 12,
     gh: syncGh(JSON.parse(prJson(head, 'main', { isCrossRepository: true }))),
   }), /cross-repository/)
+  assert.equal(existsSync(landingsFile), false)
   assert.throws(() => syncLanding({
     root,
     number: 12,
     gh: syncGh(JSON.parse(prJson(head, 'main', { labels: [] }))),
   }), /no mergeable label/)
+  assert.equal(existsSync(landingsFile), false)
   assert.throws(() => syncLanding({
     root,
     number: 12,
     gh: syncGh(JSON.parse(prJson(head, 'main', { mergeable: 'CONFLICTING' }))),
   }), /not mergeable/)
+  assert.equal(existsSync(landingsFile), false)
   saveLandings(root, { schemaVersion: 1, lands: { 12: { phase: 'prepared' } }, syncs: {} })
+  const before = readFileSync(landingsFile, 'utf8')
   assert.throws(() => syncLanding({ root, number: 12, gh: syncGh(JSON.parse(prJson(head))) }), /already landing/)
+  assert.equal(readFileSync(landingsFile, 'utf8'), before)
+})
+
+test('sync refuses a head that already contains main', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  assert.throws(() => syncLanding({ root, number: 12, gh: syncGh(JSON.parse(prJson(head))) }), /already contains origin\/main/)
+})
+
+test('candidates reports an up-to-date same-repository candidate as not syncable', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const result = listLandingCandidates({
+    root,
+    gh: fakeGh({
+      pr: JSON.parse(prJson(head, 'main', { mergeStateStatus: 'CLEAN' })),
+      list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+    }),
+  })
+  assert.deepEqual(result.candidates, [{
+    number: 12,
+    head,
+    change: 'widget',
+    base: 'main',
+    behind: false,
+    sameRepository: true,
+    syncable: false,
+  }])
+})
+
+test('plan names the author update for a behind fork head', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  assert.throws(() => planLanding({
+    root,
+    number: 12,
+    gh: fakeGh({ pr: JSON.parse(prJson(head, 'main', { isCrossRepository: true })) }),
+  }), /author must update the branch/)
 })
 
 test('sync refuses a stale head and an update-branch rejection', () => {
