@@ -12,6 +12,6 @@
 
 ## 3. Verify
 
-- [ ] 3.1 Run `npx openspec validate docs-single-landing-requirement --strict`.
-- [ ] 3.2 Run `npm run openspec:check`.
-- [ ] 3.3 Run `node scripts/check-requirement-length.mjs`.
+- [x] 3.1 Run `npx openspec validate docs-single-landing-requirement --strict` — valid.
+- [x] 3.2 Run `npm run openspec:check` — 119 passed, 0 failed.
+- [x] 3.3 Run `node scripts/check-requirement-length.mjs` — ok.
