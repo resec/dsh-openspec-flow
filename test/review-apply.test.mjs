@@ -10,7 +10,7 @@ import {
   CHANGE, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, passDraftConstructing, captureSpawn, cleanupFixtures,
 } from './review-fixtures.mjs'
 import { reviewDirectory } from '../lib/review/store.js'
-import { readApplyState } from '../lib/worktree/state.js'
+import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/worktree/seal.js'
 
 test.after(cleanupFixtures)
@@ -947,6 +947,156 @@ test('a draft-only policy reports unset and migrates on the first apply start', 
   assert.equal(started.review, 'apply')
   const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
   assert.equal(migrated.reviews.apply.enabled, true)
+})
+
+test('a ready apply status names land only for a plugin-created active or landing worktree', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  const tree = run(['rev-parse', 'HEAD^{tree}'])
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
+    apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
+  })
+  const directory = reviewDir(root)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'apply-review.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    id: 'apply-ready',
+    change: CHANGE,
+    review: 'apply',
+    state: 'in-review',
+    mode: 'self',
+    independent: false,
+    objectHash: tree,
+    treeSha: tree,
+    rounds: [{ round: 1, objectHash: tree, verdict: 'pass', report: { path: 'apply-1/report.json' } }],
+    findings: [],
+  }, null, 2)}\n`)
+
+  const now = new Date().toISOString()
+  const state = {
+    schemaVersion: 1,
+    change: CHANGE,
+    store: null,
+    mainRoot: root,
+    worktree: '',
+    branch: `openspec/${CHANGE}`,
+    baseCommit: 'base',
+    sealedCommit: null,
+    status: 'active',
+    createdAt: now,
+    lastUsedAt: now,
+    lockToken: null,
+    lockPid: null,
+  }
+  const plugin = join(root, '.cache', 'openspec-flow', 'worktrees', `local#${CHANGE}`)
+  for (const [status, worktree, expected] of [
+    ['active', plugin, 'openspec_apply_worktree action=land'],
+    ['landing', plugin, 'openspec_apply_worktree action=land'],
+    ['archived', plugin, 'openspec_archive'],
+    ['active', join(root, 'user-worktree'), 'openspec_archive'],
+  ]) {
+    writeApplyState(root, null, CHANGE, { ...state, status, worktree })
+    const result = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+    assert.equal(result.nextAction, expected, `${status} ${worktree}`)
+  }
+})
+
+test('a ready apply review names archive from every entry in the compatibility path', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const reported = await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  assert.equal(reported.ready, true)
+
+  // A pass report may still carry an open minor finding; waiving it makes the review ready.
+  const second = gitFixture()
+  const disposeFake = setup(second.root)
+  await passDraft(disposeFake, second.root, second.run)
+  await call(disposeFake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(disposeFake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ findings: [minorFinding()] }),
+  })
+  const disposed = await call(disposeFake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply',
+    id: 'R1-02', status: 'waived', approvedBy: 'user', waiver: 'accepted for this test',
+  })
+  assert.equal(disposed.ready, true)
+  const status = await call(disposeFake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.ready, true)
+
+  // wait is reviewer-only; mark the same ready record as reviewer-owned.
+  const path = join(reviewDir(second.root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(path, 'utf8'))
+  record.mode = 'reviewer'
+  record.independent = true
+  record.reviewerWaived = {
+    slot: 1, reason: null, waiver: 'user waiver', approvedBy: 'user', at: new Date().toISOString(),
+  }
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`)
+  const waited = await call(disposeFake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(waited.waitState, 'ready')
+
+  assert.deepEqual(
+    [...new Set([disposed.nextAction, status.nextAction, reported.nextAction, waited.nextAction])],
+    ['openspec_archive'],
+  )
+})
+
+test('a ready apply review names land from every entry in a plugin-created worktree', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, undefined, { worktree: { enabled: true } })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const reported = await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  assert.equal(reported.ready, true)
+
+  const second = gitFixture()
+  const disposeFake = setup(second.root, undefined, { worktree: { enabled: true } })
+  await passDraft(disposeFake, second.root, second.run)
+  await call(disposeFake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(disposeFake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ findings: [minorFinding()] }),
+  })
+  const disposed = await call(disposeFake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'apply',
+    id: 'R1-02', status: 'waived', approvedBy: 'user', waiver: 'accepted for this test',
+  })
+  assert.equal(disposed.ready, true)
+  assert.equal(disposed.nextAction, 'openspec_apply_worktree action=land')
+  const status = await call(disposeFake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.ready, true)
+
+  const path = join(reviewDir(second.root), 'apply-review.json')
+  const record = JSON.parse(readFileSync(path, 'utf8'))
+  record.mode = 'reviewer'
+  record.independent = true
+  record.reviewerWaived = {
+    slot: 1, reason: null, waiver: 'user waiver', approvedBy: 'user', at: new Date().toISOString(),
+  }
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`)
+  const waited = await call(disposeFake, 'openspec_review', {
+    action: 'wait', change: CHANGE, review: 'apply',
+  })
+  assert.equal(waited.waitState, 'ready')
+
+  assert.deepEqual(
+    [...new Set([disposed.nextAction, status.nextAction, reported.nextAction, waited.nextAction])],
+    ['openspec_apply_worktree action=land'],
+  )
 })
 
 test('starting the same round twice before a report resumes it', async () => {

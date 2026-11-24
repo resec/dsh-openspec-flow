@@ -432,6 +432,23 @@ test('readiness accounts for verdict, blockers and stale hashes', () => {
   assert.equal(waived.ready, true)
 })
 
+test('the ready next action defaults by review kind and accepts an override', () => {
+  const draft = {
+    review: 'draft',
+    state: 'in-review',
+    objectHash: 'hash',
+    rounds: [{ round: 1, verdict: 'pass', report: { path: 'report.json' } }],
+    findings: [],
+  }
+  const apply = { ...draft, review: 'apply' }
+  assert.equal(draftReadiness(draft, 'hash', 'draft').nextAction, 'openspec_apply_next')
+  assert.equal(draftReadiness(apply, 'hash', 'apply').nextAction, 'openspec_archive')
+  assert.equal(
+    draftReadiness(apply, 'hash', 'apply', { readyAction: 'openspec_apply_worktree action=land' }).nextAction,
+    'openspec_apply_worktree action=land',
+  )
+})
+
 test('a blocking length result gates readiness and names resume', () => {
   const length = {
     limit: 500,
