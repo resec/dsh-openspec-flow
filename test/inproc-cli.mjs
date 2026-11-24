@@ -10,9 +10,11 @@
  * runner uses the latter for its own child protocol, so leaving it alone keeps
  * the runner's channel intact. The CLI writes its JSON through `console.log`.
  *
- * Calls are serialized: `runCli` changes `process.cwd`, the environment and the
- * process exit code, so two runs cannot overlap. A second call waits for the
- * first one to finish and keeps its own output.
+ * Calls are serialized: each call changes `process.cwd`, the environment, the
+ * captured console and the process exit code, so two runs cannot overlap. A
+ * second call waits for the first one to finish and keeps its own output. When
+ * the CLI exposes an awaitable program entry, the runner waits for the command
+ * action; otherwise it uses the output-based fallback.
  */
 
 import { format } from 'node:util'
@@ -66,8 +68,9 @@ function setEnv(key, value) {
 
 /**
  * Create a spawner that runs CLI calls in this process.
- * @param options - `load` resolves the CLI module; the window values bound one
- *   call. Tests override them to keep the suite fast.
+ * @param options - `load` resolves the CLI module; `deadlineMs` bounds both
+ *   completion paths, while `quietMs` and `noOutputGraceMs` bound only the
+ *   polling fallback. Tests override them to keep the suite fast.
  * @returns the spawner.
  */
 export function createInprocSpawner({
