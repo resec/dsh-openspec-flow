@@ -135,12 +135,12 @@ If the merged tree differs, `merge` records `tree-mismatch` and archive is refus
 
 ### Review-failed recovery
 
-`review-failed` is a durable stop: `candidates` omits the pull request until the operator clears the blocker. `abandon` alone deletes the landing entry, so the pull request returns to the candidate list and fails again; fix the blocker first. Every recovery below ends by clearing the phase with `abandon <n> --apply`: the entry and checkout are removed, the PR returns to the candidate list, and the next run prepares the landing again from the PR head while the repaired review record lets the final review resume. The recovery steps are:
+`review-failed` is a durable stop: `candidates` omits the pull request until the operator clears the blocker. `abandon` alone deletes the landing entry, so the pull request returns to the candidate list and fails again; fix the blocker first. Steps 1 to 3 end by clearing the phase with `abandon <n> --apply`: the entry and checkout are removed, the PR returns to the candidate list, and the next run prepares the landing again from the PR head while the repaired review record lets the final review resume. Step 4 also clears the entry with `abandon <n> --apply`, but the label is gone so the PR stays out of the candidate list. The recovery steps are:
 
 1. With user approval, run `openspec_review action=replace review=apply` with a reason, which rebinds the same reviewer slot, then clear the phase with `abandon <n> --apply`.
 2. Remove the locked review record and start a fresh review as the self-mode recovery does, then clear the phase with `abandon <n> --apply`.
 3. When a passed record still holds an open finding, with user approval run `openspec_review action=dispose review=apply` for that non-blocking finding, then clear the phase with `abandon <n> --apply`.
-4. Have the maintainer remove the `mergeable` label, which takes the pull request out of the candidate list.
+4. Have the maintainer remove the `mergeable` label, which takes the pull request out of the candidate list, then clear the phase with `abandon <n> --apply`.
 
 ## Schedule
 
