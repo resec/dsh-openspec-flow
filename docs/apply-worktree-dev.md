@@ -63,13 +63,13 @@ The JSON output and `check` expose the same path and the observed pnpm version.
 - A lock whose recorded pid is dead is reclaimed by the next caller.
 - `check` reports a held lock and its owner without removing it.
 
-Browser path resolution is: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`. Bootstrap uses the same resolved path for the presence check, `--reset-browsers` and the installer.
+Browser path resolution is: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`. Bootstrap uses the same resolved path for the presence check, `--reset-browsers` and the installer. A reset removes the directory recursively, so it is confined to a browser cache inside the repository: a path that is the repository root or lies outside it is refused with the path, the reason and the explicit cleanup step named, and bootstrap exits nonzero without deleting anything. A cache shared with other projects or with the host therefore has to be removed by its owner, and `--reset-browsers` without `PLAYWRIGHT_BROWSERS_PATH` resets the repository's own directory.
 
 ```sh
 # Install once, from any worktree, after npm ci
 node scripts/worktree-env.mjs init --browser
 
-# Recover a stale shared browser directory
+# Recover a stale browser directory inside this checkout
 ./scripts/bootstrap.sh --reset-browsers
 ```
 

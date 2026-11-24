@@ -78,7 +78,7 @@ On Linux, the lab doctor also requires a CJK font. If the doctor reports one mis
 
 Run `./scripts/bootstrap.sh --help` for the full list.
 
-On macOS the default temporary directory is a symlink; the test entrypoints canonicalize `TMPDIR` for the child test process, so no host workaround is needed. When the Chromium download is slow or blocked, pass `--playwright-host` or set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror. An interrupted install can leave a `__dirlock` under the resolved browser directory; `--reset-browsers` removes that directory before installing again. After a failed later step, rerun with `--skip-install`; `--full` does not repeat the plain suite. The lab caches the pinned DSH under `.cache/lab/dsh`; `npm run lab -- cache prune` reclaims entries older than 30 days.
+On macOS the default temporary directory is a symlink; the test entrypoints canonicalize `TMPDIR` for the child test process, so no host workaround is needed. When the Chromium download is slow or blocked, pass `--playwright-host` or set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror. An interrupted install can leave a `__dirlock` under the resolved browser directory; `--reset-browsers` removes that directory before installing again. The reset only removes a directory inside the repository and exits nonzero when `PLAYWRIGHT_BROWSERS_PATH` names a cache outside it, which its owner has to remove. After a failed later step, rerun with `--skip-install`; `--full` does not repeat the plain suite. The lab caches the pinned DSH under `.cache/lab/dsh`; `npm run lab -- cache prune` reclaims entries older than 30 days.
 
 ## Change-first workflow
 
