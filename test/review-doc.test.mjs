@@ -415,7 +415,7 @@ test('the review document explains the cards and the model rule', () => {
     '评审卡不投递',
     '`review.json` 或 `apply-review.json`',
     '升级前写入的同类卡同样不投递',
-    '汇报类型 · change 名 · 评审类型',
+    '汇报类型 · change 名 · 评审类型 · 轮次 · 结论 · 四档计数',
     'change 名缺失时省略',
     '未记录时不显示',
     '合并为一行',
