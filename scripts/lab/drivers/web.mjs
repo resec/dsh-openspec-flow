@@ -8,7 +8,7 @@
 
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative } from 'node:path'
+import { basename, join, relative } from 'node:path'
 
 /**
  * Load Playwright from the repository's development dependencies.
@@ -23,9 +23,30 @@ export async function loadPlaywright() {
 }
 
 /**
+ * Record console errors, uncaught page errors and failed requests for one page.
+ * @param page - Playwright page.
+ * @returns `{ errors, pageErrors, failures }`.
+ */
+export function watchPage(page) {
+  const errors = []
+  const pageErrors = []
+  const failures = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  page.on('pageerror', (error) => {
+    const text = String(error)
+    errors.push(text)
+    pageErrors.push(text)
+  })
+  page.on('requestfailed', (request) => failures.push(`${request.method()} ${request.url()}`))
+  return { errors, pageErrors, failures }
+}
+
+/**
  * Launch Chromium and open one page.
  * @param options - URL, viewport and headless flag.
- * @returns `{ browser, page }`.
+ * @returns `{ browser, page, errors, pageErrors, failures }`.
  */
 export async function openPage({ url, headless = true, viewport = { width: 1440, height: 1200 }, browsersPath, fontConfig }) {
   if (browsersPath !== undefined) process.env.PLAYWRIGHT_BROWSERS_PATH = browsersPath
@@ -34,15 +55,32 @@ export async function openPage({ url, headless = true, viewport = { width: 1440,
   const browser = await chromium.launch({ headless })
   const context = await browser.newContext({ viewport })
   const page = await context.newPage()
-  const errors = []
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(message.text())
-  })
-  page.on('pageerror', (error) => errors.push(String(error)))
-  const failures = []
-  page.on('requestfailed', (request) => failures.push(`${request.method()} ${request.url()}`))
+  const watched = watchPage(page)
   if (url !== undefined) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-  return { browser, page, errors, failures }
+  return { browser, page, ...watched }
+}
+
+/**
+ * Fail when the loaded page raised an uncaught error.
+ * @param pageErrors - recorded uncaught page errors.
+ * @returns nothing.
+ */
+export function assertNoPageError(pageErrors) {
+  if (pageErrors.length > 0) {
+    throw new Error(`the page raised an uncaught error: ${pageErrors.join('; ')}`)
+  }
+}
+
+/**
+ * Enforce the Web GUI open conditions and keep a screenshot of the page.
+ * @param options - page, recorded page errors, screenshot path and the run's screenshot list.
+ * @returns the screenshot path.
+ */
+export async function confirmPageLoaded({ page, pageErrors, path, screenshots }) {
+  assertNoPageError(pageErrors)
+  await screenshot(page, path)
+  screenshots.push(path)
+  return path
 }
 
 /**
@@ -70,14 +108,15 @@ export async function dismissOnboarding(page) {
 }
 
 /**
- * Select a workspace through the directory picker.
+ * Select a workspace through the directory picker and wait until the page shows it.
  * @param page - Playwright page.
  * @param directory - absolute project directory.
  * @returns nothing.
  */
 export async function chooseWorkspace(page, directory) {
+  const name = basename(directory)
   const choose = page.getByRole('button', { name: 'Choose workspace', exact: true })
-  if ((await choose.count()) === 0) return
+  if ((await choose.count()) === 0) throw new Error('the page shows no "Choose workspace" button')
   await page.waitForTimeout(800)
   await choose.click({ force: true, timeout: 20_000 })
   await page.waitForTimeout(800)
@@ -87,15 +126,23 @@ export async function chooseWorkspace(page, directory) {
   const dialog = page.getByRole('dialog')
   const home = page.getByRole('button', { name: 'Home', exact: true })
   if ((await home.count()) > 0) await home.click()
+  let parent = 'Home'
   for (const segment of segments) {
     const item = dialog.getByText(segment, { exact: true }).first()
-    if ((await item.count()) === 0) continue
+    if ((await item.count()) === 0) throw new Error(`the directory picker shows no ${segment} under ${parent}`)
     await item.click()
+    parent = segment
     await page.waitForTimeout(350)
   }
   const open = page.getByRole('button', { name: 'Open', exact: true })
-  if ((await open.count()) > 0) await open.click({ force: true })
+  if ((await open.count()) === 0) throw new Error('the directory picker shows no "Open" button')
+  await open.click({ force: true })
   await page.waitForTimeout(1_500)
+  try {
+    await page.getByText(name, { exact: true }).first().waitFor({ timeout: 15_000 })
+  } catch {
+    throw new Error(`the page does not show the selected workspace ${name}`)
+  }
 }
 
 /**

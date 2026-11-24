@@ -77,6 +77,8 @@ export default defineScenario({
 
 The plain test entrypoint only collects top-level `test/*.test.mjs`, so `test/lab/*.scenario.mjs` does not slow down `npm test` or `test:affected`. Framework unit tests live at `test/lab-*.test.mjs` and do run in `npm test`.
 
+The web driver enforces the open conditions instead of leaving them to the scenario. `waitForShell` is followed by a page-error check: a page that raised an uncaught error fails the run with that error named. A clean page is screenshotted to `artifacts/web.png`, and `report.json` lists that path in `screenshots` together with every path a scenario passes to `web.screenshot`. `chooseWorkspace` throws when the page shows no `Choose workspace` button, when the directory picker shows no entry for one path segment, or when it shows no `Open` button, and it returns only after the page shows the selected directory name, so a scenario never sends a message against an unselected page.
+
 ## POCs
 
 One-off experiments belong under `.cache/lab/experiments/`. They are ignored by git, never discovered by `test:lab` and never part of pre-push. Import the lab API directly or call the CLI; the isolated home is the only state they touch.
@@ -107,7 +109,7 @@ The offline maintainer path has no remote CI before its deferred push, so it run
 
 Each run writes under `.cache/lab/runs/<id>/artifacts/`:
 
-- `report.json` — versions, cache source, plugin sha512 and dirty paths, checks, verdict and evidence paths
+- `report.json` — versions, cache source, plugin sha512 and dirty paths, checks, screenshot paths, page-event counts, verdict and evidence paths
 - `manifest.json` — DSH and run metadata
 - one `dump-config-<mode>.yml` per composed profile, `headless.ndjson`, `headless.stderr.log`, `web.log`, `mock.log`
 - `init-<mode>.log` — the untouched output of a profile initialization that failed; the failure message names it
