@@ -40,7 +40,7 @@
 
 ## 8. Maintainer pull-request gate
 
-- [ ] 8.1 Add the maintainer same-repository restricted-path exemption to `scripts/check-pr-change.mjs` and pass `--maintainer` from `.github/workflows/ci.yml` only when the pull-request author is `resec` and the head repository equals `github.repository`; keep the single-change, task-completion, head `package.json` and dependency checks, cover the maintainer and external paths in `test/check-pr-change.test.mjs` and `test/ci-workflow.test.mjs`, and document the exemption and the remaining external refusal in `docs/local-pr.md`.
+- [x] 8.1 Add the maintainer same-repository restricted-path exemption to `scripts/check-pr-change.mjs` and pass `--maintainer` from `.github/workflows/ci.yml` only when the pull-request author is `resec` and the head repository equals `github.repository`; keep the single-change, task-completion, head `package.json` and dependency checks, cover the maintainer and external paths in `test/check-pr-change.test.mjs` and `test/ci-workflow.test.mjs`, and document the exemption and the remaining external refusal in `docs/local-pr.md`.
 
 ## 7. Integration verification
 
