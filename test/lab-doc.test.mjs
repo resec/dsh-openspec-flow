@@ -17,6 +17,9 @@ test('the lab document states the commands, POC location and browser install', (
   assert.match(doc, /apply-worktree-dev\.md/)
   assert.match(doc, /otherwise `\.cache\/lab\/pw-browsers`/)
   assert.match(doc, /COVERAGE_SKIP=1/)
+  assert.match(doc, /`--offline`, `--fresh-dsh`, `--mock-only`, `--include-real-model`, `--cleanup` and `--keep` are boolean/)
+  assert.match(doc, /and so is `inspect --all`/)
+  assert.match(doc, /There is no `--all` flag for `test:lab`/)
 })
 
 test('AGENTS and the README point at the lab gate and documentation', () => {
