@@ -18,4 +18,4 @@
 ## 4. Verify
 
 - [x] 4.1 Run `node --test test/pr-review-land.test.mjs` (28 tests, 28 pass); with `scripts/pr-review-land.mjs` stashed, the two new cases fail.
-- [x] 4.2 Run `/tmp/b3/gates.sh fix-landing-local-main-sync`.
+- [x] 4.2 Run `/tmp/b3/gates.sh fix-landing-local-main-sync` (strict validation, `openspec:check` 116 passed, requirement length, generated skills, `check:pr`, `npm run verify` 1333 passed with line 98.63%, branch 93.61%, function 99.21% and no violation).
