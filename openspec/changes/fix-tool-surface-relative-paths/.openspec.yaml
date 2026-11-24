@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Report worktree, land, remove and failed-archive paths against the resolved
+  root, as the tool-surface path rule already requires.
