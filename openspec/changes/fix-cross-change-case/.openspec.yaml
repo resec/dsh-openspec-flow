@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Fold the change name's case when attributing a finding location, as the
+  review spec requires the reviewed change's own location to be accepted.
