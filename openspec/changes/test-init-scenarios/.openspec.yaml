@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Assert every scenario the init spec already names, so a partial init
+  cannot pass the integration test.
