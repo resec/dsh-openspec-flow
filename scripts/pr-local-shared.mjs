@@ -48,27 +48,6 @@ export function readJson(file) {
 }
 
 /**
- * Read the active plugin apply state for one change.
- * @param root - main worktree.
- * @param change - change name.
- * @returns `{ file, state }`, or undefined.
- */
-export function readApplyState(root, change) {
-  const common = resolvePaths(root).commonDir
-  if (common === undefined) throw new Error(`${root} is not a git repository`)
-  const directory = join(common, 'openspec-flow', 'apply')
-  if (!existsSync(directory)) return undefined
-  for (const name of readdirSync(directory)) {
-    if (!name.endsWith('.json')) continue
-    const file = join(directory, name)
-    const state = readJson(file)
-    if (state?.change !== change) continue
-    return { file, state }
-  }
-  return undefined
-}
-
-/**
  * Find the active plugin apply state for a worktree or change.
  * @param root - main worktree.
  * @param options - worktree path and optional change name.
@@ -149,13 +128,6 @@ export function assertPlanningCopy({ root, change, sealedCommit }) {
       throw new Error(`the tracked ${ignorePath} differs from the seal`)
     }
   }
-}
-
-/** Whether GitHub is reachable through the authenticated gh. */
-export function assertOnline(gh = ghText, cwd) {
-  const repo = gh(['repo', 'view', '--json', 'nameWithOwner'], cwd)
-  if (repo === undefined) throw new Error('github-unreachable')
-  return JSON.parse(repo)
 }
 
 /** Read local main against origin main after a fetch. */
