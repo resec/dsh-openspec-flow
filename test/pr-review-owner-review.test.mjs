@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -13,7 +13,7 @@ import {
   reconcileOwnerReview,
   syncPullRequest,
 } from '../scripts/pr-review-owner-review.mjs'
-import { loadState, saveState, cleanupClosedPullRequests } from '../scripts/pr-review-watch.mjs'
+import { cleanupClosedPullRequests, loadState, saveState, saveLocalState } from '../scripts/pr-review-watch.mjs'
 
 const HEAD = 'a'.repeat(40)
 const OLD = 'b'.repeat(40)
@@ -474,6 +474,67 @@ test('main dry-run prints a plan and the lock refuses a second run', () => {
     assert.equal(locked, 1)
     assert.match(output, /another PR review run holds/)
     assert.equal(loadState(root).prs['12'].ownerReview, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
+
+function localEntry(overrides = {}) {
+  return {
+    number: 12,
+    change: 'widget',
+    branch: 'openspec/apply/local-widget-12345678',
+    head: HEAD,
+    tree: OLD,
+    record: 'local#widget',
+    ownerSession: 'owner-1',
+    phase: 'published',
+    ...overrides,
+  }
+}
+
+test('owner-review skips a local pull request without touching labels', () => {
+  const root = makeRoot()
+  try {
+    writeState(root, makeEntry())
+    saveLocalState(root, { schemaVersion: 1, prs: { 12: localEntry() } })
+    const { gh, calls } = fakeGh(prHandler({ 12: makePr() }))
+    const result = syncPullRequest({ root, number: 12, apply: true, gh })
+    assert.equal(result.action, 'none')
+    assert.equal(result.reason, 'local-owner')
+    assert.deepEqual(result.actions, [])
+    assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'edit'), false)
+    assert.deepEqual(loadState(root).prs['12'].ownerReview, undefined)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('owner-review reconcile excludes a labeled local pull request', () => {
+  const root = makeRoot()
+  try {
+    writeState(root)
+    saveLocalState(root, { schemaVersion: 1, prs: { 12: localEntry() } })
+    const open = [{ number: 12, labels: [{ name: OWNER_REVIEW_LABEL }] }]
+    const { gh, calls } = fakeGh(prHandler({ 12: makePr({ labels: [{ name: OWNER_REVIEW_LABEL }] }) }, open))
+    const result = reconcileOwnerReview({ root, apply: true, gh })
+    assert.deepEqual(result.results, [])
+    assert.deepEqual(result.errors, [])
+    assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'edit'), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('owner-review refuses a corrupt local owner state', () => {
+  const root = makeRoot()
+  try {
+    writeState(root)
+    writeFileSync(join(root, '.cache', 'pr-review', 'local-prs.json'), '{not json')
+    const { gh } = fakeGh(prHandler({ 12: makePr() }))
+    assert.throws(() => syncPullRequest({ root, number: 12, gh }), /corrupt/)
+    assert.throws(() => reconcileOwnerReview({ root, gh }), /corrupt/)
   } finally {
     cleanup(root)
   }
