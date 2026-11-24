@@ -18,5 +18,5 @@
 ## 3. Verify
 
 - [x] 3.1 Run `node --test test/pr-review-watch.test.mjs`.
-- [ ] 3.2 Run `npm run verify` on Node 24 and record the test summary and the coverage verdict.
-- [ ] 3.3 Run `openspec validate test-watch-prepare-gates --strict` and `npm run check:pr`.
+- [x] 3.2 Run `npm run verify` on Node 24: 1435 tests pass, plugin coverage line 98.63%, branch 93.72%, function 99.21%.
+- [x] 3.3 Run `openspec validate test-watch-prepare-gates --strict` and `npm run check:pr`.
