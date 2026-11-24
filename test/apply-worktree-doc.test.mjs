@@ -17,6 +17,10 @@ test('the apply worktree document and README row describe the state and locks', 
     'cleanup',
     'rebaseReview',
     'cleanup.complete',
+    "holding the same change's lock is refused",
+    "another change's lock does not block it",
+    'any change lock in the same git common directory',
+    "Releasing one change lock drops only that lock's entry",
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }

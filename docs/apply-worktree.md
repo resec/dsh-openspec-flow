@@ -55,7 +55,7 @@ Writes use a temporary file and a rename. A corrupt or incomplete state is repor
 
 A lock is created by writing an owner record into a temporary directory and renaming the complete directory into place. The owner record carries `schema`, `token`, `pid`, `at` and `what`. A waiter polls until its timeout, then fails naming the owner; the general waiter never removes a dead owner's lock, while apply may reclaim a dead free lock as described below. A caller may re-enter with the state's recorded token from the same pid. When the recorded pid is dead and the lock is free, apply may acquire it and replace the token/pid.
 
-The lifecycle lock is acquired first and released last. A change lock is acquired second and released first. Acquiring the lifecycle lock while holding a change lock is refused.
+The lifecycle lock is acquired first and released last. A change lock is acquired second and released first. Acquiring the lifecycle lock while holding the same change's lock is refused, because that would hand the change lock over to the lifecycle lock; another change's lock does not block it. A lifecycle request that names no change cannot show which change it concerns, so it is refused while the process holds any change lock in the same git common directory. Releasing one change lock drops only that lock's entry.
 
 Release removes the directory only when the caller's token still matches. A changed owner is left in place and reported. A missing lock releases idempotently.
 

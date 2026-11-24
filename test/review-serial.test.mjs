@@ -6,7 +6,8 @@ import {
 import { join } from 'node:path'
 import test from 'node:test'
 import { applyLockLocation } from '../lib/review/apply-lock.js'
-import { reviewDirectory } from '../lib/review/store.js'
+import { gitCommonDir, reviewDirectory } from '../lib/review/store.js'
+import { acquireLock, releaseLock } from '../lib/worktree/lock.js'
 import {
   CHANGE, call, cleanupFixtures, externalSetup, fixture, gitFixture, passDraft, report, setup, writePolicy,
 } from './review-fixtures.mjs'
@@ -203,6 +204,21 @@ test("a parallel draft's uncommitted artifacts do not block the apply review", a
     action: 'start', change: CHANGE, review: 'apply',
   })
   assert.equal(review.state, 'in-review')
+})
+
+test("archive proceeds while this process holds another change's lock", async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 }, apply: { enabled: false } })
+  await passDraft(fake, root, run)
+  copySecond(root)
+  const other = await acquireLock(gitCommonDir(root), 'change', { change: SECOND, timeoutMs: 1000 })
+  try {
+    const archived = await call(fake, 'openspec_archive', { change: CHANGE })
+    assert.equal(archived.archived, true)
+    assert.equal(existsSync(other.path), true)
+  } finally {
+    releaseLock(other)
+  }
 })
 
 test('a failed archive keeps the locks', async () => {
