@@ -22,10 +22,32 @@ import {
   sha512Hex,
   splitDirtyPaths,
   tarballPaths,
+  untrackedPaths,
   verifyTarball,
 } from '../lib/bundle.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+/**
+ * Run git in a repository.
+ * @param root - repository root.
+ * @param args - arguments after `git -C <root>`.
+ * @returns the command result.
+ */
+function git(root, ...args) {
+  return spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+}
+
+/**
+ * The paths `git ls-files` lists, as the pack entrypoint reads them.
+ * @param root - repository root.
+ * @returns the tracked POSIX paths.
+ */
+function trackedOf(root) {
+  const listed = git(root, 'ls-files', '-z')
+  assert.equal(listed.status, 0, listed.stderr)
+  return listed.stdout.split('\0').filter(Boolean)
+}
 
 /**
  * Build one ustar header block.
@@ -95,6 +117,31 @@ function fixture() {
   return root
 }
 
+/**
+ * Turn a fixture into a committed repository that holds an ignored and an
+ * untracked file npm never packs, and an ignored file the `lib/**` glob packs.
+ * @param root - the fixture root.
+ * @returns the fixture root.
+ */
+function commitFixture(root) {
+  writeFileSync(join(root, '.gitignore'), '*.log\nlib/.DS_Store\n')
+  const commands = [
+    ['init', '-q'],
+    ['config', 'user.email', 'bundle@example.test'],
+    ['config', 'user.name', 'Bundle Test'],
+    ['add', '.gitignore', 'package.json', 'index.js', 'client.js', 'reviewer.js', 'cordis.patch.yml', 'icon.svg', 'lib/mod.js', 'skills/demo/SKILL.md', 'locale/en.json'],
+    ['commit', '-qm', 'init'],
+  ]
+  for (const args of commands) {
+    const result = git(root, ...args)
+    assert.equal(result.status, 0, result.stderr)
+  }
+  writeFileSync(join(root, 'lib', 'debug.log'), 'debug\n')
+  writeFileSync(join(root, 'lib', '.DS_Store'), '\0')
+  writeFileSync(join(root, 'skills', '.DS_Store'), '\0')
+  return root
+}
+
 test('reads the manifest and refuses a missing one', () => {
   const manifest = readManifest(ROOT)
   assert.equal(manifest.name, 'dsh-openspec-flow')
@@ -105,29 +152,48 @@ test('reads the manifest and refuses a missing one', () => {
 
 test('the core set is independent of the file list', () => {
   const manifest = readManifest(ROOT)
-  const core = corePaths(ROOT, manifest)
+  const tracked = trackedOf(ROOT)
+  const core = corePaths(ROOT, manifest, tracked)
   for (const required of ['package.json', 'index.js', 'client.js', 'reviewer.js', 'cordis.patch.yml', 'icon.svg', 'lib/bundle.js']) {
     assert.ok(core.includes(required), required)
   }
   assert.ok(core.some((path) => path.startsWith('skills/') && path.endsWith('/SKILL.md')))
   assert.ok(core.some((path) => path.startsWith('locale/') && path.endsWith('.json')))
-  const withoutFiles = corePaths(ROOT, { ...manifest, files: [] })
+  const withoutFiles = corePaths(ROOT, { ...manifest, files: [] }, tracked)
   assert.deepEqual(withoutFiles, core)
-  assert.deepEqual(expectedPublishedPaths(ROOT, { ...manifest, files: undefined }), core)
-  assert.ok(expectedPublishedPaths(ROOT).includes('lib/bundle.js'))
+  assert.deepEqual(expectedPublishedPaths(ROOT, { ...manifest, files: undefined }, tracked), core)
+  assert.ok(expectedPublishedPaths(ROOT, manifest, tracked).includes('lib/bundle.js'))
+})
+
+test('the core set holds tracked files only', () => {
+  const root = commitFixture(fixture())
+  try {
+    const manifest = readManifest(root)
+    const tracked = trackedOf(root)
+    assert.ok(!tracked.includes('lib/debug.log'))
+    for (const path of ['lib/debug.log', 'lib/.DS_Store', 'skills/.DS_Store']) {
+      assert.ok(!corePaths(root, manifest, tracked).includes(path), path)
+      assert.ok(!expectedPublishedPaths(root, manifest, tracked).includes(path), path)
+    }
+    assert.ok(corePaths(root, manifest, tracked).includes('lib/mod.js'))
+    assert.ok(expectedPublishedPaths(root, manifest, tracked).includes('skills/demo/SKILL.md'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('expands the manifest files on top of the core', () => {
   const root = fixture()
+  const tracked = ['index.js', 'lib/mod.js', 'skills/demo/SKILL.md', 'locale/en.json']
   try {
     const manifest = readManifest(root)
-    const paths = expectedPublishedPaths(root, manifest)
+    const paths = expectedPublishedPaths(root, manifest, tracked)
     for (const required of ['package.json', 'index.js', 'lib/mod.js', 'skills/demo/SKILL.md', 'locale/en.json', 'cordis.patch.yml', 'icon.svg']) {
       assert.ok(paths.includes(required), required)
     }
     assert.ok(!paths.includes('README.md'))
     assert.ok(!paths.includes('LICENSE'))
-    assert.deepEqual(expectedPublishedPaths(root), paths)
+    assert.deepEqual(expectedPublishedPaths(root, { ...manifest, files: ['lib/**', 'locale/*.json'] }, tracked), paths)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -136,7 +202,7 @@ test('expands the manifest files on top of the core', () => {
 test('reports a missing published directory', () => {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-manifest-dir-'))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'pkg', version: '1.0.0' }))
-  assert.throws(() => corePaths(root, readManifest(root)), /published directory lib\/ is missing/)
+  assert.throws(() => corePaths(root, readManifest(root), []), /published directory lib\/ is missing/)
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -273,7 +339,7 @@ test('refuses an existing pair unless forced', () => {
 
 test('builds the metadata record', () => {
   const bytes = tarball([['index.js', 'x']])
-  const record = metadataFor({ name: 'pkg', version: '1.0.0' }, bytes, ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z')
+  const record = metadataFor({ name: 'pkg', version: '1.0.0' }, bytes, ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z', false)
   assert.deepEqual(record, {
     name: 'pkg',
     version: '1.0.0',
@@ -285,25 +351,34 @@ test('builds the metadata record', () => {
     dirty: false,
     at: '2026-11-15T00:00:00.000Z',
   })
+  assert.equal(metadataFor({ name: 'pkg', version: '1.0.0' }, bytes, ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z', true).dirty, true)
+})
+
+test('lists the tarball paths the repository does not track', () => {
+  assert.deepEqual(untrackedPaths(['index.js', 'lib/debug.log', 'lib/mod.js'], ['index.js', 'lib/mod.js', 'skills/a/SKILL.md']), ['lib/debug.log'])
+  assert.deepEqual(untrackedPaths(['index.js'], ['index.js']), [])
+  assert.deepEqual(untrackedPaths([], ['index.js']), [])
 })
 
 test('publishes a verified pair only after the check passes', () => {
   const dist = mkdtempSync(join(tmpdir(), 'openspec-flow-publish-'))
   const empty = mkdtempSync(join(tmpdir(), 'openspec-flow-publish-empty-'))
   const manifest = { name: 'pkg', version: '1.0.0' }
+  const tracked = ['index.js']
   try {
     const { tarball: tarballPath, metadata } = artifactPaths(dist, 'pkg', '1.0.0')
-    const first = publishVerified(dist, manifest, tarball([['index.js', 'x']]), ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z')
+    const first = publishVerified(dist, manifest, tarball([['index.js', 'x']]), ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z', tracked)
     assert.equal(first.revision, 'a'.repeat(40))
+    assert.equal(first.dirty, false)
     assert.ok(existsSync(tarballPath))
 
-    assert.throws(() => publishVerified(empty, manifest, tarball([['index.js', 'x']]), ['client.js'], 'b'.repeat(40), 'later'), /missing/)
+    assert.throws(() => publishVerified(empty, manifest, tarball([['index.js', 'x']]), ['client.js'], 'b'.repeat(40), 'later', tracked), /missing/)
     assert.deepEqual(readdirSync(empty), [])
 
-    assert.throws(() => publishVerified(dist, manifest, tarball([['index.js', 'z']]), ['client.js'], 'b'.repeat(40), 'later'), /missing/)
+    assert.throws(() => publishVerified(dist, manifest, tarball([['index.js', 'z']]), ['client.js'], 'b'.repeat(40), 'later', tracked), /missing/)
     assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).revision, 'a'.repeat(40))
 
-    const second = publishVerified(dist, manifest, tarball([['index.js', 'z']]), ['index.js'], 'b'.repeat(40), 'later')
+    const second = publishVerified(dist, manifest, tarball([['index.js', 'z']]), ['index.js'], 'b'.repeat(40), 'later', tracked)
     assert.equal(second.revision, 'b'.repeat(40))
     assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).revision, 'b'.repeat(40))
     assert.deepEqual(readdirSync(dist).filter((name) => name !== 'pkg-1.0.0'), [])
@@ -313,18 +388,38 @@ test('publishes a verified pair only after the check passes', () => {
   }
 })
 
+test('publishes a tarball that carries an untracked path as dirty', () => {
+  const dist = mkdtempSync(join(tmpdir(), 'openspec-flow-publish-dirty-'))
+  const manifest = { name: 'pkg', version: '1.0.0' }
+  try {
+    const { metadata } = artifactPaths(dist, 'pkg', '1.0.0')
+    const bytes = tarball([['index.js', 'x'], ['lib/debug.log', 'debug']])
+    const record = publishVerified(dist, manifest, bytes, ['index.js'], 'a'.repeat(40), '2026-11-15T00:00:00.000Z', ['index.js'])
+    assert.equal(record.dirty, true)
+    assert.equal(record.files, 2)
+    assert.equal(record.sha512, sha512Hex(bytes))
+    assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).dirty, true)
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
 test('packs a fixture with npm and verifies the bytes', () => {
-  const root = fixture()
+  const root = commitFixture(fixture())
   const out = mkdtempSync(join(tmpdir(), 'openspec-flow-pack-out-'))
   try {
     const packed = spawnSync('npm', ['pack', '--json', '--pack-destination', out, '--cache', join(out, 'cache')], { cwd: root, encoding: 'utf8' })
     assert.equal(packed.status, 0, packed.stderr)
     const name = JSON.parse(packed.stdout)[0].filename
     const bytes = readFileSync(join(out, name))
-    const paths = verifyTarball(bytes, expectedPublishedPaths(root))
+    const tracked = trackedOf(root)
+    const paths = verifyTarball(bytes, expectedPublishedPaths(root, readManifest(root), tracked))
     assert.ok(paths.includes('skills/demo/SKILL.md'))
     assert.ok(paths.includes('lib/mod.js'))
     assert.ok(!paths.some((path) => path.startsWith('test/')))
+    assert.deepEqual(untrackedPaths(paths, tracked), ['lib/debug.log'])
+    assert.ok(!paths.includes('lib/.DS_Store'))
+    assert.ok(!paths.includes('skills/.DS_Store'))
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(out, { recursive: true, force: true })

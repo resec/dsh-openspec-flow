@@ -61,6 +61,9 @@ const COMPLETE = [
   ['locale/en.json', '{}'],
 ]
 
+/** The paths a committed fixture repository tracks. */
+const TRACKED = COMPLETE.map(([name]) => name)
+
 /**
  * Create a small repository fixture with the shipped layout.
  * @returns the fixture root.
@@ -98,6 +101,7 @@ function fakeExec(options = {}) {
     if (command === 'git') {
       if (options.gitFails) return { status: 1, stdout: '', stderr: 'git failed' }
       if (args.includes('--porcelain')) return { status: 0, stdout: options.status ?? '', stderr: '' }
+      if (args.includes('ls-files')) return { status: 0, stdout: `${(options.tracked ?? TRACKED).join('\0')}\0`, stderr: '' }
       return { status: 0, stdout: `${options.revision ?? 'a'.repeat(40)}\n`, stderr: '' }
     }
     if (command !== 'npm') throw new Error(`unexpected command ${command}`)
@@ -213,9 +217,60 @@ test('packs a clean tree and publishes the pair', () => {
     assert.equal(result.code, 0)
     const { directory, tarball, metadata } = artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0')
     assert.ok(existsSync(tarball))
-    assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).revision, 'b'.repeat(40))
+    const record = JSON.parse(readFileSync(metadata, 'utf8'))
+    assert.equal(record.revision, 'b'.repeat(40))
+    assert.equal(record.dirty, false)
+    assert.ok(!result.lines.some((line) => line.text.includes('does not track')))
     assert.ok(result.lines.some((line) => line.text.includes(directory)))
     assert.ok(!existsSync(join(root, SCRATCH_DIR)))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('records a dirty pack when the tarball carries an ignored file', () => {
+  const root = fixture()
+  try {
+    const { exec } = fakeExec({ bytes: tarball([...COMPLETE, ['lib/debug.log', 'debug']]) })
+    const result = runPack({ root, argv: [], exec })
+    assert.equal(result.code, 0)
+    const { tarball: archive, metadata } = artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0')
+    const record = JSON.parse(readFileSync(metadata, 'utf8'))
+    assert.equal(record.dirty, true)
+    assert.equal(record.files, COMPLETE.length + 1)
+    assert.ok(tarballPaths(readFileSync(archive)).includes('lib/debug.log'))
+    const reported = result.lines.filter((line) => line.text.includes('lib/debug.log'))
+    assert.equal(reported.length, 1)
+    assert.equal(reported[0].error, false)
+    assert.ok(result.lines.some((line) => !line.error && line.text.includes('dirty true')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('reads the published set from the tracked paths, not the directory', () => {
+  const root = fixture()
+  try {
+    // npm never packs either file, so the tarball omits them: requiring them would reject the pack.
+    writeFileSync(join(root, 'lib', '.DS_Store'), '\0')
+    mkdirSync(join(root, 'skills', 'demo', 'nested'))
+    writeFileSync(join(root, 'skills', 'demo', 'nested', '.DS_Store'), '\0')
+    const result = runPack({ root, argv: [], exec: fakeExec().exec })
+    assert.equal(result.code, 0, result.lines.map((line) => line.text).join('\n'))
+    assert.ok(!result.lines.some((line) => line.text.includes('missing')))
+    assert.equal(JSON.parse(readFileSync(artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0').metadata, 'utf8')).dirty, false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('reports a missing published directory', () => {
+  const root = fixture()
+  try {
+    rmSync(join(root, 'lib'), { recursive: true })
+    const result = runPack({ root, argv: [], exec: fakeExec().exec })
+    assert.equal(result.code, 1)
+    assert.ok(result.lines.some((line) => line.error && /published directory lib\/ is missing/.test(line.text)))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

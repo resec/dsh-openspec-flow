@@ -11,7 +11,7 @@
 | `dist/<name>-<version>/<name>-<version>.tgz` | 由 `npm pack` 生成的安装包，含 `package.json` 及其 `files` 列出的文件（`README.md`、`LICENSE` 为文档） |
 | `dist/<name>-<version>/<name>-<version>.json` | 元数据：`name`、`version`、`file`、`sha512`、`bytes`、`files`、`revision`、`dirty`、`at` |
 
-`revision` 记录打包时的 `HEAD` 提交，是产物来源的标识；成功产物中 `dirty` 恒为 `false`。`dist/` 被版本控制忽略，产物可由提交重新生成。
+`revision` 记录打包时的 `HEAD` 提交，是产物来源的标识；`dirty` 表示 tarball 是否带有 `HEAD` 未跟踪的路径。被 `.gitignore` 忽略、却被 `files` 通配（如 `lib/**`）带进包的文件（如 `lib/debug.log`）不会让打包失败，但会让 `dirty` 为 `true`，命令同时列出这些路径。这样的产物不能由提交重新生成，删除或提交这些文件后重打。`dist/` 被版本控制忽略。
 
 ## 打包
 
@@ -26,7 +26,7 @@ npm run bundle:pack
 - 发布内容必须已提交；`openspec/` 下的未提交路径会被忽略并单独列出（它们不可能进入 tarball），`openspec/` 之外的未提交改动会让 `revision` 不描述包内容，命令列出阻断路径并退出非零。
 - 同一版本已存在产物时拒绝覆盖；确实需要重发同一版本时加 `--force`，两个文件一起替换并记录新的 `revision`。
 - 打包先写入 `.cache/pack/`，读取 tarball 字节校验必含内容与禁含路径；校验通过后才把版本目录整体发布到 `dist/`，失败时 `dist/` 保持原样，临时目录在成功和失败后都会删除。发布以目录为单位替换，中断不会留下新 tarball 配旧元数据。
-- 必含内容分两层：无条件核心集（`package.json`、`index.js`、`client.js`、`reviewer.js`、`cordis.patch.yml`、`icon.svg`、`lib/` 全部文件、`skills/` 全部文件、`locale/*.json`）与 `files` 列出的文件；核心集不依赖 `files`，所以清单删掉入口文件也会被拒绝。
+- 必含内容分两层：无条件核心集（`package.json`、`index.js`、`client.js`、`reviewer.js`、`cordis.patch.yml`、`icon.svg`、`lib/` 全部已跟踪文件、`skills/` 全部已跟踪文件、`locale/*.json`）与 `files` 列出的文件；核心集不依赖 `files`，所以清单删掉入口文件也会被拒绝。目录通配展开取自 `git ls-files` 的已跟踪文件，不遍历工作区，所以被忽略或未跟踪的文件（如 `.DS_Store`）不会成为必含项。
 - 禁含 `test/`、`openspec/`、`scripts/`、`node_modules/`、`dist/`。
 - 脚本不写 profile、不调用插件管理器，也不在 profile 目录运行包管理器。
 
