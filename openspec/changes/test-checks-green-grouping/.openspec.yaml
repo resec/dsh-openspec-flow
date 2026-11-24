@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-25
+skip_specs: true
+goal: Guard the checksGreen grouping key, the start time fallback and the
+  same-time rule with minimal rollups, so dropping the workflow name from the
+  key fails the suite.
