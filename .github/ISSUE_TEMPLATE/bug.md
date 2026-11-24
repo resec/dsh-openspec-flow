@@ -44,6 +44,7 @@ Commands that must pass after the fix.
 ```sh
 npm test
 npm run openspec:check
+npm run check:requirement-length
 ```
 
 ## Scope
