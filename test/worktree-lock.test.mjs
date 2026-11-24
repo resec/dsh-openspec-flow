@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -32,6 +32,33 @@ function repository() {
 test.after(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true })
 })
+
+const lockModule = new URL('../lib/worktree/lock.js', import.meta.url).href
+
+/** Recover in a child process, held back by a barrier file until the parent writes it. */
+function recoverChild({ common, change, expectedOwner, barrier }) {
+  const code = `
+import { existsSync } from 'node:fs'
+import { recoverLock } from ${JSON.stringify(lockModule)}
+const { LOCK_COMMON, LOCK_CHANGE, LOCK_OWNER, LOCK_BARRIER } = process.env
+while (!existsSync(LOCK_BARRIER)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2)
+try {
+  const result = recoverLock(LOCK_COMMON, 'change', { change: LOCK_CHANGE, expectedOwner: LOCK_OWNER })
+  process.stdout.write(JSON.stringify({ ok: true, result }))
+} catch (error) {
+  process.stdout.write(JSON.stringify({ ok: false, message: error.message }))
+}
+`
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      env: { ...process.env, LOCK_COMMON: common, LOCK_CHANGE: change, LOCK_OWNER: expectedOwner, LOCK_BARRIER: barrier },
+    })
+    let out = ''
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { out += chunk })
+    child.on('close', (status) => resolve({ status, out }))
+  })
+}
 
 test('the lifecycle lock is exclusive and releases', async () => {
   const root = repository()
@@ -267,16 +294,42 @@ test('the same owner re-enters with the recorded token', async () => {
   releaseLock(first)
 })
 
-test('a dead free lock can be reclaimed by apply', async () => {
+test('a dead owner lock is refused and names the recover action', async () => {
   const root = repository()
   const common = gitCommonDir(root)
   const path = lockPath(common, 'change', { change: 'demo' })
   mkdirSync(path, { recursive: true })
   writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 999999, at: new Date().toISOString(), what: 'dead' })}\n`)
-  const handle = await acquireLock(common, 'change', { change: 'demo', reclaimDead: true })
-  assert.notEqual(handle.owner.token, 'dead')
-  assert.equal(inspectLock(path).state, 'alive')
-  releaseLock(handle)
+  await assert.rejects(
+    acquireLock(common, 'change', { change: 'demo', timeoutMs: 100 }),
+    /held by dead process 999999 \(token dead\); recover it with openspec_apply_worktree action=recover scope=change expectedOwner=dead/,
+  )
+  assert.equal(inspectLock(path).state, 'dead')
+  rmSync(path, { recursive: true, force: true })
+})
+
+test('two processes recovering the same change: only one succeeds', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  mkdirSync(join(path, '..'), { recursive: true })
+  mkdirSync(path)
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 2147483647 })}\n`)
+  const barrier = join(temporary(), 'go')
+  const children = [
+    recoverChild({ common, change: 'demo', expectedOwner: 'dead', barrier }),
+    recoverChild({ common, change: 'demo', expectedOwner: 'dead', barrier }),
+  ]
+  writeFileSync(barrier, 'go')
+  const results = (await Promise.all(children)).map(({ status, out }) => {
+    assert.equal(status, 0)
+    return JSON.parse(out)
+  })
+  const recovered = results.filter((result) => result.ok === true)
+  assert.equal(recovered.length, 1)
+  assert.deepEqual(recovered[0].result, { recovered: true, scope: 'change' })
+  assert.match(results.find((result) => result.ok === false).message, /another recovery holds|is missing/)
+  assert.equal(existsSync(path), false)
 })
 
 test('different changes hold independent change locks', async () => {

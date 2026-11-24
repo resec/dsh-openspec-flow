@@ -13,7 +13,7 @@ import {
 } from '../lib/worktree/create.js'
 import { applyStatePath, readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { gitCommonDir } from '../lib/review/store.js'
-import { lockPath } from '../lib/worktree/lock.js'
+import { lockPath, inspectLock, recoverLock } from '../lib/worktree/lock.js'
 
 const roots = []
 
@@ -36,6 +36,13 @@ function repository(change = 'demo') {
 
 function context(cwd) {
   return createFakeContext({ cwd }).ctx
+}
+
+function deadChangeLock(root, token = 'dead-token') {
+  const path = lockPath(gitCommonDir(root), 'change', { change: 'demo' })
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token, pid: 2147483647, at: new Date().toISOString() })}\n`)
+  return path
 }
 
 test.after(() => {
@@ -187,6 +194,64 @@ test('a landing state is refused by apply', async () => {
     }),
     /landing/,
   )
+})
+
+test('apply refuses a dead owner lock and points to recover', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const path = deadChangeLock(root)
+  const fake = context(root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head,
+      agent: { id: 'dead-owner' }, signal: new AbortController().signal,
+    }),
+    /held by dead process 2147483647 \(token dead-token\); recover it with openspec_apply_worktree action=recover scope=change expectedOwner=dead-token/,
+  )
+  assert.equal(inspectLock(path).state, 'dead')
+  assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
+  assert.equal(readApplyState(root, null, 'demo'), undefined)
+  rmSync(path, { recursive: true, force: true })
+})
+
+test('apply succeeds after the dead owner lock is recovered', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  deadChangeLock(root)
+  const common = gitCommonDir(root)
+  assert.deepEqual(
+    recoverLock(common, 'change', { change: 'demo', expectedOwner: 'dead-token' }),
+    { recovered: true, scope: 'change' },
+  )
+  const fake = context(root)
+  const state = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head,
+    agent: { id: 'after-recover' }, signal: new AbortController().signal,
+  })
+  assert.notEqual(state.lockToken, 'dead-token')
+  assert.equal(state.lockPid, process.pid)
+  assert.equal(inspectLock(lockPath(common, 'change', { change: 'demo' })).state, 'alive')
+})
+
+test('a dead owner lock also blocks reusing an active worktree', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'reuse-dead' }
+  const state = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  rmSync(lockPath(gitCommonDir(root), 'change', { change: 'demo' }), { recursive: true, force: true })
+  deadChangeLock(root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+      signal: new AbortController().signal,
+    }),
+    /held by dead process 2147483647 .*action=recover scope=change expectedOwner=dead-token/,
+  )
+  assert.deepEqual(readApplyState(root, null, 'demo'), state)
 })
 
 test('a failed session move removes the new checkout', async () => {
