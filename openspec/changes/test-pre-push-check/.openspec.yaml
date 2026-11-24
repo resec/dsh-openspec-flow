@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Guard the main-only pre-push gate's behavior instead of the prose of an
+  archived change, and cover the in-progress change that the full check rejects
+  but the scoped gate must allow.
