@@ -236,7 +236,7 @@ test('retarget resets the worktree to the merge commit and records the phases', 
     assert.equal(loadLocalState(fixture.root).prs['12'].phase, 'published')
     assert.throws(
       () => retargetLocal({ root: fixture.root, number: 12, session: SESSION, token: 'wrong', apply: true, gh, git: runGit }),
-      /recorded --token/,
+      /token does not match/,
     )
     assert.equal(loadLocalState(fixture.root).prs['12'].phase, 'published')
     const dry = retargetLocal({ root: fixture.root, number: 12, session: SESSION, token: TOKEN, gh, git: runGit })
@@ -316,6 +316,54 @@ test('finish records landed-offline, releases the lock and then records pushed',
 })
 
 
+
+test('retarget and finish accept the recorded owner session without a token', () => {
+  const fixture = makeFixture()
+  try {
+    const gh = mergedGh(fixture)
+    const retargeted = retargetLocal({
+      root: fixture.root, number: 12, session: SESSION, apply: true, gh, git: runGit,
+    })
+    assert.equal(retargeted.phase, 'retargeted')
+    assert.equal(mustGit(fixture.worktree, ['rev-parse', 'HEAD']), fixture.merge)
+    const archiveCommit = simulateArchive(fixture)
+    const offline = finishLocal({
+      root: fixture.root, number: 12, phase: 'landed-offline', session: SESSION, apply: true, gh, git: runGit,
+    })
+    assert.equal(offline.phase, 'landed-offline')
+    assert.equal(lockStatus({ root: fixture.root }).held, false)
+    mustGit(fixture.root, ['push', '-q', 'origin', 'main'])
+    assert.equal(mustGit(fixture.root, ['rev-parse', 'HEAD']), archiveCommit)
+    const pushed = finishLocal({
+      root: fixture.root, number: 12, phase: 'pushed', session: SESSION, apply: true, gh, git: runGit,
+    })
+    assert.equal(pushed.phase, 'pushed')
+    assert.equal(loadLocalState(fixture.root).prs['12'].phase, 'pushed')
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('recover omits the token when the lock is free and refuses another session', () => {
+  const fixture = makeFixture()
+  try {
+    const gh = mergedGh(fixture)
+    forceRelease({ root: fixture.root, reason: 'owner session ended' })
+    const free = recoverLocal({ root: fixture.root, number: 12, gh, git: runGit })
+    assert.equal(free.lock, null)
+    assert.ok(free.steps.some((step) => step.includes('retarget 12 --session owner-1 --apply')))
+    assert.equal(free.steps.some((step) => step.includes('--token')), false)
+    acquireLock({ root: fixture.root, session: 'other-owner', token: 'other-token', pr: 12 })
+    assert.throws(
+      () => recoverLocal({ root: fixture.root, number: 12, gh, git: runGit }),
+      /held by session other-owner, but the local entry belongs to owner-1/,
+    )
+    forceRelease({ root: fixture.root, reason: 'test cleanup' })
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
 test('finish records a published pull-request fallback as landed-offline and pushed', () => {
   const fixture = makeFixture()
   try {
@@ -380,10 +428,11 @@ test('recover plans the plugin lock recovery, retarget, land, push and finish', 
     assert.equal(plan.treeMatches, true)
     assert.equal(plan.changeLock.state, 'dead')
     assert.match(plan.steps[0], /openspec_apply_worktree action=recover scope=change expectedOwner=dead-token/)
-    assert.ok(plan.steps.some((step) => step.includes('pr-local-land.mjs retarget 12 --session owner-1 --apply')))
+    assert.ok(plan.steps.some((step) => step.includes('pr-local-land.mjs retarget 12 --session owner-1 --token token-1 --apply')))
     assert.ok(plan.steps.some((step) => step.includes('openspec_apply_worktree action=land')))
     assert.ok(plan.steps.some((step) => step.includes('scripts/push-landed.mjs --push')))
-    assert.ok(plan.steps.some((step) => step.includes('finish 12 --phase pushed --session owner-1 --apply')))
+    assert.ok(plan.steps.some((step) => step.includes('finish 12 --phase pushed --session owner-1 --token token-1 --apply')))
+    assert.deepEqual(plan.lock, { ownerSession: SESSION, pr: 12 })
     writeFileSync(join(deadLock, 'owner'), `${JSON.stringify({ pid: process.pid, token: 'live-token' })}\n`)
     assert.equal(inspectChangeLock(fixture.root, { change: CHANGE, store: null }).state, 'alive')
     assert.throws(() => recoverLocal({ root: fixture.root, number: 12, gh, git: runGit }), /live process/)

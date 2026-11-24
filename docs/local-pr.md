@@ -52,7 +52,7 @@ node scripts/pr-review-lock.mjs release --session <id> --token <token>
 node scripts/pr-review-lock.mjs force-release --reason "<why the owner is gone>"
 ```
 
-`--owner-session` is accepted as an alias for `--session` in the lock command. A local owner holds the lock through the rebase, re-review and CI of a new head and through merge, retarget, land, archive and push. A repeated publish accepts the owner's own lock with the recorded token and refuses another session. A stale lock is reported with its owner and age (the documented limit is 120 minutes) and is released only by `force-release`.
+`--owner-session` is accepted as an alias for `--session` in the lock command. A local owner holds the lock through the rebase, re-review and CI of a new head and through merge, retarget, land, archive and push. A repeated publish accepts the owner's own lock with the recorded token and refuses another session. The landing commands treat the recorded owner session as the primary ownership check: they may omit `--token`, and a token that is supplied must match the recorded one. A stale lock is reported with its owner and age (the documented limit is 120 minutes) and is released only by `force-release`.
 
 Contributor landing commands (`plan`, `sync`, `prepare`, `reviewed`, `merge`, `archive`, `push`, `finish`) refuse while a local owner holds the lock. Review commands remain available, so the watch may still review a contributor pull request.
 
@@ -123,7 +123,7 @@ After the apply review passes and the pull request has green CI:
    node scripts/pr-local-land.mjs retarget <n> --session <id> --apply
    ```
 
-   It records `merged` and then `retargeted`, and the worktree tree still equals the reviewed tree.
+   It records `merged` and then `retargeted`, and the worktree tree still equals the reviewed tree. `--token` is optional when `--session` matches the recorded lock owner.
 
 4. Land with the plugin, on the user's explicit approval:
 
@@ -140,7 +140,7 @@ After the apply review passes and the pull request has green CI:
    node scripts/pr-local-land.mjs finish <n> --phase pushed --session <id> --apply
    ```
 
-   Because the land commit is already on `origin/main`, only the archive commit is in the pushed range. `finish --phase pushed` verifies the landed manifest, that local `main` is the archive commit and that `origin/main` equals it, records `pushed` and releases the landing lock.
+   Because the land commit is already on `origin/main`, only the archive commit is in the pushed range. `finish --phase pushed` verifies the landed manifest, that local `main` is the archive commit and that `origin/main` equals it, records `pushed` and releases the landing lock. `--token` is optional when `--session` matches the recorded lock owner.
 
 ### A head behind main
 
@@ -159,7 +159,7 @@ node scripts/pr-local-land.mjs recover <n>
 The plan verifies the merge and tree and lists, in order:
 
 1. `openspec_apply_worktree action=recover scope=change expectedOwner=<token>` when the plugin change lock is held by a dead process. A corrupt lock is reported for inspection first.
-2. `node scripts/pr-local-land.mjs retarget <n> --session <session> --apply`
+2. `node scripts/pr-local-land.mjs retarget <n> --session <session> --apply`; when the landing lock is still held, the plan appends the recorded `--token`, and a lock owned by another session must be force-released first
 3. `openspec_apply_worktree action=land change=<change> approvedBy=user`
 4. `node scripts/push-landed.mjs --push`
 5. `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <session> --apply`

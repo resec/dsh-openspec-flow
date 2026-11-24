@@ -90,7 +90,11 @@ function requireSession(entry, session) {
 }
 
 /**
- * Refuse a held landing lock that names another session, or a token mismatch.
+ * Refuse a held landing lock that names another session.
+ *
+ * A matching session is the primary ownership check. The token is an optional
+ * stricter discriminator: when the caller passes one it must match, but the
+ * documented session-only commands proceed without it.
  * @returns the lock owner, or undefined when free.
  */
 function requireLockOwner({ root, session, token }) {
@@ -99,8 +103,8 @@ function requireLockOwner({ root, session, token }) {
   if (lock.ownerSession !== session) {
     throw new Error(`the landing lock is held by session ${lock.ownerSession} for PR #${lock.pr}`)
   }
-  if (typeof token !== 'string' || token.trim() === '' || token !== lock.token) {
-    throw new Error(`the landing lock is held by session ${session}; pass the recorded --token`)
+  if (typeof token === 'string' && token.trim() !== '' && token !== lock.token) {
+    throw new Error(`the landing lock token does not match the token recorded for session ${session}`)
   }
   return lock
 }
@@ -238,7 +242,7 @@ export function retargetLocal({
   if (!RETARGETABLE_PHASES.has(entry.phase)) {
     throw new Error(`PR #${entry.number} is ${entry.phase}; retarget needs a published, merged or failed entry`)
   }
-  requireLockOwner({ root, session, token })
+  const lockOwner = requireLockOwner({ root, session, token })
   if (!apply) return { dryRun: true, ...(verifyLocal({ root, number: entry.number, session, gh, git })) }
   let facts
   try {
@@ -249,7 +253,7 @@ export function retargetLocal({
   }
   updateLocalEntry(root, entry.number, { phase: 'merged', error: null })
   try {
-    acquireLock({ root, session, token, pr: entry.number })
+    if (lockOwner === undefined) acquireLock({ root, session, token, pr: entry.number })
     if (git(facts.worktree, ['reset', '--hard', facts.mergeCommit]) === undefined) {
       throw new Error(`git reset --hard ${facts.mergeCommit} failed in ${facts.worktree}`)
     }
@@ -286,10 +290,13 @@ export function finishLocal({
   }
   const entry = requireLocalEntry(root, number)
   requireSession(entry, session)
-  requireLockOwner({ root, session, token })
+  const lockOwner = requireLockOwner({ root, session, token })
   if (entry.phase === 'pushed') {
-    if (phase === 'pushed') return entry
-    throw new Error(`PR #${entry.number} is already pushed; the phase cannot move back to ${phase}`)
+    if (phase !== 'pushed') {
+      throw new Error(`PR #${entry.number} is already pushed; the phase cannot move back to ${phase}`)
+    }
+    if (lockOwner !== undefined) releaseLock({ root, session, token: lockOwner.token })
+    return entry
   }
   if (!['published', 'merged', 'retargeted', 'landed', 'landed-offline', 'failed'].includes(entry.phase)) {
     throw new Error(`PR #${entry.number} is ${entry.phase}; land it before finish`)
@@ -333,8 +340,7 @@ export function finishLocal({
     error: null,
     ...(facts.offline ? { landedOfflineAt: new Date().toISOString() } : {}),
   })
-  const lock = readLockOwner(root)
-  if (lock !== undefined) releaseLock({ root, session, token })
+  if (lockOwner !== undefined) releaseLock({ root, session, token: lockOwner.token })
   return updated
 }
 
@@ -350,17 +356,22 @@ export function recoverLocal({ root, number, gh = ghText, git = gitText } = {}) 
   if (changeLock.state === 'alive') {
     throw new Error(`the plugin change lock is held by live process ${String(changeLock.owner.pid)}; wait for it to finish or recover it explicitly`)
   }
+  const lock = readLockOwner(root)
+  if (lock !== undefined && lock.ownerSession !== entry.ownerSession) {
+    throw new Error(`the landing lock is held by session ${lock.ownerSession}, but the local entry belongs to ${entry.ownerSession}; run node scripts/pr-review-lock.mjs force-release --reason "<why>" and retry as ${entry.ownerSession}`)
+  }
   const session = entry.ownerSession
+  const tokenArg = lock === undefined ? '' : ` --token ${lock.token}`
   const steps = []
   if (changeLock.state === 'dead') {
     steps.push(`openspec_apply_worktree action=recover scope=change expectedOwner=${changeLock.owner.token}`)
   } else if (changeLock.state === 'corrupt') {
     steps.push('openspec_apply_worktree action=recover scope=change (inspect the corrupt change lock first)')
   }
-  steps.push(`node scripts/pr-local-land.mjs retarget ${entry.number} --session ${session} --apply`)
+  steps.push(`node scripts/pr-local-land.mjs retarget ${entry.number} --session ${session}${tokenArg} --apply`)
   steps.push(`openspec_apply_worktree action=land change=${entry.change} approvedBy=user (user approval)`)
   steps.push('node scripts/push-landed.mjs --push')
-  steps.push(`node scripts/pr-local-land.mjs finish ${entry.number} --phase pushed --session ${session} --apply`)
+  steps.push(`node scripts/pr-local-land.mjs finish ${entry.number} --phase pushed --session ${session}${tokenArg} --apply`)
   return {
     number: entry.number,
     change: entry.change,
@@ -369,6 +380,7 @@ export function recoverLocal({ root, number, gh = ghText, git = gitText } = {}) 
     treeMatches: true,
     mergeCommit: facts.mergeCommit,
     changeLock: { state: changeLock.state, owner: changeLock.owner ?? null },
+    lock: lock === undefined ? null : { ownerSession: lock.ownerSession, pr: lock.pr },
     steps,
   }
 }
