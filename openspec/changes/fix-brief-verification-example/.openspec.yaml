@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Make the brief's verifications example a combination the report
+  validator accepts, and state the earlier-findings rule in the empty branch.
