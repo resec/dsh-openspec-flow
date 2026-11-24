@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Make the pull-request review document say that landing writes the main
+  worktree and that owner-review is only an advisory queue signal.
