@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Make the in-process CLI test runner await the pinned CLI's async command
+  handlers, retain the polling fallback, and keep the child-process contract
+  covered.
