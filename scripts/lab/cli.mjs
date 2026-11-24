@@ -25,12 +25,11 @@ import { run as execute } from './core/process.mjs'
 
 const COMMANDS = ['doctor', 'cache', 'up', 'run', 'exec', 'inspect', 'down', 'test']
 
-// Flags that always take a value, and switches that never do. A switch takes
-// no value, so the token after it stays a positional argument: `--offline
+// Flags that always take a value. Every other flag is a switch: a switch takes
+// no value, so the token after it stays a positional argument. `--offline
 // a.scenario.mjs` is the switch plus one scenario path, not a path-valued
 // `--offline`. An unknown flag is read as a switch for the same reason.
 const VALUE_FLAGS = new Set(['name', 'mode', 'plugin'])
-const SWITCHES = new Set(['offline', 'fresh-dsh', 'mock-only', 'include-real-model', 'cleanup', 'all'])
 
 /**
  * Parse `--flag value`, boolean switches and positional arguments.
