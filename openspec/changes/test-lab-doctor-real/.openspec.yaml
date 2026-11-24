@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Make the doctor and lab helper tests assert the behavior of the real
+  check functions with temporary inputs, so a changed message or an inverted
+  verdict fails the suite.
