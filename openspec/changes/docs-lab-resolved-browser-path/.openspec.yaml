@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-11-24
+goal: State that the doctor's browser install command uses the resolved browser directory, the environment's value when set and `.cache/lab/pw-browsers` otherwise.
