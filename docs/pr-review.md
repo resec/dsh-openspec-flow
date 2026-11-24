@@ -142,6 +142,8 @@ If the merged tree differs, `merge` records `tree-mismatch` and archive is refus
 3. When a passed record still holds an open finding, with user approval run `openspec_review action=dispose review=apply` for that non-blocking finding, then clear the phase with `abandon <n> --apply`.
 4. Have the maintainer remove the `mergeable` label, which takes the pull request out of the candidate list, then clear the phase with `abandon <n> --apply`.
 
+Step 4 is self-describing: because `candidates` reads the landing phase before the label, a label-removed `review-failed` landing is refused as `PR #<n> landing is review-failed: <error>; it also has no mergeable label; run abandon <n> --apply to clear the landing`. Running the reported command removes the entry and its checkout, after which the pull request is refused only for the missing label. Until then the entry counts as an unfinished landing, so `assertSingleLanding` refuses every other `prepare` with `PR #<n> is already landing in phase review-failed`; clearing it releases the queue.
+
 ## Schedule
 
 Keep one DSH scheduled session that runs every five minutes. Each run stays in the same session so the independent reviewer subagent started by an earlier run remains resumable; a new session per run cannot address that reviewer.
@@ -201,7 +203,7 @@ The script's `run.lock` makes a second overlapping run exit; inspect `.cache/pr-
   reports/pr-<n>-<head>.json report handoff written by the session
 ```
 
-Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed`, `blocked` and `tree-mismatch`. A retry resumes at the recorded phase; a merge is never repeated. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run, while a label-removed pull request appears in `refused` for the missing label.
+Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed`, `blocked` and `tree-mismatch`. A retry resumes at the recorded phase; a merge is never repeated. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run. A label-removed `review-failed` landing is still refused for its recorded failure, with the missing label and the `abandon <n> --apply` command in the same reason.
 
 The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at the PR checkout while the review is active. `state --cleanup` and `state --forget` remove that matching entry with the checkout; a foreign entry is refused and reported. Remove the checkout and state before a merged-tree apply review.
 

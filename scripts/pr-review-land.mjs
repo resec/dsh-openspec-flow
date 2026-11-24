@@ -213,13 +213,16 @@ export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh
   for (const item of Array.isArray(listed) ? listed : []) {
     const n = Number(item?.number)
     if (!Number.isInteger(n) || n < 1) continue
-    if (!hasLandingLabel(item)) {
-      refused.push({ number: n, reason: `PR #${n} has no ${LANDING_LABEL} label` })
-      continue
-    }
     const own = lands.lands?.[String(n)]
     if (own?.phase === REVIEW_FAILED_PHASE) {
-      refused.push({ number: n, reason: `PR #${n} landing is ${REVIEW_FAILED_PHASE}: ${String(own.error ?? 'no error recorded')}` })
+      const reasons = [`PR #${n} landing is ${REVIEW_FAILED_PHASE}: ${String(own.error ?? 'no error recorded')}`]
+      if (!hasLandingLabel(item)) reasons.push(`it also has no ${LANDING_LABEL} label`)
+      reasons.push(`run abandon ${n} --apply to clear the landing`)
+      refused.push({ number: n, reason: reasons.join('; ') })
+      continue
+    }
+    if (!hasLandingLabel(item)) {
+      refused.push({ number: n, reason: `PR #${n} has no ${LANDING_LABEL} label` })
       continue
     }
     if (own !== undefined && OPEN_PHASES.has(own.phase)) {

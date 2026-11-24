@@ -166,6 +166,8 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /without disposing a finding/)
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
+  assert.match(doc, /landing is review-failed: <error>/)
+  assert.match(doc, /abandon <n> --apply to clear the landing/)
   assert.match(doc, /every five minutes/)
 })
 
@@ -579,6 +581,94 @@ test('candidates omits a review-failed landing and another unfinished landing', 
   const other = listLandingCandidates({ root, gh: fake })
   assert.deepEqual(other.candidates, [])
   assert.match(other.refused[0].reason, /already landing in phase prepared/)
+})
+
+test('candidates reports a label-removed review-failed landing and its recovery command', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const paths = resolvePaths(root)
+  const worktree = join(paths.worktrees, 'pr-12')
+  mkdirSync(paths.worktrees, { recursive: true })
+  git(root, ['worktree', 'add', '--detach', worktree, head])
+  saveLandings(root, {
+    schemaVersion: 1,
+    lands: { 12: { number: 12, phase: REVIEW_FAILED_PHASE, error: 'reviewer gone', worktree, landingBranch: 'pr-land/12', merged: false, mergedHead: null } },
+  })
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [] }] })
+  const refused = listLandingCandidates({ root, gh: fake })
+  assert.deepEqual(refused.candidates, [])
+  assert.match(refused.refused[0].reason, /review-failed: reviewer gone/)
+  assert.match(refused.refused[0].reason, /no mergeable label/)
+  assert.match(refused.refused[0].reason, /abandon 12 --apply/)
+
+  assert.deepEqual(abandonLanding({ root, number: 12, apply: true }), { abandoned: 12 })
+  assert.equal(loadLandings(root).lands['12'], undefined)
+  assert.equal(existsSync(worktree), false)
+  const after = listLandingCandidates({ root, gh: fake })
+  assert.match(after.refused[0].reason, /no mergeable label/)
+  assert.doesNotMatch(after.refused[0].reason, /review-failed/)
+
+  saveLandings(root, { schemaVersion: 1, lands: { 12: { number: 12, phase: REVIEW_FAILED_PHASE, merged: false, mergedHead: null } } })
+  assert.match(listLandingCandidates({ root, gh: fake }).refused[0].reason, /no error recorded/)
+})
+
+test('clearing a review-failed landing unblocks another pull request prepare', () => {
+  const { root, remote } = makeRepo()
+  addPullRequest(root, remote)
+  git(root, ['checkout', '-q', '-b', 'gadget-branch'])
+  const gadget = join(root, 'openspec', 'changes', 'gadget')
+  mkdirSync(gadget, { recursive: true })
+  writeFileSync(join(gadget, '.openspec.yaml'), 'schema: spec-driven\n')
+  writeFileSync(join(gadget, 'proposal.md'), '# Gadget\n')
+  writeFileSync(join(root, 'gadget.txt'), 'gadget\n')
+  git(root, ['add', 'openspec/changes/gadget', 'gadget.txt'])
+  git(root, ['commit', '-qm', 'gadget change'])
+  const head = git(root, ['rev-parse', 'HEAD'])
+  git(root, ['push', '-q', 'origin', 'HEAD:refs/pull/13/head'])
+  git(root, ['checkout', '-q', 'main'])
+  const watch = JSON.parse(readFileSync(join(resolvePaths(root).cache, 'state.json'), 'utf8'))
+  watch.prs['13'] = {
+    number: 13,
+    head,
+    base: git(root, ['merge-base', 'origin/main', head]),
+    baseTip: git(root, ['rev-parse', 'origin/main']),
+    change: 'gadget',
+    worktree: join(resolvePaths(root).worktrees, 'pr-13'),
+    round: 1,
+    status: 'commented',
+    error: null,
+    commentId: 'https://example.test/comment/2',
+    updatedAt: new Date().toISOString(),
+  }
+  saveState(root, watch)
+  const prs = {
+    12: JSON.parse(prJson(head)),
+    13: JSON.parse(prJson(head, 'main', {
+      number: 13,
+      files: [{ path: 'openspec/changes/gadget/proposal.md' }, { path: 'gadget.txt' }],
+      comments: [{ author: { login: LOGIN }, body: `**Verdict:** pass\n<!-- pr-review: pr=13 head=${head} round=1 -->` }],
+    })),
+  }
+  const labels = { 12: [], 13: [{ name: LANDING_LABEL }] }
+  const gh = (args) => {
+    if (args[0] === 'api') return LOGIN
+    if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(prs[Number(args[2])])
+    if (args[0] === 'pr' && args[1] === 'list') {
+      return JSON.stringify(Object.keys(prs).map((key) => ({ number: Number(key), labels: labels[key] })))
+    }
+    throw new Error(`unexpected gh ${args.join(' ')}`)
+  }
+  saveLandings(root, { schemaVersion: 1, lands: { 12: { number: 12, phase: REVIEW_FAILED_PHASE, error: 'reviewer gone', merged: false, mergedHead: null } } })
+  assert.throws(() => prepareLanding({ root, number: 13, apply: true, gh }), /PR #12 is already landing in phase review-failed/)
+  const listed = listLandingCandidates({ root, gh })
+  assert.equal(listed.candidates.length, 0)
+  assert.match(listed.refused.find((item) => item.number === 13).reason, /PR #12 is already landing in phase review-failed/)
+
+  abandonLanding({ root, number: 12, apply: true })
+  const prepared = prepareLanding({ root, number: 13, apply: true, gh })
+  assert.equal(prepared.phase, 'prepared')
+  assert.equal(prepared.change, 'gadget')
+  assert.equal(loadLandings(root).lands['13'].phase, 'prepared')
 })
 
 test('state --fail records review-failed, keeps the checkout and abandon clears it', () => {
