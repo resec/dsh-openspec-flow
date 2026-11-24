@@ -25,7 +25,7 @@
 ## 4. Integration verification
 
 - [x] 4.1 Run `node --test test/landed-push-guard.test.mjs test/push-landed.test.mjs test/offline-land.test.mjs test/check-main-push.test.mjs test/hooks.test.mjs test/offline-push-spec.test.mjs test/land-push-doc.test.mjs test/local-pr-doc.test.mjs`, and verify every new failure mode is covered
-- [ ] 4.2 Run `npm run check:requirement-length`, `openspec_inspect action=validate strict=true` for the change, and `npm run verify` on Node 24; verify all pass and the coverage report has no violation
+- [x] 4.2 Run `npm run check:requirement-length`, `openspec_inspect action=validate strict=true` for the change, and `npm run verify` on Node 24; verify all pass and the coverage report has no violation
 - [x] 4.3 Replay a direct land, an online merge and a recorded offline land against a temporary repository; verify direct land is refused with `origin/main` unchanged, online lands push only the archive commit, and the recorded offline land pushes only with `--offline`
 
 ## Workflow follow-up
