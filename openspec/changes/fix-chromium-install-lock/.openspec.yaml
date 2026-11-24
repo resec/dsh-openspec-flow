@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Make the shared Chromium install lock appear with its owner, and reclaim
+  a lock that has none after a short grace period.
