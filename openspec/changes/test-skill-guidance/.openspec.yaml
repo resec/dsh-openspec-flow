@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+skip_specs: true
+goal: Guard the requirement that the workflow skills use the context, rules
+  and guidance returned by the tools.
