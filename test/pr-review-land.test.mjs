@@ -894,17 +894,34 @@ test('a local landing lock refuses every contributor landing command', () => {
     const { head } = addPullRequest(root, remote)
     const fake = fakeGh({ pr: JSON.parse(prJson(head)), list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }] })
     acquireLock({ root, session: 'local-owner', token: 'local-token', pr: 99 })
-    assert.throws(() => assertLandingLockFree(root), /held by session local-owner for PR #99/)
+    assert.throws(() => assertLandingLockFree(root), /landing lock belongs to another session/)
     assert.throws(
       () => planLanding({ root, number: 12, gh: fake }),
-      /landing lock is held by session local-owner for PR #99; pass --session local-owner/,
+      /landing lock belongs to another session/,
     )
     assert.throws(
       () => planLanding({ root, number: 12, gh: fake, session: 'local-owner', token: 'wrong' }),
       /landing lock token does not match/,
     )
-    assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /landing lock is held/)
-    assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /landing lock is held/)
+    saveLocalState(root, {
+      schemaVersion: 1,
+      prs: {
+        99: {
+          number: 99, change: 'widget', branch: 'local-branch', head: 'a'.repeat(40),
+          tree: 'c'.repeat(40), record: 'apply-local', ownerSession: 'local-owner', phase: 'published',
+        },
+      },
+    })
+    assert.throws(
+      () => planLanding({ root, number: 12, gh: fake, session: 'local-owner', token: 'local-token' }),
+      /owns local PR #99/,
+    )
+    assert.throws(
+      () => assertLandingLockFree(root, { session: 'local-owner', token: 'local-token' }),
+      /owns local PR #99/,
+    )
+    assert.throws(() => prepareLanding({ root, number: 12, gh: fake, apply: true }), /landing lock belongs to another session/)
+    assert.throws(() => syncLanding({ root, number: 12, gh: fake }), /landing lock belongs to another session/)
     for (const run of [
       () => reviewedLanding({ root, number: 12, apply: true }),
       () => mergeLanding({ root, number: 12, gh: fake, apply: true }),
@@ -913,11 +930,11 @@ test('a local landing lock refuses every contributor landing command', () => {
       () => finishLanding({ root, number: 12, apply: true }),
       () => abandonLanding({ root, number: 12, apply: true }),
     ]) {
-      assert.throws(run, /landing lock is held by session local-owner/)
+      assert.throws(run, /landing lock belongs to another session/)
     }
     const blocked = listLandingCandidates({ root, gh: fake })
     assert.deepEqual(blocked.candidates, [])
-    assert.match(blocked.blocked, /landing lock is held by session local-owner/)
+    assert.match(blocked.blocked, /landing lock belongs to another session/)
     forceRelease({ root, reason: 'test' })
     assert.equal(planLanding({ root, number: 12, gh: fake }).change, 'widget')
   } finally {

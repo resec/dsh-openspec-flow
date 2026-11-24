@@ -19,6 +19,7 @@ import {
   activeChangeNames,
   checksGreen,
   forgetPullRequest,
+  loadLocalState,
   loadState,
   localPullRequestNumbers,
   mainWorktree,
@@ -168,6 +169,13 @@ function ghLogin(ghRunner, root) {
  * @returns the lock owner, or undefined when free.
  */
 export function assertLandingLockFree(root, { session, token } = {}) {
+  if (typeof session === 'string' && session !== '') {
+    for (const entry of Object.values(loadLocalState(root).prs)) {
+      if (entry.ownerSession === session) {
+        throw new Error(`session ${session} owns local PR #${entry.number}; contributor landing commands cannot use a local owner session`)
+      }
+    }
+  }
   const owner = readLockOwner(root)
   if (owner === undefined) return undefined
   if (typeof session === 'string' && session !== '' && owner.ownerSession === session) {
@@ -176,7 +184,7 @@ export function assertLandingLockFree(root, { session, token } = {}) {
     }
     return owner
   }
-  throw new Error(`the landing lock is held by session ${owner.ownerSession} for PR #${owner.pr}; pass --session ${owner.ownerSession} to a landing command or release it`)
+  throw new Error(`the landing lock belongs to another session (${owner.ownerSession}, PR #${owner.pr}); wait for it to release it, or force-release it as that owner`)
 }
 
 /** Refuse a contributor landing for an owner-managed local PR. */
