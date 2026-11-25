@@ -61,7 +61,7 @@ The session SHALL reconcile `owner-review` and clean up each run. It SHALL advan
 
 ### Requirement: Fixed-session reviewer reuse
 
-The scheduled session SHALL reuse one fixed session for every run. The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer subagent stays bound to the session, except a passed landing record. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
+The session SHALL reuse one fixed session for every run. The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer stays bound to the session. It SHALL skip the resume for a passed landing record. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
 
 #### Scenario: Final review resumes the reviewer
 
