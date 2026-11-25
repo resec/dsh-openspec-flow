@@ -600,6 +600,7 @@ test('the expanded card keeps recorded optional finding and disposition rows', a
       summary: 'One blocker.',
       findings: [{
         id: 'R2-01', severity: 'major', status: 'open', location: 'proposal.md:3', title: 'Missing goal',
+        axis: 'intent',
         problem: 'The goal is missing.', evidence: 'proposal.md', impact: 'Intent cannot be checked.',
         rule: 'Intent fit', failure: 'Apply starts without a goal.', suggestion: 'Add the goal.',
       }],
@@ -610,7 +611,8 @@ test('the expanded card keeps recorded optional finding and disposition rows', a
   }
   const sections = cardSections(card)
   const finding = sections.find((section) => section.title === 'Findings').items[0]
-  assert.deepEqual(finding.rows.map((row) => row[0]), ['问题', '证据', '影响', '规则', '失败路径', '建议'])
+  assert.deepEqual(finding.rows.map((row) => row[0]), ['问题', '证据', '类别', '影响', '规则', '失败路径', '建议'])
+  assert.deepEqual(finding.rows.find((row) => row[0] === '类别'), ['类别', 'intent'])
   const disposed = sections.find((section) => section.title === '处理情况').items[0]
   assert.deepEqual(disposed.rows.map((row) => row[0]), ['说明', '豁免', '批准者', '验证轮次'])
 })
