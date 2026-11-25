@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-25
+goal: "The scheduled PR review run completes within its window on an
+  intermittently flaky GitHub path: reconcile reads are batched to a handful of
+  calls, every gh call has a deadline, reads retry, a killed run no longer
+  blocks later runs, and each run records its duration and transient failures."

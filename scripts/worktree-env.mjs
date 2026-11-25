@@ -111,15 +111,6 @@ export function resolveBrowsersPath({ root = process.cwd(), env = process.env } 
   return isAbsolute(value) ? value : resolve(root, value)
 }
 
-/**
- * Resolve the npm cache from the environment.
- * @param options - fallback and environment.
- * @returns the cache path.
- */
-export function resolveNpmCache({ fallback, env = process.env } = {}) {
-  return env.LAB_NPM_CACHE ?? env.npm_config_cache ?? fallback
-}
-
 /** Quote one value for POSIX shell. */
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`
@@ -135,7 +126,7 @@ export function renderPrint(environment) {
     `export OPENSPEC_FLOW_MAIN=${shellQuote(environment.mainRoot)}`,
     `export OPENSPEC_FLOW_SHARED=${shellQuote(environment.sharedRoot)}`,
     `export npm_config_cache=${shellQuote(environment.npmCache)}`,
-    `export LAB_NPM_CACHE=${shellQuote(environment.npmCache)}`,
+    `export OPENSPEC_FLOW_NPM_CACHE=${shellQuote(environment.npmCache)}`,
     `export PNPM_STORE_DIR=${shellQuote(environment.pnpmStore)}`,
     `export PLAYWRIGHT_BROWSERS_PATH=${shellQuote(environment.browsersPath)}`,
     `export DSH_HOME=${shellQuote(environment.dshHome)}`,

@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Contributor landing no longer blocks on a parallel change's uncommitted
+  planning directory; sync and sync-batch run without a clean main worktree; the
+  archive phase commits only the paths it owns.

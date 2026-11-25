@@ -16,8 +16,8 @@ import {
   renderPrint,
   resolveBrowsersPath,
   resolveEnvironment,
-  resolveNpmCache,
 } from '../scripts/worktree-env.mjs'
+import * as worktreeEnv from '../scripts/worktree-env.mjs'
 
 const MODULE = fileURLToPath(new URL('../scripts/worktree-env.mjs', import.meta.url))
 
@@ -89,7 +89,11 @@ test('the shell output carries caches and a per-worktree home but no node_module
   try {
     const environment = resolveEnvironment({ cwd: root, env: {} })
     const text = renderPrint(environment)
-    assert.match(text, /npm_config_cache=/)
+    const sharedNpm = join(environment.sharedRoot, 'npm')
+    assert.equal(environment.npmCache, sharedNpm)
+    assert.ok(text.includes(`export npm_config_cache='${sharedNpm}'`))
+    assert.ok(text.includes(`export OPENSPEC_FLOW_NPM_CACHE='${sharedNpm}'`))
+    assert.equal(Object.hasOwn(worktreeEnv, 'resolveNpmCache'), false)
     assert.match(text, /PNPM_STORE_DIR=/)
     assert.match(text, /PLAYWRIGHT_BROWSERS_PATH=/)
     assert.match(text, /DSH_HOME=/)
@@ -100,12 +104,10 @@ test('the shell output carries caches and a per-worktree home but no node_module
   }
 })
 
-test('resolves lab browser and npm paths from root and environment', () => {
+test('resolves the lab browser path from root and environment', () => {
   const root = '/tmp/lab-root'
   assert.equal(resolveBrowsersPath({ root, env: {} }), join(root, '.cache', 'lab', 'pw-browsers'))
   assert.equal(resolveBrowsersPath({ root, env: { PLAYWRIGHT_BROWSERS_PATH: '/shared/pw' } }), '/shared/pw')
-  assert.equal(resolveNpmCache({ fallback: '/fallback', env: { npm_config_cache: '/npm' } }), '/npm')
-  assert.equal(resolveNpmCache({ fallback: '/fallback', env: { LAB_NPM_CACHE: '/lab' } }), '/lab')
 })
 
 test('prepareChromium installs once, reuses the browser and resets under the lock', () => {

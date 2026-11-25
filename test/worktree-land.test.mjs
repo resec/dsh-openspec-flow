@@ -8,7 +8,12 @@ import test from 'node:test'
 import { CHANGE, cleanupFixtures, gitFixture, passDraft, passDraftConstructing, report, reviewDir, setup, call } from './review-fixtures.mjs'
 import { readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { sha256 } from '../lib/review/store.js'
-import { manifestPath } from '../lib/worktree/land.js'
+import {
+  archiveStagingProblem,
+  isArchiveDirectoryName,
+  manifestPath,
+  outsideArchiveScope,
+} from '../lib/worktree/land.js'
 import { removeSealRef, sealRefName } from '../lib/worktree/seal.js'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
 
@@ -377,13 +382,21 @@ test('land keeps a resumable state when the archive commit fails', async () => {
     /commit/,
   )
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  assert.match(run(['status', '--porcelain']), /openspec\/changes\/archive\//)
   rmSync(hook, { force: true })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /empty git index before the archive commit/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  run(['reset'])
   const retried = await call(fake, 'openspec_apply_worktree', {
     action: 'land', change: CHANGE, approvedBy: 'user',
   })
   assert.equal(retried.archiveCommit, run(['rev-parse', 'HEAD']))
   assert.equal(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
   assert.equal(run(['log', '-1', '--format=%b']), `Landed from ${retried.landCommit}`)
+  assert.equal(run(['rev-list', '--count', `${retried.landCommit}..HEAD`]), '1')
   assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
 })
 
@@ -1218,4 +1231,263 @@ test('land leaves an unchanged tracked planning file in place when it fails', as
   )
   assert.equal(existsSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md')), true)
   assert.equal(run(['status', '--porcelain', '--', `openspec/changes/${CHANGE}/proposal.md`]), '')
+})
+
+test('the archive scope classifier separates allowed paths from foreign paths', () => {
+  const allowed = [
+    'openspec/changes/archive/2026-01-01-widget',
+    'openspec/specs',
+    'openspec/changes/widget',
+  ]
+  assert.deepEqual(outsideArchiveScope([
+    'openspec/changes/archive/2026-01-01-widget/proposal.md',
+    'openspec/specs/widget/spec.md',
+    'openspec/changes/widget/proposal.md',
+  ], allowed), [])
+  assert.deepEqual(outsideArchiveScope([
+    'openspec/changes/other/proposal.md',
+    'notes.txt',
+    'openspec/changes/archive/2026-01-01-other/proposal.md',
+  ], allowed), [
+    'openspec/changes/other/proposal.md',
+    'notes.txt',
+    'openspec/changes/archive/2026-01-01-other/proposal.md',
+  ])
+  assert.deepEqual(outsideArchiveScope([], allowed), [])
+  assert.deepEqual(outsideArchiveScope([
+    'openspec/changes/widget/old.md',
+    'openspec/changes/archive/2026-01-01-widget/new.md',
+  ], allowed), [])
+})
+
+test('land refuses a staged path before the fast-forward', async () => {
+  const { root, run, fake } = await readyLand()
+  const before = run(['rev-parse', 'HEAD'])
+  mkdirSync(join(root, 'openspec', 'changes', 'other'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'other', 'proposal.md'), '# other\n')
+  run(['add', 'openspec/changes/other/proposal.md'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /empty git index before landing/,
+  )
+  assert.equal(run(['rev-parse', 'HEAD']), before)
+  assert.equal(readApplyState(root, null, CHANGE).status, 'active')
+  assert.match(run(['status', '--porcelain']), /A  openspec\/changes\/other\/proposal\.md/)
+})
+
+test('an untracked planning file under another change does not block land', async () => {
+  const { root, run, fake } = await readyLand()
+  const other = join(root, 'openspec', 'changes', 'other')
+  mkdirSync(other, { recursive: true })
+  writeFileSync(join(other, 'proposal.md'), '# other\n')
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.match(run(['status', '--porcelain']), /\?\? openspec\/changes\/other\//)
+  const changed = run(['show', '--no-renames', '--name-only', '--format=', landed.archiveCommit]).split('\n').filter(Boolean)
+  assert.equal(changed.some((path) => path.startsWith('openspec/changes/other/')), false)
+  assert.ok(changed.some((path) => path.startsWith('openspec/changes/archive/')))
+  assert.ok(changed.some((path) => path.startsWith('openspec/specs/')))
+  assert.ok(changed.some((path) => path === `openspec/changes/${CHANGE}/proposal.md`))
+})
+
+test('a resumed archive commit with a foreign path refuses', async () => {
+  const { root, run, fake } = await prepareLegacyLanding({ archive: true })
+  writeFileSync(join(root, 'notes.txt'), 'foreign\n')
+  run(['add', 'notes.txt'])
+  run(['commit', '--amend', '--no-edit'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /changes paths outside/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test("a resumed archive commit for another change's directory refuses", async () => {
+  const { root, run, fake } = await prepareLegacyLanding()
+  const other = join(root, 'openspec', 'changes', 'archive', '2026-11-21-other')
+  mkdirSync(other, { recursive: true })
+  writeFileSync(join(other, 'proposal.md'), '# other\n')
+  run(['add', 'openspec/changes/archive/2026-11-21-other'])
+  run(['commit', '-m', 'another archive'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /does not add exactly one archived directory/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('a resumed archive commit without an archived directory refuses', async () => {
+  const { root, run, fake } = await prepareLegacyLanding()
+  mkdirSync(join(root, 'openspec', 'specs', 'theme'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'specs', 'theme', 'spec.md'), '# theme\n')
+  run(['add', 'openspec/specs/theme/spec.md'])
+  run(['commit', '-m', 'spec only'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /does not add exactly one archived directory/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('a resumed land refuses ambiguous archived directories', async () => {
+  const { root, run, fake } = await prepareLegacyLanding()
+  const archiveRoot = join(root, 'openspec', 'changes', 'archive')
+  mkdirSync(join(archiveRoot, `2026-11-20-${CHANGE}`), { recursive: true })
+  mkdirSync(join(archiveRoot, `2026-11-21-${CHANGE}`), { recursive: true })
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /multiple archived directories/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('the archive staging helper refuses an empty or foreign set', () => {
+  const allowed = [
+    'openspec/changes/archive/2026-01-01-widget',
+    'openspec/specs',
+    'openspec/changes/widget',
+  ]
+  assert.equal(archiveStagingProblem([], allowed), 'archive produced no staged changes')
+  assert.equal(archiveStagingProblem(['openspec/changes/widget/proposal.md'], allowed), undefined)
+  assert.match(archiveStagingProblem(['notes.txt'], allowed), /notes\.txt/)
+})
+
+test('archive directory names follow the dated change naming', () => {
+  assert.equal(isArchiveDirectoryName('widget', '2026-01-01-widget'), true)
+  assert.equal(isArchiveDirectoryName('widget', '2026-01-01-other'), false)
+  assert.equal(isArchiveDirectoryName('2026-01-01-widget', '2026-01-01-widget'), true)
+  assert.equal(isArchiveDirectoryName('2026-01-01-widget', '2026-01-02-widget'), false)
+})
+
+test('a resumed land with no archive directory runs the archive', async () => {
+  const { root, run, fake } = await prepareLegacyLanding()
+  rmSync(join(root, 'openspec', 'changes', 'archive'), { recursive: true, force: true })
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(readApplyState(root, null, CHANGE).status, 'archived')
+  assert.equal(landed.archiveCommit, run(['rev-parse', 'HEAD']))
+})
+
+test('land refuses an archive path outside the main worktree', async () => {
+  const { root, fake } = await readyLand()
+  const original = fake.ctx.subprocess.spawn
+  fake.ctx.subprocess.spawn = (spec) => {
+    if (spec.argv.some((arg) => arg === 'archive')) {
+      return {
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        control: undefined,
+        collected: {
+          stdout: {
+            readFrom: () => ({
+              text: JSON.stringify({
+                archive: { change: CHANGE, path: `/outside-${CHANGE}` },
+                root: { path: join(root, 'openspec') },
+              }),
+            }),
+          },
+          stderr: { readFrom: () => ({ text: '' }) },
+        },
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+        terminate() {},
+        waitForExit() {},
+      }
+    }
+    return original(spec)
+  }
+  try {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /outside the main worktree/,
+    )
+  } finally {
+    fake.ctx.subprocess.spawn = original
+  }
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('a staged foreign path refuses the archive commit', async () => {
+  const { root, fake } = await readyLand()
+  mkdirSync(join(root, 'openspec', 'changes', 'other'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'other', 'notes.txt'), 'foreign\n')
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-land-staged-'))
+  const wrapper = join(directory, 'git')
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'if [ "$1" = "-C" ] && [ "$3" = "add" ] && [ "$4" = "-A" ] && [ "$5" = "--" ]; then',
+    '  "$REAL_GIT" -C "$2" add openspec/changes/other/notes.txt',
+    'fi',
+    'exec "$REAL_GIT" "$@"',
+    '',
+  ].join('\n'), { mode: 0o755 })
+  chmodSync(wrapper, 0o755)
+  const savedPath = process.env.PATH
+  const savedRealGit = process.env.REAL_GIT
+  process.env.REAL_GIT = realGit
+  process.env.PATH = `${directory}:${savedPath}`
+  try {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /index also carries/,
+    )
+  } finally {
+    process.env.PATH = savedPath
+    if (savedRealGit === undefined) delete process.env.REAL_GIT
+    else process.env.REAL_GIT = savedRealGit
+    rmSync(directory, { recursive: true, force: true })
+  }
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('a resumed archive commit with two archived directories refuses', async () => {
+  const { root, run, fake } = await prepareLegacyLanding({ archive: true })
+  const second = join(root, 'openspec', 'changes', 'archive', `2026-11-21-${CHANGE}`)
+  mkdirSync(second, { recursive: true })
+  writeFileSync(join(second, 'proposal.md'), '# second\n')
+  run(['add', `openspec/changes/archive/2026-11-21-${CHANGE}`])
+  run(['commit', '--amend', '--no-edit'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /does not add exactly one archived directory/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('an empty staged set refuses the archive commit', async () => {
+  const { root, run, fake } = await readyLand()
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-land-empty-'))
+  const wrapper = join(directory, 'git')
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'if [ "$1" = "-C" ] && [ "$3" = "rm" ] && [ "$4" = "-r" ] && [ "$5" = "--cached" ]; then',
+    '  "$REAL_GIT" "$@"',
+    '  "$REAL_GIT" -C "$2" reset -q',
+    '  exit 0',
+    'fi',
+    'exec "$REAL_GIT" "$@"',
+    '',
+  ].join('\n'), { mode: 0o755 })
+  chmodSync(wrapper, 0o755)
+  const savedPath = process.env.PATH
+  const savedRealGit = process.env.REAL_GIT
+  process.env.REAL_GIT = realGit
+  process.env.PATH = `${directory}:${savedPath}`
+  try {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /archive produced no staged changes/,
+    )
+  } finally {
+    process.env.PATH = savedPath
+    if (savedRealGit === undefined) delete process.env.REAL_GIT
+    else process.env.REAL_GIT = savedRealGit
+    rmSync(directory, { recursive: true, force: true })
+  }
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  assert.notEqual(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
 })
