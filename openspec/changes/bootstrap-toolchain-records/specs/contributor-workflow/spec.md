@@ -1,0 +1,28 @@
+# Spec Delta
+
+## MODIFIED Requirements
+
+### Requirement: CI lab job provisions pnpm
+
+The CI lab job SHALL install pnpm at the version the toolchain module pins, which is the value `project-invariants` defines, before `npm run lab -- doctor` and `npm run test:lab -- --mock-only`, because DSH forwards plugin installation to pnpm. The workflow test SHALL assert that the action is in the lab job before `npm ci`, that the version equals the pin, and that the lab documentation names the same version.
+
+#### Scenario: A bare runner runs the lab
+
+- **WHEN** the lab job starts on a runner without pnpm
+- **THEN** it installs the pinned pnpm before the doctor and the lab
+- **AND** the lab can add the plugin tarball
+
+#### Scenario: The action is misplaced or unpinned
+
+- **WHEN** the pnpm action is absent from the lab job, follows `npm ci`, or omits an explicit version
+- **THEN** the workflow test fails and names the missing placement or pin
+
+#### Scenario: The documented pin drifts
+
+- **WHEN** the workflow's pnpm version, the version in `docs/lab.md` and the toolchain pin differ
+- **THEN** the workflow test fails and reports all three versions
+
+#### Scenario: The workflow pin drifts from the module
+
+- **WHEN** the workflow pins a pnpm version other than the toolchain pin
+- **THEN** the workflow test fails and names both versions
