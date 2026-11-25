@@ -7,7 +7,6 @@
  * only --apply writes labels and watch state.
  */
 
-import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 import { ghRead, ghWrite } from './gh-exec.mjs'
@@ -19,6 +18,7 @@ import {
   loadState,
   localPullRequestNumbers,
   mainWorktree,
+  repositorySlug,
   saveState,
   trustedPass,
   UsageError,
@@ -291,21 +291,6 @@ export const RECONCILE_LIST_FIELDS = 'number,state,isDraft,headRefOid,baseRefNam
 export const DETAIL_CHUNK_SIZE = 25
 /** Comments read from one batched detail request. */
 const COMMENT_WINDOW = 10
-
-/**
- * Resolve the repository owner and name locally from the origin remote.
- * @returns `{ owner, name }`, or undefined when the remote does not name GitHub.
- */
-function repositorySlug(root) {
-  try {
-    const url = execFileSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim()
-    const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/u.exec(url)
-    if (match !== null) return { owner: match[1], name: match[2] }
-  } catch {
-    // No origin remote: fall back to gh below.
-  }
-  return undefined
-}
 
 /** Read one batched detail request and return the nodes it carries. */
 function readDetailChunk({ root, gh, owner, name, numbers }) {

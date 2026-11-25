@@ -119,6 +119,96 @@ function ghProbeText(args, options = {}) {
   }
 }
 
+/** Maximum pull requests read in one batched state request. */
+export const STATE_CHUNK_SIZE = 100
+
+/**
+ * Resolve the repository owner and name from the origin remote.
+ * @param root - main worktree.
+ * @returns `{ owner, name }`, or undefined when the remote does not name GitHub.
+ */
+export function repositorySlug(root) {
+  let url
+  try {
+    url = gitText(root, ['remote', 'get-url', 'origin'], true)
+  } catch {
+    return undefined
+  }
+  if (url === undefined) return undefined
+  const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/u.exec(url)
+  return match === null ? undefined : { owner: match[1], name: match[2] }
+}
+
+/** Read one pull request's state through its own request. */
+function readStateOnce({ root, gh, number }) {
+  const text = gh(['pr', 'view', String(number), '--json', 'state'], { cwd: root })
+  if (text === undefined) throw new Error(`gh pr view ${number} failed`)
+  const state = JSON.parse(text)?.state
+  if (typeof state !== 'string' || state === '') throw new Error(`gh pr view ${number} returned no state`)
+  return state
+}
+
+/**
+ * Read one batched state request and return the state of each resolved number.
+ * @param options - root, gh runner, repository owner and name, and numbers.
+ * @returns map from number to state; a number the response leaves out is absent.
+ */
+function readStateChunk({ root, gh, owner, name, numbers }) {
+  const parts = numbers.map((number) => `p${number}:pullRequest(number:${number}){state}`)
+  const query = `query{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${parts.join(' ')}}}`
+  const text = gh(['api', 'graphql', '-f', `query=${query}`], { cwd: root })
+  if (text === undefined) throw new Error('the batched state read returned nothing')
+  const repository = JSON.parse(text)?.data?.repository
+  if (repository === null || typeof repository !== 'object') {
+    throw new Error('the batched state read returned no repository')
+  }
+  const states = new Map()
+  for (const number of numbers) {
+    const node = repository[`p${number}`]
+    if (node === null || typeof node !== 'object' || typeof node.state !== 'string') continue
+    states.set(number, node.state)
+  }
+  return states
+}
+
+/**
+ * Read the state of every given pull request number in batched requests, resolving
+ * a number the batch leaves out with its own read. A batch that fails for a reason
+ * other than a transient network failure falls back to one read per number, and a
+ * transient failure is reported.
+ * @param options - root, numbers and gh runner.
+ * @returns map from number to state.
+ */
+export function readPullRequestStates({ root = process.cwd(), numbers = [], gh = ghRead } = {}) {
+  const wanted = [...new Set(numbers.map(Number))]
+    .filter((number) => Number.isInteger(number) && number > 0)
+    .sort((first, second) => first - second)
+  const states = new Map()
+  const readOne = (number) => states.set(number, readStateOnce({ root, gh, number }))
+  const slug = wanted.length === 0 ? undefined : repositorySlug(root)
+  if (slug === undefined) {
+    for (const number of wanted) readOne(number)
+    return states
+  }
+  for (let index = 0; index < wanted.length; index += STATE_CHUNK_SIZE) {
+    const chunk = wanted.slice(index, index + STATE_CHUNK_SIZE)
+    let chunkStates
+    try {
+      chunkStates = readStateChunk({ root, gh, ...slug, numbers: chunk })
+    } catch (error) {
+      if (isTransientGhFailure(error) || error instanceof GhDeadlineError) throw error
+      for (const number of chunk) readOne(number)
+      continue
+    }
+    for (const number of chunk) {
+      const state = chunkStates.get(number)
+      if (state === undefined) readOne(number)
+      else states.set(number, state)
+    }
+  }
+  return states
+}
+
 /**
  * Resolve the main worktree of the repository.
  * @param cwd - any directory in a checkout.
@@ -348,25 +438,25 @@ export function deleteLocalEntry(root, number) {
 
 /**
  * Remove closed or completed local owner entries, retaining unfinished ones.
- * @param options - root and gh runner.
+ * @param options - root, gh runner and an optional pre-read state map.
  * @returns removed and retained entries.
  */
-export function cleanupLocalEntries({ root = process.cwd(), gh = ghText } = {}) {
+export function cleanupLocalEntries({ root = process.cwd(), gh = ghRead, states = undefined } = {}) {
   const state = loadLocalState(root)
   const removed = []
   const retained = []
   for (const [key, entry] of Object.entries(state.prs)) {
-    const text = gh(['pr', 'view', key, '--json', 'state'])
-    if (text === undefined) throw new Error(`gh pr view ${key} failed`)
-    const pr = JSON.parse(text)
+    const number = Number(key)
+    const prState = states === undefined ? readStateOnce({ root, gh, number }) : states.get(number)
+    if (prState === undefined) throw new Error(`gh pr view ${key} failed`)
     const landed = entry.phase === 'landed' || entry.phase === 'landed-offline'
     const remove = entry.phase === 'pushed'
-      || (pr.state === 'CLOSED' && !landed)
+      || (prState === 'CLOSED' && !landed)
     if (remove) {
       delete state.prs[key]
       removed.push({ number: entry.number, change: entry.change, local: true, removed: true })
-    } else if (pr.state !== 'OPEN') {
-      retained.push({ number: entry.number, change: entry.change, phase: entry.phase, state: pr.state })
+    } else if (prState !== 'OPEN') {
+      retained.push({ number: entry.number, change: entry.change, phase: entry.phase, state: prState })
     }
   }
   saveLocalState(root, state)
@@ -1222,20 +1312,27 @@ export function forgetPullRequest({ root = process.cwd(), number, change, worktr
  * @param options - root, gh runner.
  * @returns cleanup results.
  */
-export function cleanupClosedPullRequests({ root = process.cwd(), gh = ghText } = {}) {
+export function cleanupClosedPullRequests({ root = process.cwd(), gh = ghRead } = {}) {
   const state = loadState(root)
+  const local = loadLocalState(root)
+  const numbers = [
+    ...Object.keys(state.prs).map(Number),
+    ...Object.keys(local.prs).map(Number),
+  ]
+  const states = readPullRequestStates({ root, numbers, gh })
   const cleaned = []
   for (const [key, entry] of Object.entries(state.prs)) {
-    const pr = ghJson(gh, ['pr', 'view', key, '--json', 'state,mergedAt'])
-    if (pr.state === 'OPEN') continue
+    const prState = states.get(Number(key))
+    if (prState === undefined) throw new Error(`gh pr view ${key} failed`)
+    if (prState === 'OPEN') continue
     cleaned.push(forgetPullRequest({ root, number: entry.number, change: entry.change, worktree: entry.worktree }))
   }
-  const local = cleanupLocalEntries({ root, gh })
+  const localResult = cleanupLocalEntries({ root, gh, states })
   trimTelemetry(root)
   return [
     ...cleaned,
-    ...local.removed,
-    ...local.retained.map((entry) => ({ ...entry, local: true, retained: true })),
+    ...localResult.removed,
+    ...localResult.retained.map((entry) => ({ ...entry, local: true, retained: true })),
   ]
 }
 
