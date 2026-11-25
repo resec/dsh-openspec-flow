@@ -850,3 +850,35 @@ test('finish names adopt when the landed manifest on main records another tree',
   }
 })
 
+test('adopt unblocks verify and finish', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'f'.repeat(40) })
+    const adopted = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit, apply: true,
+    })
+    assert.equal(adopted.tree, fixture.tree)
+    const verified = verifyLocal({ root: fixture.root, number: 12, gh: mergedGh(fixture), git: runGit })
+    assert.equal(verified.tree, fixture.tree)
+    assert.equal(verified.mergeTree, fixture.tree)
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+  const afterLand = makeFixture()
+  try {
+    simulateArchive(afterLand)
+    removeWorktree(afterLand)
+    updateLocalEntry(afterLand.root, 12, { tree: 'f'.repeat(40) })
+    adoptLocal({
+      root: afterLand.root, number: 12, tree: afterLand.tree, session: SESSION, gh: noGh(), git: runGit, apply: true,
+    })
+    const finished = finishLocal({
+      root: afterLand.root, number: 12, phase: 'landed-offline', session: SESSION, token: TOKEN, apply: true, gh: mergedGh(afterLand), git: runGit,
+    })
+    assert.equal(finished.phase, 'landed-offline')
+    assert.equal(loadLocalState(afterLand.root).prs['12'].phase, 'landed-offline')
+    assert.equal(lockStatus({ root: afterLand.root }).held, false)
+  } finally {
+    cleanup(afterLand.root, afterLand.remote)
+  }
+})
