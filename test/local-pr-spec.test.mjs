@@ -78,10 +78,23 @@ test('the same-run review landing requirement carries its scenarios', () => {
     'A review pass continues into landing',
     'A behind pass waits for sync',
     'An unlisted pass stops',
-    'A passed record skips the resume',
   ]) {
     assert.ok(text.includes(`#### Scenario: ${scenario}`), `same-run spec has scenario ${scenario}`)
   }
   assert.match(text, /not behind `origin\/main`/)
   assert.match(text, /openspec_archive/)
+})
+
+test('the fixed-session reviewer reuse requirement carries the resume skip', () => {
+  const text = landingSpec()
+  assert.match(text, /### Requirement: Fixed-session reviewer reuse/)
+  for (const scenario of [
+    'Final review resumes the reviewer',
+    'Resume fails',
+    'Reviewer is not started twice',
+    'A passed record skips the resume',
+  ]) {
+    assert.ok(text.includes(`#### Scenario: ${scenario}`), `reviewer reuse spec has scenario ${scenario}`)
+  }
+  assert.match(text, /skip the resume and advance `reviewed`/)
 })

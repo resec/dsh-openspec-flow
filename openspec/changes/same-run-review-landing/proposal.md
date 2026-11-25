@@ -18,7 +18,7 @@ A labeled same-repository pull request that is behind `main` needs four five-min
 
 ### Modified Capabilities
 
-- `pr-review-pipeline`: the scheduled-run sequencing requirement and its scenarios change so that a review pass can continue into the landing sequence in the same run.
+- `pr-review-pipeline`: the scheduled-run sequencing and fixed-session reviewer reuse requirements change so that a review pass can continue into the landing sequence in the same run and a passed record over the landing tree skips the resume.
 
 ## Impact
 

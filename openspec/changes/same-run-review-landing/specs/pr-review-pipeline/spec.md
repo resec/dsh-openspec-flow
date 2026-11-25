@@ -59,6 +59,30 @@ The session SHALL reconcile `owner-review` and clean up each run. It SHALL advan
 - **WHEN** a local pull request is merged but not landed
 - **THEN** the run reports it and does not retarget, land or merge it
 
+### Requirement: Fixed-session reviewer reuse
+
+Runs SHALL reuse one fixed session. The landing stage SHALL resume the apply review in the same DSH session that started it, so the reviewer subagent stays bound, except that a passed record matching the landing tree SHALL skip the resume and advance `reviewed`. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL record the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
+
+#### Scenario: Final review resumes the reviewer
+
+- **WHEN** the landing stage starts the final review on the landing branch
+- **THEN** it resumes the recorded apply review and wakes the reviewer subagent bound to the same session
+
+#### Scenario: Resume fails
+
+- **WHEN** the reviewer cannot be resumed
+- **THEN** `state --fail <n> --error <text> --apply` records the `review-failed` phase with the error, the checkout is kept, and the run stops without replacing the reviewer, starting another session or merging
+
+#### Scenario: Reviewer is not started twice
+
+- **WHEN** the apply review record already exists for the change
+- **THEN** the final review does not call `start`
+
+#### Scenario: A passed record skips the resume
+
+- **WHEN** the apply review record is passed and its `treeSha` equals the landing tree
+- **THEN** `reviewed` advances without `openspec_review action=resume`; otherwise the run uses the resume path
+
 ## ADDED Requirements
 
 ### Requirement: Same-run review landing
@@ -82,8 +106,3 @@ After a review run publishes a pass, the session SHALL re-list landing candidate
 - **WHEN** the re-listing does not return the reviewed pull request as a candidate because it lacks `mergeable`, another landing is unfinished, the landing lock is held, or a behind fork is refused with an author-update reason
 - **THEN** the run stops without acquiring the lock and the next run follows the existing flow
 - **AND** a behind fork is reported to its author
-
-#### Scenario: A passed record skips the resume
-
-- **WHEN** the apply review record is passed and its `treeSha` equals the landing tree
-- **THEN** `reviewed` advances without `openspec_review action=resume`; otherwise the run uses the resume path
