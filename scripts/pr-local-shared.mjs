@@ -191,10 +191,13 @@ export function localMarker({ change, tree, record, session }) {
   return `<!-- local-apply-review: change=${change} tree=${tree} review=${record} session=${session} -->`
 }
 
-/** Read the landed manifest that matches a change and reviewed tree. */
-export function readLandedManifest({ root, change, tree }) {
-  const directory = join(resolvePaths(root).commonDir, 'openspec-flow', 'landed')
-  if (!existsSync(directory)) return undefined
+/** Read every readable landed manifest. */
+export function readLandedManifests(root) {
+  const common = resolvePaths(root).commonDir
+  if (common === undefined) return []
+  const directory = join(common, 'openspec-flow', 'landed')
+  if (!existsSync(directory)) return []
+  const manifests = []
   for (const name of readdirSync(directory)) {
     if (!name.endsWith('.json')) continue
     let manifest
@@ -203,9 +206,24 @@ export function readLandedManifest({ root, change, tree }) {
     } catch {
       continue
     }
-    if (manifest?.change === change && manifest?.featureTree === tree) return { file: join(directory, name), manifest }
+    if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) continue
+    manifests.push({ file: join(directory, name), manifest })
   }
-  return undefined
+  return manifests
+}
+
+/** Read the landed manifest for a change whose archive commit is `main`. */
+export function readLandedManifestForMain(root, { change, main } = {}) {
+  if (typeof change !== 'string' || change === '') return undefined
+  if (typeof main !== 'string' || main === '') return undefined
+  return readLandedManifests(root)
+    .find(({ manifest }) => manifest.change === change && manifest.archiveCommit === main)
+}
+
+/** Read the landed manifest that matches a change and reviewed tree. */
+export function readLandedManifest({ root, change, tree }) {
+  return readLandedManifests(root)
+    .find(({ manifest }) => manifest.change === change && manifest.featureTree === tree)
 }
 
 /** Whether an untracked path is under another change directory. */

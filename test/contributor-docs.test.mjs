@@ -129,6 +129,8 @@ test('AGENTS.md states the online local completion path and the retarget step', 
   assert.match(AGENTS, /gh pr merge --rebase/)
   assert.match(AGENTS, /scripts\/pr-local-land\.mjs verify <n> --session <id>/)
   assert.match(AGENTS, /retarget <n> --session <id> --apply/)
+  assert.match(AGENTS, /pr-local-land\.mjs adopt <n> --tree <merged-tree> --session <id> --apply/)
+  assert.match(AGENTS, /finish never adopts by itself/)
   assert.match(AGENTS, /accept the matching owner session without the lock token/)
   assert.match(AGENTS, /a supplied token must match/)
   assert.match(AGENTS, /releases the landing lock/)
