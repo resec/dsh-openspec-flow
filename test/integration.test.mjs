@@ -1072,10 +1072,18 @@ test('initializes an empty project without writing skills', async () => {
   assert.equal(result.config, 'created')
   assert.ok(existsSync(join(root, 'openspec', 'config.yaml')))
   assert.ok(existsSync(join(root, 'openspec', 'specs')))
+  assert.ok(existsSync(join(root, 'openspec', 'changes')))
+  assert.ok(existsSync(join(root, 'openspec', 'changes', 'archive')))
+  assert.equal(existsSync(join(root, 'AGENTS.md')), false)
   assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
+
+  const configPath = join(root, 'openspec', 'config.yaml')
+  writeFileSync(configPath, '# project config written by hand\ncontext: keep this text\n')
+  const before = readFileSync(configPath)
 
   const again = await call(fake, 'openspec_init', {})
   assert.equal(again.config, 'exists')
+  assert.deepEqual(readFileSync(configPath), before, 'an existing config.yaml is not rewritten')
   assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
 })
 
