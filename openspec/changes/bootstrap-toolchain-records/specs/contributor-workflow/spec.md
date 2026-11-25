@@ -4,7 +4,7 @@
 
 ### Requirement: Bootstrap provisions the toolchain
 
-Bootstrap SHALL resolve a Node 24 runtime satisfying `engines.node` from the host or download and verify the pinned fallback into the shared version bucket, then install locked dependencies, Git hooks, the pnpm bucket and the Playwright Chromium binary under `PLAYWRIGHT_BROWSERS_PATH` when set, else the worktree's Playwright-version bucket. A full mode SHALL run `npm run verify` and `npm run test:lab -- --mock-only` in place of the plain test suite; the suite runs inside that verification.
+The repository SHALL provide a bootstrap entrypoint. It SHALL resolve a Node 24 runtime satisfying `engines.node` from the host or download and verify the pinned fallback into the shared bucket. In default and full runs it SHALL install locked dependencies, Git hooks, the pnpm bucket and Chromium under `PLAYWRIGHT_BROWSERS_PATH` when set, else the worktree's Playwright-version bucket. Full mode SHALL run `npm run verify` and `npm run test:lab -- --mock-only`; the suite runs inside verification.
 
 #### Scenario: The host has a qualifying runtime
 

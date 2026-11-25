@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode, readNodeRequirements } from './node-version.mjs'
 import { MIN_FREE_BYTES } from './bootstrap-lib.mjs'
-import { installChromium, installLockPath, prepareChromium, resolveEnvironment, withInstallLockSync } from './worktree-env.mjs'
+import { INSTALL_LOCK_NAME, installChromium, installLockPath, prepareChromium, resolveEnvironment, withInstallLockSync } from './worktree-env.mjs'
 import {
   PNPM_VERSION,
   buildRecord,
@@ -370,7 +370,7 @@ export function collectBuckets({ dryRun = false, now = Date.now(), mainRoot = EN
   ]) {
     if (!existsSync(directory)) continue
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && !entry.name.startsWith('.')) candidates.push(join(directory, entry.name))
+      if (entry.isDirectory() && !entry.name.startsWith('.') && !entry.name.endsWith(INSTALL_LOCK_NAME)) candidates.push(join(directory, entry.name))
     }
   }
   let deleted = 0
