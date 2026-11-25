@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-22
+skip_specs: true
+goal: Omit the card payload report key when the report file is missing instead of
+  writing null.
