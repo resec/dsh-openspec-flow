@@ -934,6 +934,10 @@ test('returns validation findings instead of archiving a broken change', async (
   assert.equal(result.valid, false)
   assert.equal(result.archived, false)
   assert.ok(result.issues.length > 0)
+  assert.equal(result.root.path, root)
+  for (const issue of result.issues) {
+    assert.equal(issue.path.startsWith('/'), false, 'the issue path is relative to the root')
+  }
   assert.ok(existsSync(join(root, CHANGE_DIR)))
 })
 

@@ -65,11 +65,14 @@ Release removes the directory only when the caller's token still matches. A chan
 
 ```text
 status: ready | repair-required | unavailable
+root: { path, source }            # resolved OpenSpec root of the main checkout; absent when it has none
 state: { path?, exists, valid, error?, change?, store?, worktree?, branch?, status? }
 locks: [{ scope, path, held, state?, reason?, owner?, alive? }]
 worktree: { path?, exists }
 repair: { action: none | recover | cleanup | manual, scope?, expectedOwner?, message? }
 ```
+
+The root is resolved from the main checkout, so it is never the session directory an apply moved into the worktree. `state.path`, `state.worktree`, `locks[].path` and `worktree.path` are relative to `root.path`; a path outside it, such as the checkout of a user-created worktree when the root sits elsewhere, stays absolute and is not rewritten with `..`. A project with no resolved root carries no `root` and keeps those paths absolute.
 
 The `repair.action` is `none`, `recover`, `cleanup` or `manual`. A git project with no state reports `unavailable`. An archived state whose cleanup is incomplete, including a legacy archived state whose worktree still exists, gives `cleanup` and points at a land retry. A missing worktree without a cleanup record or corrupt state gives `manual`; a lock directory with no usable owner gives `manual` naming the lock; a dead lock gives `recover` with the scope and owner token. The action does not inspect npm, pnpm, Chromium, DSH profiles or ports.
 
@@ -82,6 +85,8 @@ The `repair.action` is `none`, `recover`, `cleanup` or `manual`. A git project w
 { "action": "land", "change": "add-dark-mode", "approvedBy": "user" }
 { "action": "remove", "change": "add-dark-mode" }
 ```
+
+A land or remove result carries the same `root` as the inspection, and its `manifest`, `worktree` and `path` fields are relative to `root.path`, or absolute when they fall outside it.
 
 `land` runs in main under the lifecycle and a fresh change lock. When the worktree is behind main and the apply review is ready, it writes `rebaseReview` to the apply record under the review-directory lock after verifying the change-lock owner, then refuses with the rebase, retest and re-review instruction. It releases the recorded apply change lock, acquires the lifecycle and fresh change locks, sets `landing`, and re-reads main. If main moved, it writes the marker for the new head and refuses. It also refuses a feature history with a merge commit and requires a linear rebase. Otherwise it reconciles the main planning copy with the seal tree (matching untracked change-directory files and an untracked plugin-written `.gitignore` are removed; a tracked modified or deleted `.gitignore` is restored to its `HEAD` version; a differing or extra file refuses with its path), verifies the feature tree, runs `git merge --ff-only`, verifies the resulting main tree, archives and commits in the same section, writes `<common>/openspec-flow/landed/<land>.json` with `landCommit` and `landMode` (`fast-forward` for a new land, `legacy-merge` when a retry completes a pre-existing merge), marks the state `archived`, clears `rebaseReview` under the review lock, then deletes the seal ref, removes the plugin worktree and deletes its local branch while keeping the state and manifest. A failure before main is updated restores the pre-land planning copy; a failed fast-forward never resets or rewinds main; a concurrent commit stays reachable. `cleanup` records the two flags; a cleanup failure keeps `archived`, records `cleanup.error` and returns `cleanup.complete: false`. It never pushes. A failed archive or commit keeps the land commit and worktree for a retry. A later land on an archived state with a manifest and incomplete cleanup retries only the cleanup; manifests that predate `landCommit` still read through their `mergeCommit` field.
 
