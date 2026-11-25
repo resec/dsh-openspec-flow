@@ -918,7 +918,10 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
   }
   if (!apply) return { dryRun: true, entry }
   try {
-    if (existsSync(join(root, 'openspec', 'changes', entry.change))) {
+    const tracked = git(root, ['ls-files', '--', changeDirectory(entry.change)])
+      .split('\n')
+      .filter((value) => value !== '')
+    if (tracked.some((path) => existsSync(join(root, path)))) {
       throw new Error(`the change ${entry.change} is still active; archive it first`)
     }
     const archiveRelative = archivedDirectory(root, entry.change)

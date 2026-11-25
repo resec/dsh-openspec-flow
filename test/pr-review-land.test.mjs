@@ -1762,6 +1762,24 @@ test('archive refuses a spec outside the named capabilities', () => {
   assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
 })
 
+test('archive refuses a leftover under the source change directory', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  mkdirSync(join(root, 'openspec', 'changes', 'widget'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'widget', 'leftover.md'), 'leftover\n')
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /outside its outputs/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
+test('archive refuses a staged set that is already committed', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-qm', 'chore(openspec): archive widget'])
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /produced no staged changes/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
 test('archive --commit records a commit whose paths stay inside the archive scope', () => {
   const { root } = landingToArchivePending()
   moveWidgetToArchive(root)
@@ -1776,7 +1794,8 @@ test('archive --commit records a commit whose paths stay inside the archive scop
 test('archive --commit refuses a commit that changes a path outside the scope', () => {
   const { root } = landingToArchivePending()
   moveWidgetToArchive(root)
-  writeFileSync(join(root, 'notes.txt'), 'notes\n')
+  mkdirSync(join(root, 'openspec', 'changes', 'other'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'other', 'proposal.md'), '# Other\n')
   git(root, ['add', '-A'])
   git(root, ['commit', '-qm', 'chore(openspec): archive widget'])
   const head = git(root, ['rev-parse', 'HEAD'])
@@ -1790,6 +1809,7 @@ test('archive --commit refuses a commit that changes a path outside the scope', 
 test('archive refuses a missing or ambiguous archived directory', () => {
   const first = landingToArchivePending()
   rmSync(join(first.root, 'openspec', 'changes', 'widget'), { recursive: true })
+  git(first.root, ['rm', '-r', '--cached', '-q', '--', 'openspec/changes/widget'])
   assert.throws(() => archiveLanding({ root: first.root, number: 12, apply: true }), /has no archive directory/)
   const second = landingToArchivePending()
   moveWidgetToArchive(second.root)
