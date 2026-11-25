@@ -54,11 +54,11 @@ runner 以 `detached: true` 启动，成为新进程组的组长；信号与收�
 
 ### 决策 3：共享模块 `scripts/run-signal.mjs`
 
-新增模块导出四个函数：`spawnRunChild`（POSIX 设置 `detached`）、`signalRunChild`（整组信号，`ESRCH` 视为已退出）、`stopRunChild`（`SIGKILL` 整组 + 有界等待）、`finishRun`（决策 7 的收尾组合）。两个入口使用同一实现，避免两套信号逻辑再次漂移，单元测试集中在 `test/run-signal.test.mjs`。
+新增模块导出六个函数：`spawnRunChild`（POSIX 设置 `detached`）、`signalRunChild`（整组信号，`ESRCH` 视为已退出）、`stopRunChild`（`SIGKILL` 整组 + 有界等待）、`finishRun`（决策 7 的收尾组合），以及两个辅助导出 `usesProcessGroup`（平台是否提供进程组）与 `runChildSpawnOptions`（是否追加 `detached`）。三个进程组函数都接受 `platform` 参数并默认 `process.platform`，让跨平台分支可以在同一套件里验证。两个入口使用同一实现，避免两套信号逻辑再次漂移，单元测试集中在 `test/run-signal.test.mjs`。
 
 ### 决策 4：无进程组平台只处理直接子进程
 
-`process.kill(-pid)` 是 POSIX 语义。Windows 上不设置 `detached`，`signalRunChild`/`stopRunChild` 只对直接子进程操作，且不尝试整组信号。该降级在 delta 中单列一条需求，避免归档后的主规格承诺代码不提供的能力；Windows 上后代存活的风险记录在 Risks 中。
+`process.kill(-pid)` 是 POSIX 语义。Windows 上不设置 `detached`，`signalRunChild`/`stopRunChild` 只对直接子进程操作，且不尝试整组信号。该降级在 delta 中单列一条需求，避免归档后的主规格承诺代码不提供的能力；`platform` 参数与 `usesProcessGroup` 让降级分支在没有 Windows 主机的套件里也可测，Windows 上后代存活的风险记录在 Risks 中。
 
 ### 决策 5：保留注入接缝
 
@@ -74,7 +74,7 @@ runner 以 `detached: true` 启动，成为新进程组的组长；信号与收�
 
 ### 决策 7：收尾顺序抽成可注入的 `finishRun`
 
-`finishRun(child, finish, stop = stopRunChild)` 先 `await stop(child)`，再调用 `finish()`；两个入口的正常结束与信号路径都用两参数形式调用它。第三个参数是顺序单测的注入点：测试传入记录调用的假 stop，断言顺序为 `stop,finish`，实现反序会直接失败。这样「停止先于删除」有可判别的测试，而不需要让生产代码为端到端观察留暂停点。
+`finishRun(child, finish, stop = stopRunChild)` 先 `await stop(child)`，再调用 `finish()`；停止调用失败时仍在 `finally` 中执行 `finish()`，因此停止错误不会让 run root 留下，两个入口捕获该错误、照常报告，且不改变运行的退出状态。两个入口的正常结束与信号路径都用两参数形式调用它。第三个参数是顺序单测的注入点：测试传入记录调用的假 stop，断言顺序为 `stop,finish`，实现反序会直接失败。这样「停止先于删除」有可判别的测试，而不需要让生产代码为端到端观察留暂停点。
 
 替代方案：在端到端用例里让删除与停止之间可暂停 → 需要测试专用钩子，把测试关注点混进生产代码。
 

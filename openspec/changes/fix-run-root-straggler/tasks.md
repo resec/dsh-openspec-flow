@@ -2,8 +2,8 @@
 
 ## 1. 进程组辅助模块与收尾顺序
 
-- [x] 1.1 新增 `scripts/run-signal.mjs`，导出 `spawnRunChild`、`signalRunChild`、`stopRunChild`、`finishRun`；POSIX 设置 `detached` 并以 `-pid` 面向整组，Windows 只处理直接子进程且不尝试整组信号；`stopRunChild` 补发 `SIGKILL` 后以 10 ms 间隔、250 ms 上界等待组消失；`finishRun(child, finish, stop = stopRunChild)` 先等待 `stop(child)` 再调用 `finish`，`child` 为 undefined 时只调用 `finish`，第三个参数是顺序单测的注入点。验证：`node -e "import('./scripts/run-signal.mjs').then((m) => console.log(Object.keys(m).sort().join(',')))"` 输出 `finishRun,signalRunChild,spawnRunChild,stopRunChild`。
-- [x] 1.2 新增 `test/run-signal.test.mjs`：组首进程、组内孙进程随组终止、忽略 `SIGTERM` 的成员被 `SIGKILL`、组已不存在时不抛错；另加 `finishRun` 顺序用例：以第三个参数注入记录调用的假 stop，`finish` 用假函数，断言顺序为 `stop,finish`，且 `child` 为 undefined 时只调用 `finish`。每条用例在 `finally` 中杀掉自己启动的子进程，断言失败也不留后代。验证：`node --test test/run-signal.test.mjs` 通过，运行后 `pgrep -f 'run-signal-probe'` 无输出。
+- [x] 1.1 新增 `scripts/run-signal.mjs`，导出 `spawnRunChild`、`signalRunChild`、`stopRunChild`、`finishRun`，以及平台辅助 `usesProcessGroup`、`runChildSpawnOptions`；POSIX 设置 `detached` 并以 `-pid` 面向整组，Windows 只处理直接子进程且不尝试整组信号，三个进程组函数接受默认 `process.platform` 的 `platform` 参数；`stopRunChild` 补发 `SIGKILL` 后以 10 ms 间隔、250 ms 上界等待组消失，未启动的子进程直接返回；`finishRun(child, finish, stop = stopRunChild)` 先等待 `stop(child)` 再在 `finally` 中调用 `finish`，停止失败也执行删除，`child` 为 undefined 时只调用 `finish`，第三个参数是顺序单测的注入点。验证：`node -e "import('./scripts/run-signal.mjs').then((m) => console.log(Object.keys(m).sort().join(',')))"` 输出 `finishRun,runChildSpawnOptions,signalRunChild,spawnRunChild,stopRunChild,usesProcessGroup`。
+- [x] 1.2 新增 `test/run-signal.test.mjs`：组首进程、组内孙进程随组终止、忽略 `SIGTERM` 的成员被 `SIGKILL`、组已不存在时不抛错；另加 `finishRun` 用例：以第三个参数注入记录调用的假 stop，断言顺序为 `stop,finish`、`child` 为 undefined 时只调用 `finish`、stop 失败时仍调用 `finish`；`stopRunChild` 对未启动子进程不抛错；平台降级用例断言 win32 下 spawn 选项不带 `detached`、直接子进程收到信号且不经过整组信号。每条用例在 `finally` 中杀掉自己启动的子进程，断言失败也不留后代。验证：`node --test test/run-signal.test.mjs` 通过，运行后 `pgrep -f 'run-signal-probe'` 无输出。
 
 ## 2. scoped 入口与回归夹具
 
