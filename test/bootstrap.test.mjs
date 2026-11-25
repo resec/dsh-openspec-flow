@@ -33,6 +33,7 @@ import {
   browsersPath,
   completionHint,
   dependenciesError,
+  npmEnvFor,
   parseBootstrapArgs,
   playwrightEnv,
   resolveNpmCache,
@@ -346,6 +347,18 @@ test('bootstrap resolves OPENSPEC_FLOW_NPM_CACHE and ignores npm_config_cache', 
   assert.equal(resolveNpmCache({ env: { npm_config_cache: '/npm' } }), fallback)
   assert.equal(resolveNpmCache({ env: { OPENSPEC_FLOW_NPM_CACHE: '/cache', npm_config_cache: '/npm' } }), '/cache')
   assert.equal(resolveNpmCache({ env: {} }), fallback)
+})
+
+test('the npm child environment carries both cache selectors', () => {
+  assert.deepEqual(npmEnvFor({ cache: '/cache' }), {
+    npm_config_cache: '/cache',
+    OPENSPEC_FLOW_NPM_CACHE: '/cache',
+  })
+  assert.deepEqual(npmEnvFor({ cache: '/cache', registry: 'https://registry.example' }), {
+    npm_config_cache: '/cache',
+    OPENSPEC_FLOW_NPM_CACHE: '/cache',
+    npm_config_registry: 'https://registry.example',
+  })
 })
 
 test('names npm ci when dependencies are missing', () => {
