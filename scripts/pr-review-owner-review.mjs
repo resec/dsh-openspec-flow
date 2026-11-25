@@ -7,12 +7,15 @@
  * only --apply writes labels and watch state.
  */
 
-import { spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+
+import { ghRead, ghWrite } from './gh-exec.mjs'
 
 import {
   activeChangeNames,
   checksGreen,
+  hasTrustedMarker,
   loadState,
   localPullRequestNumbers,
   mainWorktree,
@@ -20,6 +23,7 @@ import {
   trustedPass,
   UsageError,
   withRunLock,
+  withRunTelemetry,
 } from './pr-review-watch.mjs'
 
 /** Advisory label managed by this command. */
@@ -43,20 +47,19 @@ const PR_FIELDS = [
 /** Merge states that definitely invalidate the signal. */
 const CONFLICTING_STATES = new Set(['DIRTY', 'BLOCKED'])
 
-/** Run gh and return stdout, or undefined when allowed to fail. */
+/** Whether one `gh` invocation mutates a label. */
+export function isLabelWrite(args) {
+  return args[0] === 'pr' && args[1] === 'edit'
+}
+
+/**
+ * Run gh: a label write stays single-shot, every read retries under the shared
+ * policy. Returns stdout, or undefined when the failure is allowed.
+ */
 function ghText(args, { cwd, allowFailure = false } = {}) {
-  const result = spawnSync('gh', args, {
-    cwd,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    if (allowFailure) return undefined
-    const detail = String(result.stderr ?? '').trim() || String(result.stdout ?? '').trim()
-    throw new Error(`gh ${args.join(' ')} failed${detail === '' ? '' : `: ${detail}`}`)
-  }
-  return result.stdout.trim()
+  return isLabelWrite(args)
+    ? ghWrite(args, { cwd, allowFailure })
+    : ghRead(args, { cwd, allowFailure })
 }
 
 /** Read one pull request through gh. */
@@ -229,8 +232,16 @@ export function syncPullRequest({
   }
   const login = ghLogin(root, gh)
   const state = loadState(root)
-  const entry = state.prs[String(n)]
-  const decision = decideOwnerReview({ pr, entry, login, number: n })
+  const decision = decideOwnerReview({ pr, entry: state.prs[String(n)], login, number: n })
+  return applyOwnerReviewDecision({ root, number: n, decision, apply, gh, now, state })
+}
+
+/**
+ * Apply one owner-review decision to GitHub and watch state.
+ * @returns the per-pull-request result.
+ */
+function applyOwnerReviewDecision({ root, number, decision, apply, gh, now, state }) {
+  const n = Number(number)
   const result = {
     number: n,
     head: decision.head,
@@ -274,32 +285,255 @@ export function syncPullRequest({
   return result
 }
 
+/** Cheap list fields for the reconcile screening pass. */
+export const RECONCILE_LIST_FIELDS = 'number,state,isDraft,headRefOid,baseRefName,labels,statusCheckRollup'
+/** Maximum pull requests read in one batched detail request. */
+export const DETAIL_CHUNK_SIZE = 25
+/** Comments read from one batched detail request. */
+const COMMENT_WINDOW = 10
+
+/**
+ * Resolve the repository owner and name locally from the origin remote.
+ * @returns `{ owner, name }`, or undefined when the remote does not name GitHub.
+ */
+function repositorySlug(root) {
+  try {
+    const url = execFileSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim()
+    const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/u.exec(url)
+    if (match !== null) return { owner: match[1], name: match[2] }
+  } catch {
+    // No origin remote: fall back to gh below.
+  }
+  return undefined
+}
+
+/** Read one batched detail request and return the nodes it carries. */
+function readDetailChunk({ root, gh, owner, name, numbers }) {
+  const parts = numbers.map((n) => (
+    `p${n}:pullRequest(number:${n}){mergeable mergeStateStatus comments(last:${COMMENT_WINDOW}){nodes{author{login} body}}}`
+  ))
+  const query = `query{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${parts.join(' ')}}}`
+  const text = gh(['api', 'graphql', '-f', `query=${query}`], { cwd: root })
+  if (text === undefined) throw new Error('the batched detail read returned nothing')
+  const repository = JSON.parse(text)?.data?.repository
+  if (repository === null || typeof repository !== 'object') {
+    throw new Error('the batched detail read returned no repository')
+  }
+  const details = new Map()
+  for (const number of numbers) {
+    const node = repository[`p${number}`]
+    if (node !== null && typeof node === 'object') details.set(number, node)
+  }
+  return details
+}
+
+/** Read the changed files of several pull requests in one request. */
+function readFilesChunk({ root, gh, owner, name, numbers }) {
+  const parts = numbers.map((n) => `p${n}:pullRequest(number:${n}){files(first:100){nodes{path}}}`)
+  const query = `query{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${parts.join(' ')}}}`
+  const text = gh(['api', 'graphql', '-f', `query=${query}`], { cwd: root })
+  if (text === undefined) throw new Error('the batched file read returned nothing')
+  const repository = JSON.parse(text)?.data?.repository
+  if (repository === null || typeof repository !== 'object') {
+    throw new Error('the batched file read returned no repository')
+  }
+  const files = new Map()
+  for (const number of numbers) {
+    const paths = repository[`p${number}`]?.files?.nodes
+    if (Array.isArray(paths)) files.set(number, paths)
+  }
+  return files
+}
+
+/** The evidence object the decider reads for a tracked pull request. */
+function evidencePullRequest({ row, entry, detail, files }) {
+  const change = typeof entry?.change === 'string' && entry.change !== ''
+    ? entry.change
+    : 'unknown-change'
+  return {
+    ...row,
+    ...(detail ?? {}),
+    files: files ?? [{ path: `openspec/changes/${change}/placeholder.md` }],
+  }
+}
+
 /**
  * Reconcile tracked pull requests and open pull requests carrying the label.
- * @returns per-PR results and collected errors.
+ * Reads are batched: one login, one lightweight list, chunked detail requests of
+ * at most {@link DETAIL_CHUNK_SIZE} pull requests, and per-pull-request file or
+ * comment reads only where a decision needs them.
+ * @returns per-pull-request results and collected errors.
  */
 export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh = ghText, now = new Date().toISOString() } = {}) {
   const state = loadState(root)
-  const numbers = new Set(Object.keys(state.prs))
   const local = localPullRequestNumbers(root)
-  for (const key of local) numbers.delete(key)
-  const text = gh(['pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,labels'], { cwd: root })
-  if (text === undefined) throw new Error('gh pr list failed')
-  for (const pr of JSON.parse(text)) {
-    if (local.has(String(pr.number))) continue
-    if (hasLabel(pr, OWNER_REVIEW_LABEL)) numbers.add(String(pr.number))
+  const login = ghLogin(root, gh)
+  const listText = gh(['pr', 'list', '--state', 'all', '--limit', '1000', '--json', RECONCILE_LIST_FIELDS], { cwd: root })
+  if (listText === undefined) throw new Error('gh pr list failed')
+  const rows = Array.isArray(JSON.parse(listText)) ? JSON.parse(listText) : []
+  const known = new Map()
+  const open = new Map()
+  for (const row of rows) {
+    const number = Number(row?.number)
+    if (!Number.isInteger(number) || number < 1) continue
+    known.set(number, row)
+    if (row?.state === undefined || String(row.state) === 'OPEN') open.set(number, row)
   }
+
+  const numbers = new Set()
+  for (const key of Object.keys(state.prs)) {
+    const number = Number(key)
+    if (Number.isInteger(number) && number > 0) numbers.add(number)
+  }
+  for (const row of open.values()) {
+    if (hasLabel(row, OWNER_REVIEW_LABEL)) numbers.add(Number(row.number))
+  }
+  for (const key of local) numbers.delete(Number(key))
+  const ordered = [...numbers].sort((left, right) => left - right)
 
   const results = []
   const errors = []
-  const ordered = [...numbers].filter((value) => /^\d+$/u.test(value)).sort((a, b) => Number(a) - Number(b))
-  for (const key of ordered) {
+  const plans = new Map()
+  const detailNumbers = []
+  const fileNumbers = []
+  const filesFor = new Map()
+
+  const stopItem = ({ number, head, labeled }, reason) => {
+    plans.set(number, labeled
+      ? { number, head, action: 'remove', reason }
+      : { number, head, action: 'none', reason })
+  }
+
+  const pendingFiles = []
+  for (const number of ordered) {
+    const row = known.get(number)
+    const entry = state.prs[String(number)]
+    if (row === undefined) {
+      try {
+        const pr = readPullRequest({ root, number, gh })
+        plans.set(number, decideOwnerReview({ pr, entry, login, number }))
+      } catch (error) {
+        errors.push({ number, error: error instanceof Error ? error.message : String(error) })
+      }
+      continue
+    }
+    const head = String(row.headRefOid ?? '')
+    const labeled = hasLabel(row, OWNER_REVIEW_LABEL)
+    const item = { number, row, head, labeled }
+    if (row.state !== undefined && String(row.state) !== 'OPEN') { stopItem(item, 'closed'); continue }
+    if (row.isDraft === true) { stopItem(item, 'draft'); continue }
+    if (String(row.baseRefName ?? '') !== 'main') { stopItem(item, 'base'); continue }
+    if (entry === undefined || String(entry.head ?? '') !== head) {
+      pendingFiles.push({ ...item, entry })
+      continue
+    }
+    if (!checksGreen(row.statusCheckRollup)) { stopItem(item, 'ci'); continue }
+    if (hasLabel(row, MERGEABLE_LABEL)) { stopItem(item, 'mergeable-label'); continue }
+    if (entry.status !== 'commented') { stopItem(item, 'state-status'); continue }
+    detailNumbers.push({ number, row, entry })
+  }
+
+  if (pendingFiles.length > 0) {
+    const slug = repositorySlug(root)
+    if (slug === undefined) throw new Error('cannot resolve the repository owner and name from origin')
+    const fileNumbers = pendingFiles.map((item) => item.number)
     try {
-      results.push(syncPullRequest({ root, number: Number(key), apply, gh, now }))
-    } catch (error) {
-      errors.push({ number: Number(key), error: error instanceof Error ? error.message : String(error) })
+      const files = readFilesChunk({ root, gh, owner: slug.owner, name: slug.name, numbers: fileNumbers })
+      for (const [number, paths] of files) filesFor.set(number, paths)
+    } catch {
+      for (const number of fileNumbers) {
+        try {
+          const pr = readPullRequest({ root, number, gh })
+          filesFor.set(number, Array.isArray(pr?.files) ? pr.files : [])
+        } catch (readError) {
+          errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
+        }
+      }
+    }
+    for (const item of pendingFiles) {
+      const files = filesFor.get(item.number)
+      if (files === undefined) continue
+      if (activeChangeNames(files).length !== 1) { stopItem(item, 'active-changes'); continue }
+      if (!checksGreen(item.row.statusCheckRollup)) { stopItem(item, 'ci'); continue }
+      if (hasLabel(item.row, MERGEABLE_LABEL)) { stopItem(item, 'mergeable-label'); continue }
+      if (item.entry === undefined) { stopItem(item, 'no-watch-state'); continue }
+      if (String(item.entry.head ?? '') !== item.head) { stopItem(item, 'state-head'); continue }
+      if (item.entry.status !== 'commented') { stopItem(item, 'state-status'); continue }
+      detailNumbers.push({ number: item.number, row: item.row, entry: item.entry, files })
     }
   }
+
+  const details = new Map()
+  if (detailNumbers.length > 0) {
+    const slug = repositorySlug(root)
+    if (slug === undefined) throw new Error('cannot resolve the repository owner and name from origin')
+    for (let index = 0; index < detailNumbers.length; index += DETAIL_CHUNK_SIZE) {
+      const chunk = detailNumbers.slice(index, index + DETAIL_CHUNK_SIZE)
+      const chunkNumbers = chunk.map((item) => item.number)
+      let chunkDetails
+      try {
+        chunkDetails = readDetailChunk({ root, gh, owner: slug.owner, name: slug.name, numbers: chunkNumbers })
+      } catch {
+        for (const number of chunkNumbers) {
+          try {
+            details.set(number, readPullRequest({ root, number, gh }))
+          } catch (readError) {
+            errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
+          }
+        }
+        continue
+      }
+      for (const number of chunkNumbers) {
+        const value = chunkDetails.get(number)
+        if (value === undefined) {
+          try {
+            details.set(number, readPullRequest({ root, number, gh }))
+          } catch (readError) {
+            errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
+          }
+          continue
+        }
+        details.set(number, value)
+      }
+    }
+  }
+
+  for (const item of detailNumbers) {
+    const detail = details.get(item.number)
+    if (detail === undefined) continue
+    const head = String(item.entry.head ?? '')
+    let comments = Array.isArray(detail.comments?.nodes ?? detail.comments)
+      ? (detail.comments?.nodes ?? detail.comments)
+      : []
+    if (!hasTrustedMarker(comments, login, item.number, head)) {
+      try {
+        const text = gh(['pr', 'view', String(item.number), '--json', 'comments'], { cwd: root })
+        if (text !== undefined) comments = JSON.parse(text)?.comments ?? comments
+      } catch (error) {
+        errors.push({ number: item.number, error: error instanceof Error ? error.message : String(error) })
+        continue
+      }
+    }
+    const pr = evidencePullRequest({
+      row: item.row,
+      entry: item.entry,
+      detail: { ...detail, comments },
+      files: item.files,
+    })
+    plans.set(item.number, decideOwnerReview({ pr, entry: item.entry, login, number: item.number }))
+  }
+
+  for (const number of ordered) {
+    const decision = plans.get(number)
+    if (decision === undefined) continue
+    try {
+      results.push(applyOwnerReviewDecision({ root, number, decision, apply, gh, now, state }))
+    } catch (error) {
+      errors.push({ number, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  results.sort((left, right) => left.number - right.number)
+  errors.sort((left, right) => left.number - right.number)
   return { dryRun: !apply, results, errors }
 }
 
@@ -351,11 +585,14 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
     }
     const root = options.root ?? mainWorktree()
     const gh = options.gh ?? ghText
-    const result = withRunLock(root, () => (
+    const label = parsed.command === 'reconcile'
+      ? 'owner-review --reconcile'
+      : `owner-review ${parsed.number}`
+    const result = withRunTelemetry(root, label, () => withRunLock(root, () => (
       parsed.command === 'reconcile'
         ? reconcileOwnerReview({ root, apply: parsed.apply, gh })
         : syncPullRequest({ root, number: parsed.number, apply: parsed.apply, gh })
-    ))
+    )))
     if (parsed.json) {
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
