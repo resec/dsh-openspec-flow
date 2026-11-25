@@ -140,7 +140,7 @@ draft review 还会执行一次执行性预检，检查计划中的执行引用�
 
 ## 轮次汇报与信息卡
 
-每轮结束由插件写一张信息卡文件，模型不再复述报告。额外轮次卡片的文件元数据 `round` 使用该轮的 `seq`，payload 携带 `roundToken`；客户端摘要与展开信息显示 token（`E1`）而不是序号。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
+每轮结束由插件写一张信息卡文件，模型不再复述报告。额外轮次卡片的文件元数据 `round` 使用该轮的 `seq`，payload 携带 `roundToken`；客户端摘要与展开信息显示 token（`E1`）而不是序号。卡片文件位于变更的评审目录下 `cards/<sessionKey>-<kind>-<phase>-<round>.json`，`sessionKey` 是会话 id 的短 SHA-256、`kind` 是 `draft` 或 `apply`；旧的无 kind 文件名仍可读；文件携带完整 payload。客户端 `conversation.chat.turnTail` 通过评审通道端点 `reviewCards/get` 按当前会话与 turn 查询，并携带该 turn 的起止时间窗口；Host 返回已绑定到该 turn 的卡片，只把写入该窗口、尚未绑定的卡片绑定到该 turn，绑定持久化，刷新后仍返回。写入时间晚于 turn 结束的卡片保持未绑定，留给包含它的后续 turn；投递水位不会越过请求携带的 turn 结束时间。同一 turn 的卡片按 phase 分组后按写入时间升序排列，apply 轮次不会再因为 round 数字较小而排在更早的 draft 轮次之前。卡片不写入会话日志、不进入模型可见面；工具结果不携带卡片 payload；`action: "report"` 与 reviewer 的 `own-report` 仍返回完整报告。
 
 Host 只读取文件名以当前会话键开头的卡片文件；每个评审根在单次请求内最多扫描一次，并按卡片文件绝对路径去重，主工作树与 apply worktree 共享同一个 review 根时同一张卡只返回一次、只绑定一次。单 turn 请求保持原响应；客户端会把同一会话的多个 turn 查询在微任务内合并为 `turns` 批量请求（每批最多 64 个 turn，每个 turn 携带自己的窗口），Host 按 turn 升序依次应用绑定、窗口、独立评审 withholding 与水位规则，返回每个 turn 一个 `byTurn` 条目（无卡片时为空数组）；重复 turn 只保留首项。批量结束后的水位与按同样顺序逐个请求的结果一致，每个评审目录在批量中只写一次 `card-delivery.json`。批量请求失败时客户端回退为逐 turn 单请求；某个 turn 为空或缺失时该 turn 不显示卡片。Host 对每个项目根的 git 根解析做进程内缓存，测试或根变化后可用 `clearGitRootCache()` 清除。
 
@@ -150,7 +150,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 - 评审汇报：`self-report`（自评审，changer 会话）与 reviewer `submit`（reviewer 会话）各写一张；独立评审的 changer `wait` 与 `report` 不写评审卡，`report` 仍返回完整报告。
 - 处理汇报：`resume` 新开一轮且关闭轮已有报告与处置时；或处置后已就绪、下一步为 apply/archive 时最后一次 `dispose`/`waive`。
-- 同一会话、同一轮、同一 phase 只写一次，由 review 记录的 `cards` 标记去重。
+- 同一会话、同一种类、同一轮、同一 phase 只写一次，由 review 记录的 `cards` 标记去重。
 
 卡片形态：
 
@@ -178,11 +178,11 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 | `<reviewRoot>/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
 | `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/brief.md` | apply 额外轮次 brief；目录名使用 token |
 | `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/diff.patch` | apply 额外轮次 diff |
-| `<reviewRoot>/<store>#<change>/cards/<sessionKey>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
+| `<reviewRoot>/<store>#<change>/cards/<sessionKey>-<kind>-<phase>-<round>.json` | 一轮卡片文件；payload 完整，绑定后写入 `turn` |
 | `<reviewRoot>/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
-`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。记录复制前，旧记录根下的卡片仍由 `reviewCards/get` 返回并照常绑定 turn 与投递水位；复制后从共享记录读取，`.migrated` 标记会阻止已删除共享记录的旧卡片复活。迁移锁位于 `<reviewRoot>/.migrate/<record>.lock`；进程中断留下它时，后续访问等待 5 秒后报 busy，确认没有迁移进程后手动删除该锁目录。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、phase、round、at），写入前查重，保证同一会话、同一轮、同一 phase 只写一张卡；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
+`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。记录复制前，旧记录根下的卡片仍由 `reviewCards/get` 返回并照常绑定 turn 与投递水位；复制后从共享记录读取，`.migrated` 标记会阻止已删除共享记录的旧卡片复活。迁移锁位于 `<reviewRoot>/.migrate/<record>.lock`；进程中断留下它时，后续访问等待 5 秒后报 busy，确认没有迁移进程后手动删除该锁目录。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、kind、phase、round、at），写入前查重，保证同一会话、同一种类、同一轮、同一 phase 只写一张卡；变更前写入的标记没有 `kind`，仍按「同会话、同轮、同 phase」匹配；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
 
 ## 失败处理
 
