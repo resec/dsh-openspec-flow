@@ -74,3 +74,16 @@ test('review and worktree schemas declare extra round and cleanup fields', () =>
   assert.ok(cleanup, 'the land result declares cleanup')
   assert.deepEqual(cleanup.required, ['complete', 'worktreeRemoved', 'branchRemoved'])
 })
+
+test('the review action description names every accepted action', () => {
+  const fake = createFakeContext({ cwd: process.cwd() })
+  apply(fake.ctx, { timeoutMs: 30_000 })
+  const action = fake.tools.get('openspec_review').parameters.properties.action
+  assert.ok(Array.isArray(action.enum) && action.enum.length > 0, 'the action parameter enumerates its values')
+  const rendered = `${action.enum.slice(0, -1).join(', ')} or ${action.enum.at(-1)}`
+  assert.equal(
+    action.description,
+    `Review step to perform: ${rendered}.`,
+    'the action description names every value and nothing the parameter does not accept',
+  )
+})
