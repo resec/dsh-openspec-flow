@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
+import { ghRead } from '../scripts/gh-exec.mjs'
+
 import {
   LANDING_LABEL,
   REVIEW_FAILED_PHASE,
@@ -1442,7 +1444,7 @@ test('sync-batch reads the open list without change paths and inspects each labe
     const head = addBatchPullRequest(root, remote, 12)
     advanceMain(root)
     const gh = batchGh(batchRows([{ number: 12, head }]))
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
     const list = gh.calls.find((args) => args[0] === 'pr' && args[1] === 'list')
     const fields = list[list.indexOf('--json') + 1]
     assert.equal(fields.split(',').includes('files'), false)
@@ -1477,7 +1479,7 @@ test('sync-batch leaves out a row that changes two active changes', () => {
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
     assert.equal(result.eligible, 1)
     assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced'])
     assert.equal(base.calls.some((args) => args[0] === 'api' && args[1] === '--method' && String(args[3]).includes('13')), false)
@@ -1486,7 +1488,7 @@ test('sync-batch leaves out a row that changes two active changes', () => {
   }
 })
 
-test('sync-batch retries the open list once after a transient gateway error', () => {
+test('sync-batch does not retry the open list itself', () => {
   const { root, remote } = makeRepo()
   try {
     const head = addBatchPullRequest(root, remote, 12)
@@ -1496,14 +1498,14 @@ test('sync-batch retries the open list once after a transient gateway error', ()
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
         lists += 1
-        if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)')
+        throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)')
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
-    assert.equal(lists, 2)
-    assert.equal(result.changed, true)
-    assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced'])
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(lists, 1)
+    assert.equal(result.unavailable, true)
+    assert.equal(result.changed, false)
   } finally {
     cleanup(root, remote)
   }
@@ -1531,8 +1533,8 @@ test('sync-batch reports an inspection refusal without counting it in the remain
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, limit: 1, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
-    assert.equal(views, 2)
+    const result = syncBatch({ root, gh, apply: true, limit: 1, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(views, 1)
     assert.equal(result.eligible, 2)
     assert.equal(result.updated, 1)
     assert.equal(result.remaining, 1)
@@ -1557,7 +1559,7 @@ test('sync-batch does not retry the update-branch request', () => {
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
     assert.equal(updates, 1)
     assert.equal(result.changed, false)
     assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:refused'])
@@ -1577,14 +1579,39 @@ test('sync-batch reports an unavailable open list without writing state', () => 
       lists += 1
       throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
     }
-    const result = syncBatch({ root, gh, apply: true, retryDelayMs: 0 })
-    assert.equal(lists, 2)
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(lists, 1)
     assert.equal(result.unavailable, true)
     assert.equal(result.apply, true)
     assert.equal(result.locked, false)
     assert.equal(result.changed, false)
     assert.deepEqual(result.results, [])
     assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch leaves the retry policy to one layer', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const spawns = []
+    const spawn = (command, args) => {
+      spawns.push(args.join(' '))
+      return { status: 1, signal: null, stdout: '', stderr: 'HTTP 504: 504 Gateway Timeout' }
+    }
+    const config = {
+      timeoutMs: 20_000,
+      attempts: 3,
+      backoffMs: [0, 0],
+      pollTimeoutMs: 5_000,
+      probeTimeoutMs: 5_000,
+      fetchTimeoutMs: 30_000,
+    }
+    const gh = (args, cwd) => ghRead(args, { cwd, spawn, config, sleep: () => {} })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(result.unavailable, true)
+    assert.equal(spawns.length, 3)
   } finally {
     cleanup(root, remote)
   }

@@ -30,7 +30,7 @@ import {
   withRunTelemetry,
 } from './pr-review-watch.mjs'
 import { readLockOwner, releaseLock } from './pr-review-lock.mjs'
-import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
+import { isTransientGhFailure } from './gh-retry.mjs'
 import { filterUnrelatedChangeStatus } from '../lib/review/store.js'
 import { statusLinePath } from '../lib/status-paths.js'
 import { ghPoll, ghRead, ghWrite } from './gh-exec.mjs'
@@ -573,7 +573,6 @@ export function syncBatch({
   limit = 20,
   pollAttempts = 10,
   pollIntervalMs = 1000,
-  retryDelayMs = 2000,
   sleep = sleepSync,
   session,
   token,
@@ -595,10 +594,10 @@ export function syncBatch({
   assertLocalMainNotAhead(root)
   let listed
   try {
-    listed = JSON.parse(withGhRetry(() => ghRunner([
+    listed = JSON.parse(ghRunner([
       'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
       'number,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,labels',
-    ], root), { delayMs: retryDelayMs, sleep }))
+    ], root))
   } catch (error) {
     if (!isTransientGhFailure(error)) throw error
     return {
@@ -627,10 +626,7 @@ export function syncBatch({
     const n = Number(row.number)
     let files
     try {
-      files = JSON.parse(withGhRetry(
-        () => ghRunner(['pr', 'view', String(n), '--json', 'files'], root),
-        { delayMs: retryDelayMs, sleep },
-      )).files
+      files = JSON.parse(ghRunner(['pr', 'view', String(n), '--json', 'files'], root)).files
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       results.push({
