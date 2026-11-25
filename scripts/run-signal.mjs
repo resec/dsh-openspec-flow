@@ -13,8 +13,6 @@
 
 import { spawn } from 'node:child_process'
 
-const POSIX = process.platform !== 'win32'
-
 /** Delay between two checks for a removed process group. */
 const STOP_POLL_MS = 10
 
@@ -22,15 +20,40 @@ const STOP_POLL_MS = 10
 const STOP_BOUND_MS = 250
 
 /**
- * Start a runner as the leader of its own process group on POSIX.
+ * Report whether a platform provides process groups.
+ *
+ * `process.platform` is the default so the branch stays testable.
+ *
+ * @param platform - a `process.platform` value.
+ * @returns true when the platform has signalable process groups.
+ */
+export function usesProcessGroup(platform = process.platform) {
+  return platform !== 'win32'
+}
+
+/**
+ * Build the spawn options that put the runner in its own process group.
+ *
+ * @param options - spawn options.
+ * @param platform - a `process.platform` value.
+ * @returns the options to spawn with.
+ */
+export function runChildSpawnOptions(options = {}, platform = process.platform) {
+  return usesProcessGroup(platform) ? { ...options, detached: true } : options
+}
+
+/**
+ * Start a runner as the leader of its own process group where the platform
+ * provides one.
  *
  * @param command - executable to start.
  * @param args - arguments for the executable.
- * @param options - spawn options, forwarded unchanged.
+ * @param options - spawn options, forwarded to {@link runChildSpawnOptions}.
+ * @param platform - a `process.platform` value.
  * @returns the child process.
  */
-export function spawnRunChild(command, args, options = {}) {
-  return spawn(command, args, POSIX ? { ...options, detached: true } : options)
+export function spawnRunChild(command, args, options = {}, platform = process.platform) {
+  return spawn(command, args, runChildSpawnOptions(options, platform))
 }
 
 /**
@@ -39,10 +62,11 @@ export function spawnRunChild(command, args, options = {}) {
  *
  * @param child - the runner started by {@link spawnRunChild}.
  * @param signal - signal name or number.
+ * @param platform - a `process.platform` value.
  * @returns false when the group is already gone, otherwise the signal result.
  */
-export function signalRunChild(child, signal) {
-  if (!POSIX) return child.kill(signal)
+export function signalRunChild(child, signal, platform = process.platform) {
+  if (!usesProcessGroup(platform)) return child.kill(signal)
   try {
     return process.kill(-child.pid, signal)
   } catch (error) {
@@ -55,14 +79,15 @@ export function signalRunChild(child, signal) {
  * Kill every process in the run's group and wait for the group to disappear.
  *
  * The wait is bounded so an unreaped process cannot hold the entrypoint. A
- * group that is already gone is not an error.
+ * group that is already gone, and a child that never spawned, are not errors.
  *
  * @param child - the runner started by {@link spawnRunChild}, or undefined.
+ * @param platform - a `process.platform` value.
  * @returns a promise that settles once the group is gone or the bound expires.
  */
-export async function stopRunChild(child) {
+export async function stopRunChild(child, platform = process.platform) {
   if (child === undefined || child.pid === undefined) return
-  if (!POSIX) {
+  if (!usesProcessGroup(platform)) {
     try {
       child.kill('SIGKILL')
     } catch {
@@ -93,7 +118,9 @@ export async function stopRunChild(child) {
  * Stop the run's process group, then run the root cleanup.
  *
  * The stop must complete before the root is removed, or a surviving descendant
- * recreates it. `stop` is injectable so the order has a deterministic test.
+ * recreates it. The cleanup runs even when the stop fails, so a stop error
+ * cannot leave the root behind; `stop` is injectable so the order has a
+ * deterministic test.
  *
  * @param child - the runner started by {@link spawnRunChild}, or undefined.
  * @param finish - removes the run root.
