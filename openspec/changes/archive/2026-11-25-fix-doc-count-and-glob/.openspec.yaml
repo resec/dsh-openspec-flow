@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-22
+skip_specs: true
+goal: Correct the tool count comment in index.js and the recursive scenario glob
+  in docs/lab.md.
