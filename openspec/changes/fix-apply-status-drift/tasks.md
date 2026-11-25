@@ -8,6 +8,7 @@
 ## 2. Gate readiness
 
 - [x] 2.1 Add the `unwaivedPlanFiles` option to `draftReadiness`: one reason per file and `openspec_review action=waive scope=plan-change` as the next action, after an open finding and before a stale tree.
+- [x] 2.2 Add the `tool-surface` delta that states the precedence: an unwaived plan drift names the waiver even when the tree also differs, and `resume` waits for the waiver, with one scenario per half.
 
 ## 3. Guard the behavior
 
@@ -15,6 +16,7 @@
 - [x] 3.2 Assert that a `baseline: "none"` apply review does not gate on plan drift.
 - [x] 3.3 Move the tree with an implementation file in the "names resume with the apply kind" test, so a plan artifact does not also count as unwaived drift.
 - [x] 3.4 Confirm the new assertions fail with `lib/tools/review.js` and `lib/review/readiness.js` stashed.
+- [x] 3.5 Assert that a committed plan edit plus a moved tree names the waiver, and that the recorded waiver then names `resume review=apply`.
 
 ## 4. Describe the behavior
 

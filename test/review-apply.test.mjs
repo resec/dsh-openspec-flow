@@ -1084,6 +1084,32 @@ test('apply start fails closed when a locked policy needs a reviewer but the ser
   )
 })
 
+test('apply status names the plan waiver before resume when the plan and the tree both moved', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const tasksPath = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  writeFileSync(tasksPath, `${readFileSync(tasksPath, 'utf8')}\n- [ ] 9.9 A late plan edit\n`)
+  writeFileSync(join(root, 'app.js'), 'export const theme = "dark"\n')
+  run(['add', 'app.js', `openspec/changes/${CHANGE}/tasks.md`])
+  run(['commit', '-m', 'commit the plan edit and move the tree'])
+  const drift = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(drift.ready, false)
+  assert.ok(drift.reasons.some((reason) => reason.includes('tasks.md')), drift.reasons.join('; '))
+  assert.equal(drift.nextAction, 'openspec_review action=waive scope=plan-change')
+
+  await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'The user approved the committed plan edit.', files: ['tasks.md'],
+  })
+  const waived = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(waived.nextAction, 'openspec_review action=resume review=apply')
+})
+
 test('apply status names resume with the apply kind when the tree moved', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)

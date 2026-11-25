@@ -18,7 +18,7 @@ None.
 
 ### Modified Capabilities
 
-None. `change-review` already requires this: "Apply review uses the draft base and report lifecycle" says `ready` requires "every drift file inside the plan-change waiver file set", and "Apply review refuses an unwaived plan change" names the waiver as the remedy. Only the status projection missed it, so this change sets `skip_specs: true`.
+`tool-surface`: "An unwaived plan drift names the waiver before resume" states the order the projection applies when the plan drifted and the tree also differs. `change-review` already requires the readiness half: "Apply review uses the draft base and report lifecycle" says `ready` requires "every drift file inside the plan-change waiver file set", and "Apply review refuses an unwaived plan change" names the waiver as the remedy. The untouched tool-surface requirement names `resume` for a differing tree, so the precedence needed its own sentence.
 
 ## Impact
 
