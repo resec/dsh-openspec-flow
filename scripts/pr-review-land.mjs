@@ -301,6 +301,7 @@ function assertLatestMain(root, plan) {
 
 /** Evaluate all landing gates. */
 function planLandingChecked({ root, number, gh: ghRunner, checkAhead, session, token }) {
+  assertOnMain(root)
   assertLandingLockFree(root, { session, token })
   const plan = evaluateLanding({ root, number, gh: ghRunner })
   assertLandingReady(root, plan.change)
@@ -746,6 +747,7 @@ function completeMergedLanding(root, lands, entry) {
 /** Merge the reviewed pull request with gh rebase. */
 export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertOnMain(root)
   assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
