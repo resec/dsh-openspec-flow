@@ -18,11 +18,11 @@ A labeled same-repository pull request that is behind `main` needs four five-min
 
 ### Modified Capabilities
 
-- `pr-review-pipeline`: the scheduled-run sequencing and fixed-session reviewer reuse requirements change so that a review pass can continue into the landing sequence in the same run and a passed record over the landing tree skips the resume.
+- `pr-review-pipeline`: the scheduled-run sequencing, fixed-session reviewer reuse and pull-request review requirements change so that a review pass can continue into the landing sequence in the same run, a passed record over the landing tree skips the resume, and that record replaces the prepared-landing review.
 
 ## Impact
 
 - Documentation: `docs/pr-review.md` (Landing step 5 resume-skip, Landing step 9, Schedule preamble, steps 7 and 8, closing rules and the closing summary paragraph), `AGENTS.md` (scheduled pull-request review loop).
-- Tests: `test/local-pr-spec.test.mjs` (delta path and the `Scheduled run sequencing` scenario inventory, plus the added `Same-run review landing` requirement and its scenarios), `test/local-pr-doc.test.mjs` (Landing and Schedule wording assertions), `test/contributor-docs.test.mjs` (AGENTS.md wording assertions).
+- Tests: `test/local-pr-spec.test.mjs` (delta path, the `Scheduled run sequencing` scenario inventory, the added `Same-run review landing` requirement, and the modified `Fixed-session reviewer reuse` and `Apply review on the pull-request branch` requirements), `test/local-pr-doc.test.mjs` (Landing and Schedule wording assertions), `test/contributor-docs.test.mjs` (AGENTS.md wording assertions).
 - Runtime prompt: the five-minute scheduled session prompt.
 - Scripts: no change; the landing commands already accept the same owner session and token across the sequence, and `finish` releases the lock.
