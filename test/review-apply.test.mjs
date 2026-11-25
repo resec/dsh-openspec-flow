@@ -966,6 +966,22 @@ test('apply status names an unwaived plan drift after the review passed', async 
   assert.equal(waived.nextAction, 'openspec_apply_next')
 })
 
+test('apply status reports a removed plan artifact instead of throwing', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  rmSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'))
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(status.ready, false)
+  const reasons = status.reasons.join('; ')
+  assert.match(reasons, /the changed plan files could not be read/)
+  assert.match(reasons, /tasks\.md/)
+})
+
 test('apply status without a draft baseline does not gate on plan drift', async () => {
   const { root, run } = gitFixture()
   writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')

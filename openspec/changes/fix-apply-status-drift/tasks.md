@@ -17,6 +17,7 @@
 - [x] 3.3 Move the tree with an implementation file in the "names resume with the apply kind" test, so a plan artifact does not also count as unwaived drift.
 - [x] 3.4 Confirm the new assertions fail with `lib/tools/review.js` and `lib/review/readiness.js` stashed.
 - [x] 3.5 Assert that a committed plan edit plus a moved tree names the waiver, and that the recorded waiver then names `resume review=apply`.
+- [x] 3.6 Assert that status reports a readiness reason instead of throwing when a required plan artifact is missing.
 
 ## 4. Describe the behavior
 
