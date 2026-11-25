@@ -7,6 +7,8 @@ set -eu
 ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 MIRROR=${NODE_DIST_MIRROR:-https://nodejs.org/dist}
 PASSTHROUGH=
+SHARED=
+DEPS_ONLY=0
 
 usage() {
   cat <<'EOF'
@@ -20,13 +22,15 @@ Options:
   --print-node-version   Print the baseline Node version and exit.
   --print-asset          Print the Node tarball name for this platform and exit.
   --print-candidate-paths Print the global Node roots this script inspects.
+  --print-shared-root    Print the resolved shared root and exit.
+  --deps-only            Prepare tools, dependencies and the record only; skip hooks, the lab doctor and tests.
   --node-mirror URL      Node distribution mirror (default https://nodejs.org/dist).
   --full                 Run verification and the lab instead of the plain test suite.
   --skip-test            Skip npm test.
   --skip-install         Reuse node_modules instead of running npm ci.
   --skip-playwright      Skip the Playwright browser installation.
   --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
-  --reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
+  --reset-browsers       Remove the current Playwright browser bucket before installing Chromium.
   --force                Continue past the free-disk threshold.
   --registry URL         npm registry for npm ci and npx.
 
@@ -74,6 +78,25 @@ print_candidate_paths() {
     "/opt/homebrew/opt/node@24/bin/node" \
     "/usr/local/opt/node@24/bin/node" \
     "/home/linuxbrew/.linuxbrew/opt/node@24/bin/node"
+}
+
+resolve_shared() {
+  if [ -n "${OPENSPEC_FLOW_SHARED_ROOT:-}" ]; then
+    SHARED=$OPENSPEC_FLOW_SHARED_ROOT
+  else
+    main=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -n 1 || true)
+    [ -n "$main" ] || main=$ROOT
+    SHARED="$main/.cache/openspec-flow/shared"
+  fi
+  case "$SHARED" in
+    /*) ;;
+    *) echo "bootstrap: the shared root must be absolute: $SHARED" >&2; exit 1 ;;
+  esac
+  case "$SHARED" in
+    *'
+'*|*'
+'*) echo "bootstrap: the shared root must not contain CR or LF" >&2; exit 1 ;;
+  esac
 }
 
 node_version() {
@@ -138,6 +161,11 @@ for arg in "$@"; do
       print_candidate_paths
       exit 0
       ;;
+    --print-shared-root)
+      resolve_shared
+      printf '%s\n' "$SHARED"
+      exit 0
+      ;;
   esac
 done
 
@@ -160,12 +188,23 @@ while [ $# -gt 0 ]; do
       MIRROR=${1#*=}
       shift
       ;;
+    --deps-only)
+      DEPS_ONLY=1
+      shift
+      ;;
     *)
       PASSTHROUGH="$PASSTHROUGH $1"
       shift
       ;;
   esac
 done
+
+resolve_shared
+export OPENSPEC_FLOW_SHARED_ROOT="$SHARED"
+export OPENSPEC_FLOW_WORKTREE_ROOT="$ROOT"
+if [ "$DEPS_ONLY" = "1" ]; then
+  export OPENSPEC_FLOW_DEPS_ONLY=1
+fi
 
 consider "$(command -v node 2>/dev/null || true)"
 consider "/opt/homebrew/opt/node@24/bin/node"
@@ -181,6 +220,7 @@ done
 if [ -n "$BEST_PATH" ]; then
   PATH="$(dirname "$BEST_PATH"):$PATH"
   export PATH
+  export OPENSPEC_FLOW_NODE_SOURCE=host
   # shellcheck disable=SC2086
   exec "$BEST_PATH" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
 fi
@@ -191,20 +231,22 @@ PLATFORM=$(detect_platform) || exit 1
 ARCH=$(detect_arch) || exit 1
 
 ASSET="node-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-TARGET="$ROOT/.cache/toolchain/node-v${VERSION}-${PLATFORM}-${ARCH}"
-if [ -x "$TARGET/bin/node" ]; then
-  ln -sfn "$TARGET" "$ROOT/.cache/toolchain/node"
-  PATH="$TARGET/bin:$PATH"
+BUCKET="$SHARED/toolchain/node/${VERSION}"
+if [ -x "$BUCKET/bin/node" ] && [ -f "$BUCKET/.complete" ]; then
+  mkdir -p "$ROOT/.cache/toolchain"
+  ln -sfn "$BUCKET" "$ROOT/.cache/toolchain/node"
+  PATH="$BUCKET/bin:$PATH"
   export PATH
+  export OPENSPEC_FLOW_NODE_SOURCE=bucket
   # shellcheck disable=SC2086
-  exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
+  exec "$BUCKET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
 fi
 
-mkdir -p "$ROOT/.cache/toolchain"
+mkdir -p "$SHARED/toolchain/node" "$ROOT/.cache/toolchain"
 URL="${MIRROR%/}/v${VERSION}/${ASSET}"
 SUM_URL="${MIRROR%/}/v${VERSION}/SHASUMS256.txt"
-TARBALL="$ROOT/.cache/toolchain/$ASSET"
-SUMS="$ROOT/.cache/toolchain/SHASUMS256-${VERSION}.txt"
+TARBALL="$SHARED/toolchain/node/${VERSION}.tar.gz"
+SUMS="$SHARED/toolchain/node/SHASUMS256-${VERSION}.txt"
 
 echo "bootstrap: downloading Node ${VERSION} from $URL"
 curl -fsSL "$URL" -o "$TARBALL"
@@ -221,11 +263,14 @@ else
 fi
 [ "$EXPECTED" = "$ACTUAL" ] || { echo "bootstrap: checksum mismatch for $ASSET" >&2; exit 1; }
 
-rm -rf "$TARGET"
-tar -xzf "$TARBALL" -C "$ROOT/.cache/toolchain"
-[ -x "$TARGET/bin/node" ] || { echo "bootstrap: extracted Node is missing $TARGET/bin/node" >&2; exit 1; }
-ln -sfn "$TARGET" "$ROOT/.cache/toolchain/node"
-PATH="$TARGET/bin:$PATH"
+rm -rf "$BUCKET"
+mkdir -p "$BUCKET"
+tar -xzf "$TARBALL" -C "$BUCKET" --strip-components=1
+[ -x "$BUCKET/bin/node" ] || { echo "bootstrap: extracted Node is missing $BUCKET/bin/node" >&2; exit 1; }
+printf '%s\n' "$VERSION" > "$BUCKET/.complete"
+ln -sfn "$BUCKET" "$ROOT/.cache/toolchain/node"
+PATH="$BUCKET/bin:$PATH"
 export PATH
+export OPENSPEC_FLOW_NODE_SOURCE=bucket
 # shellcheck disable=SC2086
-exec "$TARGET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
+exec "$BUCKET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH

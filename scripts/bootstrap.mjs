@@ -7,15 +7,27 @@
  * It never writes tracked files, shell configuration or DSH profiles.
  */
 
-import { existsSync, realpathSync, statfsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { assertCurrentNode } from './node-version.mjs'
+import { assertCurrentNode, readNodeRequirements } from './node-version.mjs'
 import { MIN_FREE_BYTES } from './bootstrap-lib.mjs'
-import { prepareChromium, resolveBrowsersPath } from './worktree-env.mjs'
+import { installChromium, installLockPath, prepareChromium, resolveEnvironment, withInstallLockSync } from './worktree-env.mjs'
+import {
+  PNPM_VERSION,
+  buildRecord,
+  chromiumBucket,
+  pnpmBucket,
+  readChromiumRevisions,
+  readRecord,
+  resolvePlaywrightVersion,
+  writeRecord,
+} from './toolchain.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
+const ENVIRONMENT = resolveEnvironment({ cwd: ROOT })
+const SHARED = process.env.OPENSPEC_FLOW_SHARED_ROOT ?? ENVIRONMENT.sharedRoot
 
 /**
  * Resolve the npm cache for bootstrap.
@@ -37,11 +49,11 @@ const NPM_CACHE = resolveNpmCache()
  * @param env - environment to resolve.
  * @returns the absolute browser path.
  */
-export function browsersPath(env = process.env) {
-  return resolveBrowsersPath({ root: ROOT, env })
+export function browsersPath(env = process.env, { root = ROOT, sharedRoot = SHARED } = {}) {
+  const value = env.PLAYWRIGHT_BROWSERS_PATH
+  if (value !== undefined && value.trim() !== '') return isAbsolute(value) ? value : resolve(root, value)
+  return chromiumBucket(sharedRoot, resolvePlaywrightVersion(root))
 }
-
-const BROWSERS_PATH = browsersPath()
 
 const USAGE = `Usage: scripts/bootstrap.sh [options]
 
@@ -51,7 +63,10 @@ Options:
   --skip-install         Reuse node_modules instead of running npm ci.
   --skip-playwright      Skip the Playwright Chromium installation.
   --playwright-host URL  Chromium download host (PLAYWRIGHT_DOWNLOAD_HOST).
-  --reset-browsers       Remove .cache/lab/pw-browsers before installing Chromium.
+  --reset-browsers       Remove the current Playwright browser bucket before installing Chromium.
+  --deps-only            Prepare tools, dependencies, Chromium and the record; skip hooks, the doctor and tests.
+  --no-gc               Skip bucket collection.
+  --gc-dry-run          Report buckets collection would delete without deleting them.
   --force                Continue past the free-disk threshold.
   --registry URL         npm registry for npm ci and npx.
   --help                 Show this usage and exit.
@@ -77,6 +92,9 @@ export function parseBootstrapArgs(argv) {
     skipPlaywright: false,
     playwrightHost: undefined,
     resetBrowsers: false,
+    depsOnly: process.env.OPENSPEC_FLOW_DEPS_ONLY === '1',
+    noGc: false,
+    gcDryRun: false,
     force: false,
     registry: undefined,
     help: false,
@@ -89,6 +107,9 @@ export function parseBootstrapArgs(argv) {
       case '--skip-install': options.skipInstall = true; break
       case '--skip-playwright': options.skipPlaywright = true; break
       case '--reset-browsers': options.resetBrowsers = true; break
+      case '--deps-only': options.depsOnly = true; break
+      case '--no-gc': options.noGc = true; break
+      case '--gc-dry-run': options.gcDryRun = true; break
       case '--force': options.force = true; break
       case '--help': options.help = true; break
       case '--playwright-host': {
@@ -123,12 +144,17 @@ export function parseBootstrapArgs(argv) {
  */
 export function resolvePlan(options, state) {
   const dependenciesPresent = state?.dependenciesPresent === true
+  const depsOnly = options.depsOnly === true
   return {
     install: options.skipInstall !== true,
-    doctor: true,
-    plainTest: options.skipTest !== true && options.full !== true,
-    verification: options.full === true,
-    lab: options.full === true,
+    doctor: !depsOnly,
+    plainTest: !depsOnly && options.skipTest !== true && options.full !== true,
+    verification: !depsOnly && options.full === true,
+    lab: !depsOnly && options.full === true,
+    chromium: options.skipPlaywright !== true,
+    record: true,
+    gc: true,
+    depsOnly,
     missingDependencies: options.skipInstall === true && !dependenciesPresent,
   }
 }
@@ -164,11 +190,11 @@ export function npmEnvFor({ cache = NPM_CACHE, registry } = {}) {
  * @param overrides - browser path, npm environment and install seam.
  * @returns `{ installed, reused }`.
  */
-export function runBrowserStep(options, { browsersPath: path = BROWSERS_PATH, npmEnv = {}, install, lockOptions = {} } = {}) {
-  const prepare = install ?? (({ browsersPath: browser, host }) => run('npx', ['playwright', 'install', 'chromium'], {
-    ...npmEnv,
-    ...playwrightEnv(host),
-    PLAYWRIGHT_BROWSERS_PATH: browser,
+export function runBrowserStep(options, { browsersPath: path = browsersPath(), npmEnv = {}, install, lockOptions = {} } = {}) {
+  const prepare = install ?? (({ browsersPath: browser, host }) => installChromium({
+    browsersPath: browser,
+    host,
+    cwd: ROOT,
   }))
   return prepareChromium({
     browsersPath: path,
@@ -221,6 +247,148 @@ function freeBytes(path) {
   return Number(stats.bavail) * Number(stats.bsize)
 }
 
+function npmInfo() {
+  const path = process.env.npm_execpath ?? join(dirname(process.execPath), 'npm')
+  const result = spawnSync('npm', ['--version'], { encoding: 'utf8' })
+  const version = result.status === 0 ? result.stdout.trim() : ''
+  return { path, version }
+}
+
+/**
+ * Prepare the pinned pnpm bucket and return the recorded paths.
+ * @param options - npm environment.
+ * @returns the pnpm record fields.
+ */
+export function ensurePnpmBucket({ npmEnv = {}, sharedRoot = SHARED, install } = {}) {
+  const bucket = pnpmBucket(sharedRoot)
+  const js = join(bucket, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
+  const binDir = join(bucket, 'node_modules', '.bin')
+  const marker = join(bucket, '.complete.json')
+  const lockPath = installLockPath(bucket)
+  return withInstallLockSync(lockPath, 'the pnpm bucket', () => {
+    if (existsSync(marker) && existsSync(js)) {
+      const check = spawnSync(process.execPath, [js, '--version'], { encoding: 'utf8' })
+      if (check.status === 0 && check.stdout.trim() === PNPM_VERSION) {
+        return { bucket, version: PNPM_VERSION, js, binDir, node: process.execPath }
+      }
+    }
+    rmSync(bucket, { recursive: true, force: true })
+    mkdirSync(bucket, { recursive: true })
+    const doInstall = install ?? (() => run('npm', ['install', '--prefix', bucket, `pnpm@${PNPM_VERSION}`, '--no-audit', '--no-fund'], npmEnv))
+    doInstall()
+    const check = spawnSync(process.execPath, [js, '--version'], { encoding: 'utf8' })
+    if (check.status !== 0 || check.stdout.trim() !== PNPM_VERSION) {
+      throw new Error(`the pnpm bucket at ${bucket} reports ${JSON.stringify((check.stdout ?? '').trim())}; expected ${PNPM_VERSION}`)
+    }
+    writeFileSync(marker, `${JSON.stringify({ version: PNPM_VERSION, installedAt: new Date().toISOString() })}\n`)
+    return { bucket, version: PNPM_VERSION, js, binDir, node: process.execPath }
+  })
+}
+
+/**
+ * Write this worktree's toolchain record.
+ * @param options - pnpm fields and optional Chromium fields.
+ * @returns the record path.
+ */
+export function writeToolchainRecord({ pnpm, chromium = null, root = ROOT, nodeSource = process.env.OPENSPEC_FLOW_NODE_SOURCE } = {}) {
+  const requirements = readNodeRequirements(root)
+  const record = buildRecord({
+    root,
+    requirements: {
+      nodeRange: requirements.range,
+      primaryNodeMajor: requirements.primaryMajor,
+      pnpm: PNPM_VERSION,
+    },
+    node: {
+      path: process.execPath,
+      version: process.version,
+      source: nodeSource === 'bucket' ? 'bucket' : 'host',
+    },
+    npm: npmInfo(),
+    pnpm,
+    chromium,
+  })
+  return writeRecord(root, record)
+}
+
+/**
+ * Read the Chromium record fields for the prepared bucket.
+ * @returns the Chromium fields.
+ */
+export function chromiumRecordFields({ root = ROOT, sharedRoot = SHARED, env = process.env } = {}) {
+  const playwrightVersion = resolvePlaywrightVersion(root)
+  return {
+    playwrightVersion,
+    browsersPath: browsersPath(env, { root, sharedRoot }),
+    revisions: readChromiumRevisions(root),
+  }
+}
+
+function worktreeRoots(mainRoot) {
+  const result = spawnSync('git', ['-C', mainRoot, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`git worktree list failed: ${(result.stderr ?? '').trim()}`)
+  return result.stdout
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length))
+}
+
+/**
+ * Delete unreferenced buckets older than one hour.
+ * @param options - dry-run flag.
+ * @returns the number of buckets considered.
+ */
+export function collectBuckets({ dryRun = false, now = Date.now(), mainRoot = ENVIRONMENT.mainRoot, sharedRoot = SHARED } = {}) {
+  const referenced = new Set()
+  for (const worktree of worktreeRoots(mainRoot)) {
+    if (!existsSync(worktree)) {
+      console.error(`bootstrap: collection: missing worktree ${worktree}`)
+      continue
+    }
+    const result = readRecord(worktree)
+    if (result.state === 'invalid') {
+      throw new Error(`the worktree record at ${worktree} cannot be read: ${result.reasons.join('; ')}`)
+    }
+    if (result.state === 'absent') continue
+    const record = result.record
+    const paths = [
+      record.node?.source === 'bucket' ? record.node.path : undefined,
+      record.pnpm?.bucket,
+      record.chromium?.browsersPath,
+    ]
+    for (const path of paths) {
+      if (typeof path === 'string' && path !== '') referenced.add(resolve(path))
+    }
+  }
+  const candidates = []
+  for (const directory of [
+    join(sharedRoot, 'toolchain', 'node'),
+    join(sharedRoot, 'toolchain', 'pnpm'),
+    join(sharedRoot, 'browsers'),
+  ]) {
+    if (!existsSync(directory)) continue
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) candidates.push(join(directory, entry.name))
+    }
+  }
+  let deleted = 0
+  for (const bucket of candidates) {
+    const real = resolve(bucket)
+    if ([...referenced].some((path) => path === real || path.startsWith(`${real}/`))) continue
+    if (existsSync(installLockPath(bucket))) continue
+    if (now - statSync(bucket).mtimeMs < 60 * 60_000) continue
+    if (dryRun) {
+      console.log(`bootstrap: collection would delete ${bucket}`)
+      continue
+    }
+    rmSync(bucket, { recursive: true, force: true })
+    deleted += 1
+    console.log(`bootstrap: collection deleted ${bucket}`)
+  }
+  console.log(`bootstrap: collection ${dryRun ? 'dry run' : 'done'}; deleted ${deleted}`)
+  return candidates.length
+}
+
 function main() {
   const options = parseBootstrapArgs(process.argv.slice(2))
   if (options.help) {
@@ -238,53 +406,75 @@ function main() {
   }
 
   const npmEnv = npmEnvFor({ cache: NPM_CACHE, registry: options.registry })
-  const total = options.full ? 7 : 5
   const plan = resolvePlan(options, {
     dependenciesPresent: existsSync(join(ROOT, 'node_modules')),
   })
   if (plan.missingDependencies) throw new Error(dependenciesError())
 
+  let step = 0
+  const total = plan.depsOnly ? 5 : options.full ? 8 : 6
+  const next = (message) => {
+    step += 1
+    log(step, total, message)
+  }
+
+  next('preparing the pnpm bucket')
+  const pnpm = ensurePnpmBucket({ npmEnv })
+
   if (plan.install) {
-    log(1, total, 'installing locked dependencies')
+    next('installing locked dependencies')
     run('npm', ['ci'], npmEnv)
   } else {
-    log(1, total, 'dependencies reused')
+    next('dependencies reused')
   }
 
-  log(2, total, 'installing Git hooks')
-  run('npm', ['run', 'hooks:install'], npmEnv)
+  if (!plan.depsOnly) {
+    next('installing Git hooks')
+    run('npm', ['run', 'hooks:install'], npmEnv)
+  }
 
-  if (options.skipPlaywright) {
-    log(3, total, 'Playwright Chromium skipped')
-  } else {
+  let chromium = null
+  if (plan.chromium) {
     const prepared = runBrowserStep(options, { npmEnv })
-    log(3, total, prepared.installed ? 'installed Playwright Chromium' : 'Playwright Chromium already present')
+    chromium = chromiumRecordFields()
+    next(prepared.installed ? 'installed Playwright Chromium' : 'Playwright Chromium already present')
   }
 
-  const labEnv = { PLAYWRIGHT_BROWSERS_PATH: BROWSERS_PATH, ...npmEnv }
-  log(4, total, 'checking the lab prerequisites')
-  run('npm', ['run', 'lab', '--', 'doctor'], labEnv)
+  const labEnv = () => ({ PLAYWRIGHT_BROWSERS_PATH: browsersPath(), ...npmEnv })
+  if (plan.doctor) {
+    next('checking the lab prerequisites')
+    run('npm', ['run', 'lab', '--', 'doctor'], labEnv())
+  }
 
   if (plan.plainTest) {
-    log(5, total, 'running the test suite')
+    next('running the test suite')
     run('npm', ['test'], npmEnv)
-  } else {
-    log(5, total, options.full ? 'plain test suite skipped; verification runs the suite' : 'test suite skipped')
   }
 
   if (plan.verification) {
-    log(6, total, 'running verification')
+    next('running verification')
     run('npm', ['run', 'verify'], npmEnv)
   }
 
   if (plan.lab) {
-    log(7, total, 'running the reusable lab scenarios')
-    run('npm', ['run', 'test:lab', '--', '--mock-only'], labEnv)
+    next('running the reusable lab scenarios')
+    run('npm', ['run', 'test:lab', '--', '--mock-only'], labEnv())
+  }
+
+  const path = writeToolchainRecord({ pnpm, chromium })
+  next(`wrote ${path}`)
+
+  if (plan.gc && !options.noGc) {
+    try {
+      collectBuckets({ dryRun: options.gcDryRun })
+    } catch (error) {
+      console.error(`bootstrap: bucket collection aborted: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   console.log('bootstrap: ready')
   console.log(completionHint())
-  console.log('Next: source scripts/activate.sh to use a clone-local runtime, then npm run verify.')
+  console.log('Next: source scripts/activate.sh to use the recorded toolchain, then npm run verify.')
 }
 
 /**

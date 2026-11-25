@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   existsSync,
+  utimesSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -28,21 +29,154 @@ import {
   acquireInstallLockSync,
   installLockPath,
   releaseInstallLock,
+  resolveEnvironment,
 } from '../scripts/worktree-env.mjs'
 import {
   browsersPath,
   completionHint,
+  chromiumRecordFields,
+  collectBuckets,
   dependenciesError,
+  ensurePnpmBucket,
   npmEnvFor,
   parseBootstrapArgs,
   playwrightEnv,
   resolveNpmCache,
   resolvePlan,
   runBrowserStep,
+  writeToolchainRecord,
 } from '../scripts/bootstrap.mjs'
+import { PNPM_VERSION, buildRecord, pnpmBucket, readRecord, writeRecord } from '../scripts/toolchain.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BASELINE = JSON.parse(readFileSync(join(ROOT, 'coverage.baseline.json'), 'utf8')).node.version.replace(/^v/, '')
+
+test('the shell and Node resolve the same shared root', () => {
+  const script = join(ROOT, 'scripts', 'bootstrap.sh')
+  const override = mkdtempSync(join(tmpdir(), 'bootstrap-shared-'))
+  const withOverride = spawnSync('sh', [script, '--print-shared-root'], {
+    encoding: 'utf8',
+    env: { ...process.env, OPENSPEC_FLOW_SHARED_ROOT: override },
+  })
+  assert.equal(withOverride.status, 0)
+  assert.equal(withOverride.stdout.trim(), override)
+  const shellDefault = spawnSync('sh', [script, '--print-shared-root'], {
+    encoding: 'utf8',
+    env: { ...process.env, OPENSPEC_FLOW_SHARED_ROOT: '' },
+  })
+  assert.equal(shellDefault.status, 0)
+  const nodeDefault = resolveEnvironment({ cwd: ROOT, env: { ...process.env, OPENSPEC_FLOW_SHARED_ROOT: '' } })
+  assert.equal(shellDefault.stdout.trim(), nodeDefault.sharedRoot)
+  rmSync(override, { recursive: true, force: true })
+})
+
+test('reuses a prepared downloaded Node bucket before looking at the host', () => {
+  const shared = mkdtempSync(join(tmpdir(), 'bootstrap-bucket-'))
+  const home = mkdtempSync(join(tmpdir(), 'bootstrap-home-'))
+  const bucket = join(shared, 'toolchain', 'node', BASELINE)
+  mkdirSync(join(bucket, 'bin'), { recursive: true })
+  const marker = join(shared, 'ran.txt')
+  writeFileSync(join(bucket, 'bin', 'node'), `#!/bin/sh\nprintf '%s\\n' \"$@\" > ${JSON.stringify(marker)}\nexit 0\n`)
+  spawnSync('chmod', ['+x', join(bucket, 'bin', 'node')])
+  writeFileSync(join(bucket, '.complete'), `${BASELINE}\n`)
+  const result = spawnSync('sh', [join(ROOT, 'scripts', 'bootstrap.sh')], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: '/usr/bin:/bin',
+      OPENSPEC_FLOW_SHARED_ROOT: shared,
+      OPENSPEC_FLOW_NODE_SOURCE: '',
+    },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(existsSync(marker))
+  rmSync(shared, { recursive: true, force: true })
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('activation prefers the recorded Node and falls back to the legacy runtime', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-activate-'))
+  const recordDir = join(root, '.cache', 'toolchain')
+  const bin = join(root, 'bin')
+  mkdirSync(recordDir, { recursive: true })
+  mkdirSync(bin, { recursive: true })
+  const node = join(bin, 'node')
+  writeFileSync(node, '#!/bin/sh\nexit 0\n')
+  spawnSync('chmod', ['+x', node])
+  writeFileSync(join(recordDir, 'manifest.json'), JSON.stringify({ node: { path: node } }))
+  const result = spawnSync('sh', ['-c', `. ${JSON.stringify(join(ROOT, 'scripts', 'activate.sh'))}; command -v node`], {
+    encoding: 'utf8',
+    env: { ...process.env, OPENSPEC_FLOW_WORKTREE_ROOT: root, PATH: '/usr/bin:/bin' },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), node)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('prepares or reuses the pnpm bucket', () => {
+  const shared = mkdtempSync(join(tmpdir(), 'bootstrap-pnpm-'))
+  const bucket = pnpmBucket(shared)
+  mkdirSync(join(bucket, 'node_modules', 'pnpm', 'bin'), { recursive: true })
+  writeFileSync(join(bucket, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'), `console.log('${PNPM_VERSION}')\n`)
+  writeFileSync(join(bucket, '.complete.json'), JSON.stringify({ version: PNPM_VERSION }))
+  const reused = ensurePnpmBucket({ sharedRoot: shared })
+  assert.equal(reused.bucket, bucket)
+  assert.equal(reused.version, PNPM_VERSION)
+  writeFileSync(join(bucket, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'), "console.log('0.0.0')\n")
+  const repaired = ensurePnpmBucket({
+    sharedRoot: shared,
+    install: () => {
+      mkdirSync(join(bucket, 'node_modules', 'pnpm', 'bin'), { recursive: true })
+      writeFileSync(join(bucket, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'), `console.log('${PNPM_VERSION}')\n`)
+    },
+  })
+  assert.equal(repaired.version, PNPM_VERSION)
+  rmSync(shared, { recursive: true, force: true })
+})
+
+test('writes a record that reads back current', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-record-'))
+  writeFileSync(join(root, 'package.json'), '{"engines":{"node":">=24.9.0"}}\n')
+  writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3,"packages":{}}\n')
+  writeFileSync(join(root, 'coverage.baseline.json'), '{"node":{"version":"v24.22.2"}}\n')
+  writeFileSync(join(root, 'coverage.config.json'), '{"primaryNodeMajor":24}\n')
+  const pnpm = { bucket: pnpmBucket('/shared'), version: PNPM_VERSION, js: '/x/pnpm.mjs', binDir: '/x/bin', node: process.execPath }
+  const path = writeToolchainRecord({ root, pnpm, chromium: null })
+  assert.ok(existsSync(path))
+  assert.equal(readRecord(root).state, 'current')
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('reads the Chromium bucket and revisions from the local package', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-chromium-'))
+  const shared = mkdtempSync(join(tmpdir(), 'bootstrap-chromium-shared-'))
+  mkdirSync(join(root, 'node_modules', 'playwright-core'), { recursive: true })
+  writeFileSync(join(root, 'node_modules', 'playwright-core', 'package.json'), '{"version":"1.65.1"}\n')
+  writeFileSync(
+    join(root, 'node_modules', 'playwright-core', 'browsers.json'),
+    JSON.stringify({ browsers: [
+      { name: 'chromium', revision: '1255' },
+      { name: 'chromium-headless-shell', revision: '1255' },
+      { name: 'ffmpeg', revision: '1013' },
+    ] }),
+  )
+  const fields = chromiumRecordFields({ root, sharedRoot: shared, env: {} })
+  assert.equal(fields.browsersPath, join(shared, 'browsers', 'playwright-1.65.1'))
+  assert.deepEqual(fields.revisions, { chromium: '1255', headlessShell: '1255', ffmpeg: '1013' })
+  rmSync(root, { recursive: true, force: true })
+  rmSync(shared, { recursive: true, force: true })
+})
+
+test('deps-only skips the doctor and tests', () => {
+  const plan = resolvePlan({ depsOnly: true }, { dependenciesPresent: true })
+  assert.equal(plan.doctor, false)
+  assert.equal(plan.plainTest, false)
+  assert.equal(plan.verification, false)
+  assert.equal(plan.lab, false)
+  assert.equal(plan.chromium, true)
+  assert.equal(plan.record, true)
+})
 
 test('reads the baseline Node version from coverage.baseline.json', () => {
   assert.equal(readBaselineNodeVersion(ROOT), BASELINE)
@@ -283,7 +417,8 @@ test('maps the download host to the Playwright environment', () => {
 })
 
 test('bootstrap resolves the explicit or default browser path', () => {
-  assert.equal(browsersPath({}), join(ROOT, '.cache', 'lab', 'pw-browsers'))
+  assert.match(browsersPath({}), /browsers[\\/]playwright-[0-9]/)
+  assert.ok(!browsersPath({}).includes(join('.cache', 'lab', 'pw-browsers')))
   assert.equal(browsersPath({ PLAYWRIGHT_BROWSERS_PATH: '/shared/browsers' }), '/shared/browsers')
   assert.equal(browsersPath({ PLAYWRIGHT_BROWSERS_PATH: 'relative/browsers' }), join(ROOT, 'relative', 'browsers'))
 })
@@ -369,4 +504,56 @@ test('the completion hint names the DSH cache and prune command', () => {
   const hint = completionHint()
   assert.match(hint, /\.cache\/lab\/dsh/)
   assert.match(hint, /npm run lab -- cache prune/)
+})
+
+
+test('collection keeps referenced buckets and deletes old unreferenced ones', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bootstrap-gc-root-'))
+  const shared = mkdtempSync(join(tmpdir(), 'bootstrap-gc-shared-'))
+  try {
+    for (const file of ['package.json', 'package-lock.json', 'coverage.baseline.json', 'coverage.config.json']) {
+      writeFileSync(join(root, file), file === 'package.json' ? '{"engines":{"node":">=24.9.0"}}\n' : '{"lockfileVersion":3,"packages":{}}\n')
+    }
+    writeFileSync(join(root, 'coverage.baseline.json'), '{"node":{"version":"v24.22.2"}}\n')
+    writeFileSync(join(root, 'coverage.config.json'), '{"primaryNodeMajor":24}\n')
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root })
+    spawnSync('git', ['config', 'user.name', 'Test'], { cwd: root })
+    spawnSync('git', ['add', '.'], { cwd: root })
+    spawnSync('git', ['commit', '-qm', 'initial'], { cwd: root })
+    const nodeDir = join(shared, 'toolchain', 'node', '24.22.2')
+    const pnpmDir = join(shared, 'toolchain', 'pnpm', PNPM_VERSION)
+    const browserDir = join(shared, 'browsers', 'playwright-1.65.1')
+    const staleDir = join(shared, 'toolchain', 'pnpm', '9.9.9')
+    for (const dir of [nodeDir, pnpmDir, browserDir, staleDir]) mkdirSync(dir, { recursive: true })
+    const node = join(nodeDir, 'bin', 'node')
+    mkdirSync(join(nodeDir, 'bin'), { recursive: true })
+    writeFileSync(node, '')
+    const pnpmJs = join(pnpmDir, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
+    mkdirSync(join(pnpmDir, 'node_modules', 'pnpm', 'bin'), { recursive: true })
+    writeFileSync(pnpmJs, '')
+    writeRecord(root, buildRecord({
+      root,
+      requirements: { nodeRange: '>=24.9.0', primaryNodeMajor: 24, pnpm: PNPM_VERSION },
+      node: { path: node, version: 'v24.22.2', source: 'bucket' },
+      npm: { path: node, version: '11.0.0' },
+      pnpm: { bucket: pnpmDir, version: PNPM_VERSION, js: pnpmJs, binDir: join(pnpmDir, 'node_modules', '.bin'), node },
+      chromium: { playwrightVersion: '1.65.1', browsersPath: browserDir, revisions: { chromium: '1', headlessShell: '1', ffmpeg: '1' } },
+    }))
+    const old = new Date(Date.now() - 2 * 60 * 60_000)
+    for (const dir of [nodeDir, pnpmDir, browserDir, staleDir]) utimesSync(dir, old, old)
+    collectBuckets({ mainRoot: root, sharedRoot: shared })
+    assert.equal(existsSync(staleDir), false)
+    assert.equal(existsSync(pnpmDir), true)
+    assert.equal(existsSync(nodeDir), true)
+    assert.equal(existsSync(browserDir), true)
+    writeFileSync(join(root, '.cache', 'toolchain', 'manifest.json'), '{')
+    mkdirSync(join(shared, 'toolchain', 'pnpm', '8.8.8'), { recursive: true })
+    utimesSync(join(shared, 'toolchain', 'pnpm', '8.8.8'), old, old)
+    assert.throws(() => collectBuckets({ mainRoot: root, sharedRoot: shared }), /cannot be read/)
+    assert.equal(existsSync(join(shared, 'toolchain', 'pnpm', '8.8.8')), true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(shared, { recursive: true, force: true })
+  }
 })
