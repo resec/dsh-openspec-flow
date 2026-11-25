@@ -10,5 +10,5 @@ the time of the run (88 numbers):
 
 - `node scripts/pr-review-watch.mjs state --cleanup`: 652 ms and 1 GitHub call,
   against 48,523 ms and 85 calls recorded for the previous round.
-- `npm run verify` on Node 24: pass, no coverage violations (line 98.64%,
+- `npm run verify` on Node 24: pass, no coverage violations (line 98.65%,
   branch 93.76%, function 99.23%).
