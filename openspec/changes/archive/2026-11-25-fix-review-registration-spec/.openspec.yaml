@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-22
+goal: Register openspec_review while either review is enabled, as decided on
+  issue #9.
