@@ -826,9 +826,9 @@ test('an old policy gains its reviewer model on the first review start', async (
   assert.equal(JSON.parse(readFileSync(policyPath, 'utf8')).reviews.draft.reviewerModel.provider, 'other')
 })
 
-test('the review tool is absent when disabled', async () => {
+test('the review tool is absent when both reviews are disabled', async () => {
   const root = fixture()
-  const fake = setup(root, { draft: { enabled: false, reviewers: 0 } })
+  const fake = setup(root, { draft: { enabled: false, reviewers: 0 }, apply: { enabled: false } })
   assert.equal(fake.tools.has('openspec_review'), false)
   const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
   assert.equal(applied.state, 'all_done')

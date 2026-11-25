@@ -160,3 +160,18 @@ test('a command registry without register keeps every tool visible', () => {
   assert.equal(visibleTools(fake, agent).length, 10)
   resetAdminState()
 })
+
+test('the review tool follows the enabled reviews', () => {
+  resetAdminState()
+  const onlyApply = createFakeContext({ cwd: process.cwd(), commands: true })
+  apply(onlyApply.ctx, { reviews: { draft: { enabled: false }, apply: { enabled: true } } })
+  const onlyApplyAgent = onlyApply.createAgent().agent
+  assert.ok(visibleTools(onlyApply, onlyApplyAgent).includes('openspec_review'), 'apply review keeps the tool')
+
+  resetAdminState()
+  const neither = createFakeContext({ cwd: process.cwd(), commands: true })
+  apply(neither.ctx, { reviews: { draft: { enabled: false }, apply: { enabled: false } } })
+  const neitherAgent = neither.createAgent().agent
+  assert.equal(visibleTools(neither, neitherAgent).includes('openspec_review'), false, 'no enabled review hides the tool')
+  resetAdminState()
+})
