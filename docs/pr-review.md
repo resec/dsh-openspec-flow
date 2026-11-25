@@ -15,7 +15,7 @@ This is the repository-side loop for reviewing open pull requests with the insta
   ```
 
   Confirm this before enabling the schedule. An apply review with `reviewers: 0` is self-review and is not used by this loop.
-- The repository is clean in the main worktree. The script creates its own checkout under `.cache/pr-review/worktrees/` and never writes the main worktree.
+- The main worktree is clean apart from other changes' uncommitted planning files under `openspec/changes/`. The script creates its own checkout under `.cache/pr-review/worktrees/` and never writes the main worktree.
 - The `owner-review` label exists. Verify it with `gh label list --search owner-review`; if it is absent, create it with `gh label create owner-review --description "require owner review before auto merge"`.
 
 ## Commands
@@ -60,6 +60,8 @@ node scripts/pr-review-land.mjs sync 12 --apply
 node scripts/pr-review-land.mjs prepare 12 --apply
 node scripts/pr-review-land.mjs reviewed 12 --apply
 node scripts/pr-review-land.mjs merge 12 --apply
+node scripts/pr-review-land.mjs archive 12 --apply
+# Recover an archive commit made outside the command:
 node scripts/pr-review-land.mjs archive 12 --commit <archive-sha> --apply
 node scripts/pr-review-land.mjs push 12 --apply
 node scripts/pr-review-land.mjs finish 12 --apply
@@ -155,7 +157,9 @@ The `mergeable` label is the only contributor landing authorization. Only a main
 
 Every contributor landing command refuses while a local owner holds `landing.lock`, and a new landing also refuses while local `main` leads `origin/main` (run `node scripts/push-landed.mjs --push` first, or `--push --offline` for a recorded offline land). `plan`, `sync`, `sync-batch` and `prepare` are read or prepare steps; `merge`, `archive`, `push` and `finish` mutate main. Reviews stay available while the lock is held.
 
-`sync-batch` evaluates every labeled non-draft pull request based on `main` in one run. It reads the open list with scalar fields only and reads each candidate's changed paths with one request for that pull request, so a pull request must change exactly one active change to be eligible; a changed-path read that still fails after its retry is reported as a refusal for that pull request and does not stop the batch. It updates each eligible same-repository branch that is behind `main`, refuses a fork or conflicting branch with a reason, skips an up-to-date branch, updates at most 20 branches per run, waits at most 10 seconds per updated head and leaves the remainder to the next run. It creates no landing entry and consumes no landing phase. It stops the run only when it changed a head; a lock-refused batch continues to review, while an empty or all-refused batch falls through to the landing or review step. An unavailable open list is reported as `unavailable: true` with `changed: false`; it writes no `syncs` entry, updates no branch and falls through to the landing or review step, so reviews stay available. Reviews stay available while a lock is held.
+The worktree rule accepts another change's uncommitted planning files under `openspec/changes/`, and refuses the landing change's own directory, a path outside every `openspec/changes/` directory, a staged index and a `HEAD` outside `main`. `sync` and `sync-batch` do not check the worktree.
+
+`sync-batch` evaluates every labeled non-draft pull request based on `main` in one run. It reads the open list with scalar fields only and reads each candidate's changed paths with one request for that pull request, so a pull request must change exactly one active change to be eligible; a changed-path read that still fails after its retry is reported as a refusal for that pull request and does not stop the batch. It updates each eligible same-repository branch that is behind `main`, refuses a fork or conflicting branch with a reason, skips an up-to-date branch, updates at most 20 branches per run, waits at most 10 seconds per updated head and leaves the remainder to the next run. It creates no landing entry and consumes no landing phase. It stops the run only when it changed a head; a lock-refused batch continues to review, while an empty or all-refused batch falls through to the landing or review step. An unavailable open list is reported as `unavailable: true` with `changed: false`; it writes no `syncs` entry, updates no branch and falls through to the landing or review step, so reviews stay available. A dirty main worktree does not stop the batch; the main-branch, landing-lock and local-`main`-ahead gates still apply. Reviews stay available while a lock is held.
 
 The landing sequence is:
 
@@ -166,8 +170,8 @@ The landing sequence is:
 5. The session resumes the recorded apply review on the landing checkout with `openspec_review action=resume`, `base` set to the pre-merge main and the record's `baseline: "none"`. `start` is not used because the change already has a record. If the resume fails, run `state --fail <n> --error <text> --apply` to record `review-failed`, keep the checkout and stop; do not call `replace` and do not start another session.
 6. `reviewed <n> --apply` requires the apply review record to be `passed` with its `treeSha` equal to the landing tree, then records `reviewedTree`.
 7. `merge <n> --apply` fetches `origin/main`, requires it to equal the recorded pre-merge main and to be contained in the head, then runs `gh pr merge <n> --rebase`. It never uses squash, `--admin`, force or a merge commit on `main`. A moved main or a stale head records `failed` before any merge call. After the merge it fast-forwards local main and requires the merged tree to equal `reviewedTree`.
-8. The session runs `openspec_archive` on main, commits the archive, pushes and then continues with the remaining landing commands in the same run.
-9. `archive <n> --commit <sha> --apply` records the archive commit; `push <n> --apply` verifies local main equals `origin/main` and records the pushed head; `finish <n> --apply` writes the manifest and removes the landing checkout and branch. A ready final review merges, archives, pushes and finishes in one locked run; archive and push no longer wait for a later run.
+8. The session runs `openspec_archive` on main. `archive <n> --apply` then commits the archive from the paths it owns: the archived directory, the capability directories the archived change names under `openspec/specs`, and the removal of the source change directory. The subject is `chore(openspec): archive <change>` and the body is empty. The session pushes and continues with the remaining landing commands in the same run.
+9. `archive <n> --commit <sha> --apply` verifies and records an archive commit made outside the command; `push <n> --apply` verifies local main equals `origin/main` and records the pushed head; `finish <n> --apply` writes the manifest and removes the landing checkout and branch. A ready final review merges, archives, pushes and finishes in one locked run; archive and push no longer wait for a later run.
 
 If the merged tree differs, `merge` records `tree-mismatch` and archive is refused; a deliberate merged-tree review is required. If archive, commit or push fails after the merge, the PR stays merged and the change stays active; the landing state records the phase and retries from there without merging again.
 
@@ -235,10 +239,12 @@ Run the PR review watch for this repository in this fixed session:
      state --fail.
    - reviewed: node scripts/pr-review-land.mjs merge <n> --apply
      --session <scheduled-session>.
-   - archive-pending: run openspec_archive on main, commit, push, then
-     archive <n> --commit <sha> --apply --session <scheduled-session>,
-     push <n> --apply --session <scheduled-session> and
-     finish <n> --apply --session <scheduled-session>.
+   - archive-pending: run openspec_archive on main, then
+     archive <n> --apply --session <scheduled-session> to commit and record
+     the archive, push, then push <n> --apply --session <scheduled-session>
+     and finish <n> --apply --session <scheduled-session>. When the archive
+     commit already exists, run archive <n> --commit <sha> --apply
+     --session <scheduled-session> instead.
    - review-failed: report it and stop.
 6. Otherwise run node scripts/pr-review-land.mjs sync-batch --apply. The
    batch is not a landing phase: it updates every eligible labeled
