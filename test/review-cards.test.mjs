@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import test from 'node:test'
 import {
   buildCard,
+  CARD_DIR,
   cardFilePath,
   hasCardMarker,
   normalizeJson,
@@ -197,7 +198,8 @@ test('a card file is written once under a hashed session key', () => {
     }
     assert.equal(writeCard(options), true)
     assert.equal(stored.cards.length, 1)
-    const path = cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 })
+    const path = cardFilePath(root, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1 })
+    assert.equal(basename(path), `${sessionKeyOf('card-session')}-draft-review-1.json`, 'the file name carries the kind')
     const file = JSON.parse(readFileSync(path, 'utf8'))
     assert.equal(file.schemaVersion, 1)
     assert.equal(file.sessionId, 'card-session')
@@ -205,7 +207,7 @@ test('a card file is written once under a hashed session key', () => {
     assert.equal(file.turn, null)
     assert.equal(file.payload.phase, 'review')
     assert.equal(file.payload.report.summary, 'One blocker.')
-    assert.equal(hasCardMarker(stored, { sessionId: 'card-session', phase: 'review', round: 1 }), true)
+    assert.equal(hasCardMarker(stored, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1 }), true)
 
     assert.equal(writeCard(options), false, 'a second write for the same session, phase and round is skipped')
     assert.equal(stored.cards.length, 1)
@@ -417,4 +419,49 @@ test('an extra round card uses the sequence and carries the token', () => {
   assert.equal(card.verdict, 'pass')
   assert.equal(card.startedAt, '2026-01-02T00:00:00.000Z')
   assert.equal(card.recordedAt, '2026-01-02T00:01:00.000Z')
+})
+
+test('a marker written before the kind existed still skips the write', () => {
+  const record = { cards: [{ sessionId: 'card-session', phase: 'review', round: 1, at: '2026-01-01T00:00:00.000Z' }] }
+  const marker = {
+    sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1,
+  }
+  assert.equal(hasCardMarker(record, marker), true, 'a kind-less marker still matches')
+  assert.equal(hasCardMarker({ cards: [] }, marker), false)
+})
+
+test('a card without a known review kind is neither named nor written', () => {
+  const root = directory()
+  const warnings = []
+  try {
+    assert.equal(writeCardFile({
+      directory: root,
+      session: { id: 'card-session' },
+      phase: 'review',
+      round: 1,
+      payload: {},
+      logger: { warn: (message) => warnings.push(message) },
+    }), false)
+    assert.match(warnings[0], /unknown kind/)
+    assert.throws(
+      () => cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 }),
+      /needs a kind of draft or apply/,
+    )
+    const stored = record()
+    assert.equal(writeCard({
+      directory: root,
+      record: stored,
+      phase: 'review',
+      round: 1,
+      readiness: readiness(),
+      currentHash: 'hash-a',
+      session: { id: 'card-session' },
+      logger: { warn: (message) => warnings.push(message) },
+    }), false)
+    assert.match(warnings[1], /unknown kind/)
+    assert.equal(stored.cards, undefined, 'a skipped write records no marker')
+    assert.equal(existsSync(join(root, CARD_DIR)), false, 'no card directory is created')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
