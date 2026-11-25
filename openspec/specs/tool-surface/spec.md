@@ -545,7 +545,7 @@ Each `openspec_inspect` action except `worktree` SHALL return the same projectio
 
 ### Requirement: Draft review is exposed as one tool
 
-The plugin SHALL expose `openspec_review` for the draft review. Its `action` parameter SHALL select `start`, `resume`, `status`, `self-report`, `report`, `dispose`, `waive`, `extend` or `abandon`. The tool SHALL return the review id, the current round, the artifact hash, the status and the next action. It SHALL NOT expose reviewer-subagent actions until the independent reviewer is added.
+The plugin SHALL expose `openspec_review` for the draft review. Its `action` parameter SHALL select `start`, `resume`, `wait`, `status`, `self-report`, `report`, `dispose`, `waive`, `retry`, `replace`, `waive-reviewer`, `extend` or `abandon`. The tool SHALL return the review id, the current round, the artifact hash, the status and the next action.
 
 #### Scenario: Draft review starts
 
@@ -572,6 +572,11 @@ The plugin SHALL expose `openspec_review` for the draft review. Its `action` par
 
 - **WHEN** `openspec_review` receives an action outside the supported set
 - **THEN** the parameter schema rejects the call before execution
+
+#### Scenario: Every accepted action is described
+
+- **WHEN** an agent reads the `openspec_review` `action` parameter
+- **THEN** its description names every value the parameter accepts, including `wait`, `retry`, `replace` and `waive-reviewer`
 
 ### Requirement: Apply waits for a ready draft review
 
@@ -1564,3 +1569,23 @@ The plugin SHALL register `openspec_review` while the draft review or the apply 
 
 - **WHEN** the plugin loads with `reviews.draft.enabled` false and `reviews.apply.enabled` true
 - **THEN** the tool catalog contains `openspec_review`
+
+### Requirement: Apply review accepts the reviewer actions
+
+`openspec_review` SHALL accept `review: "apply"` with `action: "wait"`, `"retry"`, `"replace"` or `"waive-reviewer"`. `wait` reads the reviewer state once and arms the round deadline; `retry` messages the same reviewer to submit again; `replace` activates a substitute reviewer for a reason; `waive-reviewer` records a user-approved coverage gap in place of a report.
+
+#### Scenario: Apply review waits for the reviewer
+
+- **WHEN** an agent calls `openspec_review` with `action: "wait"` and `review: "apply"` while the reviewer round is open
+- **THEN** the result reports the wait state and the next action
+
+#### Scenario: Apply review replaces the reviewer
+
+- **WHEN** an agent calls `openspec_review` with `action: "replace"`, `review: "apply"` and a reason
+- **THEN** a substitute reviewer is activated and the next action is `wait`
+
+#### Scenario: Reviewer coverage is waived with user approval
+
+- **WHEN** `waive-reviewer` runs with `review: "apply"`, a waiver and `approvedBy: "user"` before the reviewer reports
+- **THEN** the review records the coverage gap
+- **AND** the same call without `approvedBy: "user"` is refused
