@@ -1254,6 +1254,10 @@ test('the archive scope classifier separates allowed paths from foreign paths', 
     'openspec/changes/archive/2026-01-01-other/proposal.md',
   ])
   assert.deepEqual(outsideArchiveScope([], allowed), [])
+  assert.deepEqual(outsideArchiveScope([
+    'openspec/changes/widget/old.md',
+    'openspec/changes/archive/2026-01-01-widget/new.md',
+  ], allowed), [])
 })
 
 test('land refuses a staged path before the fast-forward', async () => {
@@ -1451,4 +1455,39 @@ test('a resumed archive commit with two archived directories refuses', async () 
     /does not add exactly one archived directory/,
   )
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
+
+test('an empty staged set refuses the archive commit', async () => {
+  const { root, run, fake } = await readyLand()
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-land-empty-'))
+  const wrapper = join(directory, 'git')
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'if [ "$1" = "-C" ] && [ "$3" = "rm" ] && [ "$4" = "-r" ] && [ "$5" = "--cached" ]; then',
+    '  "$REAL_GIT" "$@"',
+    '  "$REAL_GIT" -C "$2" reset -q',
+    '  exit 0',
+    'fi',
+    'exec "$REAL_GIT" "$@"',
+    '',
+  ].join('\n'), { mode: 0o755 })
+  chmodSync(wrapper, 0o755)
+  const savedPath = process.env.PATH
+  const savedRealGit = process.env.REAL_GIT
+  process.env.REAL_GIT = realGit
+  process.env.PATH = `${directory}:${savedPath}`
+  try {
+    await assert.rejects(
+      call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+      /archive produced no staged changes/,
+    )
+  } finally {
+    process.env.PATH = savedPath
+    if (savedRealGit === undefined) delete process.env.REAL_GIT
+    else process.env.REAL_GIT = savedRealGit
+    rmSync(directory, { recursive: true, force: true })
+  }
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+  assert.notEqual(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
 })
