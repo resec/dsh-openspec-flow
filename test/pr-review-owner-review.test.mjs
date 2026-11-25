@@ -792,3 +792,98 @@ test('files are read only for a pull request whose head changed', () => {
     cleanup(root)
   }
 })
+
+test('reconcile degrades to per-pull-request reads when origin is not a github URL', () => {
+  const root = makeRoot()
+  try {
+    const setUrl = spawnSync(
+      'git',
+      ['-C', root, 'remote', 'set-url', 'origin', 'https://gitlab.example/owner/repo.git'],
+      { encoding: 'utf8' },
+    )
+    assert.equal(setUrl.status, 0, setUrl.stderr)
+    saveState(root, {
+      schemaVersion: 1,
+      prs: {
+        12: makeEntry(),
+        13: makeEntry({ number: 13, ownerReview: { head: HEAD, at: 't' } }),
+      },
+    })
+    const prs = {
+      12: makePr({ number: 12 }),
+      13: makePr({ number: 13, headRefOid: OLD, labels: [{ name: OWNER_REVIEW_LABEL }] }),
+    }
+    const list = [
+      { number: 12, labels: [] },
+      { number: 13, labels: [{ name: OWNER_REVIEW_LABEL }] },
+    ]
+    const views = []
+    const { gh } = fakeGh((args) => {
+      if (args[0] === 'api' && args[1] === 'user') return LOGIN
+      if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify(list.map((row) => cheapRow(row, prs)))
+      if (args[0] === 'pr' && args[1] === 'view') {
+        views.push(Number(args[2]))
+        return JSON.stringify(prs[String(args[2])])
+      }
+      if (args[0] === 'pr' && args[1] === 'edit') return 'ok'
+      throw new Error(`unexpected gh call: ${args.join(' ')}`)
+    })
+    const result = reconcileOwnerReview({ root, apply: false, gh })
+    assert.deepEqual(result.errors, [])
+    assert.equal(result.results.find((entry) => entry.number === 12).action, 'add')
+    assert.equal(result.results.find((entry) => entry.number === 13).reason, 'state-head')
+    assert.deepEqual(views.sort((left, right) => left - right), [12, 13])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a large changed-head set reads files in chunks and re-reads a truncated list', () => {
+  const root = makeRoot()
+  try {
+    const prs = {}
+    const list = []
+    const entries = {}
+    for (let number = 1; number <= 30; number += 1) {
+      prs[String(number)] = makePr({ number, headRefOid: OLD, labels: [{ name: OWNER_REVIEW_LABEL }] })
+      list.push({ number, labels: [{ name: OWNER_REVIEW_LABEL }] })
+      entries[String(number)] = makeEntry({ number, ownerReview: { head: HEAD, at: 't' } })
+    }
+    saveState(root, { schemaVersion: 1, prs: entries })
+    const fileQueries = []
+    const views = []
+    const { gh } = fakeGh((args) => {
+      if (args[0] === 'api' && args[1] === 'user') return LOGIN
+      if (args[0] === 'api' && args[1] === 'graphql') {
+        const query = args[args.indexOf('-f') + 1] ?? ''
+        fileQueries.push(query)
+        const repository = {}
+        for (const match of query.matchAll(/p(\d+):pullRequest\(number:(\d+)\)/gu)) {
+          const number = Number(match[2])
+          repository[`p${number}`] = {
+            files: {
+              pageInfo: { hasNextPage: number === 7 },
+              nodes: [{ path: 'openspec/changes/widget/a.md' }],
+            },
+          }
+        }
+        return JSON.stringify({ data: { repository } })
+      }
+      if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify(list.map((row) => cheapRow(row, prs)))
+      if (args[0] === 'pr' && args[1] === 'view') {
+        views.push(Number(args[2]))
+        return JSON.stringify(prs[String(args[2])])
+      }
+      if (args[0] === 'pr' && args[1] === 'edit') return 'ok'
+      throw new Error(`unexpected gh call: ${args.join(' ')}`)
+    })
+    const result = reconcileOwnerReview({ root, apply: false, gh })
+    assert.equal(fileQueries.length, 2)
+    assert.deepEqual(views, [7])
+    assert.equal(result.results.length, 30)
+    assert.deepEqual(result.errors, [])
+    assert.equal(result.results.every((entry) => entry.reason === 'state-head'), true)
+  } finally {
+    cleanup(root)
+  }
+})
