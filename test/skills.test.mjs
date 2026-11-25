@@ -7,6 +7,10 @@ import {
   packagedSkillPath,
   parseFrontmatter,
 } from '../lib/skills.js'
+import { PINNED_CLI_VERSION } from '../lib/openspec.js'
+
+/** The `metadata.upstream` value the bundled CLI pin implies. */
+const UPSTREAM = `openspec@${PINNED_CLI_VERSION}`
 
 test('parses frontmatter name, description and metadata', () => {
   const parsed = parseFrontmatter([
@@ -43,7 +47,7 @@ test('every packaged skill is valid and stamps the plugin version', () => {
     assert.ok(parsed.description.length > 0 && parsed.description.length <= 500, name)
     assert.doesNotMatch(parsed.description, /: /, `${name} description must stay a YAML plain scalar`)
     assert.equal(parsed.metadata.generatedBy, GENERATED_BY, name)
-    assert.equal(parsed.metadata.upstream, 'openspec@2.0.0', name)
+    assert.equal(parsed.metadata.upstream, UPSTREAM, name)
     assert.match(raw, /openspec_[a-z_]+/, name)
     assert.doesNotMatch(raw, /\bCLI\b/i, `${name} must not mention the CLI`)
     assert.doesNotMatch(raw.replaceAll('/opsx-admin', ''), /\bopsx\b/i, `${name} must not name an alias command`)
