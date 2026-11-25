@@ -13,4 +13,4 @@
 ## 3. Verify
 
 - [x] 3.1 Run `node --test test/review-length.test.mjs test/review-doc.test.mjs`.
-- [x] 3.2 Run `/tmp/b3/gates.sh docs-length-counting-unit` and confirm every gate passes.
+- [x] 3.2 Run `npm run verify` on Node 24 on the committed tree and record its test summary and coverage verdict, and `openspec_inspect` with `action: "validate"` and `strict: true`.
