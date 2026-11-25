@@ -21,9 +21,9 @@ test('the lab environment keeps DSH_HOME under the run and adopts exported cache
 test('a custom lab root keeps its browser default without the environment', () => {
   const root = join(ROOT, 'custom-lab-root')
   const run = { home: '/tmp/lab-run/home', agentsHome: '/tmp/lab-run/agents' }
-  assert.equal(
+  assert.match(
     labEnvironmentForRun({ root, run, env: {} }).PLAYWRIGHT_BROWSERS_PATH,
-    join(root, '.cache', 'lab', 'pw-browsers'),
+    /browsers[\\/]playwright-[0-9]/,
   )
 })
 

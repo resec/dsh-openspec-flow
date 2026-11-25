@@ -36,8 +36,11 @@ The shared root defaults to `<main>/.cache/openspec-flow/shared` and can be over
 | --- | --- |
 | `<shared>/npm` | shared npm cache |
 | `<shared>/pnpm-store` | shared pnpm store |
-| `<shared>/pw-browsers` | shared Chromium |
-| `<shared>/.install.lock` | Chromium preparation lock |
+| `<shared>/toolchain/node/<version>` | downloaded Node bucket |
+| `<shared>/toolchain/pnpm/<version>` | pinned pnpm bucket |
+| `<shared>/browsers/playwright-<version>` | Chromium bucket |
+| `<shared>/browsers/playwright-<version>.install.lock` | that bucket's preparation lock |
+| `<worktree>/.cache/toolchain/manifest.json` | per-worktree toolchain record |
 | `<worktree>/.cache/openspec-flow/dsh-home` | per-worktree `DSH_HOME` |
 | `<worktree>/node_modules` | per-worktree dependencies |
 | `<worktree>/.cache`, `.coverage`, `dist` | per-worktree test output |
@@ -54,16 +57,22 @@ pnpm install --store-dir "$PNPM_STORE_DIR"
 
 The JSON output and `check` expose the same path and the observed pnpm version.
 
+## Toolchain record and deps-only preparation
+
+Each worktree carries its own `<worktree>/.cache/toolchain/manifest.json`, written by bootstrap after the pnpm bucket, dependencies, Chromium bucket and the other preparation steps succeed. It names the Node, npm, pnpm and Chromium paths, the shared buckets and the input hashes. The lab and the pre-push hook read the current worktree's record; a stale record is refused with its correction, and a missing record falls back to `PATH`.
+
+`./scripts/bootstrap.sh --deps-only` prepares the buckets and the record without Git hooks, the lab doctor or tests. Apply worktree creation runs it automatically and rolls the worktree back when it fails; a branch created before `--deps-only` existed fails with the usage diagnostic instead of skipping preparation. Collection runs after the record: unreferenced, unlocked buckets older than one hour are deleted, a corrupt record aborts collection without failing the preparation, and `--no-gc` / `--gc-dry-run` control it.
+
 ## Chromium preparation and the lock
 
-`init --browser` and bootstrap's browser step use one lock at `<shared>/.install.lock`. The lock covers the presence check, `--reset-browsers` and the install, so a reset cannot delete a browser another worktree is installing.
+`init --browser` and bootstrap's browser step use one lock per bucket at `<shared>/browsers/playwright-<version>.install.lock`. The lock covers the presence check, `--reset-browsers` and the install, so a reset cannot delete a browser another worktree is installing, and two Playwright versions may install concurrently.
 
 - A waiter polls, then rechecks and reuses a browser the holder installed.
 - A timeout reports the owner instead of deleting the lock.
 - A lock whose recorded pid is dead is reclaimed by the next caller.
 - `check` reports a held lock and its owner without removing it.
 
-Browser path resolution is: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`. Bootstrap uses the same resolved path for the presence check, `--reset-browsers` and the installer.
+Browser path resolution is: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise the worktree's Playwright-version bucket. Bootstrap uses the same resolved path for the presence check, `--reset-browsers` and the installer; the lab uses the record's browser path when a record exists.
 
 ```sh
 # Install once, from any worktree, after npm ci

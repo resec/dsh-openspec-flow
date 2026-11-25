@@ -6,21 +6,23 @@ The lab runs the packaged plugin in an isolated DSH and verifies behavior that s
 
 - Node 24 satisfying `engines.node`; the lab entrypoints use the repository preflight.
 - The pinned DSH, installed from npm at the plugin's `engines.dsh` version. The first online run caches it under `.cache/lab/dsh/`; later runs reuse it.
-- Playwright and its Chromium binary at `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`:
+- Playwright and its Chromium binary at `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise the Playwright-version bucket `<shared>/browsers/playwright-<version>/`. Bootstrap prepares it and records the path in `.cache/toolchain/manifest.json`:
 
 ```sh
-PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-.cache/lab/pw-browsers}" npx playwright install chromium
+./scripts/bootstrap.sh --deps-only
 ```
 
 In an apply worktree, source the shared environment first; see [`apply-worktree-dev.md`](apply-worktree-dev.md).
 
-- `pnpm` on `PATH` at the version pinned by the CI lab job. DSH forwards plugin installation to pnpm:
+- `pnpm` prepared by bootstrap into `<shared>/toolchain/pnpm/11.28.5/`; the record names the bucket and the lab uses it. DSH forwards plugin installation to pnpm. CI installs the same pin with `pnpm/action-setup`. A manual global install is only a fallback:
 
 ```sh
-npm install --global pnpm@12.6.0
+npm install --global pnpm@11.28.5
 ```
 
 - A CJK font. The lab uses `.cache/lab/fontconfig/fonts.conf` when it exists and otherwise relies on the host font configuration. Without a CJK font the card labels render as boxes.
+
+Bootstrap writes the worktree's toolchain record at `.cache/toolchain/manifest.json`. `./scripts/bootstrap.sh --deps-only` prepares the buckets and the record without hooks, the doctor or tests; collection then deletes unreferenced, unlocked buckets older than one hour, `--no-gc` skips it and `--gc-dry-run` only reports.
 
 Run the preflight first:
 
@@ -28,7 +30,7 @@ Run the preflight first:
 npm run lab -- doctor
 ```
 
-An absent DSH cache is reported as `will-install`, not as a failure. A missing pnpm, a missing browser binary, a broken browser library, a missing CJK font, a wrong Node version or insufficient disk fails.
+An absent DSH cache is reported as `will-install`, not as a failure. A missing recorded pnpm, a missing browser binary, a broken browser library, a missing CJK font, a wrong Node version or insufficient disk fails.
 
 ## Commands
 

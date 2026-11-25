@@ -13,12 +13,12 @@ import { readPackage } from './paths.mjs'
 import { dshVersion, listCache } from './cache.mjs'
 import { run } from './process.mjs'
 import { assertCurrentNode } from '../../node-version.mjs'
+import { PNPM_VERSION, readRecord, resolveRecordedPnpm } from '../../toolchain.mjs'
 
 /** Minimum free space the lab accepts. */
 export const MIN_FREE_BYTES = 1024 * 1024 * 1024
 
-/** The pnpm version the CI lab job installs and the documentation names. */
-export const PNPM_VERSION = '12.6.0'
+export { PNPM_VERSION }
 
 /**
  * Locate a Playwright Chromium executable under one browser root.
@@ -70,15 +70,30 @@ export function checkRuntime() {
  * @param env - environment used to resolve pnpm.
  * @returns one check.
  */
-export function checkPnpm(env = process.env) {
-  let result
+export function checkPnpm(env = process.env, root = ROOT) {
+  let recorded
   try {
-    result = run('pnpm', ['--version'], { timeoutMs: 30_000, env })
+    recorded = resolveRecordedPnpm(root)
   } catch (error) {
     return {
       name: 'pnpm',
       status: 'fail',
-      detail: `pnpm is unavailable (${error instanceof Error ? error.message : String(error)}); run npm install --global pnpm@${PNPM_VERSION} and retry`,
+      detail: `${error instanceof Error ? error.message : String(error)}; run ./scripts/bootstrap.sh --deps-only and retry`,
+    }
+  }
+  const command = recorded === undefined ? 'pnpm' : recorded.node.path
+  const args = recorded === undefined ? ['--version'] : [recorded.pnpm.js, '--version']
+  const correction = recorded === undefined
+    ? `run ./scripts/bootstrap.sh --deps-only or install pnpm@${PNPM_VERSION} and retry`
+    : 'run ./scripts/bootstrap.sh --deps-only and retry'
+  let result
+  try {
+    result = run(command, args, { timeoutMs: 30_000, env })
+  } catch (error) {
+    return {
+      name: 'pnpm',
+      status: 'fail',
+      detail: `${recorded === undefined ? 'pnpm is unavailable' : 'the recorded pnpm is unavailable'} (${error instanceof Error ? error.message : String(error)}); ${correction}`,
     }
   }
   const version = result.stdout.trim()
@@ -86,17 +101,24 @@ export function checkPnpm(env = process.env) {
     return {
       name: 'pnpm',
       status: 'fail',
-      detail: `pnpm --version exited ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}; run npm install --global pnpm@${PNPM_VERSION} and retry`,
+      detail: `pnpm --version exited ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}; ${correction}`,
     }
   }
   if (version === '') {
     return {
       name: 'pnpm',
       status: 'fail',
-      detail: `pnpm --version printed no version; run npm install --global pnpm@${PNPM_VERSION} and retry`,
+      detail: `pnpm --version printed no version; ${correction}`,
     }
   }
-  return { name: 'pnpm', status: 'ok', detail: `pnpm ${version}` }
+  if (version !== PNPM_VERSION) {
+    return {
+      name: 'pnpm',
+      status: 'fail',
+      detail: `pnpm ${version} is not the pinned ${PNPM_VERSION}; ${correction}`,
+    }
+  }
+  return { name: 'pnpm', status: 'ok', detail: `${recorded === undefined ? 'pnpm' : 'recorded pnpm'} ${version}` }
 }
 
 /**
@@ -228,8 +250,9 @@ export function runDoctor({
   env = process.env,
   deps = {},
 } = {}) {
-  void root
-  const resolvedBrowsers = browsersPath ?? env.PLAYWRIGHT_BROWSERS_PATH ?? BROWSERS_PATH
+  const record = readRecord(root)
+  const recordedBrowser = record.state === 'current' ? record.record.chromium?.browsersPath : undefined
+  const resolvedBrowsers = browsersPath ?? env.PLAYWRIGHT_BROWSERS_PATH ?? recordedBrowser ?? BROWSERS_PATH
   const cache = deps.cache ?? ((v) => checkCache(v, cacheBase))
   const browser = deps.browser ?? ((p) => checkBrowser(p, platform))
   const browserCheck = browser(resolvedBrowsers)
@@ -240,7 +263,7 @@ export function runDoctor({
   const fontEnv = existsSync(fontConfig) ? { ...env, FONTCONFIG_FILE: fontConfig } : env
   const checks = [
     deps.runtime ?? checkRuntime(),
-    deps.pnpm === undefined ? checkPnpm(env) : deps.pnpm(),
+    deps.pnpm === undefined ? checkPnpm(env, root) : deps.pnpm(),
     cache(version),
     browserCheck,
     libraries,
