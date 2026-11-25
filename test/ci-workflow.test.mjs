@@ -12,6 +12,17 @@ test('CI is pull-request driven, read-only and Ubuntu-only', () => {
   assert.doesNotMatch(WORKFLOW, /macos/i)
 })
 
+test('only a pull-request run cancels the run in progress', () => {
+  const block = /^concurrency:\n((?: {2}\S[^\n]*\n)+)/mu.exec(WORKFLOW)
+  assert.ok(block, 'the workflow has no concurrency block')
+  assert.ok(
+    WORKFLOW.indexOf('\nconcurrency:') < WORKFLOW.indexOf('\njobs:'),
+    'the concurrency block must stay at the workflow level, before the first jobs:',
+  )
+  assert.match(block[1], /^ {2}group: ci-\$\{\{ github\.ref \}\}$/mu)
+  assert.match(block[1], /^ {2}cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/mu)
+})
+
 test('both jobs derive Node from the baseline file', () => {
   assert.match(WORKFLOW, /^  verify:$/m)
   assert.match(WORKFLOW, /^  lab:$/m)
