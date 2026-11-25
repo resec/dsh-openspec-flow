@@ -631,7 +631,29 @@ export function releaseRunLock(root) {
     process.stderr.write(`lock-release-skipped pid=${String(owner?.pid ?? 'unknown')}\n`)
     return false
   }
-  rmSync(lock, { recursive: true, force: true })
+  const moved = `${lock}.release-${process.pid}-${Date.now()}`
+  try {
+    renameSync(lock, moved)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    process.stderr.write('lock-release-skipped pid=unknown\n')
+    return false
+  }
+  const movedOwner = runLockOwner(moved)
+  const stillOurs = movedOwner !== undefined
+    && movedOwner.pid === owner.pid
+    && (movedOwner.pidStart ?? null) === (owner.pidStart ?? null)
+    && (movedOwner.at ?? null) === (owner.at ?? null)
+  if (!stillOurs) {
+    try {
+      if (!existsSync(lock)) renameSync(moved, lock)
+    } catch {
+      // Another owner holds the path; leave the moved directory alone.
+    }
+    process.stderr.write(`lock-release-skipped pid=${String(movedOwner?.pid ?? 'unknown')}\n`)
+    return false
+  }
+  rmSync(moved, { recursive: true, force: true })
   return true
 }
 
