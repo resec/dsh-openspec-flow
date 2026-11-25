@@ -730,6 +730,41 @@ test('the wait deadline steers the waiter', async () => {
   assert.match(changer.steered[0].content[0].text, /wait limit/)
 })
 
+test('the wait deadline wakes the changer for a round opened after a waiver', async () => {
+  const root = fixture()
+  const changer = {
+    id: 'review-test',
+    status: 'idle',
+    steered: [],
+    steer(message) {
+      this.steered.push(message)
+    },
+  }
+  const reviewerAgent = { id: 'reviewer-1', status: 'idle' }
+  const { fake, steered } = externalSetup(root, undefined, {
+    seedAgents: [changer, reviewerAgent],
+    deliverSteer: true,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'accepted', approvedBy: 'user',
+  })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. Edited\n\n- [ ] 1.1 Edited task\n')
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const file = join(reviewDir(root), 'review.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.rounds[1].startedAt = new Date(Date.now() - (10 * 60_000 - 2000)).toISOString()
+  record.limits.waitMinutes = 10
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  const waited = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(waited.waitState, 'waiting')
+  assert.ok(pendingDeadline(reviewDir(root), 'draft'))
+  assert.equal(await waitFor(() => changer.steered.length === 1, 5000), true)
+  assert.match(changer.steered[0].content[0].text, /wait limit/)
+})
+
 test('a submission cancels the deadline', async () => {
   const root = fixture()
   const changer = {

@@ -33,7 +33,7 @@ import {
   recordFinding,
   summarizeFindings,
 } from '../lib/review/report.js'
-import { draftReadiness } from '../lib/review/readiness.js'
+import { draftReadiness, reviewerWaiverCovers } from '../lib/review/readiness.js'
 import {
   latestEntry,
   latestExtraRound,
@@ -715,6 +715,51 @@ test('verification transitions and dispositions cover every status', () => {
   assert.throws(() => disposeFinding(rejected, { status: 'rejected' }), /needs a note/)
   disposeFinding(rejected, { status: 'rejected', note: 'not a defect' })
   assert.equal(rejected.status, 'rejected')
+})
+
+test('a reviewer waiver covers only the round it was approved for', () => {
+  const waived = { slot: 1, round: 1, objectHash: 'hash', reason: null, waiver: 'ok', approvedBy: 'user', at: 'now' }
+  const base = {
+    state: 'in-review',
+    review: 'draft',
+    mode: 'reviewer',
+    objectHash: 'hash',
+    findings: [],
+    reviewerWaived: waived,
+  }
+  const unreported = { round: 1, objectHash: 'hash' }
+  const blocked = (round, objectHash, verdict) => ({ round, objectHash, verdict, report: { path: 'report.json' } })
+
+  // The waived round still passes without a report and still needs a passing verdict.
+  assert.equal(reviewerWaiverCovers({ ...base, rounds: [unreported] }), true)
+  assert.deepEqual(draftReadiness({ ...base, rounds: [unreported] }, 'hash'), {
+    ready: true,
+    reasons: [],
+    nextAction: 'openspec_apply_next',
+  })
+  const onWaivedRound = draftReadiness({ ...base, rounds: [blocked(1, 'hash', 'blocked')] }, 'hash')
+  assert.equal(onWaivedRound.ready, false)
+  assert.match(onWaivedRound.reasons.join(' '), /verdict is blocked/)
+
+  // A later round needs its own passing report.
+  for (const verdict of ['blocked', 'changes-requested']) {
+    const later = draftReadiness({ ...base, objectHash: 'next', rounds: [unreported, blocked(2, 'next', verdict)] }, 'next')
+    assert.equal(later.ready, false, verdict)
+    assert.deepEqual(later.reasons, [`the latest report verdict is ${verdict}`])
+    assert.doesNotMatch(later.nextAction, /apply_next/)
+  }
+  const missing = draftReadiness({ ...base, objectHash: 'next', rounds: [unreported, { round: 2, objectHash: 'next' }] }, 'next')
+  assert.equal(missing.ready, false)
+  assert.deepEqual(missing.reasons, ['no review report has been recorded'])
+  assert.equal(missing.nextAction, 'openspec_review action=wait')
+
+  // The same round bound to another object is not the waived report either.
+  assert.equal(reviewerWaiverCovers({ ...base, rounds: [{ round: 1, objectHash: 'next' }] }), false)
+  assert.equal(reviewerWaiverCovers({ ...base, reviewerWaived: undefined, rounds: [unreported] }), false)
+
+  // A waiver recorded before it carried its round keeps the scope it was approved under.
+  assert.equal(reviewerWaiverCovers({ ...base, reviewerWaived: { ...waived, round: undefined }, rounds: [unreported] }), true)
+  assert.equal(reviewerWaiverCovers({ ...base, reviewerWaived: { ...waived, round: undefined }, rounds: [{ round: 2, objectHash: 'next' }] }), true)
 })
 
 test('readiness reports abandoned, empty and deferred blockers', () => {

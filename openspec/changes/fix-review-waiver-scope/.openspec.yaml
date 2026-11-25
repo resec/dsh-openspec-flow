@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Scope a reviewer waiver to the round and object it was approved on; a
+  later round needs its own passing report.

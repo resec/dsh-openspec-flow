@@ -809,6 +809,124 @@ test('waive-reviewer records a reason and leaves an unready review in review', a
   assert.equal(saved.state, 'in-review')
 })
 
+test('a reviewer waiver covers only the round it was approved for', async () => {
+  const root = fixture()
+  const { fake, activations, messages } = externalSetup(root)
+  const file = join(reviewDir(root), 'review.json')
+  const status = () => call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'draft' })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+
+  // The waived round passes without a report.
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive-reviewer', change: CHANGE, review: 'draft',
+    waiver: 'accepted by the user', approvedBy: 'user',
+  })
+  assert.equal(waived.ready, true)
+  assert.equal(waived.coverageGap, true)
+
+  // A later round wakes the reviewer again and its wait is a real wait.
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. Edited\n\n- [ ] 1.1 Edited task\n')
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 2)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 1)
+  assert.match(messages[0].content[0].text, /new draft review round 2/)
+  const waiting = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(waiting.waitState, 'waiting')
+  assert.equal(waiting.ready, false)
+
+  // A blocked report on that round keeps the review unready.
+  const blocked = await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 2, report: report({ verdict: 'blocked' }),
+  })
+  assert.equal(blocked.ready, false)
+  const waited = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(waited.waitState, 'ready')
+  for (const result of [await status(), waited]) {
+    assert.equal(result.ready, false)
+    assert.deepEqual(result.reasons, ['the latest report verdict is blocked'])
+    assert.doesNotMatch(result.nextAction, /apply_next/)
+    assert.match(result.nextAction, /openspec_review/)
+  }
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).state, 'in-review')
+  await assert.rejects(
+    call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /the draft review is not ready: the latest report verdict is blocked/,
+  )
+
+  // So does a changes-requested report once its only finding is waived.
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  await execute({
+    action: 'submit',
+    change: CHANGE,
+    review: 'draft',
+    round: 3,
+    report: report({ verdict: 'changes-requested', findings: [{ ...majorFinding(), id: 'R3-01' }] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive', review: 'draft', change: CHANGE, id: 'R3-01',
+    approvedBy: 'user', waiver: 'The user accepts the risk.',
+  })
+  const requested = await status()
+  assert.equal(requested.ready, false)
+  assert.deepEqual(requested.reasons, ['the latest report verdict is changes-requested'])
+  assert.doesNotMatch(requested.nextAction, /apply_next/)
+  const approved = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(approved.reviewerWaived.round, 1)
+  assert.equal(approved.reviewerWaived.objectHash, approved.rounds[0].objectHash)
+})
+
+test('a report submitted after the waiver still needs a passing verdict', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'accepted', approvedBy: 'user',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const submitted = await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1, report: report({ verdict: 'blocked' }),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  assert.equal(submitted.ready, false)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'draft' })
+  assert.equal(status.ready, false)
+  assert.deepEqual(status.reasons, ['the latest report verdict is blocked'])
+  assert.doesNotMatch(status.nextAction, /apply_next/)
+})
+
+test('a user may waive the reviewer again for a later round', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  const file = join(reviewDir(root), 'review.json')
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'accepted', approvedBy: 'user',
+  })
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 1. Edited\n\n- [ ] 1.1 Edited task\n')
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const again = await call(fake, 'openspec_review', {
+    action: 'waive-reviewer', change: CHANGE, review: 'draft', waiver: 'accepted again', approvedBy: 'user',
+  })
+  assert.equal(again.ready, true)
+  assert.equal(again.coverageGap, true)
+  const saved = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(saved.reviewerWaived.round, 2)
+  assert.equal(saved.reviewerWaived.objectHash, saved.rounds[1].objectHash)
+  assert.equal(saved.state, 'passed')
+})
+
 test('the reviewer preset is read-only and exported as a subpath', () => {
   const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /id: preset-openspec-reviewer/)
