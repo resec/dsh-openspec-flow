@@ -134,6 +134,21 @@ async function triggerStraggler(markers) {
   await new Promise((resolve) => setTimeout(resolve, 300))
 }
 
+/**
+ * Create the marker directory a straggler test uses.
+ *
+ * One hook stops a straggler a reverted fix left running and then removes the
+ * directory, so the pid file is still readable when the stop runs.
+ */
+function markerDir(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'run-root-markers-'))
+  t.after(() => {
+    killStraggler(directory)
+    rmSync(directory, { recursive: true, force: true })
+  })
+  return directory
+}
+
 test('a passing scoped run removes its run root', async (t) => {
   const probe = scratch(t)
   const result = await runScoped(['--run', 'test/temp.test.mjs'], { TMPDIR: probe })
@@ -183,8 +198,7 @@ test('a scoped run interrupted by SIGTERM removes its root and exits 143', async
 
 test('a scoped run stops a straggler before removing its root', async (t) => {
   const probe = scratch(t)
-  const markers = scratch(t)
-  t.after(() => killStraggler(markers))
+  const markers = markerDir(t)
   const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
     cwd: ROOT,
     env: childEnv(stragglerEnv(probe, markers)),
@@ -201,8 +215,7 @@ test('a scoped run stops a straggler before removing its root', async (t) => {
 
 test('a scoped run interrupted by SIGTERM stops a straggler', async (t) => {
   const probe = scratch(t)
-  const markers = scratch(t)
-  t.after(() => killStraggler(markers))
+  const markers = markerDir(t)
   const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
     cwd: ROOT,
     env: childEnv(stragglerEnv(probe, markers, { RUN_ROOT_STRAGGLER_MODE: 'stay' })),
@@ -225,8 +238,7 @@ test('a scoped run interrupted by SIGTERM stops a straggler', async (t) => {
 
 test('a scoped run interrupted by SIGTERM kills a straggler that ignores it', async (t) => {
   const probe = scratch(t)
-  const markers = scratch(t)
-  t.after(() => killStraggler(markers))
+  const markers = markerDir(t)
   const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
     cwd: ROOT,
     env: childEnv(stragglerEnv(probe, markers, {
@@ -252,8 +264,7 @@ test('a scoped run interrupted by SIGTERM kills a straggler that ignores it', as
 
 test('a run without a resolved base still stops a straggler', async (t) => {
   const missing = join(scratch(t), 'missing')
-  const markers = scratch(t)
-  t.after(() => killStraggler(markers))
+  const markers = markerDir(t)
   const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
     cwd: ROOT,
     env: childEnv(stragglerEnv(missing, markers)),
@@ -320,8 +331,7 @@ test('a plain run interrupted by SIGTERM removes its root and exits 143', async 
 
 test('a plain run stops a straggler before removing its root', async (t) => {
   const probe = scratch(t)
-  const markers = scratch(t)
-  t.after(() => killStraggler(markers))
+  const markers = markerDir(t)
   const child = spawn(
     process.execPath,
     [RUNNER, 'plugin', '--', '--test-name-pattern=run root straggler', STRAGGLER],
