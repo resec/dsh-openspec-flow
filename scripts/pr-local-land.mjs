@@ -252,6 +252,7 @@ export function adoptLocal({
 
   const main = gitOrThrow(git, root, ['rev-parse', 'main'])
   const sources = []
+  const skipped = []
   let head
 
   const landed = readLandedManifestForMain(root, { change: entry.change, main })
@@ -275,8 +276,9 @@ export function adoptLocal({
   let pr
   try {
     pr = readPullRequest({ root, number: entry.number, gh })
-  } catch {
+  } catch (error) {
     pr = undefined
+    skipped.push(`gh pr view ${entry.number}: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (pr?.state === 'MERGED') {
     const mergeCommit = String(pr.mergeCommit?.oid ?? '')
@@ -288,7 +290,11 @@ export function adoptLocal({
       throw new Error(`the merged pull request tree ${mergeTree} is not ${candidate}; the tree did not land`)
     }
     const fetched = git(root, ['fetch', 'origin', 'main'], true) !== undefined
+    if (!fetched) skipped.push('git fetch origin main failed')
     const originMain = fetched ? git(root, ['rev-parse', 'origin/main']) : undefined
+    if (fetched && originMain !== mergeCommit) {
+      skipped.push(`origin/main is ${originMain ?? 'unreadable'}, not the merge commit ${mergeCommit}`)
+    }
     if (originMain === mergeCommit) {
       sources.push('merged pull request')
       if (head === undefined) head = mergeCommit
@@ -312,7 +318,8 @@ export function adoptLocal({
   }
 
   if (head === undefined) {
-    throw new Error(`tree ${candidate} is not the current worktree head tree, a landed manifest tree on main, or the merged pull request tree on origin/main`)
+    const detail = skipped.length === 0 ? '' : `; skipped: ${skipped.join('; ')}`
+    throw new Error(`tree ${candidate} is not the current worktree head tree, a landed manifest tree on main, or the merged pull request tree on origin/main${detail}`)
   }
   if (!apply) {
     return {
@@ -323,10 +330,12 @@ export function adoptLocal({
       head,
       tree: candidate,
       sources,
+      skipped,
       phase: entry.phase,
     }
   }
-  return updateLocalEntry(root, entry.number, { head, tree: candidate, error: null })
+  const updated = updateLocalEntry(root, entry.number, { head, tree: candidate, error: null })
+  return skipped.length === 0 ? updated : { ...updated, skipped }
 }
 
 /** Record a failed local landing command on the owner entry. */

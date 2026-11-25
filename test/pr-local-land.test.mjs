@@ -766,6 +766,29 @@ test('adopt refuses a tree with no current source', () => {
       () => adoptLocal({ root: fixture.root, number: 12, tree, session: SESSION, gh: openGh(), git: runGit }),
       /not the current worktree head tree/,
     )
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree, session: SESSION, gh: noGh(), git: runGit }),
+      /gh pr view 12 failed/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt reports a skipped fetch and still records the worktree source', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    const flakyGit = (cwd, args, allowFailure = false) => {
+      if (args[0] === 'fetch' && args[1] === 'origin') return undefined
+      return runGit(cwd, args, allowFailure)
+    }
+    const report = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: flakyGit,
+    })
+    assert.ok(report.skipped.some((text) => text.includes('git fetch origin main failed')))
+    assert.equal(report.head, fixture.featureHead)
+    assert.deepEqual(report.sources, ['apply worktree'])
   } finally {
     cleanup(fixture.root, fixture.remote)
   }
