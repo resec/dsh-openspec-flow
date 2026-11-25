@@ -27,11 +27,13 @@ import {
   trustedPass,
   UsageError,
   withRunLock,
+  withRunTelemetry,
 } from './pr-review-watch.mjs'
 import { readLockOwner, releaseLock } from './pr-review-lock.mjs'
 import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
 import { filterUnrelatedChangeStatus } from '../lib/review/store.js'
 import { statusLinePath } from '../lib/status-paths.js'
+import { ghPoll, ghRead, ghWrite } from './gh-exec.mjs'
 
 export { trustedPass }
 
@@ -96,9 +98,25 @@ function gitMaybe(cwd, args) {
   return result.stdout.trim()
 }
 
-/** Gh helper returning text; throws with stderr on failure. */
+/** Whether one `gh` invocation mutates GitHub. */
+export function isGhWrite(args) {
+  if (args[0] === 'pr' && args[1] === 'merge') return true
+  return args[0] === 'api' && args.includes('--method')
+}
+
+/** Whether one `gh` invocation is the single-shot head poll after an update. */
+export function isHeadPoll(args) {
+  return args[0] === 'pr' && args[1] === 'view' && args[3] === '--json' && args[4] === 'headRefOid'
+}
+
+/**
+ * Gh helper returning text; throws with stderr on failure. Reads retry under
+ * the shared policy, writes and the head poll stay single-shot.
+ */
 function gh(args, cwd) {
-  return capture('gh', args, { cwd }).trim()
+  if (isGhWrite(args)) return ghWrite(args, { cwd })
+  if (isHeadPoll(args)) return ghPoll(args, { cwd })
+  return ghRead(args, { cwd })
 }
 
 /** Read one JSON file, returning undefined when absent. */
@@ -1169,7 +1187,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
-    const result = withRunLock(root, () => {
+    const result = withRunTelemetry(root, options.command, () => withRunLock(root, () => {
       const shared = { root, number: options.number, apply: options.apply, session: options.session, token: options.token }
       if (options.command === 'plan') return planLanding(shared)
       if (options.command === 'sync') return syncLanding(shared)
@@ -1182,7 +1200,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       if (options.command === 'push') return pushLanding(shared)
       if (options.command === 'abandon') return abandonLanding(shared)
       return finishLanding(shared)
-    })
+    }))
     write(`${JSON.stringify(result, null, 2)}\n`)
     return 0
   } catch (error) {
