@@ -368,6 +368,19 @@ test('the review document explains batch disposition and the removed issue field
   assert.match(text, /plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`/)
 })
 
+test('the review document states that an abandoned review stays abandoned', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  const row = text.split('\n').find((line) => line.includes('**评审被放弃**'))
+  assert.ok(row, 'the document keeps the abandoned-review row')
+  assert.match(row, /`abandoned` 是终态/)
+  for (const phrase of [
+    '`resume`', '`dispose`', '`waive`', '`self-report`', '`retry`', '`replace`', '`waive-reviewer`', '`extend`', '`submit`',
+    '新开变更或移除评审记录',
+  ]) {
+    assert.ok(row.includes(phrase), `the row names ${phrase}`)
+  }
+})
+
 test('the review document explains the reviewer read targets and the resume gate', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of ['`own-report`', '`findings`', '`round`', '`resume` 在有 `open` finding 时拒绝开新轮']) {

@@ -192,7 +192,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 - **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。rebase 额外轮次不占普通轮次号，也不受轮次上限影响。
 - **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"` 与该 review 的 `review`；先处置再 `resume`。
 - **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`，两者缺少 `review` 同样拒绝。
-- **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。
+- **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。`abandoned` 是终态：`resume`、`dispose`、finding 的 `waive`、`self-report`、`retry`、`replace`、`waive-reviewer`、`extend` 与评审者的 `submit` 都拒绝该记录且不改动它，错误带 review 类型与同一条恢复提示（新开变更或移除评审记录）；`status`、`report` 与评审者的 `read` 仍可读取。
 - **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；用 `resume` 开新一轮，或修正提交。draft 轮次在无报告时对象已变，由 `resume` 先记为 `blocked` 再开下一轮。
 - **意图文件缺失或被改动**：`resume` 拒绝并提示移除评审记录；`start` 不会为已有记录重写 `intent.md`。
 - **工作区不干净**：apply review 拒绝启动并列出未提交路径；其他 `openspec/changes/` 目录的未提交规划文件不算脏。

@@ -800,6 +800,64 @@ test('apply review supports status, report, extend, dispose and abandon', async 
   )
 })
 
+test('an abandoned apply review refuses dispositions, a report and an extension', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'abandon', change: CHANGE, review: 'apply', reason: 'superseded',
+  })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const before = readFileSync(file, 'utf8')
+  const refusal = /apply review was abandoned; start a new change or remove its review record/
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'apply', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'apply', change: CHANGE, dispositions: [{ id: 'R1-01', status: 'fixed', note: 'Fixed.' }],
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive', review: 'apply', change: CHANGE, id: 'R1-01', waiver: 'accepted', approvedBy: 'user',
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'extend', change: CHANGE, review: 'apply', approvedBy: 'user', reason: 'more', minutes: 5,
+    }),
+    refusal,
+  )
+  assert.equal(readFileSync(file, 'utf8'), before)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' }),
+    refusal,
+  )
+  assert.equal(readFileSync(file, 'utf8'), before)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(status.state, 'abandoned')
+  const stored = await call(fake, 'openspec_review', { action: 'report', change: CHANGE, review: 'apply' })
+  assert.equal(stored.state, 'abandoned')
+  assert.equal(stored.report.verdict, 'changes-requested')
+})
+
 test('an apply review disposes a dispositions batch', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)

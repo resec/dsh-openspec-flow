@@ -912,6 +912,61 @@ test('abandon closes the review', async () => {
   )
 })
 
+test('an abandoned draft review refuses dispositions, a report and an extension', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', { action: 'abandon', change: CHANGE, reason: 'superseded' })
+  const file = join(reviewDir(root), 'review.json')
+  const before = readFileSync(file, 'utf8')
+  const refusal = /draft review was abandoned; start a new change or remove its review record/
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, dispositions: [{ id: 'R1-01', status: 'fixed', note: 'Fixed.' }],
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive', review: 'draft', change: CHANGE, id: 'R1-01', waiver: 'accepted', approvedBy: 'user',
+    }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'self-report', change: CHANGE, report: report() }),
+    refusal,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'extend', change: CHANGE, approvedBy: 'user', reason: 'more', minutes: 5,
+    }),
+    refusal,
+  )
+  assert.equal(readFileSync(file, 'utf8'), before)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE }),
+    refusal,
+  )
+  assert.equal(readFileSync(file, 'utf8'), before)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.state, 'abandoned')
+  const stored = await call(fake, 'openspec_review', { action: 'report', change: CHANGE })
+  assert.equal(stored.state, 'abandoned')
+  assert.equal(stored.report.verdict, 'changes-requested')
+})
+
 test('dispose refuses an unknown finding and a deferred blocker', async () => {
   const root = fixture()
   const fake = setup(root)

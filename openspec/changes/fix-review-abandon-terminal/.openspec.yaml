@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Keep an abandoned review abandoned; dispositions, submits and the
+  reviewer recovery actions refuse its record.
