@@ -33,6 +33,7 @@ function makeRepository() {
   git(directory, ['config', 'user.email', 'test@example.com'])
   git(directory, ['config', 'user.name', 'Test'])
   writeFileSync(join(directory, 'README.md'), '# test\n')
+  writeFileSync(join(directory, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3, packages: { 'node_modules/playwright-core': { version: '1.65.1' } } }))
   git(directory, ['add', '.'])
   git(directory, ['commit', '-qm', 'initial'])
   return directory
@@ -104,6 +105,28 @@ test('the shell output carries caches and a per-worktree home but no node_module
   }
 })
 
+test('resolves the Playwright-version browser bucket from the lockfile', () => {
+  const root = makeRepository()
+  try {
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/playwright-core': { version: '1.65.1' } } }))
+    const environment = resolveEnvironment({ cwd: root, env: {} })
+    assert.equal(environment.browsersPath, join(environment.sharedRoot, 'browsers', 'playwright-1.65.1'))
+    assert.equal(environment.installLock, join(environment.sharedRoot, 'browsers', 'playwright-1.65.1.install.lock'))
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('an unresolvable Playwright version fails instead of falling back', () => {
+  const root = makeRepository()
+  try {
+    rmSync(join(root, 'package-lock.json'))
+    assert.throws(() => resolveEnvironment({ cwd: root, env: {} }), /cannot resolve the Playwright version/)
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('resolves the lab browser path from root and environment', () => {
   const root = '/tmp/lab-root'
   assert.equal(resolveBrowsersPath({ root, env: {} }), join(root, '.cache', 'lab', 'pw-browsers'))
@@ -124,6 +147,36 @@ test('prepareChromium installs once, reuses the browser and resets under the loc
     assert.deepEqual(prepareChromium({ browsersPath: browsers, install }), { installed: false, reused: true })
     assert.deepEqual(prepareChromium({ browsersPath: browsers, reset: true, install }), { installed: true, reused: false })
     assert.equal(installations.length, 2)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a Chromium bucket writes a marker and an unmarked bucket is not reused', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-chromium-marker-'))
+  try {
+    mkdirSync(join(root, 'node_modules', 'playwright-core'), { recursive: true })
+    writeFileSync(join(root, 'node_modules', 'playwright-core', 'package.json'), '{"version":"1.65.1"}\n')
+    writeFileSync(join(root, 'node_modules', 'playwright-core', 'browsers.json'), JSON.stringify({ browsers: [
+      { name: 'chromium', revision: '1255' },
+      { name: 'chromium-headless-shell', revision: '1255' },
+      { name: 'ffmpeg', revision: '1013' },
+    ] }))
+    const browsers = join(root, 'browsers', 'playwright-1.65.1')
+    const install = ({ browsersPath }) => {
+      mkdirSync(join(browsersPath, 'chrome'), { recursive: true })
+      writeFileSync(join(browsersPath, 'chrome', 'chrome'), '')
+    }
+    prepareChromium({ browsersPath: browsers, cwd: root, install, writeMarker: true, requireMarker: true })
+    const marker = JSON.parse(readFileSync(join(browsers, '.complete.json'), 'utf8'))
+    assert.equal(marker.playwrightVersion, '1.65.1')
+    assert.deepEqual(marker.revisions, { chromium: '1255', headlessShell: '1255', ffmpeg: '1013' })
+    let installed = 0
+    prepareChromium({ browsersPath: browsers, cwd: root, install: (options) => { installed += 1; install(options) }, requireMarker: true })
+    assert.equal(installed, 0)
+    rmSync(join(browsers, '.complete.json'))
+    prepareChromium({ browsersPath: browsers, cwd: root, install: (options) => { installed += 1; install(options) }, requireMarker: true })
+    assert.equal(installed, 1)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -240,8 +293,8 @@ test('check reports missing paths, a mismatched inherited DSH_HOME and a held lo
     assert.ok(missing.errors.some((line) => line.includes('shared root')))
     mkdirSync(join(shared, 'npm'), { recursive: true })
     mkdirSync(join(shared, 'pnpm-store'), { recursive: true })
-    mkdirSync(join(shared, 'pw-browsers', 'chrome'), { recursive: true })
-    writeFileSync(join(shared, 'pw-browsers', 'chrome', 'chrome'), '')
+    mkdirSync(join(environment.browsersPath, 'chrome'), { recursive: true })
+    writeFileSync(join(environment.browsersPath, 'chrome', 'chrome'), '')
     mkdirSync(environment.dshHome, { recursive: true })
     const mismatched = checkEnvironment({ environment, env: { DSH_HOME: '/other/home' }, spawn: fakeSpawn })
     assert.equal(mismatched.ok, false)

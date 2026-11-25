@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +45,7 @@ function fakeNode({ stampExit = 1, checkExit = 0 } = {}) {
     '#!/bin/sh',
     'printf "%s\\n" "$*" >> "$NODE_LOG"',
     'case "$1" in',
+    '  scripts/toolchain.mjs) [ -n "${RECORD_NODE:-}" ] && printf "%s\\n" "$RECORD_NODE"; exit "${RECORD_EXIT:-0}" ;;',
     `  scripts/check-main-push.mjs) exit ${checkExit} ;;`,
     `  scripts/coverage-stamp.mjs) exit ${stampExit} ;;`,
     '  *) exit 1 ;;',
@@ -61,11 +62,11 @@ function fakeNode({ stampExit = 1, checkExit = 0 } = {}) {
  * @param options - fake behavior, stdin refs, stdin mode and extra hook environment.
  * @returns the spawn result, the recorded npm calls and the recorded node calls.
  */
-function runHook({ failValidation = false, stampExit = 1, checkExit = 0, input = '', stdin = 'pipe', env = {} } = {}) {
+function runHook({ failValidation = false, stampExit = 1, checkExit = 0, input = '', stdin = 'pipe', env = {}, cwd } = {}) {
   const fake = fakeNpm({ failValidation })
   const fakeBin = fakeNode({ stampExit, checkExit })
   const options = {
-    cwd: ROOT,
+    cwd: cwd ?? fake.dir,
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -224,4 +225,27 @@ test('the hook installer names the stamp file and every invalidator', () => {
   assert.match(source, /offline local path runs npm run test:lab -- --mock-only/)
   assert.doesNotMatch(source, /never the lab gate/)
   assert.doesNotMatch(source, /coverage:check/)
+})
+
+
+test('a recorded Node is put first and a missing record keeps PATH', () => {
+  const root = tempDir('openspec-hook-record-')
+  mkdirSync(join(root, '.cache', 'toolchain'), { recursive: true })
+  writeFileSync(join(root, '.cache', 'toolchain', 'manifest.json'), '{}\n')
+  const recordedDir = tempDir('openspec-hook-recorded-node-')
+  const marker = join(recordedDir, 'called.txt')
+  const recordedNode = join(recordedDir, 'node')
+  writeFileSync(recordedNode, `#!/bin/sh\nprintf '%s\\n' "$@" >> ${JSON.stringify(marker)}\nexit 1\n`)
+  chmodSync(recordedNode, 0o755)
+  const { result, calls } = runHook({
+    input: BRANCH_REF,
+    cwd: root,
+    env: { RECORD_NODE: recordedNode },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(existsSync(marker))
+  assert.deepEqual(calls, ['run openspec:check', 'run verify'])
+  const recorded = readFileSync(marker, 'utf8')
+  assert.match(recorded, /scripts\/coverage-stamp\.mjs/)
+  assert.match(recorded, /check/)
 })

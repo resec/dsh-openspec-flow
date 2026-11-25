@@ -153,7 +153,7 @@ Reusable scenarios SHALL live under `test/lab/**/*.scenario.mjs` and SHALL NOT b
 
 ### Requirement: The doctor preflight reports missing prerequisites
 
-The lab SHALL provide a doctor command that reuses the repository's runtime preflight and checks pnpm, the DSH cache state, the Playwright browser binary, browser shared libraries, a CJK font and free disk. An absent DSH cache entry SHALL be reported as will-install, not as a failure; every other missing prerequisite SHALL fail with a correction-oriented message.
+The lab SHALL provide a doctor command that reuses the repository's runtime preflight and checks pnpm, the DSH cache state, the Playwright browser binary, browser shared libraries, a CJK font and free disk. The pnpm check SHALL use the current worktree's recorded pnpm when a current record exists, else `PATH`, and SHALL require the pinned version. An absent DSH cache entry SHALL be reported as will-install, not as a failure; every other missing prerequisite SHALL fail with a correction.
 
 #### Scenario: All prerequisites are present
 
@@ -162,9 +162,21 @@ The lab SHALL provide a doctor command that reuses the repository's runtime pref
 
 #### Scenario: pnpm is missing
 
-- **WHEN** the `pnpm` executable is absent from `PATH`
+- **WHEN** no record exists and the `pnpm` executable is absent from `PATH`
 - **THEN** the doctor exits nonzero
-- **AND** it names the pinned pnpm version and an install command
+- **AND** it names the pinned pnpm version and a correction that prepares it
+
+#### Scenario: A recorded pnpm is used
+
+- **WHEN** the current worktree's record is current
+- **THEN** the doctor checks the recorded pnpm and its version
+- **AND** it does not require pnpm on `PATH`
+
+#### Scenario: A recorded pnpm is missing
+
+- **WHEN** the record exists but its pnpm path is missing
+- **THEN** the doctor exits nonzero
+- **AND** it names a new deps-only preparation instead of a global install
 
 #### Scenario: The first run has no DSH cache
 
@@ -182,7 +194,7 @@ The lab SHALL provide a doctor command that reuses the repository's runtime pref
 
 - **WHEN** the Playwright browser executable is absent from the lab browser path
 - **THEN** the doctor exits nonzero
-- **AND** it names the install command with `PLAYWRIGHT_BROWSERS_PATH` pointing under `.cache/lab/`
+- **AND** it names the install command with the resolved browser path: an explicit `PLAYWRIGHT_BROWSERS_PATH`, the current record's browser path, or the Playwright-version bucket
 
 #### Scenario: A CJK font is missing
 

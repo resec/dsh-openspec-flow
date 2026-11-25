@@ -8,10 +8,11 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findBrowserExecutable } from './lab/core/doctor.mjs'
+import { chromiumBucket, resolvePlaywrightVersion } from './toolchain.mjs'
 
 /** Environment variable for an alternate shared root. */
 export const SHARED_ROOT_ENV = 'OPENSPEC_FLOW_SHARED_ROOT'
@@ -88,15 +89,22 @@ export function resolveEnvironment({ cwd = process.cwd(), env = process.env } = 
   const main = mainWorktree(cwd)
   const override = env[SHARED_ROOT_ENV]
   const sharedRoot = override === undefined || override === '' ? join(main, '.cache', 'openspec-flow', 'shared') : assertAbsolutePath(override)
+  const browsersPath = (() => {
+    const explicit = env.PLAYWRIGHT_BROWSERS_PATH
+    if (explicit !== undefined && explicit.trim() !== '') {
+      return isAbsolute(explicit) ? explicit : resolve(worktree, explicit)
+    }
+    return chromiumBucket(sharedRoot, resolvePlaywrightVersion(worktree))
+  })()
   return {
     mainRoot: main,
     worktree,
     sharedRoot,
     npmCache: join(sharedRoot, 'npm'),
     pnpmStore: join(sharedRoot, 'pnpm-store'),
-    browsersPath: join(sharedRoot, 'pw-browsers'),
+    browsersPath,
     dshHome: join(worktree, '.cache', 'openspec-flow', 'dsh-home'),
-    installLock: join(sharedRoot, INSTALL_LOCK_NAME),
+    installLock: installLockPath(browsersPath),
   }
 }
 
@@ -144,7 +152,8 @@ export function renderJson(environment) {
 
 /** The lock path for one browser directory. */
 export function installLockPath(browsersPath) {
-  return join(dirname(resolve(browsersPath)), INSTALL_LOCK_NAME)
+  const target = resolve(browsersPath)
+  return join(dirname(target), `${basename(target)}${INSTALL_LOCK_NAME}`)
 }
 
 /**
@@ -294,11 +303,13 @@ function sleepSync(ms) {
  * @returns nothing.
  */
 export function installChromium({ browsersPath, host, cwd = process.cwd(), spawn = spawnSync } = {}) {
+  const cli = join(cwd, 'node_modules', 'playwright', 'cli.js')
+  if (!existsSync(cli)) throw new Error(`the local Playwright CLI is missing at ${cli}; run npm ci first`)
   const env = { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browsersPath }
   if (host !== undefined) env.PLAYWRIGHT_DOWNLOAD_HOST = host
-  const result = spawn('npx', ['playwright', 'install', 'chromium'], { cwd, env, stdio: 'inherit' })
+  const result = spawn(process.execPath, [cli, 'install', 'chromium'], { cwd, env, stdio: 'inherit' })
   if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(`npx playwright install chromium exited ${String(result.status ?? 'unknown')}`)
+  if (result.status !== 0) throw new Error(`playwright install chromium exited ${String(result.status ?? 'unknown')}`)
 }
 
 /**
@@ -312,15 +323,37 @@ export function prepareChromium({
   host,
   install = installChromium,
   cwd = process.cwd(),
+  requireMarker = false,
+  writeMarker = false,
   isAlive = processAlive,
   timeoutMs,
   pollMs,
 } = {}) {
   const lockPath = installLockPath(browsersPath)
+  const markerPath = join(browsersPath, '.complete.json')
   return withInstallLockSync(lockPath, 'chromium', () => {
     if (reset) rmSync(browsersPath, { recursive: true, force: true })
-    if (!reset && findBrowserExecutable(browsersPath) !== undefined) return { installed: false, reused: true }
+    if (!reset && findBrowserExecutable(browsersPath) !== undefined) {
+      if (!requireMarker || existsSync(markerPath)) return { installed: false, reused: true }
+    }
     install({ browsersPath, host, cwd })
+    if (writeMarker) {
+      const packagePath = join(cwd, 'node_modules', 'playwright-core', 'package.json')
+      const browsersFile = join(cwd, 'node_modules', 'playwright-core', 'browsers.json')
+      if (!existsSync(packagePath) || !existsSync(browsersFile)) {
+        throw new Error(`cannot record the Chromium revisions under ${cwd}; run npm ci first`)
+      }
+      const playwrightVersion = JSON.parse(readFileSync(packagePath, 'utf8')).version
+      const parsed = JSON.parse(readFileSync(browsersFile, 'utf8'))
+      const byName = new Map((parsed.browsers ?? []).map((entry) => [entry.name, entry]))
+      const revisions = {}
+      for (const [key, name] of [['chromium', 'chromium'], ['headlessShell', 'chromium-headless-shell'], ['ffmpeg', 'ffmpeg']]) {
+        const entry = byName.get(name)
+        if (entry === undefined) throw new Error(`browsers.json names no ${name} revision under ${cwd}`)
+        revisions[key] = entry.revision
+      }
+      writeFileSync(markerPath, `${JSON.stringify({ playwrightVersion, revisions, installedAt: new Date().toISOString() }, null, 2)}\n`)
+    }
     return { installed: true, reused: false }
   }, { ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(pollMs === undefined ? {} : { pollMs }), isAlive })
 }
@@ -334,7 +367,17 @@ export function initEnvironment({ environment, browser = false, install = instal
   for (const directory of [environment.sharedRoot, environment.npmCache, environment.pnpmStore, environment.browsersPath, environment.dshHome]) {
     mkdirSync(directory, { recursive: true })
   }
-  if (browser) prepareChromium({ browsersPath: environment.browsersPath, install, cwd: environment.worktree, host })
+  if (browser) {
+    const localPackage = existsSync(join(environment.worktree, 'node_modules', 'playwright-core', 'browsers.json'))
+    prepareChromium({
+      browsersPath: environment.browsersPath,
+      install,
+      cwd: environment.worktree,
+      host,
+      requireMarker: localPackage,
+      writeMarker: localPackage,
+    })
+  }
   return environment
 }
 

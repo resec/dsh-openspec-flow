@@ -85,6 +85,15 @@ npm view @deepseek-ai/dsh@<version> engines.node --json
 
 同时记录 Node 主版本。当前主版本 24 记录在 `coverage.config.json:2` 与 `openspec/specs/project-invariants/spec.md` 的 `Runtime baseline`。目标版本把主版本移走时，`engines.node`、`coverage.config.json`、覆盖基线、规格与测试入口的提示文本要一起改；只改 `engines.node` 不够。
 
+同时记录目标版本声明的 pnpm 版本。读取目标 tag 根 `package.json` 的 `packageManager`：
+
+```bash
+gh api "repos/deepseek-ai/deepseek-harness/contents/package.json?ref=dsh-v<version>" \
+  --jq '.content' | base64 -d | grep packageManager
+```
+
+已发布的 `@deepseek-ai/dsh` 包不携带该字段，源码 tag 是唯一来源；不要改为在 bootstrap 运行时联网读取。当前 pin 记在 `scripts/toolchain.mjs` 的 `PNPM_VERSION`。
+
 ### 判断升级类型
 
 | 上游变化 | 对插件的影响 | 需要做的事 |
@@ -214,6 +223,8 @@ DSH 侧对应的声明文件与符号：
    - 更新 `AGENTS.md:25` 与 `README.md` 的「测试运行时」段落。
 9. 不要用 `^`、`~` 或 `>=` 代替精确 pin，也不要先加 `compatibility.json` 豁免再升级。
 
+**pnpm pin**：把 `scripts/toolchain.mjs` 的 `PNPM_VERSION` 改为目标 tag 声明的版本，并同步 `.github/workflows/ci.yml`、`docs/lab.md` 与 `CONTRIBUTING.md`；`test/ci-workflow.test.mjs` 会校验三处一致。不要把这个版本写进本仓库 `package.json` 的 `packageManager`，也不要改为 devDependency。
+
 ### 隔离组合检查
 
 10. 用候选运行时初始化独立 profile，并装入当前工作树的插件：
@@ -266,6 +277,7 @@ DSH 侧对应的声明文件与符号：
 | --- | --- | --- |
 | Node 预检 | `node --version` | 主版本符合 `primaryNodeMajor`，具体版本满足 `engines.node` |
 | 插件测试与覆盖率 | `npm run verify` | 退出 0，测试全部通过且不低于基线 |
+| pnpm pin 一致性 | `node --test test/ci-workflow.test.mjs` | 退出 0 |
 | OpenSpec 严格校验 | `npm run openspec:check` | 退出 0 |
 | 候选组合 | 上文 `--dump-config` | 有 `openspec-flow` 行，无 `skipping profile bundle` |
 | 实际启动 | 重启 profile | stderr 无 `skipping profile bundle` |
@@ -303,6 +315,7 @@ DSH 侧对应的声明文件与符号：
 
 - [ ] 目标版本的 release notes、compare 链接与 npm 发布状态已记录。
 - [ ] 目标 `engines.node` 与 Node 主版本已核对。
+- [ ] 目标 tag 的 `packageManager` 已记录，`scripts/toolchain.mjs` 的 pin、CI 与文档一致。
 - [ ] 服务声明 diff 已读，耦合面差异已判断。
 - [ ] `engines.dsh` 是 `=<target>`，`engines.node` 与目标下限一致。
 - [ ] Node 主版本变化时，`coverage.config.json`、覆盖基线、`project-invariants` 与测试入口提示同步。
