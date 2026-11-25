@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { finishRun, signalRunChild, spawnRunChild, stopRunChild } from '../scripts/run-signal.mjs'
+import {
+  finishRun,
+  runChildSpawnOptions,
+  signalRunChild,
+  spawnRunChild,
+  stopRunChild,
+  usesProcessGroup,
+} from '../scripts/run-signal.mjs'
 
 /** Marker carried by every child this file starts, so a leftover is visible. */
 const PROBE = 'run-signal-probe'
@@ -156,4 +163,24 @@ test('finishRun still removes the root when the stop fails', async () => {
 test('stopRunChild tolerates a child that never spawned', async () => {
   await stopRunChild({ pid: undefined })
   await stopRunChild(undefined)
+})
+
+test('a platform without process groups signals the direct child only', async () => {
+  assert.equal(usesProcessGroup('linux'), true)
+  assert.equal(usesProcessGroup('darwin'), true)
+  assert.equal(usesProcessGroup('win32'), false)
+  assert.deepEqual(runChildSpawnOptions({ cwd: '/repo' }, 'win32'), { cwd: '/repo' })
+  assert.equal(runChildSpawnOptions({ cwd: '/repo' }, 'linux').detached, true)
+
+  const signals = []
+  const fake = {
+    pid: 999999,
+    kill(signal) {
+      signals.push(signal)
+      return true
+    },
+  }
+  assert.equal(signalRunChild(fake, 'SIGTERM', 'win32'), true)
+  await stopRunChild(fake, 'win32')
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL'], 'the direct child received both signals')
 })
