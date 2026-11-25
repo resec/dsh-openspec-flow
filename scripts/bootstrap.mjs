@@ -57,7 +57,8 @@ Options:
   --help                 Show this usage and exit.
 
 Environment: OPENSPEC_FLOW_NPM_CACHE selects the npm cache (default
-.cache/npm); PLAYWRIGHT_BROWSERS_PATH selects the Chromium directory.
+.cache/npm); an exported npm_config_cache is ignored; PLAYWRIGHT_BROWSERS_PATH
+selects the Chromium directory.
 
 The script never edits shell rc files, global Git configuration or DSH
 profiles, and never runs the CLI's init or update commands.
