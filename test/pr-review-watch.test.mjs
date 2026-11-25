@@ -27,6 +27,7 @@ import {
   preparePullRequest,
   processStartTime,
   publishComment,
+  readPullRequestStates,
   readReport,
   reclaimStaleRunLock,
   releaseRunLock,
@@ -92,6 +93,11 @@ function makeOrigin(root) {
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return remote
+}
+
+/** Point origin at a GitHub URL so the batched state read resolves a repository. */
+function useGithubOrigin(root) {
+  git(root, ['remote', 'set-url', 'origin', 'https://github.com/owner/repo.git'])
 }
 
 function cleanup(...directories) {
@@ -445,7 +451,13 @@ test('cleanup removes a tracked merged PR checkout and state entry', () => {
     git(root, ['checkout', '-q', 'main'])
     const { gh } = fakeGh(() => prJson({ headRefOid: head }))
     const facts = preparePullRequest({ root, number: 12, gh })
-    const cleanupGh = fakeGh(() => JSON.stringify({ state: 'MERGED', mergedAt: '2026-01-01T00:00:00Z' })).gh
+    useGithubOrigin(root)
+    const cleanupGh = fakeGh((args) => {
+      if (args[0] === 'api' && args[1] === 'graphql') {
+        return JSON.stringify({ data: { repository: { p12: { state: 'MERGED' } } } })
+      }
+      throw new Error(`cleanup made an unexpected gh call: ${args.join(' ')}`)
+    }).gh
     const cleaned = cleanupClosedPullRequests({ root, gh: cleanupGh })
     assert.equal(cleaned.length, 1)
     assert.equal(existsSync(facts.worktree), false)
@@ -880,7 +892,6 @@ test('state cleanup reports a retained unfinished local entry', () => {
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'view') {
         const number = Number(args[2])
-        if (args.includes('mergedAt')) return JSON.stringify({ state: number === 12 ? 'MERGED' : 'OPEN', mergedAt: null })
         return JSON.stringify({ state: number === 12 ? 'MERGED' : 'OPEN' })
       }
       return '[]'
@@ -892,6 +903,226 @@ test('state cleanup reports a retained unfinished local entry', () => {
     assert.deepEqual(Object.keys(loadLocalState(root).prs), ['12'])
   } finally {
     cleanup(root, remote)
+  }
+})
+
+test('the state read batches numbers within one request', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const answer = (args) => {
+      const query = String(args[3]).replace(/^query=/u, '')
+      const numbers = [...query.matchAll(/p(\d+):pullRequest/gu)].map((match) => Number(match[1]))
+      const repository = Object.fromEntries(numbers.map((number) => [`p${number}`, { state: 'OPEN' }]))
+      return JSON.stringify({ data: { repository } })
+    }
+    const once = fakeGh(answer)
+    const states = readPullRequestStates({
+      root,
+      numbers: Array.from({ length: 88 }, (_, index) => index + 1),
+      gh: once.gh,
+    })
+    assert.equal(once.calls.length, 1)
+    assert.equal(states.size, 88)
+    assert.equal(states.get(88), 'OPEN')
+
+    const twice = fakeGh(answer)
+    const all = readPullRequestStates({
+      root,
+      numbers: Array.from({ length: 101 }, (_, index) => index + 1),
+      gh: twice.gh,
+    })
+    assert.equal(twice.calls.length, 2)
+    assert.equal(all.size, 101)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a number the batch leaves out is read on its own', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const fake = fakeGh((args) => {
+      if (args[0] === 'api') return JSON.stringify({ data: { repository: { p7: null, p8: { state: 'OPEN' } } } })
+      return JSON.stringify({ state: 'MERGED' })
+    })
+    const states = readPullRequestStates({ root, numbers: [7, 8], gh: fake.gh })
+    assert.equal(states.get(7), 'MERGED')
+    assert.equal(states.get(8), 'OPEN')
+    assert.deepEqual(fake.calls.map((args) => args.slice(0, 3)), [['api', 'graphql', '-f'], ['pr', 'view', '7']])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a failed individual read fails the state read', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const fake = fakeGh((args) => (args[0] === 'api'
+      ? JSON.stringify({ data: { repository: { p7: null } } })
+      : undefined))
+    assert.throws(() => readPullRequestStates({ root, numbers: [7], gh: fake.gh }), /gh pr view 7 failed/u)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a rejected batch falls back per number while a transient failure is reported', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const rejected = fakeGh((args) => {
+      if (args[0] === 'api') throw new Error('HTTP 422: Something went wrong while executing your query')
+      return JSON.stringify({ state: 'OPEN' })
+    })
+    const states = readPullRequestStates({ root, numbers: [3, 4], gh: rejected.gh })
+    assert.deepEqual([...states.keys()], [3, 4])
+    assert.deepEqual(rejected.calls.map((args) => args[0]), ['api', 'pr', 'pr'])
+
+    const transient = fakeGh((args) => {
+      if (args[0] === 'api') throw new Error('HTTP 503 Service Unavailable')
+      return JSON.stringify({ state: 'OPEN' })
+    })
+    assert.throws(() => readPullRequestStates({ root, numbers: [3, 4], gh: transient.gh }), /503/u)
+    assert.equal(transient.calls.length, 1)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('an origin that is not GitHub reads each number without a batch', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const fake = fakeGh(() => JSON.stringify({ state: 'OPEN' }))
+    const states = readPullRequestStates({ root, numbers: [1, 2], gh: fake.gh })
+    assert.deepEqual([...states.keys()], [1, 2])
+    assert.deepEqual(fake.calls.map((args) => args[1]), ['view', 'view'])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('the state read issues no request without a number to read', () => {
+  const root = makeRepository()
+  try {
+    const fake = fakeGh(() => {
+      throw new Error('no read expected')
+    })
+    assert.deepEqual([...readPullRequestStates({ root, numbers: [], gh: fake.gh })], [])
+    assert.deepEqual([...readPullRequestStates({ root, numbers: [0, -1, 'x'], gh: fake.gh })], [])
+    assert.equal(fake.calls.length, 0)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('an empty or unreadable batch falls back per number', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const empty = fakeGh((args) => (args[0] === 'api' ? undefined : JSON.stringify({ state: 'OPEN' })))
+    const emptyStates = readPullRequestStates({ root, numbers: [3, 4], gh: empty.gh })
+    assert.deepEqual([...emptyStates.keys()], [3, 4])
+    assert.deepEqual(empty.calls.map((args) => args[0]), ['api', 'pr', 'pr'])
+
+    const unreadable = fakeGh((args) => (args[0] === 'api' ? JSON.stringify({ data: { repository: null } }) : JSON.stringify({ state: 'OPEN' })))
+    const unreadableStates = readPullRequestStates({ root, numbers: [3], gh: unreadable.gh })
+    assert.equal(unreadableStates.get(3), 'OPEN')
+    assert.equal(unreadable.calls.length, 2)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('cleanup reads the tracked and local numbers in one request', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const prs = {}
+    for (let number = 1; number <= 88; number += 1) {
+      prs[number] = {
+        number,
+        head: HEAD,
+        base: BASE,
+        change: 'widget',
+        worktree: join(root, '.cache', 'pr-review', 'worktrees', `pr-${number}`),
+        status: 'commented',
+      }
+    }
+    saveState(root, { schemaVersion: 1, prs })
+    const fake = fakeGh((args) => {
+      const query = String(args[3]).replace(/^query=/u, '')
+      const numbers = [...query.matchAll(/p(\d+):pullRequest/gu)].map((match) => Number(match[1]))
+      const repository = Object.fromEntries(numbers.map((number) => [`p${number}`, { state: 'OPEN' }]))
+      return JSON.stringify({ data: { repository } })
+    })
+    const cleaned = cleanupClosedPullRequests({ root, gh: fake.gh })
+    assert.deepEqual(cleaned, [])
+    assert.equal(fake.calls.length, 1)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a batched and a per-number read reach the same cleanup decision', () => {
+  const outcomes = []
+  for (const mode of ['batched', 'individual']) {
+    const root = makeRepository()
+    const remote = makeOrigin(root)
+    try {
+      if (mode === 'batched') useGithubOrigin(root)
+      const worktree = join(root, '.cache', 'pr-review', 'worktrees', 'pr-12')
+      saveState(root, {
+        schemaVersion: 1,
+        prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', worktree, status: 'commented' } },
+      })
+      const fake = fakeGh((args) => {
+        if (args[0] === 'api') return JSON.stringify({ data: { repository: { p12: { state: 'MERGED' } } } })
+        return JSON.stringify({ state: 'MERGED' })
+      })
+      const cleaned = cleanupClosedPullRequests({ root, gh: fake.gh })
+      outcomes.push({
+        cleaned: cleaned.map(({ number, change, applyState }) => ({ number, change, applyState })),
+        state: loadState(root).prs,
+        calls: fake.calls.length,
+      })
+    } finally {
+      cleanup(root, remote)
+    }
+  }
+  assert.deepEqual(outcomes[0].cleaned, [{ number: 12, change: 'widget', applyState: null }])
+  assert.deepEqual(outcomes[0].cleaned, outcomes[1].cleaned)
+  assert.deepEqual(outcomes[0].state, outcomes[1].state)
+  assert.deepEqual(outcomes[0].state, {})
+  assert.equal(outcomes[0].calls, 1)
+  assert.equal(outcomes[1].calls, 1)
+})
+
+test('local cleanup decides from a supplied state map without reading', () => {
+  const root = makeRepository()
+  try {
+    saveLocalEntries(root, {
+      12: localEntry({ number: 12, phase: 'landed-offline' }),
+      13: localEntry({ number: 13, phase: 'pushed' }),
+    })
+    const fake = fakeGh(() => {
+      throw new Error('no read expected')
+    })
+    const result = cleanupLocalEntries({ root, gh: fake.gh, states: new Map([[12, 'MERGED'], [13, 'OPEN']]) })
+    assert.deepEqual(result.removed.map((entry) => entry.number), [13])
+    assert.deepEqual(result.retained.map((entry) => entry.number), [12])
+    assert.equal(fake.calls.length, 0)
+  } finally {
+    cleanup(root)
   }
 })
 
