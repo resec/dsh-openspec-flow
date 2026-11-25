@@ -9,12 +9,12 @@ test('the lab environment keeps DSH_HOME under the run and adopts exported cache
   const environment = labEnvironmentForRun({
     root: ROOT,
     run,
-    env: { PLAYWRIGHT_BROWSERS_PATH: '/shared/pw', LAB_NPM_CACHE: '/shared/npm' },
+    env: { PLAYWRIGHT_BROWSERS_PATH: '/shared/pw', OPENSPEC_FLOW_NPM_CACHE: '/shared/npm' },
   })
   assert.equal(environment.DSH_HOME, run.home)
   assert.equal(environment.DSH_AGENTS_HOME, run.agentsHome)
   assert.equal(environment.PLAYWRIGHT_BROWSERS_PATH, '/shared/pw')
-  assert.equal(environment.LAB_NPM_CACHE, '/shared/npm')
+  assert.equal(environment.OPENSPEC_FLOW_NPM_CACHE, '/shared/npm')
   assert.equal(environment.DSH_HOME.includes('profiles'), false)
 })
 

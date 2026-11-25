@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
+import { ghRead } from '../scripts/gh-exec.mjs'
+
 import {
   LANDING_LABEL,
   REVIEW_FAILED_PHASE,
@@ -16,6 +18,8 @@ import {
   failLanding,
   finishLanding,
   hasLandingLabel,
+  isGhWrite,
+  isHeadPoll,
   listLandingCandidates,
   loadLandings,
   main,
@@ -139,6 +143,50 @@ function reviewRecord(root, tree, state = 'passed') {
   writeFileSync(join(directory, 'apply-review.json'), `${JSON.stringify({ state, treeSha: tree }, null, 2)}\n`)
 }
 
+function writeParallelDraft(root) {
+  mkdirSync(join(root, 'openspec', 'changes', 'other'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'other', 'proposal.md'), '# Other\n')
+}
+
+function moveWidgetToArchive(root, name = '2026-01-01-widget') {
+  renameSync(join(root, 'openspec/changes/widget'), join(root, 'openspec/changes/archive', name))
+}
+
+function landingToArchivePending({ changeSpec = false, draft = false } = {}) {
+  const { root, remote } = makeRepo()
+  if (draft) writeParallelDraft(root)
+  if (changeSpec) {
+    const directory = join(root, 'openspec', 'changes', 'widget', 'specs', 'widget')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, 'spec.md'), '# Widget spec\n')
+    git(root, ['add', '.'])
+    git(root, ['commit', '-qm', 'add the widget delta'])
+    git(root, ['push', '-q', 'origin', 'main'])
+  }
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  const onMerge = () => {
+    git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
+  }
+  mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
+  return { root, remote, prepared }
+}
+
+function landingToReviewed() {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
+  const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
+  reviewRecord(root, tree)
+  reviewedLanding({ root, number: 12, apply: true })
+  return { root, remote, head, prepared }
+}
+
 test('help and argument parsing are strict', () => {
   assert.equal(parseArgs(['--help']).command, 'help')
   assert.equal(parseArgs(['plan', '12']).number, 12)
@@ -180,6 +228,12 @@ test('landing documentation names the label, candidates, resume and recovery', (
   assert.match(doc, /state --fail/)
   assert.match(doc, /`review-failed`/)
   assert.match(doc, /every five minutes/)
+  assert.match(doc, /archive <n> --apply/)
+  assert.match(doc, /body is empty/)
+  assert.match(doc, /capability directories/)
+  const agents = readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8')
+  assert.match(agents, /tolerates other changes' uncommitted planning files/)
+  assert.match(agents, /subject-only commit/)
 })
 
 test('label and trusted pass checks are exact', () => {
@@ -473,9 +527,9 @@ test('archive and push failures keep retryable phases', () => {
   mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
   assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /archive failed/)
   assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
-  git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
-  git(root, ['commit', '-qm', 'archive widget'])
+  renameSync(join(root, 'openspec/changes/widget'), join(root, 'openspec/changes/archive/2026-01-01-widget'))
   archiveLanding({ root, number: 12, apply: true })
+  assert.equal(loadLandings(root).lands['12'].phase, 'archived')
   assert.throws(() => pushLanding({ root, number: 12, apply: true }), /push failed/)
   assert.equal(loadLandings(root).lands['12'].phase, 'push-pending')
   git(root, ['push', '-q', 'origin', 'main'])
@@ -552,8 +606,7 @@ test('merge verifies the merged tree and archive/push/finish complete the landin
   assert.equal(merged.reviewedTree, tree)
   assert.equal(mergeLanding({ root, number: 12, apply: true, gh: () => { throw new Error('must not merge twice') } }).phase, 'archive-pending')
   assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /still active/)
-  git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
-  git(root, ['commit', '-qm', 'archive widget'])
+  renameSync(join(root, 'openspec/changes/widget'), join(root, 'openspec/changes/archive/2026-01-01-widget'))
   archiveLanding({ root, number: 12, apply: true })
   assert.throws(() => pushLanding({ root, number: 12, apply: true }), /not pushed/)
   git(root, ['push', '-q', 'origin', 'main'])
@@ -1031,8 +1084,7 @@ test('a contributor landing may hold the landing lock for its own run', () => {
       git(root, ['push', '-q', 'origin', `${prepared.landingHead}:refs/heads/main`])
     }
     mergeLanding({ root, number: 12, apply: true, session: 'watch-1', gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
-    git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
-    git(root, ['commit', '-qm', 'archive widget'])
+    renameSync(join(root, 'openspec/changes/widget'), join(root, 'openspec/changes/archive/2026-01-01-widget'))
     archiveLanding({ root, number: 12, apply: true, session: 'watch-1' })
     git(root, ['push', '-q', 'origin', 'main'])
     pushLanding({ root, number: 12, apply: true, session: 'watch-1' })
@@ -1059,8 +1111,7 @@ test('a ready contributor landing merges, archives, pushes and finishes in one r
     }
     const merged = mergeLanding({ root, number: 12, apply: true, gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge }) })
     assert.equal(merged.phase, 'archive-pending')
-    git(root, ['mv', 'openspec/changes/widget', 'openspec/changes/archive/2026-01-01-widget'])
-    git(root, ['commit', '-qm', 'archive widget'])
+    renameSync(join(root, 'openspec/changes/widget'), join(root, 'openspec/changes/archive/2026-01-01-widget'))
     const archived = archiveLanding({ root, number: 12, apply: true })
     assert.equal(archived.phase, 'archived')
     git(root, ['push', '-q', 'origin', 'main'])
@@ -1393,7 +1444,7 @@ test('sync-batch reads the open list without change paths and inspects each labe
     const head = addBatchPullRequest(root, remote, 12)
     advanceMain(root)
     const gh = batchGh(batchRows([{ number: 12, head }]))
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
     const list = gh.calls.find((args) => args[0] === 'pr' && args[1] === 'list')
     const fields = list[list.indexOf('--json') + 1]
     assert.equal(fields.split(',').includes('files'), false)
@@ -1428,7 +1479,7 @@ test('sync-batch leaves out a row that changes two active changes', () => {
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
     assert.equal(result.eligible, 1)
     assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced'])
     assert.equal(base.calls.some((args) => args[0] === 'api' && args[1] === '--method' && String(args[3]).includes('13')), false)
@@ -1437,7 +1488,7 @@ test('sync-batch leaves out a row that changes two active changes', () => {
   }
 })
 
-test('sync-batch retries the open list once after a transient gateway error', () => {
+test('sync-batch does not retry the open list itself', () => {
   const { root, remote } = makeRepo()
   try {
     const head = addBatchPullRequest(root, remote, 12)
@@ -1447,14 +1498,14 @@ test('sync-batch retries the open list once after a transient gateway error', ()
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
         lists += 1
-        if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)')
+        throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)')
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
-    assert.equal(lists, 2)
-    assert.equal(result.changed, true)
-    assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:synced'])
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(lists, 1)
+    assert.equal(result.unavailable, true)
+    assert.equal(result.changed, false)
   } finally {
     cleanup(root, remote)
   }
@@ -1482,8 +1533,8 @@ test('sync-batch reports an inspection refusal without counting it in the remain
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, limit: 1, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
-    assert.equal(views, 2)
+    const result = syncBatch({ root, gh, apply: true, limit: 1, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(views, 1)
     assert.equal(result.eligible, 2)
     assert.equal(result.updated, 1)
     assert.equal(result.remaining, 1)
@@ -1508,7 +1559,7 @@ test('sync-batch does not retry the update-branch request', () => {
       }
       return base(args)
     }
-    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0, retryDelayMs: 0 })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
     assert.equal(updates, 1)
     assert.equal(result.changed, false)
     assert.deepEqual(result.results.map((entry) => `${entry.number}:${entry.status}`), ['12:refused'])
@@ -1528,14 +1579,39 @@ test('sync-batch reports an unavailable open list without writing state', () => 
       lists += 1
       throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
     }
-    const result = syncBatch({ root, gh, apply: true, retryDelayMs: 0 })
-    assert.equal(lists, 2)
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(lists, 1)
     assert.equal(result.unavailable, true)
     assert.equal(result.apply, true)
     assert.equal(result.locked, false)
     assert.equal(result.changed, false)
     assert.deepEqual(result.results, [])
     assert.equal(existsSync(join(resolvePaths(root).cache, 'landings.json')), false)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('sync-batch leaves the retry policy to one layer', () => {
+  const { root, remote } = makeRepo()
+  try {
+    const spawns = []
+    const spawn = (command, args) => {
+      spawns.push(args.join(' '))
+      return { status: 1, signal: null, stdout: '', stderr: 'HTTP 504: 504 Gateway Timeout' }
+    }
+    const config = {
+      timeoutMs: 20_000,
+      attempts: 3,
+      backoffMs: [0, 0],
+      pollTimeoutMs: 5_000,
+      probeTimeoutMs: 5_000,
+      fetchTimeoutMs: 30_000,
+    }
+    const gh = (args, cwd) => ghRead(args, { cwd, spawn, config, sleep: () => {} })
+    const result = syncBatch({ root, gh, apply: true, pollAttempts: 1, pollIntervalMs: 0 })
+    assert.equal(result.unavailable, true)
+    assert.equal(spawns.length, 3)
   } finally {
     cleanup(root, remote)
   }
@@ -1559,4 +1635,240 @@ test('the sync-batch command exits successfully when the open list is unavailabl
   } finally {
     cleanup(root, remote, bin)
   }
+})
+
+test('landing tolerates another change planning directory through prepare and merge', () => {
+  const { root } = landingToArchivePending({ draft: true })
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-pending')
+  assert.equal(existsSync(join(root, 'openspec', 'changes', 'other', 'proposal.md')), true)
+})
+
+test('landing refuses own dirt, outside dirt, a staged index and off-main', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
+  writeFileSync(join(root, 'openspec', 'changes', 'widget', 'extra.md'), 'extra\n')
+  assert.throws(() => planLanding({ root, number: 12, gh: fake }), /clean main worktree[\s\S]*extra\.md/)
+  rmSync(join(root, 'openspec', 'changes', 'widget', 'extra.md'))
+  writeFileSync(join(root, 'notes.txt'), 'notes\n')
+  assert.throws(() => planLanding({ root, number: 12, gh: fake }), /clean main worktree[\s\S]*notes\.txt/)
+  rmSync(join(root, 'notes.txt'))
+  writeFileSync(join(root, 'staged.txt'), 'staged\n')
+  git(root, ['add', 'staged.txt'])
+  assert.throws(() => planLanding({ root, number: 12, gh: fake }), /empty index/)
+  git(root, ['reset', '-q', 'staged.txt'])
+  rmSync(join(root, 'staged.txt'))
+  git(root, ['checkout', '-q', '-b', 'side'])
+  assert.throws(
+    () => planLanding({ root, number: 12, gh: () => { throw new Error('must not be called') } }),
+    /must run from main/,
+  )
+})
+
+test('merge refuses a staged index before gh and stays reviewed', () => {
+  const { root, head } = landingToReviewed()
+  writeFileSync(join(root, 'staged.txt'), 'staged\n')
+  git(root, ['add', 'staged.txt'])
+  let merged = 0
+  assert.throws(() => mergeLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: fakeGh({ pr: JSON.parse(prJson(head)), onMerge: () => { merged += 1 } }),
+  }), /empty index/)
+  assert.equal(merged, 0)
+  assert.equal(loadLandings(root).lands['12'].phase, 'reviewed')
+})
+
+test('candidates tolerates another change planning directory', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  writeParallelDraft(root)
+  const result = listLandingCandidates({
+    root,
+    gh: fakeGh({
+      pr: JSON.parse(prJson(head)),
+      list: [{ number: 12, labels: [{ name: LANDING_LABEL }] }],
+    }),
+  })
+  assert.equal(result.blocked, undefined)
+  assert.equal(result.candidates.length, 1)
+})
+
+test('sync runs with a dirty main worktree and refuses off main', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  writeFileSync(join(root, 'README.md'), 'dirty main\n')
+  writeFileSync(join(root, 'notes.txt'), 'notes\n')
+  const newHead = 'e'.repeat(40)
+  const result = syncLanding({
+    root,
+    number: 12,
+    apply: true,
+    gh: syncGh(JSON.parse(prJson(head)), { newHead }),
+    pollAttempts: 2,
+    pollIntervalMs: 0,
+  })
+  assert.equal(result.newHead, newHead)
+  git(root, ['checkout', '-q', '-b', 'side'])
+  assert.throws(() => syncLanding({ root, number: 12, gh: syncGh(JSON.parse(prJson(head))) }), /must run from main/)
+})
+
+test('sync-batch runs with a dirty main worktree', () => {
+  const { root, remote } = makeRepo()
+  const { head } = addPullRequest(root, remote)
+  advanceMain(root)
+  writeFileSync(join(root, 'README.md'), 'dirty main\n')
+  writeFileSync(join(root, 'notes.txt'), 'notes\n')
+  const newHead = 'f'.repeat(40)
+  let updated = false
+  const pr = JSON.parse(prJson(head))
+  const gh = (args) => {
+    if (args[0] === 'pr' && args[1] === 'list') {
+      return JSON.stringify([{
+        number: 12,
+        headRefName: 'pr-branch',
+        headRefOid: head,
+        baseRefName: 'main',
+        isDraft: false,
+        isCrossRepository: false,
+        labels: [{ name: LANDING_LABEL }],
+      }])
+    }
+    if (args[0] === 'pr' && args[1] === 'view' && args.includes('files')) {
+      return JSON.stringify({ files: [{ path: 'openspec/changes/widget/proposal.md' }] })
+    }
+    if (args[0] === 'api' && args[1] === 'user') return LOGIN
+    if (args[0] === 'api') {
+      updated = true
+      return '{}'
+    }
+    if (args[0] === 'pr' && args[1] === 'view' && args[4] === 'headRefOid') {
+      return JSON.stringify({ headRefOid: updated ? newHead : head })
+    }
+    if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(pr)
+    throw new Error(`unexpected gh ${args.join(' ')}`)
+  }
+  const result = syncBatch({ root, apply: true, gh, pollAttempts: 2, pollIntervalMs: 0, retryDelayMs: 0 })
+  assert.equal(result.changed, true)
+  assert.equal(result.updated, 1)
+})
+
+test('archive commits only its own outputs and leaves a parallel draft untracked', () => {
+  const { root } = landingToArchivePending()
+  writeParallelDraft(root)
+  moveWidgetToArchive(root)
+  const entry = archiveLanding({ root, number: 12, apply: true })
+  assert.equal(entry.phase, 'archived')
+  const head = git(root, ['rev-parse', 'HEAD'])
+  assert.equal(entry.archiveCommit, head)
+  assert.equal(git(root, ['show', '-s', '--format=%B', 'HEAD']), 'chore(openspec): archive widget')
+  const paths = git(root, ['show', '--no-renames', '--name-only', '--format=', 'HEAD']).split('\n').filter((path) => path !== '')
+  assert.ok(paths.some((path) => path.startsWith('openspec/changes/archive/2026-01-01-widget/')))
+  assert.ok(paths.includes('openspec/changes/widget/proposal.md'))
+  assert.equal(paths.some((path) => path.startsWith('openspec/changes/other/')), false)
+  assert.equal(git(root, ['status', '--porcelain']), '?? openspec/changes/other/')
+})
+
+test('archive stages the named capability directories', () => {
+  const { root } = landingToArchivePending({ changeSpec: true })
+  moveWidgetToArchive(root)
+  mkdirSync(join(root, 'openspec', 'specs', 'widget'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'specs', 'widget', 'spec.md'), '# Merged widget spec\n')
+  archiveLanding({ root, number: 12, apply: true })
+  const paths = git(root, ['show', '--no-renames', '--name-only', '--format=', 'HEAD']).split('\n').filter((path) => path !== '')
+  assert.ok(paths.includes('openspec/specs/widget/spec.md'))
+  assert.ok(paths.some((path) => path.startsWith('openspec/changes/archive/2026-01-01-widget/specs/widget/')))
+})
+
+test('archive refuses a spec outside the named capabilities', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  mkdirSync(join(root, 'openspec', 'specs', 'other'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'specs', 'other', 'spec.md'), '# Other\n')
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /outside its outputs/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
+test('archive refuses a leftover under the source change directory', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  mkdirSync(join(root, 'openspec', 'changes', 'widget'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'widget', 'leftover.md'), 'leftover\n')
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /outside its outputs/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
+test('archive refuses a staged set that is already committed', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-qm', 'chore(openspec): archive widget'])
+  assert.throws(() => archiveLanding({ root, number: 12, apply: true }), /produced no staged changes/)
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
+test('archive --commit records a commit whose paths stay inside the archive scope', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-qm', 'chore(openspec): archive widget'])
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const entry = archiveLanding({ root, number: 12, commit: head, apply: true })
+  assert.equal(entry.phase, 'archived')
+  assert.equal(entry.archiveCommit, head)
+})
+
+test('archive --commit refuses a commit that changes a path outside the scope', () => {
+  const { root } = landingToArchivePending()
+  moveWidgetToArchive(root)
+  mkdirSync(join(root, 'openspec', 'changes', 'other'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'other', 'proposal.md'), '# Other\n')
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-qm', 'chore(openspec): archive widget'])
+  const head = git(root, ['rev-parse', 'HEAD'])
+  assert.throws(
+    () => archiveLanding({ root, number: 12, commit: head, apply: true }),
+    /outside its scope/,
+  )
+  assert.equal(loadLandings(root).lands['12'].phase, 'archive-failed')
+})
+
+test('archive refuses a missing or ambiguous archived directory', () => {
+  const first = landingToArchivePending()
+  rmSync(join(first.root, 'openspec', 'changes', 'widget'), { recursive: true })
+  git(first.root, ['rm', '-r', '--cached', '-q', '--', 'openspec/changes/widget'])
+  assert.throws(() => archiveLanding({ root: first.root, number: 12, apply: true }), /has no archive directory/)
+  const second = landingToArchivePending()
+  moveWidgetToArchive(second.root)
+  mkdirSync(join(second.root, 'openspec', 'changes', 'archive', '2026-01-02-widget'), { recursive: true })
+  writeFileSync(join(second.root, 'openspec', 'changes', 'archive', '2026-01-02-widget', 'proposal.md'), '# Second\n')
+  assert.throws(() => archiveLanding({ root: second.root, number: 12, apply: true }), /more than one archive directory/)
+})
+
+test('archive refuses an unsafe capability name and a staged index', () => {
+  const first = landingToArchivePending()
+  moveWidgetToArchive(first.root)
+  mkdirSync(join(first.root, 'openspec', 'changes', 'archive', '2026-01-01-widget', 'specs', 'escape\\name'), { recursive: true })
+  writeFileSync(
+    join(first.root, 'openspec', 'changes', 'archive', '2026-01-01-widget', 'specs', 'escape\\name', 'spec.md'),
+    '# Escape\n',
+  )
+  assert.throws(() => archiveLanding({ root: first.root, number: 12, apply: true }), /not a safe path segment/)
+  const second = landingToArchivePending()
+  moveWidgetToArchive(second.root)
+  writeFileSync(join(second.root, 'staged.txt'), 'staged\n')
+  git(second.root, ['add', 'staged.txt'])
+  assert.throws(() => archiveLanding({ root: second.root, number: 12, apply: true }), /empty index/)
+  assert.equal(loadLandings(second.root).lands['12'].phase, 'archive-failed')
+})
+
+test('the landing runner classifies writes and the head poll', () => {
+  assert.equal(isGhWrite(['pr', 'merge', '12', '--rebase']), true)
+  assert.equal(isGhWrite(['api', '--method', 'PUT', 'repos/{owner}/{repo}/pulls/12/update-branch']), true)
+  assert.equal(isGhWrite(['api', 'user', '--jq', '.login']), false)
+  assert.equal(isHeadPoll(['pr', 'view', '12', '--json', 'headRefOid']), true)
+  assert.equal(isHeadPoll(['pr', 'view', '12', '--json', 'files']), false)
+  assert.equal(isHeadPoll(['pr', 'list', '--state', 'open']), false)
 })
