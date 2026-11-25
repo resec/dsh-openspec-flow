@@ -37,7 +37,7 @@ The repository SHALL require strict OpenSpec validation and one verification com
 #### Scenario: A change is finished
 
 - **WHEN** every task is checked
-- **THEN** `openspec_validate` passes with `strict: true`
+- **THEN** `openspec_inspect` with `action: "validate"` and `strict: true` passes
 - **AND** `npm run verify` passes on Node 24
 - **AND** its output carries both the test summary and the coverage verdict
 
@@ -71,7 +71,7 @@ The repository SHALL archive a change before the archive commit is pushed to `or
 
 #### Scenario: A change is not yet archived
 
-- **WHEN** a maintainer-authored change's tasks are incomplete or `openspec_validate` fails
+- **WHEN** a maintainer-authored change's tasks are incomplete or `openspec_inspect` with `action: "validate"` fails
 - **THEN** no archive commit is created and no implementation from that change is pushed directly to `main`
 
 #### Scenario: An external contribution is merged before archive
