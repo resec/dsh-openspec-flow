@@ -288,7 +288,11 @@ export async function main(argv, { version, spawn: spawner, gitStatus, tmpDir } 
     return result.status ?? 1
   } finally {
     for (const [signal, handler] of handlers) process.removeListener(signal, handler)
-    await finishRun(lastChild, finish)
+    try {
+      await finishRun(lastChild, finish)
+    } catch (error) {
+      console.error(`affected tests: cannot stop the run group: ${error.message}`)
+    }
   }
 }
 

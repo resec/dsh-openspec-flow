@@ -137,3 +137,23 @@ test('finishRun without a child only removes the root', async () => {
   assert.equal(stopped, false, 'no child means no stop step')
   assert.deepEqual(order, ['finish'])
 })
+
+test('finishRun still removes the root when the stop fails', async () => {
+  const order = []
+  await assert.rejects(
+    finishRun(
+      { pid: -1 },
+      () => order.push('finish'),
+      async () => {
+        throw new Error('stop failed')
+      },
+    ),
+    /stop failed/,
+  )
+  assert.deepEqual(order, ['finish'], 'the cleanup ran despite the stop failure')
+})
+
+test('stopRunChild tolerates a child that never spawned', async () => {
+  await stopRunChild({ pid: undefined })
+  await stopRunChild(undefined)
+})

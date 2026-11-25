@@ -61,7 +61,7 @@ export function signalRunChild(child, signal) {
  * @returns a promise that settles once the group is gone or the bound expires.
  */
 export async function stopRunChild(child) {
-  if (child === undefined) return
+  if (child === undefined || child.pid === undefined) return
   if (!POSIX) {
     try {
       child.kill('SIGKILL')
@@ -101,6 +101,9 @@ export async function stopRunChild(child) {
  * @returns a promise that settles after the cleanup ran.
  */
 export async function finishRun(child, finish, stop = stopRunChild) {
-  if (child !== undefined) await stop(child)
-  finish()
+  try {
+    if (child !== undefined) await stop(child)
+  } finally {
+    finish()
+  }
 }
