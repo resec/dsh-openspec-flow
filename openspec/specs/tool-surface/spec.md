@@ -573,20 +573,6 @@ The plugin SHALL expose `openspec_review` for the draft review. Its `action` par
 - **WHEN** `openspec_review` receives an action outside the supported set
 - **THEN** the parameter schema rejects the call before execution
 
-### Requirement: Draft review tool is absent when disabled
-
-The plugin SHALL register `openspec_review` only while the draft review is enabled. When the draft review is disabled, an agent's tool catalog SHALL contain no `openspec_review` entry.
-
-#### Scenario: Draft review is disabled
-
-- **WHEN** the plugin loads with `reviews.draft.enabled` false
-- **THEN** the tool catalog contains no `openspec_review`
-
-#### Scenario: Draft review is enabled
-
-- **WHEN** the plugin loads with `reviews.draft.enabled` true
-- **THEN** the tool catalog contains `openspec_review`
-
 ### Requirement: Apply waits for a ready draft review
 
 `openspec_apply_next` SHALL check the draft review and the applicable lock before the apply state. An unready review names `openspec_review`; a foreign lock names the holder. Git worktree apply uses the per-change lock for implementation and keeps the store-domain lock; compatibility and non-git use the project lock. A first git worktree apply SHALL construct the seal commit in the same call and record it as the base; a later draft mismatch does not refuse.
@@ -1559,3 +1545,22 @@ Once a draft review records a stale notice, `openspec_reviewer` with `action: "s
 
 - **WHEN** the record carries a stale notice and the reviewer submits a valid report with the current round
 - **THEN** the report is stored
+
+### Requirement: The review tool follows the enabled reviews
+
+The plugin SHALL register `openspec_review` while the draft review or the apply review is enabled. When both reviews are disabled, an agent's tool catalog SHALL contain no `openspec_review` entry.
+
+#### Scenario: Both reviews are disabled
+
+- **WHEN** the plugin loads with `reviews.draft.enabled` false and `reviews.apply.enabled` false
+- **THEN** the tool catalog contains no `openspec_review`
+
+#### Scenario: The draft review is enabled
+
+- **WHEN** the plugin loads with `reviews.draft.enabled` true
+- **THEN** the tool catalog contains `openspec_review`
+
+#### Scenario: Only the apply review is enabled
+
+- **WHEN** the plugin loads with `reviews.draft.enabled` false and `reviews.apply.enabled` true
+- **THEN** the tool catalog contains `openspec_review`
