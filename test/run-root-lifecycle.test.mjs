@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -10,6 +10,7 @@ import test from 'node:test'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SCRIPT = join(ROOT, 'scripts', 'affected-tests.mjs')
 const RUNNER = join(ROOT, 'scripts', 'run-tests.mjs')
+const STRAGGLER = 'test/fixtures/run-root-straggler.test.mjs'
 
 /** Longest entrypoint stderr excerpt an assertion message carries. */
 const STDERR_LIMIT = 500
@@ -97,6 +98,57 @@ function stderrClosed(child, timeoutMs = STDERR_DRAIN_MS) {
   })
 }
 
+/** Build the environment that lets the straggler fixture wait for a marker. */
+function stragglerEnv(probe, markers, extra = {}) {
+  return {
+    TMPDIR: probe,
+    RUN_ROOT_STRAGGLER_SIGNAL: join(markers, 'signal'),
+    RUN_ROOT_STRAGGLER_PID: join(markers, 'pid'),
+    ...extra,
+  }
+}
+
+/** Read the pid the fixture recorded for the straggler it left behind. */
+function stragglerPid(markers) {
+  try {
+    return Number(readFileSync(join(markers, 'pid'), 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+/** Stop a straggler that a reverted fix left running. */
+function killStraggler(markers) {
+  const pid = stragglerPid(markers)
+  if (pid === undefined || Number.isNaN(pid)) return
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // Already gone.
+  }
+}
+
+/** Release the straggler's write and give it time to run. */
+async function triggerStraggler(markers) {
+  writeFileSync(join(markers, 'signal'), '')
+  await new Promise((resolve) => setTimeout(resolve, 300))
+}
+
+/**
+ * Create the marker directory a straggler test uses.
+ *
+ * One hook stops a straggler a reverted fix left running and then removes the
+ * directory, so the pid file is still readable when the stop runs.
+ */
+function markerDir(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'run-root-markers-'))
+  t.after(() => {
+    killStraggler(directory)
+    rmSync(directory, { recursive: true, force: true })
+  })
+  return directory
+}
+
 test('a passing scoped run removes its run root', async (t) => {
   const probe = scratch(t)
   const result = await runScoped(['--run', 'test/temp.test.mjs'], { TMPDIR: probe })
@@ -142,6 +194,91 @@ test('a scoped run interrupted by SIGTERM removes its root and exits 143', async
   } finally {
     clearTimeout(timer)
   }
+})
+
+test('a scoped run stops a straggler before removing its root', async (t) => {
+  const probe = scratch(t)
+  const markers = markerDir(t)
+  const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
+    cwd: ROOT,
+    env: childEnv(stragglerEnv(probe, markers)),
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let childStderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { childStderr += chunk })
+  const code = await new Promise((resolve) => child.once('exit', (value) => resolve(value)))
+  assert.equal(code, 0, stderrNote(childStderr))
+  await triggerStraggler(markers)
+  assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
+})
+
+test('a scoped run interrupted by SIGTERM stops a straggler', async (t) => {
+  const probe = scratch(t)
+  const markers = markerDir(t)
+  const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
+    cwd: ROOT,
+    env: childEnv(stragglerEnv(probe, markers, { RUN_ROOT_STRAGGLER_MODE: 'stay' })),
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let childStderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { childStderr += chunk })
+  const exited = new Promise((resolve) => child.once('exit', (value) => resolve(value)))
+  const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
+  try {
+    const code = await exited
+    await stderrClosed(child)
+    assert.equal(code, 143, stderrNote(childStderr))
+    await triggerStraggler(markers)
+    assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
+  } finally {
+    clearTimeout(timer)
+  }
+})
+
+test('a scoped run interrupted by SIGTERM kills a straggler that ignores it', async (t) => {
+  const probe = scratch(t)
+  const markers = markerDir(t)
+  const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
+    cwd: ROOT,
+    env: childEnv(stragglerEnv(probe, markers, {
+      RUN_ROOT_STRAGGLER_MODE: 'stay',
+      RUN_ROOT_STRAGGLER_IGNORE: '1',
+    })),
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let childStderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { childStderr += chunk })
+  const exited = new Promise((resolve) => child.once('exit', (value) => resolve(value)))
+  const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
+  try {
+    const code = await exited
+    await stderrClosed(child)
+    assert.equal(code, 143, stderrNote(childStderr))
+    await triggerStraggler(markers)
+    assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
+  } finally {
+    clearTimeout(timer)
+  }
+})
+
+test('a run without a resolved base still stops a straggler', async (t) => {
+  const missing = join(scratch(t), 'missing')
+  const markers = markerDir(t)
+  const child = spawn(process.execPath, [SCRIPT, '--run', STRAGGLER], {
+    cwd: ROOT,
+    env: childEnv(stragglerEnv(missing, markers)),
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let childStderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { childStderr += chunk })
+  const code = await new Promise((resolve) => child.once('exit', (value) => resolve(value)))
+  assert.equal(code, 0, stderrNote(childStderr))
+  await triggerStraggler(markers)
+  assert.equal(existsSync(missing), false, stderrNote(childStderr))
 })
 
 test('a passing plain run removes its run root', async (t) => {
@@ -192,6 +329,27 @@ test('a plain run interrupted by SIGTERM removes its root and exits 143', async 
   } finally {
     clearTimeout(timer)
   }
+})
+
+test('a plain run stops a straggler before removing its root', async (t) => {
+  const probe = scratch(t)
+  const markers = markerDir(t)
+  const child = spawn(
+    process.execPath,
+    [RUNNER, 'plugin', '--', '--test-name-pattern=run root straggler', STRAGGLER],
+    {
+      cwd: ROOT,
+      env: childEnv(stragglerEnv(probe, markers)),
+      stdio: ['ignore', 'ignore', 'pipe'],
+    },
+  )
+  let childStderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { childStderr += chunk })
+  const code = await new Promise((resolve) => child.once('exit', (value) => resolve(value)))
+  assert.equal(code, 0, stderrNote(childStderr))
+  await triggerStraggler(markers)
+  assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
 })
 
 test('a held stderr pipe yields its capture after the bound', async () => {

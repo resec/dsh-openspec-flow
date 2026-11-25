@@ -13,12 +13,13 @@
  * during apply; the full instrumented run still decides completion.
  */
 
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { constants } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertCurrentNode } from './node-version.mjs'
+import { finishRun, signalRunChild, spawnRunChild } from './run-signal.mjs'
 import { beginRunTempDir, testEnvFor } from './test-env.mjs'
 import { DEFAULT_CONCURRENCY } from './run-tests.mjs'
 
@@ -26,6 +27,9 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /** The child a run is waiting on, so a signal can stop it before the root goes. */
 let activeChild
+
+/** The last runner a run started, kept after exit so a stop can reach its group. */
+let lastChild
 
 /** Entry modules that assemble the plugin; a change to one selects the full suite. */
 const ENTRY_MODULES = new Set(['index.js', 'client.js', 'reviewer.js', 'lib/tools/index.js'])
@@ -200,8 +204,9 @@ function readWorkingTreeChanges(gitStatus) {
  */
 function spawnChild(command, args, options) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, options)
+    const child = spawnRunChild(command, args, options)
     activeChild = child
+    lastChild = child
     child.once('error', (error) => {
       activeChild = undefined
       resolve({ error })
@@ -240,6 +245,7 @@ export async function main(argv, { version, spawn: spawner, gitStatus, tmpDir } 
   }
 
   const runner = spawner ?? spawnChild
+  lastChild = undefined
   const ownsRoot = tmpDir === undefined
   const lifecycle = ownsRoot
     ? beginRunTempDir(process.env)
@@ -251,16 +257,22 @@ export async function main(argv, { version, spawn: spawner, gitStatus, tmpDir } 
     for (const [signal, number] of [['SIGINT', 2], ['SIGTERM', 15]]) {
       const handler = () => {
         const code = 128 + number
-        const stop = () => {
-          finish()
+        const stop = async () => {
+          try {
+            await finishRun(lastChild, finish)
+          } catch (error) {
+            console.error(`affected tests: cannot stop the run group: ${error.message}`)
+          }
           process.exit(code)
         }
         if (activeChild === undefined) {
           stop()
           return
         }
-        activeChild.once('exit', stop)
-        activeChild.kill(signal)
+        activeChild.once('exit', () => {
+          stop()
+        })
+        signalRunChild(activeChild, signal)
       }
       process.on(signal, handler)
       handlers.push([signal, handler])
@@ -276,7 +288,11 @@ export async function main(argv, { version, spawn: spawner, gitStatus, tmpDir } 
     return result.status ?? 1
   } finally {
     for (const [signal, handler] of handlers) process.removeListener(signal, handler)
-    finish()
+    try {
+      await finishRun(lastChild, finish)
+    } catch (error) {
+      console.error(`affected tests: cannot stop the run group: ${error.message}`)
+    }
   }
 }
 

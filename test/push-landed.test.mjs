@@ -39,6 +39,18 @@ function makeRepository() {
   const initial = git(root, ['rev-parse', 'HEAD'])
   const origin = tempDir('dsh-push-landed-origin-')
   git(root, ['init', '--bare', '-q', origin])
+  // A bare repository inherits `init.defaultBranch` for HEAD, so deleting `main`
+  // would be refused on a host that defaults to it. Point HEAD at a branch that
+  // is never pushed so the missing-main scenario does not depend on host config.
+  git(origin, ['symbolic-ref', 'HEAD', 'refs/heads/trunk'])
+  // Pin the branch the fixture depends on: the missing-main scenario deletes
+  // `main` from the remote, and a bare repository refuses to delete the branch
+  // its HEAD points at. The HEAD a fresh bare repository gets follows the
+  // host's `init.defaultBranch`, so naming `trunk` here keeps the guard
+  // independent of that setting: dropping the line above leaves HEAD at
+  // `refs/heads/main` or `refs/heads/master`, neither of which is `trunk`, so
+  // this assertion fails on every host instead of only on one defaulting to main.
+  assert.equal(git(origin, ['symbolic-ref', 'HEAD']), 'refs/heads/trunk')
   git(root, ['remote', 'add', 'origin', origin])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return { root, origin, initial }
