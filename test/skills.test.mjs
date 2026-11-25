@@ -137,12 +137,20 @@ test('the propose and apply skills dispose findings in one batch', () => {
 test('the skills cover a landed worktree and a waived reviewer', () => {
   const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
   assert.match(archive, /already archived/)
+  assert.match(archive, /already archived and stop/)
+  assert.match(archive, /do not call `openspec_archive` or land again/)
   assert.match(archive, /`repair\.action: "cleanup"`/)
   for (const name of ['openspec-propose', 'openspec-apply-change']) {
     const raw = readFileSync(packagedSkillPath(name), 'utf8')
     assert.match(raw, /`action: "waive-reviewer"`/, name)
-    assert.match(raw, /continue with the returned `nextAction`/, name)
+    assert.match(raw, /`approvedBy: "user"` and the waiver text/, name)
+    assert.match(raw, /follow the returned `nextAction` only when it names another `openspec_review` action/, name)
+    assert.match(raw, /Never call `openspec_apply_next` from a waiver result/, name)
   }
+  const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
+  assert.match(propose, /present the proposal instead of starting apply/)
+  const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
+  assert.match(apply, /go to Finish instead of calling `openspec_apply_next` again/)
 })
 
 test('the apply and archive skills run the apply review', () => {

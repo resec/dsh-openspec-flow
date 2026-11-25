@@ -7,7 +7,7 @@
 
 ## 2. Guard the text
 
-- [x] 2.1 Add a test to `test/skills.test.mjs` asserting the `already archived` phrase and the continue-after-waiver sentence in each skill.
+- [x] 2.1 Add a test to `test/skills.test.mjs` asserting the `already archived` phrase, the refusal to call `openspec_archive` or land again, the scoped `nextAction` sentence and `approvedBy: "user"` in each review skill.
 - [x] 2.2 Confirm the new assertions fail once the sentences are removed.
 
 ## 3. Verify

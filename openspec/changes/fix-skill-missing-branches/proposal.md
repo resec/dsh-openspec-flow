@@ -8,7 +8,7 @@
 
 - The archive skill adds an `archived`-with-no-cleanup branch next to the existing `repair.action: "cleanup"` branch: report that the change is already archived and stop, without calling `openspec_archive` or land again.
 - The propose and apply skills add one sentence for the approved `waive-reviewer` call: follow the returned `nextAction` only when it names another `openspec_review` action. A waiver that leaves the review ready continues with the skill's own step — present the proposal in propose, go to Finish in apply — and never calls `openspec_apply_next`.
-- `test/skills.test.mjs` asserts the `already archived` phrase and the continue-after-waiver sentence.
+- `test/skills.test.mjs` asserts the `already archived` and no-retry phrases, the scoped `nextAction` sentence and `approvedBy: "user"` in each review skill.
 
 ## Capabilities
 
