@@ -14,7 +14,7 @@ import {
   TIMEOUT_RANGE_MS,
 } from '../scripts/gh-exec.mjs'
 import { DETAIL_CHUNK_SIZE, RECONCILE_LIST_FIELDS } from '../scripts/pr-review-owner-review.mjs'
-import { TELEMETRY_FILE, TELEMETRY_MAX_LINES } from '../scripts/pr-review-watch.mjs'
+import { STATE_CHUNK_SIZE, TELEMETRY_FILE, TELEMETRY_MAX_LINES } from '../scripts/pr-review-watch.mjs'
 
 const doc = readFileSync(new URL('../docs/pr-review.md', import.meta.url), 'utf8')
 
@@ -44,6 +44,7 @@ test('the documented retry, batching, lock and telemetry behaviour is named', ()
   assert.match(doc, /stale-lock-reclaimed pid=/u)
   assert.match(doc, /ten minutes/u)
   assert.match(doc, new RegExp(`at most ${DETAIL_CHUNK_SIZE} pull requests`, 'u'))
+  assert.match(doc, new RegExp(`at most ${STATE_CHUNK_SIZE} numbers`, 'u'))
   assert.match(doc, new RegExp(TELEMETRY_FILE, 'u'))
   assert.match(doc, new RegExp(`${TELEMETRY_MAX_LINES} lines`, 'u'))
   assert.match(doc, new RegExp(RECONCILE_LIST_FIELDS.split(',').length + ' milliseconds|lightweight open list', 'u'))
