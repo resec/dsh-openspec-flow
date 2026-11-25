@@ -117,6 +117,12 @@ test('the core set is independent of the file list', () => {
   assert.ok(expectedPublishedPaths(ROOT).includes('lib/bundle.js'))
 })
 
+test('the toolchain record helper ships from lib and never from scripts', () => {
+  const paths = expectedPublishedPaths(ROOT)
+  assert.deepEqual(paths.filter((path) => path.includes('toolchain-record')), ['lib/toolchain-record.js'])
+  assert.ok(!paths.some((path) => path.startsWith('scripts/')))
+})
+
 test('expands the manifest files on top of the core', () => {
   const root = fixture()
   try {

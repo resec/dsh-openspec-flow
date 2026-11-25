@@ -287,7 +287,7 @@ The repository SHALL NOT track, publish, or retain in reachable history any host
 
 ### Requirement: DSH runtime upgrades follow a documented procedure
 
-The repository SHALL document one procedure for moving `engines.dsh` to a new exact DSH runtime and SHALL follow it for every upgrade. The procedure MUST state the compatibility gate, the target version's declared Node floor, the DSH coupling inventory, the ordered edits, the candidate verification, the test matrix, release and rollback.
+The repository SHALL document one procedure for moving `engines.dsh` to a new exact DSH runtime and SHALL follow it for every upgrade. The procedure MUST state the compatibility gate, the target version's declared Node floor, the target release's declared pnpm version, the DSH coupling inventory, the ordered edits, the candidate verification, the test matrix, release and rollback.
 
 #### Scenario: An upgrade starts with the target runtime facts
 
@@ -295,6 +295,7 @@ The repository SHALL document one procedure for moving `engines.dsh` to a new ex
 - **THEN** the maintainer records its release notes and compare link
 - **AND** confirms the exact version is published on the npm registry
 - **AND** records its declared `engines.node` and the Node major its tests require
+- **AND** records the pnpm version the target tag declares in its root `packageManager`
 
 #### Scenario: Manifest and runtime baseline move together
 
@@ -328,6 +329,12 @@ The repository SHALL document one procedure for moving `engines.dsh` to a new ex
 - **THEN** the guide's content remains the procedure and the current pin
 - **AND** no section records that upgrade's version-to-version changes, measurements or outcomes
 - **AND** the upgrade's evidence lives in the change artifacts and commit history
+
+#### Scenario: The pnpm pin moves with the target
+
+- **WHEN** the target tag declares a different pnpm version
+- **THEN** the toolchain pin, the CI workflow and the lab documentation change in the same change
+- **AND** the lab passes with that version
 
 ### Requirement: Repository changes pass the review gates
 

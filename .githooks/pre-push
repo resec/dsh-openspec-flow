@@ -12,6 +12,19 @@ saw_ref=0
 only_main=1
 main_local_sha=
 main_remote_sha=
+# Put the current worktree's recorded Node first, so validation and verification
+# run on the runtime the stamp names. No record keeps the inherited PATH.
+if [ -f .cache/toolchain/manifest.json ]; then
+  if ! record_node=$(node scripts/toolchain.mjs node-path 2>&1); then
+    printf '%s\n' "$record_node" >&2
+    exit 1
+  fi
+  if [ -n "$record_node" ]; then
+    PATH="$(dirname "$record_node"):$PATH"
+    export PATH
+  fi
+fi
+
 # Git supplies the refs on a pipe. A terminal stdin has no refs, so it takes
 # the fallback instead of waiting for a line.
 if [ ! -t 0 ]; then

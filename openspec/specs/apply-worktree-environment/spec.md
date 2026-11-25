@@ -79,7 +79,7 @@ Each worktree SHALL use its own `DSH_HOME` at `<worktree>/.cache/openspec-flow/d
 
 ### Requirement: Lab and bootstrap honor the environment
 
-The lab and bootstrap SHALL resolve their npm cache from `OPENSPEC_FLOW_NPM_CACHE` when set, else `.cache/lab/cache/npm` (lab) or `.cache/npm` (bootstrap), and SHALL NOT use `npm_config_cache` for that choice. The worktree environment SHALL export `OPENSPEC_FLOW_NPM_CACHE` and `npm_config_cache` with the shared npm cache. The lab and bootstrap SHALL use `PLAYWRIGHT_BROWSERS_PATH` for Chromium and keep defaults when unset. Bootstrap SHALL NOT overwrite an explicitly set browser path.
+The lab and bootstrap SHALL resolve their npm cache from `OPENSPEC_FLOW_NPM_CACHE` when set, else `.cache/lab/cache/npm` (lab) or `.cache/npm` (bootstrap), and SHALL NOT use `npm_config_cache` for that choice. The worktree environment SHALL export `OPENSPEC_FLOW_NPM_CACHE` and `npm_config_cache` with the shared npm cache. The lab and bootstrap SHALL use `PLAYWRIGHT_BROWSERS_PATH` for Chromium when set. Bootstrap SHALL NOT overwrite an explicitly set browser path.
 
 #### Scenario: The lab uses the shared caches
 
@@ -89,7 +89,7 @@ The lab and bootstrap SHALL resolve their npm cache from `OPENSPEC_FLOW_NPM_CACH
 #### Scenario: Bootstrap uses the shared browser path
 
 - **WHEN** bootstrap runs with `PLAYWRIGHT_BROWSERS_PATH` set
-- **THEN** it installs or verifies the browser at that path instead of the worktree-local default
+- **THEN** it installs or verifies the browser at that path instead of the version bucket
 
 #### Scenario: Bootstrap resolves the browser path once
 
@@ -104,12 +104,12 @@ The lab and bootstrap SHALL resolve their npm cache from `OPENSPEC_FLOW_NPM_CACH
 #### Scenario: A custom lab root keeps its default without the environment
 
 - **WHEN** the lab starts with a custom root and no `PLAYWRIGHT_BROWSERS_PATH`
-- **THEN** it uses `<root>/.cache/lab/pw-browsers`, not the repository root's default
+- **THEN** it uses the worktree's Playwright-version bucket, not a root-local default
 
 #### Scenario: Unset variables keep the old defaults
 
 - **WHEN** the lab or bootstrap runs without the exported variables
-- **THEN** it uses its existing worktree-local cache and browser defaults
+- **THEN** it uses its existing npm-cache defaults and the Playwright-version browser bucket
 
 #### Scenario: An npm script cache is ignored
 
@@ -133,22 +133,27 @@ The lab and bootstrap SHALL resolve their npm cache from `OPENSPEC_FLOW_NPM_CACH
 
 ### Requirement: Concurrent worktree preparation
 
-Chromium preparation SHALL serialize through one lock under the shared root, used by `init --browser` and bootstrap. A waiter SHALL wait and recheck, then reuse a browser the holder installed; it SHALL report the owner only on timeout. A dead owner's lock SHALL be reclaimable. Concurrent worktrees SHALL keep `node_modules`, `DSH_HOME` and output separate; lab ports stay OS-assigned.
+Chromium preparation SHALL serialize through one lock per browser bucket under the shared root, used by `init --browser` and bootstrap. A waiter SHALL wait and recheck, then reuse a browser the holder installed; it SHALL report the owner only on timeout. A dead owner's lock SHALL be reclaimable. Concurrent worktrees SHALL keep `node_modules`, `DSH_HOME` and output separate; lab ports stay OS-assigned.
 
 #### Scenario: Two worktrees prepare Chromium concurrently
 
-- **WHEN** two worktrees run `init --browser` at the same time
-- **THEN** one installs under the shared lock and the other waits, rechecks and finishes with the same usable browser path
+- **WHEN** two worktrees prepare the same Playwright-version bucket at the same time
+- **THEN** one installs under that bucket's lock and the other waits, rechecks and finishes with the same usable browser path
+
+#### Scenario: Different Chromium buckets prepare concurrently
+
+- **WHEN** two worktrees prepare different Playwright-version buckets at the same time
+- **THEN** each uses its own bucket lock and neither waits for the other
 
 #### Scenario: Bootstrap and init share the lock
 
-- **WHEN** bootstrap and `init --browser` prepare the same shared root at the same time
-- **THEN** both use the same lock and only one Chromium installation runs
+- **WHEN** bootstrap and `init --browser` prepare the same bucket at the same time
+- **THEN** both use that bucket's lock and only one Chromium installation runs
 
 #### Scenario: A reset waits for the lock
 
-- **WHEN** bootstrap runs `--reset-browsers` while another preparation holds the shared lock
-- **THEN** the reset waits for the lock before checking and removing the shared browser directory
+- **WHEN** bootstrap runs `--reset-browsers` while another preparation holds the bucket lock
+- **THEN** the reset waits for the lock before checking and removing that bucket
 
 #### Scenario: A dead owner is reclaimed
 
@@ -162,7 +167,7 @@ Chromium preparation SHALL serialize through one lock under the shared root, use
 
 #### Scenario: check reports a held lock
 
-- **WHEN** `check` runs while another process holds the shared install lock
+- **WHEN** `check` runs while another process holds a bucket lock
 - **THEN** it reports the lock and its owner without removing it
 
 #### Scenario: Concurrent tests keep their own state
@@ -177,7 +182,7 @@ Chromium preparation SHALL serialize through one lock under the shared root, use
 
 ### Requirement: Developer-facing environment documentation
 
-The repository SHALL document the environment command, the shared and per-worktree boundaries, the resolved browser path, concurrent preparation and rollback in `docs/apply-worktree-dev.md`. It SHALL link that document from `docs/lab.md`, `CONTRIBUTING.md`, `AGENTS.md` and `README.md`, and SHALL update `docs/lab.md` and `CONTRIBUTING.md` where they name the old browser install and reset paths.
+The repository SHALL document the environment command, the shared and per-worktree boundaries, the Playwright-version browser bucket with its explicit-path override and per-bucket lock, the record's browser path, concurrent preparation and rollback in `docs/apply-worktree-dev.md`. It SHALL link that document from `docs/lab.md`, `CONTRIBUTING.md`, `AGENTS.md` and `README.md`, and SHALL update `docs/lab.md` and `CONTRIBUTING.md` where they name the old browser install and reset paths.
 
 #### Scenario: A developer follows the documented command
 
@@ -192,7 +197,12 @@ The repository SHALL document the environment command, the shared and per-worktr
 #### Scenario: Bootstrap documents the resolved browser path
 
 - **WHEN** a reader opens `docs/lab.md` or `CONTRIBUTING.md`
-- **THEN** the browser install and reset text names the `PLAYWRIGHT_BROWSERS_PATH` resolution order and keeps `.cache/lab/pw-browsers` as the default
+- **THEN** the browser install and reset text names the explicit `PLAYWRIGHT_BROWSERS_PATH` override and the Playwright-version bucket as the default
+
+#### Scenario: The bucket and record are documented
+
+- **WHEN** a reader opens `docs/apply-worktree-dev.md`
+- **THEN** it documents the per-bucket lock and the record's browser path
 
 #### Scenario: Rollback is documented
 
@@ -212,3 +222,47 @@ The repository SHALL document the environment command, the shared and per-worktr
 
 - **WHEN** `OPENSPEC_FLOW_SHARED_ROOT` is set
 - **THEN** the command uses it as an environment input and still reads or writes no plugin state
+
+### Requirement: Chromium is prepared in a Playwright-version bucket
+
+Chromium SHALL be prepared in `<shared>/browsers/playwright-<version>/`, keyed by the worktree's resolved Playwright version, when `PLAYWRIGHT_BROWSERS_PATH` is unset; the worktree environment SHALL export that path and an explicit value SHALL still win. The bucket SHALL carry a completion marker with the Chromium, headless-shell and ffmpeg revisions, and `--reset-browsers` SHALL reset only that bucket. The lab SHALL use a current record's browser path, else the resolved bucket.
+
+#### Scenario: The default bucket is version-keyed
+
+- **WHEN** no explicit browser path is set and the worktree resolves Playwright 1.65.1
+- **THEN** the browser path ends with `browsers/playwright-1.65.1`
+
+#### Scenario: An explicit browser path wins
+
+- **WHEN** `PLAYWRIGHT_BROWSERS_PATH` is set
+- **THEN** the lab, bootstrap and `init --browser` use it instead of the bucket
+
+#### Scenario: The printed environment names the bucket
+
+- **WHEN** the worktree environment is printed without an explicit browser path
+- **THEN** `PLAYWRIGHT_BROWSERS_PATH` names the worktree's Playwright-version bucket
+
+#### Scenario: The marker records the revisions
+
+- **WHEN** the bucket is installed
+- **THEN** its completion marker records the Chromium, headless-shell and ffmpeg revisions from the local Playwright package
+
+#### Scenario: A reset clears only the current bucket
+
+- **WHEN** `--reset-browsers` runs for one Playwright version
+- **THEN** other Playwright-version buckets remain
+
+#### Scenario: The lab uses the recorded browser path
+
+- **WHEN** the current worktree has a record and no explicit browser path is set
+- **THEN** the lab checks and runs the recorded Chromium path
+
+#### Scenario: The lab without a record uses the resolved bucket
+
+- **WHEN** no record exists and no explicit browser path is set
+- **THEN** the lab uses the Playwright-version bucket
+
+#### Scenario: An unresolvable Playwright version fails
+
+- **WHEN** the worktree has no resolved Playwright version and no explicit browser path
+- **THEN** preparation fails and names the install or preparation correction
