@@ -6,6 +6,7 @@ import test from 'node:test'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const DELTA = 'openspec/changes/local-pr-flight/specs/pr-review-pipeline/spec.md'
+const LANDING_DELTA = 'openspec/changes/same-run-review-landing/specs/pr-review-pipeline/spec.md'
 const MAIN = 'openspec/specs/pr-review-pipeline/spec.md'
 
 /**
@@ -14,6 +15,15 @@ const MAIN = 'openspec/specs/pr-review-pipeline/spec.md'
  */
 function pipelineSpec() {
   const path = join(ROOT, existsSync(join(ROOT, DELTA)) ? DELTA : MAIN)
+  return readFileSync(path, 'utf8')
+}
+
+/**
+ * Read this change's delta before archive and the merged main spec afterwards.
+ * @returns Markdown text.
+ */
+function landingSpec() {
+  const path = join(ROOT, existsSync(join(ROOT, LANDING_DELTA)) ? LANDING_DELTA : MAIN)
   return readFileSync(path, 'utf8')
 }
 
@@ -37,7 +47,7 @@ test('the delta specifies the contributor landing lock protocol', () => {
 })
 
 test('the scheduled-run requirement keeps its scenarios and adds the acquire ordering', () => {
-  const text = pipelineSpec()
+  const text = landingSpec()
   const section = text.slice(
     text.indexOf('### Requirement: Scheduled run sequencing'),
     text.indexOf('### Requirement:', text.indexOf('### Requirement: Scheduled run sequencing') + 1),
@@ -58,4 +68,20 @@ test('the scheduled-run requirement keeps its scenarios and adds the acquire ord
   }
   assert.doesNotMatch(section, /Without a held `landing\.lock`/)
   assert.match(section, /stop the run and release the lock/)
+  assert.match(section, /syncs a same-repository branch/)
+})
+
+test('the same-run review landing requirement carries its scenarios', () => {
+  const text = landingSpec()
+  assert.match(text, /### Requirement: Same-run review landing/)
+  for (const scenario of [
+    'A review pass continues into landing',
+    'A behind pass waits for sync',
+    'An unlisted pass stops',
+    'A passed record skips the resume',
+  ]) {
+    assert.ok(text.includes(`#### Scenario: ${scenario}`), `same-run spec has scenario ${scenario}`)
+  }
+  assert.match(text, /not behind `origin\/main`/)
+  assert.match(text, /openspec_archive/)
 })
