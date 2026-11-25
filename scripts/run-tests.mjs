@@ -12,11 +12,11 @@
  */
 
 import { mkdirSync, readdirSync } from 'node:fs'
-import { spawn } from 'node:child_process'
 import { constants } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { assertCurrentNode } from './node-version.mjs'
+import { finishRun, signalRunChild, spawnRunChild } from './run-signal.mjs'
 import { beginRunTempDir, testEnvFor } from './test-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -25,6 +25,9 @@ const COVERAGE_ENABLED = process.env.COVERAGE === '1' || process.env.COVERAGE ==
 export const DEFAULT_CONCURRENCY = 8
 /** The child a run is waiting on, so a signal can stop it before the root goes. */
 let activeChild
+
+/** The last runner a run started, kept after exit so a stop can reach its group. */
+let lastChild
 
 const SCOPES = {
   plugin: {
@@ -90,12 +93,13 @@ function runScope(scope, coverage, extra, env) {
   if (coverage) mkdirSync(join(ROOT, '.coverage'), { recursive: true })
   const args = buildTestArgs({ scope, coverage, extra })
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, {
+    const child = spawnRunChild(process.execPath, args, {
       cwd: ROOT,
       stdio: 'inherit',
       env: testEnvFor(coverage, env),
     })
     activeChild = child
+    lastChild = child
     child.once('error', (error) => {
       activeChild = undefined
       reject(error)
@@ -126,20 +130,27 @@ async function main() {
   assertCurrentNode()
 
   const scopes = scope === 'all' ? Object.keys(SCOPES) : [scope]
+  lastChild = undefined
   const { env, finish } = beginRunTempDir(process.env)
   for (const [signal, number] of [['SIGINT', 2], ['SIGTERM', 15]]) {
-    process.once(signal, () => {
+    process.on(signal, () => {
       const code = 128 + number
-      const stop = () => {
-        finish()
+      const stop = async () => {
+        try {
+          await finishRun(lastChild, finish)
+        } catch (error) {
+          console.error(`test entrypoint: cannot stop the run group: ${error.message}`)
+        }
         process.exit(code)
       }
       if (activeChild === undefined) {
         stop()
         return
       }
-      activeChild.once('exit', stop)
-      activeChild.kill(signal)
+      activeChild.once('exit', () => {
+        stop()
+      })
+      signalRunChild(activeChild, signal)
     })
   }
   try {
@@ -150,7 +161,7 @@ async function main() {
     }
     process.exitCode = failed ? 1 : 0
   } finally {
-    finish()
+    await finishRun(lastChild, finish)
   }
 }
 
