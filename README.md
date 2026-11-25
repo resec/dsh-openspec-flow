@@ -253,7 +253,7 @@ npm test
 
 测试入口为普通运行设置 `NODE_COMPILE_CACHE` 指向仓库内绝对路径 `.cache/node-compile`，供测试进程复用；覆盖率运行会删除继承的该变量，因为 Node 文档说明反序列化字节码会降低 V8 覆盖率精度。`.cache/` 已被忽略。
 
-测试入口还会在宿主临时目录（继承的 `TMPDIR`）下为每次运行创建一个 `openspec-flow-run-*` 根，把它作为子进程的 `TMPDIR`，并在运行结束、失败或收到 `SIGINT`/`SIGTERM` 时整体删除；设置 `DSH_TEST_KEEP_TMP=1` 会保留该根并打印其路径。覆盖率入口与 `test:affected` 通过各自的测试入口获得同样的行为。
+测试入口还会在宿主临时目录（继承的 `TMPDIR`）下为每次运行创建一个 `openspec-flow-run-*` 根，把它作为子进程的 `TMPDIR`，并在运行结束、失败或收到 `SIGINT`/`SIGTERM` 时整体删除。删除之前，入口会先终止本次运行启动的进程组（POSIX 上以 `detached` 启动 runner，向整组转发信号并补发 `SIGKILL`），避免遗留后代在删除之后用递归 `mkdir` 重建该路径；无进程组能力的平台只对直接子进程发信号。设置 `DSH_TEST_KEEP_TMP=1` 会保留该根并打印其路径，但不保留其后代。覆盖率入口与 `test:affected` 通过各自的测试入口获得同样的行为。
 
 测试默认通过进程内执行器调用真实 `@fission-ai/openspec` CLI：fake Host context 的 `spawnMode` 默认为 `inproc`，一次 CLI 调用不再启动 Node 子进程；`integration` 与 `e2e` 显式使用 `spawnMode: 'process'`，`test/spawn-contract.test.mjs` 保留真实子进程的退出码、取消与输出边界覆盖。测试文件并发默认 8，可用 `node scripts/run-tests.mjs plugin -- --test-concurrency=<n>` 覆盖；覆盖率入口与 `test:affected` 共用同一默认值。当前全量实测约 22 秒、`npm run verify` 约 27 秒（Node 24.22.2、4 核）。
 
