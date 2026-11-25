@@ -905,7 +905,7 @@ function verifyArchiveCommit(root, change, commit, archiveRelative, capabilities
   if (dirt.length > 0) throw new Error(`the archive worktree is not clean:\n${dirt.join('\n')}`)
 }
 
-/** Record the archive commit after the session archived on main. */
+/** Commit the archive, or verify a commit made elsewhere. */
 export function archiveLanding({ root = mainWorktree(), number, commit, apply = false, session, token } = {}) {
   const n = requireNumber(number)
   assertLandingLockFree(root, { session, token })
@@ -1064,7 +1064,7 @@ export function usage() {
     '  prepare <n> --apply                   create the landing branch at the head',
     '  reviewed <n> --apply                  record the passed review tree',
     '  merge <n> --apply                     merge with gh pr merge --rebase',
-    '  archive <n> [--commit <sha>] --apply  record the archive commit',
+    '  archive <n> [--commit <sha>] --apply  commit or verify the archive',
     '  push <n> --apply                      record the pushed main head',
     '  finish <n> --apply                    write the manifest and clean up',
     '  abandon <n> --apply                   remove a pre-merge landing',
