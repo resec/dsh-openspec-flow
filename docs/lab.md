@@ -56,7 +56,7 @@ npm run test:lab -- [scenario paths...] [--mock-only] [--include-real-model] [--
 
 ## Reusable scenarios
 
-Put reusable scenarios under `test/lab/*.scenario.mjs`:
+Put reusable scenarios under `test/lab/**/*.scenario.mjs`. The sample below is `test/lab/my-scenario.scenario.mjs`; a scenario in a deeper folder needs one `../` per extra level:
 
 ```js
 import { defineScenario, expectCompleted } from '../../scripts/lab/index.mjs'
@@ -77,7 +77,7 @@ export default defineScenario({
 })
 ```
 
-The plain test entrypoint only collects top-level `test/*.test.mjs`, so `test/lab/*.scenario.mjs` does not slow down `npm test` or `test:affected`. Framework unit tests live at `test/lab-*.test.mjs` and do run in `npm test`.
+The plain test entrypoint only collects top-level `test/*.test.mjs`, so `test/lab/**/*.scenario.mjs` does not slow down `npm test` or `test:affected`. Framework unit tests live at `test/lab-*.test.mjs` and do run in `npm test`.
 
 ## POCs
 
