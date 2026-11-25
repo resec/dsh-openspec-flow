@@ -465,6 +465,14 @@ test('the review document qualifies every dispose example and next action', () =
   assert.match(text, /openspec_review action=dispose review=<kind>/)
 })
 
+test('the review document and README point a blocked finding-free report at resume', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /没有可处置的 finding 时（评审无法进行时提交的 blocked 报告不带 finding）/)
+  assert.match(text, /`openspec_review action=resume review=<kind>`，不是 `dispose`/)
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  assert.match(readme, /最新报告为 `blocked` 且没有 finding 可处置时，下一步是 `openspec_review action=resume review=<kind>`/)
+})
+
 test('the README states the review kind and the draft freeze', () => {
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
   assert.match(readme, /`dispose` 与 finding 的 `waive` 必须显式传 `review`/)

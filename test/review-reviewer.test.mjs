@@ -1097,6 +1097,28 @@ test('a stale draft blocked submit is accepted and wakes the changer', async () 
   assert.equal(round.blockedReason, 'stale-object')
   assert.notEqual(round.staleFrom, round.staleTo)
   assert.deepEqual(record.findings, [])
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.nextAction, 'openspec_review action=resume review=draft')
+  assert.doesNotMatch(status.nextAction, /dispose/)
+})
+
+test('a blocked reviewer report without findings points the next action at resume', async () => {
+  const root = fixture()
+  const { fake, subagents } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const execute = reviewerRunner(root, subagents)
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft',
+    report: report({ verdict: 'blocked', summary: 'The brief could not be reviewed.', findings: [], verifications: [] }),
+  })
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.ready, false)
+  assert.match(status.reasons.join(' '), /verdict is blocked/)
+  assert.equal(status.nextAction, 'openspec_review action=resume review=draft')
+  assert.doesNotMatch(status.nextAction, /dispose/)
+  const waited = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE })
+  assert.equal(waited.waitState, 'ready')
+  assert.equal(waited.nextAction, 'openspec_review action=resume review=draft')
 })
 
 test('a stale draft pass submit is refused and names blocked', async () => {

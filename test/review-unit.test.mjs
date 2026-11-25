@@ -432,6 +432,25 @@ test('readiness accounts for verdict, blockers and stale hashes', () => {
   assert.equal(waived.ready, true)
 })
 
+test('a blocked report with no finding names the next round', () => {
+  for (const kind of ['draft', 'apply']) {
+    for (const mode of ['self', 'reviewer']) {
+      const record = {
+        review: kind,
+        mode,
+        state: 'in-review',
+        objectHash: 'hash',
+        rounds: [{ round: 1, objectHash: 'hash', verdict: 'blocked', report: { path: 'report.json' } }],
+        findings: [],
+      }
+      const readiness = draftReadiness(record, 'hash', kind)
+      assert.equal(readiness.ready, false, `${kind} ${mode} is not ready`)
+      assert.match(readiness.reasons.join(' '), /verdict is blocked/)
+      assert.equal(readiness.nextAction, `openspec_review action=resume review=${kind}`)
+    }
+  }
+})
+
 test('a blocking length result gates readiness and names resume', () => {
   const length = {
     limit: 500,

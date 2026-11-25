@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Point the next action at resume when the latest report closed the round
+  as blocked with no finding to dispose.
