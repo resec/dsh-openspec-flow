@@ -98,3 +98,17 @@ test('the fixed-session reviewer reuse requirement carries the resume skip', () 
   }
   assert.match(text, /otherwise the run uses the resume path/)
 })
+
+test('the pull-request review requirement carries the prepared-landing replacement', () => {
+  const text = landingSpec()
+  assert.match(text, /### Requirement: Apply review on the pull-request branch/)
+  for (const scenario of [
+    'First review round',
+    'Landing review tree',
+    'Review evidence',
+    'Passed record replaces the landing review',
+  ]) {
+    assert.ok(text.includes(`#### Scenario: ${scenario}`), `pull-request review spec has scenario ${scenario}`)
+  }
+  assert.match(text, /replace the prepared-landing review/)
+})

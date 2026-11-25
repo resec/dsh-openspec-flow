@@ -83,6 +83,30 @@ The scheduled session SHALL reuse one fixed session for every run. The landing s
 - **WHEN** the apply review record is passed and its `treeSha` equals the landing tree
 - **THEN** `reviewed` advances without `openspec_review action=resume`; otherwise the run uses the resume path
 
+### Requirement: Apply review on the pull-request branch
+
+The session SHALL call `openspec_review` with `review: "apply"`, `baseline: "none"`, the merge base as `base`, and the PR worktree. The review object SHALL be the committed pull-request head tree; for a prepared landing the head contains the pre-merge main and is reviewed with it as `base`. A passed record matching the landing tree SHALL replace the prepared-landing review. No PR code SHALL be executed.
+
+#### Scenario: First review round
+
+- **WHEN** a candidate PR has no apply review record and the preconditions pass
+- **THEN** the session starts the apply review with the explicit merge-base base and an independent reviewer
+
+#### Scenario: Landing review tree
+
+- **WHEN** a pull request is prepared for landing
+- **THEN** the session reviews the head tree whose commit contains the pre-merge main
+
+#### Scenario: Review evidence
+
+- **WHEN** the reviewer inspects the PR worktree
+- **THEN** it reads the committed head tree and CI evidence only, and it does not run the PR's install, test or build commands
+
+#### Scenario: Passed record replaces the landing review
+
+- **WHEN** a pull request is prepared for landing, the recorded apply review is passed and its `treeSha` equals the landing tree
+- **THEN** the session advances `reviewed` without starting the prepared-landing review
+
 ## ADDED Requirements
 
 ### Requirement: Same-run review landing
