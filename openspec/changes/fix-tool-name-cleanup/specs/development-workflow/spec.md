@@ -25,7 +25,7 @@ The repository SHALL require strict OpenSpec validation and one verification com
 
 ### Requirement: Archive precedes commit and push
 
-The repository SHALL archive a change before the archive commit is pushed to `origin/main`, so the archive commit carries the merged specs. A maintainer-authored change SHALL be archived before its implementation is pushed. An external contribution MAY merge its active change through a pull request; the maintainer SHALL archive it after merge, and the archive commit SHALL follow the apply review.
+The repository SHALL archive a change before the archive commit is pushed to `origin/main`, so the archive commit carries the merged specs. A maintainer-authored change SHALL be archived before its implementation is pushed directly to `main`. An external contribution MAY merge its active change through a pull request; the maintainer SHALL archive it after merge, and the archive commit SHALL follow the apply review.
 
 #### Scenario: A change is archived
 
@@ -35,7 +35,7 @@ The repository SHALL archive a change before the archive commit is pushed to `or
 #### Scenario: A change is not yet archived
 
 - **WHEN** a maintainer-authored change's tasks are incomplete or `openspec_inspect` with `action: "validate"` fails
-- **THEN** no archive commit is created and no implementation from that change is pushed
+- **THEN** no archive commit is created and no implementation from that change is pushed directly to `main`
 
 #### Scenario: An external contribution is merged before archive
 
