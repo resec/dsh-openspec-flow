@@ -20,4 +20,4 @@
 
 - [x] 3.1 Run `npm run test:affected -- scripts/pr-review-watch.mjs scripts/pr-review-owner-review.mjs` on Node 24 and confirm every selected test file passes.
 - [x] 3.2 Run `node scripts/pr-review-watch.mjs state --cleanup` on the real repository and read the last `state --cleanup` line of `.cache/pr-review/runs.jsonl`; verify one GitHub call and a duration under two seconds.
-- [ ] 3.3 Run `npm run verify` on Node 24 and record the test summary and coverage verdict.
+- [x] 3.3 Run `npm run verify` on Node 24 and record the test summary and coverage verdict.
