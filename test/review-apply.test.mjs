@@ -12,6 +12,7 @@ import {
 import { reviewDirectory } from '../lib/review/store.js'
 import { readApplyState } from '../lib/worktree/state.js'
 import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/worktree/seal.js'
+import { prepareApplyWorktree } from '../lib/tools/apply.js'
 
 test.after(cleanupFixtures)
 
@@ -2046,4 +2047,21 @@ test('a branch that does not point at the seal is refused on re-apply', async ()
     call(second, 'openspec_apply_next', { change: CHANGE }),
     /does not point at the seal commit/,
   )
+})
+
+
+test('the apply preparation runs the worktree bootstrap and fails when it cannot', () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-prepare-'))
+  try {
+    assert.throws(() => prepareApplyWorktree({ worktree: root }), /no bootstrap entrypoint/)
+    mkdirSync(join(root, 'scripts'), { recursive: true })
+    const script = join(root, 'scripts', 'bootstrap.sh')
+    writeFileSync(script, '#!/bin/sh\nexit 0\n')
+    spawnSync('chmod', ['+x', script])
+    assert.doesNotThrow(() => prepareApplyWorktree({ worktree: root }))
+    writeFileSync(script, '#!/bin/sh\nexit 3\n')
+    assert.throws(() => prepareApplyWorktree({ worktree: root }), /exit 3/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

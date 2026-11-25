@@ -46,7 +46,7 @@ Every pull request SHALL add or update exactly one active change under `openspec
 
 ### Requirement: Bootstrap provisions the toolchain
 
-The repository SHALL provide a bootstrap entrypoint that resolves a Node 24 runtime satisfying `engines.node` from the host or downloads and verifies the pinned fallback inside the clone, then installs locked dependencies, Git hooks and the Playwright Chromium binary under `PLAYWRIGHT_BROWSERS_PATH` when set, else `.cache/lab/pw-browsers`. A full mode SHALL run `npm run verify` and `npm run test:lab -- --mock-only` in place of the plain test suite; the suite runs inside that verification.
+The repository SHALL provide a bootstrap entrypoint. It SHALL resolve a Node 24 runtime satisfying `engines.node` from the host or download and verify the pinned fallback into the shared bucket. In default and full runs it SHALL install locked dependencies, Git hooks, the pnpm bucket and Chromium under `PLAYWRIGHT_BROWSERS_PATH` when set, else the worktree's Playwright-version bucket. Full mode SHALL run `npm run verify` and `npm run test:lab -- --mock-only`; the suite runs inside verification.
 
 #### Scenario: The host has a qualifying runtime
 
@@ -56,13 +56,18 @@ The repository SHALL provide a bootstrap entrypoint that resolves a Node 24 runt
 #### Scenario: The host has no qualifying runtime
 
 - **WHEN** no qualifying runtime exists on the host
-- **THEN** bootstrap downloads the pinned version into the clone and verifies it before use
+- **THEN** bootstrap downloads the pinned version into the shared version bucket and verifies it before use
 
 #### Scenario: Full mode runs the complete gate
 
 - **WHEN** bootstrap runs in full mode and the doctor passes
-- **THEN** dependencies, hooks and Chromium are provisioned
+- **THEN** dependencies, hooks, the pnpm bucket, Chromium and the toolchain record are provisioned
 - **AND** verification and the lab run, with the suite executed inside verification
+
+#### Scenario: The pnpm bucket is prepared
+
+- **WHEN** bootstrap prepares pnpm
+- **THEN** it installs the pinned version into the shared version bucket and the record names it
 
 #### Scenario: An explicit browser path is used
 
@@ -72,7 +77,7 @@ The repository SHALL provide a bootstrap entrypoint that resolves a Node 24 runt
 #### Scenario: No explicit path uses the default
 
 - **WHEN** `PLAYWRIGHT_BROWSERS_PATH` is unset
-- **THEN** bootstrap uses `.cache/lab/pw-browsers`
+- **THEN** bootstrap uses the worktree's Playwright-version bucket
 
 ### Requirement: Bootstrap leaves host state alone
 
@@ -241,7 +246,7 @@ The bootstrap selection and planning logic, the change checks, the generated-ski
 
 ### Requirement: CI lab job provisions pnpm
 
-The CI lab job SHALL install a pinned pnpm before `npm run lab -- doctor` and `npm run test:lab -- --mock-only`, because DSH forwards plugin installation to pnpm. The workflow test SHALL assert that the action is in the lab job before `npm ci`, that the version is pinned, and that the lab documentation names the same version.
+The CI lab job SHALL install pnpm at the version the toolchain module pins, which is the value `project-invariants` defines, before `npm run lab -- doctor` and `npm run test:lab -- --mock-only`, because DSH forwards plugin installation to pnpm. The workflow test SHALL assert that the action is in the lab job before `npm ci`, that the version equals the pin, and that the lab documentation names the same version.
 
 #### Scenario: A bare runner runs the lab
 
@@ -256,8 +261,13 @@ The CI lab job SHALL install a pinned pnpm before `npm run lab -- doctor` and `n
 
 #### Scenario: The documented pin drifts
 
-- **WHEN** the workflow's pnpm version and the version in `docs/lab.md` differ
-- **THEN** the workflow test fails and reports both versions
+- **WHEN** the workflow's pnpm version, the version in `docs/lab.md` and the toolchain pin differ
+- **THEN** the workflow test fails and reports all three versions
+
+#### Scenario: The workflow pin drifts from the module
+
+- **WHEN** the workflow pins a pnpm version other than the toolchain pin
+- **THEN** the workflow test fails and names both versions
 
 ### Requirement: Bootstrap re-runs avoid duplicate work
 
@@ -288,7 +298,7 @@ Bootstrap SHALL accept `--skip-install` to reuse the dependencies already instal
 
 ### Requirement: Bootstrap exposes download and browser recovery options
 
-Bootstrap SHALL accept `--playwright-host URL` and pass it to the Chromium installer as the download host. It SHALL accept `--reset-browsers` to remove the resolved browser directory (`PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`) before installing, so a stale installer lock does not block the run. A reset SHALL run the Chromium installation even when a browser executable is already present. It SHALL refuse `--reset-browsers` when the browser installation is skipped.
+Bootstrap SHALL accept `--playwright-host URL` and pass it to the Chromium installer as the download host. It SHALL accept `--reset-browsers` to remove the resolved browser bucket (`PLAYWRIGHT_BROWSERS_PATH` when set, otherwise the worktree's Playwright-version bucket) before installing, so a stale lock does not block the run. A reset SHALL run the Chromium installation even when a browser executable is already present. It SHALL refuse `--reset-browsers` when the browser installation is skipped.
 
 #### Scenario: The download host is redirected
 
@@ -298,13 +308,13 @@ Bootstrap SHALL accept `--playwright-host URL` and pass it to the Chromium insta
 #### Scenario: A stale lock blocks the browser install
 
 - **WHEN** bootstrap runs with `--reset-browsers`
-- **THEN** the resolved browser directory is removed before the install
+- **THEN** the resolved browser bucket is removed before the install
 - **AND** the install proceeds
 
 #### Scenario: A browser is already installed
 
 - **WHEN** bootstrap runs with `--reset-browsers` and a browser executable already exists
-- **THEN** the resolved browser directory is removed
+- **THEN** the resolved browser bucket is removed
 - **AND** the Chromium installation runs again
 
 #### Scenario: Reset conflicts with a skipped install
@@ -317,7 +327,7 @@ Bootstrap SHALL accept `--playwright-host URL` and pass it to the Chromium insta
 
 - **WHEN** bootstrap runs with `--reset-browsers` and `PLAYWRIGHT_BROWSERS_PATH` is set
 - **THEN** it removes that resolved directory before installing
-- **AND** it leaves the default `.cache/lab/pw-browsers` directory alone
+- **AND** it leaves the default Playwright-version bucket alone
 
 ### Requirement: Bootstrap names the lab cache and its cleanup
 
