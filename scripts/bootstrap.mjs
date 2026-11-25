@@ -143,6 +143,22 @@ export function playwrightEnv(host) {
 }
 
 /**
+ * Environment additions for bootstrap's npm children.
+ *
+ * Both selectors carry the same directory so `npm ci`, `npm run verify` and
+ * `npm run test:lab` cannot resolve different caches.
+ * @param options - resolved cache and optional registry.
+ * @returns the environment fragment.
+ */
+export function npmEnvFor({ cache = NPM_CACHE, registry } = {}) {
+  return {
+    npm_config_cache: cache,
+    OPENSPEC_FLOW_NPM_CACHE: cache,
+    ...(registry === undefined ? {} : { npm_config_registry: registry }),
+  }
+}
+
+/**
  * Run the Chromium preparation step, including the download-host option.
  * @param options - parsed bootstrap options.
  * @param overrides - browser path, npm environment and install seam.
@@ -221,11 +237,7 @@ function main() {
     )
   }
 
-  const npmEnv = {
-    npm_config_cache: NPM_CACHE,
-    OPENSPEC_FLOW_NPM_CACHE: NPM_CACHE,
-    ...(options.registry === undefined ? {} : { npm_config_registry: options.registry }),
-  }
+  const npmEnv = npmEnvFor({ cache: NPM_CACHE, registry: options.registry })
   const total = options.full ? 7 : 5
   const plan = resolvePlan(options, {
     dependenciesPresent: existsSync(join(ROOT, 'node_modules')),
