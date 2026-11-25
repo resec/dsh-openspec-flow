@@ -101,7 +101,7 @@ resolve_shared() {
 
 NODE_LOCK=
 node_lock_acquire() {
-  NODE_LOCK="$SHARED/toolchain/node/.${VERSION}.lock"
+  NODE_LOCK="$SHARED/toolchain/node/${VERSION}.install.lock"
   attempts=0
   while ! mkdir "$NODE_LOCK" 2>/dev/null; do
     if [ -f "$NODE_LOCK/pid" ]; then
