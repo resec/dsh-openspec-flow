@@ -67,7 +67,7 @@ test('the scheduled-run requirement keeps its scenarios and adds the acquire ord
     assert.ok(section.includes(`#### Scenario: ${scenario}`), `scheduled-run spec keeps scenario ${scenario}`)
   }
   assert.doesNotMatch(section, /Without a held `landing\.lock`/)
-  assert.match(section, /A synced head stops the run/)
+  assert.match(section, /stop the run and release the lock/)
   assert.match(section, /syncs a same-repository branch/)
 })
 
@@ -96,5 +96,5 @@ test('the fixed-session reviewer reuse requirement carries the resume skip', () 
   ]) {
     assert.ok(text.includes(`#### Scenario: ${scenario}`), `reviewer reuse spec has scenario ${scenario}`)
   }
-  assert.match(text, /skip the resume and advance `reviewed`/)
+  assert.match(text, /otherwise the run uses the resume path/)
 })

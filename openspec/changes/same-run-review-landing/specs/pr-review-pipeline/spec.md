@@ -4,7 +4,7 @@
 
 ### Requirement: Scheduled run sequencing
 
-The session SHALL reconcile `owner-review` and clean up each run. It SHALL advance one landing phase: resume or prepare a landing, land a mergeable candidate including a same-repository sync, except a not-behind review pass continuing in the same run. When no phase advances or a local owner holds the lock, it MAY review one candidate. A ready final review SHALL merge, archive and push in the same locked run. A synced head stops the run. Local pull requests SHALL be reported, never landed.
+The session SHALL reconcile `owner-review` and clean up each run. It SHALL advance one landing phase in order: resume or prepare a landing, land a mergeable candidate including a same-repository sync. When no landing phase advances, or a local owner holds the lock, it MAY review one candidate. A ready final review SHALL merge, archive and push in the same locked run. A synced head SHALL stop the run and release the lock. Local pull requests SHALL be reported, never reviewed or landed.
 
 #### Scenario: A run stops after one landing phase
 
@@ -61,7 +61,7 @@ The session SHALL reconcile `owner-review` and clean up each run. It SHALL advan
 
 ### Requirement: Fixed-session reviewer reuse
 
-Runs SHALL reuse one fixed session. The landing stage SHALL resume the apply review in the same DSH session that started it, so the reviewer subagent stays bound, except that a passed record matching the landing tree SHALL skip the resume and advance `reviewed`. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL record the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
+The scheduled session SHALL reuse one fixed session for every run. The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer subagent stays bound to the session, except a passed landing record. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
 
 #### Scenario: Final review resumes the reviewer
 
