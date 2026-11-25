@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
+import { CLI_COMMAND } from './cli-command.mjs'
 
 /**
  * Collect every description in a JSON Schema fragment.
@@ -86,4 +87,19 @@ test('the review action description names every accepted action', () => {
     `Review step to perform: ${rendered}.`,
     'the action description names every value and nothing the parameter does not accept',
   )
+})
+
+test('no tool description names an OpenSpec command', () => {
+  const fake = createFakeContext({ cwd: process.cwd() })
+  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: true }, apply: { enabled: true } } })
+  assert.ok(fake.tools.has('openspec_review'), 'the review tool is registered for the scan')
+
+  for (const [name, tool] of fake.tools) {
+    const entries = [{ path: name, text: tool.description }]
+    entries.push(...collect(tool.parameters, `${name}.parameters`))
+    entries.push(...collect(tool.output, `${name}.output`))
+    for (const entry of entries) {
+      assert.doesNotMatch(entry.text, CLI_COMMAND, `${entry.path} must not name an OpenSpec command`)
+    }
+  }
 })
