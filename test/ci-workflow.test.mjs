@@ -73,6 +73,14 @@ test('the lab job installs the browser where the doctor looks', () => {
   }
 })
 
+test('the lab job pins the repository npm cache before the lab commands', () => {
+  const lab = WORKFLOW.slice(WORKFLOW.indexOf('\n  lab:\n'))
+  const pin = lab.indexOf('OPENSPEC_FLOW_NPM_CACHE=$HOME/.npm')
+  const doctor = lab.indexOf('npm run lab -- doctor')
+  assert.ok(pin >= 0, 'the lab job does not pin the repository npm cache')
+  assert.ok(doctor > pin, 'the cache pin must precede the lab commands')
+})
+
 test('the lab job provisions the pinned pnpm before npm ci', () => {
   const lab = WORKFLOW.slice(WORKFLOW.indexOf('\n  lab:\n'))
   const action = lab.indexOf('pnpm/action-setup@v6')

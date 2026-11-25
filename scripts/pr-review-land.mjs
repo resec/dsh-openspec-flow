@@ -11,7 +11,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
@@ -27,9 +27,13 @@ import {
   trustedPass,
   UsageError,
   withRunLock,
+  withRunTelemetry,
 } from './pr-review-watch.mjs'
 import { readLockOwner, releaseLock } from './pr-review-lock.mjs'
-import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
+import { isTransientGhFailure } from './gh-retry.mjs'
+import { filterUnrelatedChangeStatus } from '../lib/review/store.js'
+import { statusLinePath } from '../lib/status-paths.js'
+import { ghPoll, ghRead, ghWrite } from './gh-exec.mjs'
 
 export { trustedPass }
 
@@ -79,6 +83,11 @@ function git(cwd, args) {
   return capture('git', ['-C', cwd, ...args]).trim()
 }
 
+/** Read the raw `git status --porcelain` output. */
+function gitStatusPorcelain(cwd) {
+  return capture('git', ['-C', cwd, 'status', '--porcelain'])
+}
+
 /** Git helper that returns undefined instead of throwing. */
 function gitMaybe(cwd, args) {
   const result = spawnSync('git', ['-C', cwd, ...args], {
@@ -89,9 +98,25 @@ function gitMaybe(cwd, args) {
   return result.stdout.trim()
 }
 
-/** Gh helper returning text; throws with stderr on failure. */
+/** Whether one `gh` invocation mutates GitHub. */
+export function isGhWrite(args) {
+  if (args[0] === 'pr' && args[1] === 'merge') return true
+  return args[0] === 'api' && args.includes('--method')
+}
+
+/** Whether one `gh` invocation is the single-shot head poll after an update. */
+export function isHeadPoll(args) {
+  return args[0] === 'pr' && args[1] === 'view' && args[3] === '--json' && args[4] === 'headRefOid'
+}
+
+/**
+ * Gh helper returning text; throws with stderr on failure. Reads retry under
+ * the shared policy, writes and the head poll stay single-shot.
+ */
 function gh(args, cwd) {
-  return capture('gh', args, { cwd }).trim()
+  if (isGhWrite(args)) return ghWrite(args, { cwd })
+  if (isHeadPoll(args)) return ghPoll(args, { cwd })
+  return ghRead(args, { cwd })
 }
 
 /** Read one JSON file, returning undefined when absent. */
@@ -196,12 +221,32 @@ export function assertNotLocal(root, number) {
   }
 }
 
-/** Verify the main worktree is clean and on main. */
-function assertMainReady(root) {
+/** Verify the main worktree is on main. */
+function assertOnMain(root) {
   const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])
   if (branch !== 'main') throw new Error(`landing must run from main, not ${branch}`)
-  const status = git(root, ['status', '--porcelain'])
-  if (status !== '') throw new Error(`landing needs a clean main worktree:\n${status}`)
+}
+
+/** The repository-relative directory of one active change. */
+function changeDirectory(change) {
+  return `openspec/changes/${change}`
+}
+
+/** Refuse a name that cannot be one safe path segment. */
+function assertSafeSegment(name) {
+  if (typeof name !== 'string' || name === '' || name === '.' || name === '..'
+    || name.includes('/') || name.includes('\\')) {
+    throw new Error(`'${String(name)}' is not a safe path segment`)
+  }
+}
+
+/** Verify the main worktree is clean apart from other changes' planning files. */
+function assertLandingReady(root, change) {
+  assertOnMain(root)
+  const staged = git(root, ['diff', '--cached', '--no-renames', '--name-only'])
+  if (staged !== '') throw new Error(`landing needs an empty index; commit or unstage these changes first:\n${staged}`)
+  const dirt = filterUnrelatedChangeStatus(gitStatusPorcelain(root), changeDirectory(change))
+  if (dirt.length > 0) throw new Error(`landing needs a clean main worktree:\n${dirt.join('\n')}`)
 }
 
 /** Refuse a new landing while local main carries commits origin/main does not. */
@@ -274,9 +319,10 @@ function assertLatestMain(root, plan) {
 
 /** Evaluate all landing gates. */
 function planLandingChecked({ root, number, gh: ghRunner, checkAhead, session, token }) {
+  assertOnMain(root)
   assertLandingLockFree(root, { session, token })
   const plan = evaluateLanding({ root, number, gh: ghRunner })
-  assertMainReady(root)
+  assertLandingReady(root, plan.change)
   if (checkAhead) assertLocalMainNotAhead(root)
   assertLatestMain(root, plan)
   return plan
@@ -289,7 +335,9 @@ export function planLanding({ root = mainWorktree(), number, gh: ghRunner = gh, 
 /** List landing candidates without writing watch or landing state. */
 export function listLandingCandidates({ root = mainWorktree(), gh: ghRunner = gh } = {}) {
   try {
-    assertMainReady(root)
+    assertOnMain(root)
+    const dirt = filterUnrelatedChangeStatus(gitStatusPorcelain(root), '')
+    if (dirt.length > 0) throw new Error(`landing needs a clean main worktree:\n${dirt.join('\n')}`)
     assertLandingLockFree(root)
     assertLocalMainNotAhead(root)
   } catch (error) {
@@ -458,7 +506,7 @@ export function syncLanding({
   const n = requireNumber(number)
   assertLandingLockFree(root, { session, token })
   assertNotLocal(root, n)
-  assertMainReady(root)
+  assertOnMain(root)
   assertLocalMainNotAhead(root)
   const pr = readPullRequest({ root, number: n, gh: ghRunner })
   if (pr.state !== 'OPEN') throw new Error(`PR #${n} is ${String(pr.state).toLowerCase()}`)
@@ -525,12 +573,11 @@ export function syncBatch({
   limit = 20,
   pollAttempts = 10,
   pollIntervalMs = 1000,
-  retryDelayMs = 2000,
   sleep = sleepSync,
   session,
   token,
 } = {}) {
-  assertMainReady(root)
+  assertOnMain(root)
   try {
     assertLandingLockFree(root)
   } catch (error) {
@@ -547,10 +594,10 @@ export function syncBatch({
   assertLocalMainNotAhead(root)
   let listed
   try {
-    listed = JSON.parse(withGhRetry(() => ghRunner([
+    listed = JSON.parse(ghRunner([
       'pr', 'list', '--state', 'open', '--limit', '1000', '--json',
       'number,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,labels',
-    ], root), { delayMs: retryDelayMs, sleep }))
+    ], root))
   } catch (error) {
     if (!isTransientGhFailure(error)) throw error
     return {
@@ -579,10 +626,7 @@ export function syncBatch({
     const n = Number(row.number)
     let files
     try {
-      files = JSON.parse(withGhRetry(
-        () => ghRunner(['pr', 'view', String(n), '--json', 'files'], root),
-        { delayMs: retryDelayMs, sleep },
-      )).files
+      files = JSON.parse(ghRunner(['pr', 'view', String(n), '--json', 'files'], root)).files
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       results.push({
@@ -717,6 +761,7 @@ function completeMergedLanding(root, lands, entry) {
 /** Merge the reviewed pull request with gh rebase. */
 export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh, apply = false, session, token } = {}) {
   const n = requireNumber(number)
+  assertOnMain(root)
   assertLandingLockFree(root, { session, token })
   const lands = loadLandings(root)
   const entry = lands.lands[String(n)]
@@ -766,7 +811,115 @@ export function mergeLanding({ root = mainWorktree(), number, gh: ghRunner = gh,
   return completeMergedLanding(root, lands, entry)
 }
 
-/** Record the archive commit after the session archived on main. */
+/** Escape one literal for a regular expression. */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+}
+
+/** Resolve the one archived directory named `<date>-<change>`. */
+function archivedDirectory(root, change) {
+  assertSafeSegment(change)
+  let names
+  try {
+    names = readdirSync(join(root, 'openspec', 'changes', 'archive'))
+  } catch {
+    throw new Error(`the change ${change} has no archive directory`)
+  }
+  const pattern = new RegExp(`^[0-9]{4}-[0-9]{2}-[0-9]{2}-${escapeRegExp(change)}$`, 'u')
+  const matches = names.filter((name) => pattern.test(name))
+  if (matches.length === 0) throw new Error(`the change ${change} has no archive directory`)
+  if (matches.length > 1) throw new Error(`the change ${change} has more than one archive directory: ${matches.join(', ')}`)
+  return `openspec/changes/archive/${matches[0]}`
+}
+
+/** The capability directories the archived change's own delta names. */
+function archivedCapabilities(root, archiveRelative) {
+  const specs = join(root, archiveRelative, 'specs')
+  if (!existsSync(specs)) return []
+  const specsRoot = join(root, 'openspec', 'specs')
+  const directories = []
+  for (const entry of readdirSync(specs, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    assertSafeSegment(entry.name)
+    const absolute = resolve(specsRoot, entry.name)
+    if (absolute !== specsRoot && !absolute.startsWith(`${specsRoot}${sep}`)) {
+      throw new Error(`the archived capability '${entry.name}' leaves openspec/specs`)
+    }
+    directories.push(`openspec/specs/${entry.name}`)
+  }
+  return directories
+}
+
+/** Whether one repository-relative path is a directory or under it. */
+function under(path, directory) {
+  return path === directory || path.startsWith(`${directory}/`)
+}
+
+/** Whether a status line is an unstaged deletion. */
+function isDeletion(line) {
+  return line.length > 1 && line[1] === 'D'
+}
+
+/** Refuse a source tree the archive did not leave in its own output scope. */
+function assertArchiveReady(root, change, archiveRelative, capabilities) {
+  assertOnMain(root)
+  const staged = git(root, ['diff', '--cached', '--no-renames', '--name-only'])
+  if (staged !== '') throw new Error(`the archive needs an empty index; commit or unstage these changes first:\n${staged}`)
+  const changeDir = changeDirectory(change)
+  const problems = []
+  const status = capture('git', ['-C', root, 'status', '--porcelain', '--untracked-files=all'])
+  for (const line of status.split('\n').filter((value) => value !== '')) {
+    const path = statusLinePath(line)
+    if (path === '') continue
+    if (under(path, changeDir)) {
+      if (!isDeletion(line)) problems.push(line)
+      continue
+    }
+    if (under(path, archiveRelative) || capabilities.some((directory) => under(path, directory))) continue
+    if (under(path, 'openspec/changes')) continue
+    problems.push(line)
+  }
+  if (problems.length > 0) {
+    throw new Error(`the archive worktree holds paths outside its outputs:\n${problems.join('\n')}`)
+  }
+}
+
+/** Stage and commit the archive scope, returning the new archive commit. */
+function commitArchive(root, change, archiveRelative, capabilities) {
+  const existing = capabilities.filter((directory) => existsSync(join(root, directory)))
+  git(root, ['add', '-A', '--', archiveRelative, ...existing])
+  git(root, ['rm', '-r', '--cached', '--ignore-unmatch', '-q', '--', changeDirectory(change)])
+  const staged = git(root, ['diff', '--cached', '--no-renames', '--name-only']).split('\n').filter((value) => value !== '')
+  if (staged.length === 0) throw new Error('the archive produced no staged changes')
+  const changeDir = changeDirectory(change)
+  const allowed = (path) => under(path, archiveRelative)
+    || capabilities.some((directory) => under(path, directory))
+    || under(path, changeDir)
+  const outside = staged.filter((path) => !allowed(path))
+  if (outside.length > 0) throw new Error(`the archive would commit paths outside its scope:\n${outside.join('\n')}`)
+  git(root, ['commit', '-m', `chore(openspec): archive ${change}`])
+  return git(root, ['rev-parse', 'HEAD'])
+}
+
+/** Verify a commit made outside the command covers exactly the archive scope. */
+function verifyArchiveCommit(root, change, commit, archiveRelative, capabilities) {
+  assertOnMain(root)
+  const head = git(root, ['rev-parse', 'HEAD'])
+  if (commit !== head) throw new Error(`the archive commit ${commit} is not HEAD`)
+  const paths = git(root, ['show', '--no-renames', '--name-only', '--format=', commit]).split('\n').filter((value) => value !== '')
+  const changeDir = changeDirectory(change)
+  const allowed = (path) => under(path, archiveRelative)
+    || capabilities.some((directory) => under(path, directory))
+    || under(path, changeDir)
+  const outside = paths.filter((path) => !allowed(path))
+  if (outside.length > 0) throw new Error(`the archive commit changes paths outside its scope:\n${outside.join('\n')}`)
+  const staged = git(root, ['diff', '--cached', '--no-renames', '--name-only'])
+  if (staged !== '') throw new Error(`the archive needs an empty index; commit or unstage these changes first:\n${staged}`)
+  const dirt = filterUnrelatedChangeStatus(gitStatusPorcelain(root), changeDir)
+  if (dirt.length > 0) throw new Error(`the archive worktree is not clean:\n${dirt.join('\n')}`)
+}
+
+/** Commit the archive, or verify a commit made elsewhere. */
 export function archiveLanding({ root = mainWorktree(), number, commit, apply = false, session, token } = {}) {
   const n = requireNumber(number)
   assertLandingLockFree(root, { session, token })
@@ -779,14 +932,22 @@ export function archiveLanding({ root = mainWorktree(), number, commit, apply = 
   }
   if (!apply) return { dryRun: true, entry }
   try {
-    if (existsSync(join(root, 'openspec', 'changes', entry.change))) {
+    const tracked = git(root, ['ls-files', '--', changeDirectory(entry.change)])
+      .split('\n')
+      .filter((value) => value !== '')
+    if (tracked.some((path) => existsSync(join(root, path)))) {
       throw new Error(`the change ${entry.change} is still active; archive it first`)
     }
-    const archived = readdirSync(join(root, 'openspec', 'changes', 'archive')).some((name) => name.endsWith(`-${entry.change}`))
-    if (!archived) throw new Error(`the change ${entry.change} has no archive directory`)
-    const head = commit ?? git(root, ['rev-parse', 'HEAD'])
-    if (head !== git(root, ['rev-parse', 'HEAD'])) throw new Error(`the archive commit ${head} is not HEAD`)
-    if (git(root, ['status', '--porcelain']) !== '') throw new Error('landing needs a clean main worktree before archive')
+    const archiveRelative = archivedDirectory(root, entry.change)
+    const capabilities = archivedCapabilities(root, archiveRelative)
+    let head
+    if (commit === undefined) {
+      assertArchiveReady(root, entry.change, archiveRelative, capabilities)
+      head = commitArchive(root, entry.change, archiveRelative, capabilities)
+    } else {
+      verifyArchiveCommit(root, entry.change, commit, archiveRelative, capabilities)
+      head = commit
+    }
     entry.archiveCommit = head
     entry.phase = 'archived'
     entry.error = null
@@ -917,7 +1078,7 @@ export function usage() {
     '  prepare <n> --apply                   create the landing branch at the head',
     '  reviewed <n> --apply                  record the passed review tree',
     '  merge <n> --apply                     merge with gh pr merge --rebase',
-    '  archive <n> [--commit <sha>] --apply  record the archive commit',
+    '  archive <n> [--commit <sha>] --apply  commit or verify the archive',
     '  push <n> --apply                      record the pushed main head',
     '  finish <n> --apply                    write the manifest and clean up',
     '  abandon <n> --apply                   remove a pre-merge landing',
@@ -1004,9 +1165,9 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     if (options.command === 'sync-batch') {
-      const result = withRunLock(root, () => syncBatch({
+      const result = withRunTelemetry(root, 'sync-batch', () => withRunLock(root, () => syncBatch({
         root, apply: options.apply, session: options.session, token: options.token,
-      }))
+      })))
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
@@ -1022,7 +1183,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
-    const result = withRunLock(root, () => {
+    const result = withRunTelemetry(root, options.command, () => withRunLock(root, () => {
       const shared = { root, number: options.number, apply: options.apply, session: options.session, token: options.token }
       if (options.command === 'plan') return planLanding(shared)
       if (options.command === 'sync') return syncLanding(shared)
@@ -1035,7 +1196,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       if (options.command === 'push') return pushLanding(shared)
       if (options.command === 'abandon') return abandonLanding(shared)
       return finishLanding(shared)
-    })
+    }))
     write(`${JSON.stringify(result, null, 2)}\n`)
     return 0
   } catch (error) {
