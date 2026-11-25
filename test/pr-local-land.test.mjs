@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 import {
+  adoptLocal,
   finishLocal,
   inspectChangeLock,
   main,
@@ -14,6 +15,7 @@ import {
   statusLocal,
   verifyLocal,
 } from '../scripts/pr-local-land.mjs'
+import { readLandedManifestForMain, readLandedManifests } from '../scripts/pr-local-shared.mjs'
 import { loadLocalState, resolvePaths, saveLocalState, updateLocalEntry } from '../scripts/pr-review-watch.mjs'
 import { acquireLock, forceRelease, lockStatus } from '../scripts/pr-review-lock.mjs'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
@@ -132,16 +134,65 @@ function cleanup(...directories) {
   for (const directory of directories) rmSync(directory, { recursive: true, force: true })
 }
 
-function writeLandedManifest(fixture, archiveCommit, tree = fixture.tree) {
+function writeLandedManifest(fixture, archiveCommit, tree = fixture.tree, overrides = {}) {
   const directory = join(fixture.common, 'openspec-flow', 'landed')
   mkdirSync(directory, { recursive: true })
-  writeFileSync(join(directory, `land-${fixture.merge}.json`), `${JSON.stringify({
+  const { file = `land-${fixture.merge}.json`, ...fields } = overrides
+  writeFileSync(join(directory, file), `${JSON.stringify({
     change: CHANGE,
+    featureHead: fixture.featureHead,
     featureTree: tree,
     landCommit: fixture.merge,
     archiveCommit,
     approvedBy: 'user',
+    ...fields,
   }, null, 2)}\n`)
+}
+
+function writeReview(fixture, tree, overrides = {}) {
+  writeFileSync(join(fixture.common, 'openspec-flow', 'review', `local#${CHANGE}`, 'apply-review.json'), `${JSON.stringify({
+    id: 'review-1',
+    state: 'passed',
+    treeSha: tree,
+    findings: [],
+    ...overrides,
+  }, null, 2)}\n`)
+}
+
+function commitWorktreeChange(fixture, content = 're-reviewed\n') {
+  writeFileSync(join(fixture.worktree, 'feature.txt'), content)
+  mustGit(fixture.worktree, ['add', '.'])
+  mustGit(fixture.worktree, ['commit', '-qm', 're-review'])
+  return {
+    head: mustGit(fixture.worktree, ['rev-parse', 'HEAD']),
+    tree: mustGit(fixture.worktree, ['rev-parse', 'HEAD^{tree}']),
+  }
+}
+
+function removeWorktree(fixture) {
+  mustGit(fixture.root, ['worktree', 'remove', '--force', fixture.worktree])
+}
+
+function openGh() {
+  return (args) => {
+    if (args[0] === 'pr' && args[1] === 'view') {
+      return JSON.stringify({
+        number: 12,
+        state: 'OPEN',
+        isDraft: false,
+        headRefOid: 'f'.repeat(40),
+        baseRefName: 'main',
+        mergeCommit: null,
+        isCrossRepository: false,
+      })
+    }
+    if (args[0] === 'api') return 'maintainer'
+    return undefined
+  }
+}
+
+function noGh() {
+  return undefined
 }
 
 function simulateArchive(fixture) {
@@ -157,6 +208,14 @@ test('parseArgs and help are strict', () => {
   assert.equal(parseArgs(['status']).command, 'status')
   assert.equal(parseArgs(['status', '12']).number, 12)
   assert.equal(parseArgs(['verify', '12', '--session', SESSION]).session, SESSION)
+  const tree = 'a'.repeat(40)
+  assert.equal(parseArgs(['adopt', '12', '--tree', tree, '--session', SESSION]).tree, tree)
+  assert.equal(parseArgs(['adopt', '12', '--tree', tree, '--session', SESSION]).command, 'adopt')
+  assert.throws(() => parseArgs(['adopt', '12', '--session', SESSION]), /needs --tree/)
+  assert.throws(() => parseArgs(['adopt', '12', '--tree', 'abc', '--session', SESSION]), /full 40-character/)
+  assert.throws(() => parseArgs(['adopt', '12', '--tree', tree]), /needs --session/)
+  assert.throws(() => parseArgs(['verify', '12', '--tree', tree]), /only adopt accepts --tree/)
+  assert.throws(() => parseArgs(['retarget', '12', '--session', SESSION, '--tree', tree]), /only adopt accepts --tree/)
   assert.equal(parseArgs(['retarget', '12', '--session', SESSION, '--apply']).apply, true)
   assert.equal(parseArgs(['finish', '12', '--session', SESSION, '--phase', 'landed-offline']).phase, 'landed-offline')
   assert.equal(parseArgs(['finish', '12', '--session', SESSION]).phase, 'pushed')
@@ -169,6 +228,7 @@ test('parseArgs and help are strict', () => {
   let output = ''
   assert.equal(main(['--help'], (text) => { output += text }), 0)
   assert.match(output, /pr-local-land\.mjs/)
+  assert.match(output, /adopt <n> --tree <sha>/)
   assert.equal(main(['wat'], (text) => { output += text }), 2)
 })
 
@@ -216,7 +276,7 @@ test('verify refuses a tree mismatch, a dirty worktree, a non-ancestor main and 
       id: 'review-1', state: 'passed', treeSha: fixture.tree, findings: [],
     }))
     updateLocalEntry(fixture.root, 12, { tree: 'f'.repeat(40) })
-    assert.throws(verify, /differs from the reviewed tree/)
+    assert.throws(verify, /differs from the reviewed tree[\s\S]*adopt 12 --tree/)
     updateLocalEntry(fixture.root, 12, { tree: fixture.tree })
     mustGit(fixture.root, ['commit', '--allow-empty', '-qm', 'local main moved'])
     assert.throws(verify, /not an ancestor/)
@@ -478,5 +538,347 @@ test('inspectChangeLock reports missing, corrupt and dead owners', () => {
     assert.equal(existsSync(directory), true)
   } finally {
     cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('landed manifest lookup selects the manifest whose archive commit is main', () => {
+  const fixture = makeFixture()
+  try {
+    const archiveCommit = simulateArchive(fixture)
+    writeLandedManifest(fixture, 'a'.repeat(40), 'b'.repeat(40), { file: 'land-stale.json' })
+    writeFileSync(join(fixture.common, 'openspec-flow', 'landed', 'land-corrupt.json'), '{bad')
+    assert.equal(readLandedManifests(fixture.root).length, 2)
+    const found = readLandedManifestForMain(fixture.root, { change: CHANGE, main: archiveCommit })
+    assert.equal(found.manifest.featureTree, fixture.tree)
+    assert.equal(readLandedManifestForMain(fixture.root, { change: CHANGE, main: 'c'.repeat(40) }), undefined)
+    assert.equal(readLandedManifestForMain(fixture.root, { change: 'other', main: archiveCommit }), undefined)
+    rmSync(join(fixture.common, 'openspec-flow', 'landed', `land-${fixture.merge}.json`))
+    writeLandedManifest(fixture, archiveCommit, 'not-a-tree', { file: 'land-bad-tree.json' })
+    assert.equal(readLandedManifestForMain(fixture.root, { change: CHANGE, main: archiveCommit }), undefined)
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt records a re-reviewed worktree tree, keeps the phase and clears the error', () => {
+  const fixture = makeFixture()
+  try {
+    const next = commitWorktreeChange(fixture)
+    writeReview(fixture, next.tree)
+    updateLocalEntry(fixture.root, 12, { phase: 'failed', error: 'stale tree' })
+    const before = readFileSync(resolvePaths(fixture.root).localState, 'utf8')
+    const dry = adoptLocal({ root: fixture.root, number: 12, tree: next.tree, session: SESSION, gh: openGh(), git: runGit })
+    assert.equal(dry.dryRun, true)
+    assert.equal(dry.head, next.head)
+    assert.equal(dry.tree, next.tree)
+    assert.deepEqual(dry.sources, ['apply worktree'])
+    assert.equal(readFileSync(resolvePaths(fixture.root).localState, 'utf8'), before)
+    const adopted = adoptLocal({
+      root: fixture.root, number: 12, tree: next.tree, session: SESSION, gh: openGh(), git: runGit, apply: true,
+    })
+    assert.equal(adopted.head, next.head)
+    assert.equal(adopted.tree, next.tree)
+    assert.equal(adopted.phase, 'failed')
+    assert.equal(adopted.error, null)
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt prefers the merged pull request head over the worktree head', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    const report = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit,
+    })
+    assert.deepEqual(report.sources, ['merged pull request', 'apply worktree'])
+    assert.equal(report.head, fixture.merge)
+    const adopted = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit, apply: true,
+    })
+    assert.equal(adopted.head, fixture.merge)
+    assert.equal(adopted.tree, fixture.tree)
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt records the landed manifest head over the merged PR and worktree heads', () => {
+  const fixture = makeFixture()
+  try {
+    const archiveCommit = simulateArchive(fixture)
+    const alternate = mustGit(fixture.root, ['commit-tree', fixture.tree, '-p', fixture.base, '-m', 'alternate reviewed head'])
+    writeLandedManifest(fixture, archiveCommit, fixture.tree, { featureHead: alternate, file: `land-${fixture.merge}.json` })
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    const report = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit,
+    })
+    assert.equal(report.head, alternate)
+    assert.deepEqual(report.sources, ['landed manifest', 'merged pull request', 'apply worktree'])
+    const adopted = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit, apply: true,
+    })
+    assert.equal(adopted.head, alternate)
+    assert.equal(adopted.tree, fixture.tree)
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt falls back to a landed manifest after the worktree is removed', () => {
+  const fixture = makeFixture()
+  try {
+    simulateArchive(fixture)
+    removeWorktree(fixture)
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    const adopted = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: noGh(), git: runGit, apply: true,
+    })
+    assert.equal(adopted.head, fixture.featureHead)
+    assert.equal(adopted.tree, fixture.tree)
+    assert.equal(adopted.phase, 'published')
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt refuses an unpassed review, an open finding, a pushed entry, another owner and another lock owner', () => {
+  const fixture = makeFixture()
+  try {
+    const base = {
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit,
+    }
+    writeReview(fixture, fixture.tree, { state: 'changes-requested' })
+    assert.throws(() => adoptLocal(base), /not passed/)
+    writeReview(fixture, fixture.tree, { findings: [{ status: 'open' }] })
+    assert.throws(() => adoptLocal(base), /open finding/)
+    writeReview(fixture, fixture.tree)
+    assert.throws(() => adoptLocal({ ...base, tree: 'abc' }), /full 40-character/)
+    updateLocalEntry(fixture.root, 12, { phase: 'pushed' })
+    assert.throws(() => adoptLocal(base), /already pushed/)
+    updateLocalEntry(fixture.root, 12, { phase: 'published' })
+    assert.throws(() => adoptLocal({ ...base, session: 'other' }), /belongs to session owner-1/)
+    forceRelease({ root: fixture.root, reason: 'test' })
+    acquireLock({ root: fixture.root, session: 'other-owner', token: 'other-token', pr: 12 })
+    assert.throws(() => adoptLocal(base), /held by session other-owner/)
+    forceRelease({ root: fixture.root, reason: 'test cleanup' })
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt refuses a merged tree that did not land and a manifest naming another tree', () => {
+  const fixture = makeFixture()
+  try {
+    const next = commitWorktreeChange(fixture)
+    writeReview(fixture, next.tree)
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree: next.tree, session: SESSION, gh: mergedGh(fixture), git: runGit }),
+      /merged pull request tree .* is not/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+  const manifestFixture = makeFixture()
+  try {
+    simulateArchive(manifestFixture)
+    const next = commitWorktreeChange(manifestFixture)
+    writeReview(manifestFixture, next.tree)
+    assert.throws(
+      () => adoptLocal({
+        root: manifestFixture.root, number: 12, tree: next.tree, session: SESSION, gh: openGh(), git: runGit,
+      }),
+      /landed manifest .* records tree .* not/,
+    )
+  } finally {
+    cleanup(manifestFixture.root, manifestFixture.remote)
+  }
+})
+
+test('adopt refuses a manifest without a usable feature head or with a mismatched head tree', () => {
+  const fixture = makeFixture()
+  try {
+    const archiveCommit = simulateArchive(fixture)
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    writeLandedManifest(fixture, archiveCommit, fixture.tree, {
+      featureHead: 'bad', landCommit: '', file: `land-${fixture.merge}.json`,
+    })
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: noGh(), git: runGit }),
+      /no usable feature head/,
+    )
+    const wrongTree = mustGit(fixture.root, ['rev-parse', `${fixture.base}^{tree}`])
+    const wrongHead = mustGit(fixture.root, ['commit-tree', wrongTree, '-p', fixture.base, '-m', 'wrong tree'])
+    writeLandedManifest(fixture, archiveCommit, fixture.tree, {
+      featureHead: wrongHead, file: `land-${fixture.merge}.json`,
+    })
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: noGh(), git: runGit }),
+      /has tree .* not/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt refuses a merged pull request without a merge commit and falls back when origin/main is not it', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    assert.throws(
+      () => adoptLocal({
+        root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture, { mergeCommit: null }), git: runGit,
+      }),
+      /no merge commit id/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+  const fallback = makeFixture()
+  try {
+    mustGit(fallback.root, ['push', '-q', '--force', 'origin', `${fallback.base}:refs/heads/main`])
+    updateLocalEntry(fallback.root, 12, { tree: 'e'.repeat(40) })
+    const report = adoptLocal({
+      root: fallback.root, number: 12, tree: fallback.tree, session: SESSION, gh: mergedGh(fallback), git: runGit,
+    })
+    assert.equal(report.head, fallback.featureHead)
+    assert.deepEqual(report.sources, ['apply worktree'])
+  } finally {
+    cleanup(fallback.root, fallback.remote)
+  }
+})
+
+test('adopt refuses a tree with no current source', () => {
+  const fixture = makeFixture()
+  try {
+    writeFileSync(join(fixture.worktree, 'dirty.txt'), 'dirty\n')
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: openGh(), git: runGit }),
+      /not the current worktree head tree/,
+    )
+    rmSync(join(fixture.worktree, 'dirty.txt'))
+    const tree = 'f'.repeat(40)
+    writeReview(fixture, tree)
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree, session: SESSION, gh: openGh(), git: runGit }),
+      /not the current worktree head tree/,
+    )
+    removeWorktree(fixture)
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree, session: SESSION, gh: openGh(), git: runGit }),
+      /not the current worktree head tree/,
+    )
+    assert.throws(
+      () => adoptLocal({ root: fixture.root, number: 12, tree, session: SESSION, gh: noGh(), git: runGit }),
+      /gh pr view 12 failed/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt reports a skipped fetch and still records the worktree source', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    const flakyGit = (cwd, args, allowFailure = false) => {
+      if (args[0] === 'fetch' && args[1] === 'origin') return undefined
+      return runGit(cwd, args, allowFailure)
+    }
+    const report = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: flakyGit,
+    })
+    assert.ok(report.skipped.some((text) => text.includes('git fetch origin main failed')))
+    assert.equal(report.head, fixture.featureHead)
+    assert.deepEqual(report.sources, ['apply worktree'])
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('verify names adopt on a merged-tree mismatch and recover plans it', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'f'.repeat(40), phase: 'failed' })
+    assert.throws(
+      () => verifyLocal({ root: fixture.root, number: 12, gh: mergedGh(fixture), git: runGit }),
+      new RegExp(`adopt 12 --tree ${fixture.tree}`),
+    )
+    const plan = recoverLocal({ root: fixture.root, number: 12, gh: mergedGh(fixture), git: runGit })
+    assert.equal(plan.treeMatches, false)
+    const adoptStep = plan.steps.findIndex((step) => step.includes(`adopt 12 --tree ${fixture.tree}`))
+    const retargetStep = plan.steps.findIndex((step) => step.includes('retarget 12'))
+    assert.ok(adoptStep >= 0 && adoptStep < retargetStep)
+    writeReview(fixture, fixture.tree, { state: 'changes-requested' })
+    assert.throws(
+      () => recoverLocal({ root: fixture.root, number: 12, gh: mergedGh(fixture), git: runGit }),
+      /not passed/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('finish names adopt when the landed manifest on main records another tree', () => {
+  const fixture = makeFixture()
+  try {
+    const archiveCommit = simulateArchive(fixture)
+    updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
+    assert.throws(
+      () => finishLocal({
+        root: fixture.root, number: 12, phase: 'landed-offline', session: SESSION, token: TOKEN, apply: true, gh: mergedGh(fixture), git: runGit,
+      }),
+      new RegExp(`records tree e+ but .* records ${fixture.tree}.*adopt 12 --tree ${fixture.tree}`),
+    )
+    assert.equal(loadLocalState(fixture.root).prs['12'].phase, 'failed')
+    writeFileSync(join(fixture.common, 'openspec-flow', 'landed', `land-${fixture.merge}.json`), `${JSON.stringify({
+      change: CHANGE,
+      featureHead: fixture.featureHead,
+      landCommit: fixture.merge,
+      archiveCommit,
+      approvedBy: 'user',
+    }, null, 2)}\n`)
+    assert.throws(
+      () => finishLocal({
+        root: fixture.root, number: 12, phase: 'landed-offline', session: SESSION, token: TOKEN, apply: true, gh: mergedGh(fixture), git: runGit,
+      }),
+      /no landed manifest/,
+    )
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+})
+
+test('adopt unblocks verify and finish', () => {
+  const fixture = makeFixture()
+  try {
+    updateLocalEntry(fixture.root, 12, { tree: 'f'.repeat(40) })
+    const adopted = adoptLocal({
+      root: fixture.root, number: 12, tree: fixture.tree, session: SESSION, gh: mergedGh(fixture), git: runGit, apply: true,
+    })
+    assert.equal(adopted.tree, fixture.tree)
+    const verified = verifyLocal({ root: fixture.root, number: 12, gh: mergedGh(fixture), git: runGit })
+    assert.equal(verified.tree, fixture.tree)
+    assert.equal(verified.mergeTree, fixture.tree)
+  } finally {
+    cleanup(fixture.root, fixture.remote)
+  }
+  const afterLand = makeFixture()
+  try {
+    simulateArchive(afterLand)
+    removeWorktree(afterLand)
+    updateLocalEntry(afterLand.root, 12, { tree: 'f'.repeat(40) })
+    adoptLocal({
+      root: afterLand.root, number: 12, tree: afterLand.tree, session: SESSION, gh: noGh(), git: runGit, apply: true,
+    })
+    const finished = finishLocal({
+      root: afterLand.root, number: 12, phase: 'landed-offline', session: SESSION, token: TOKEN, apply: true, gh: mergedGh(afterLand), git: runGit,
+    })
+    assert.equal(finished.phase, 'landed-offline')
+    assert.equal(loadLocalState(afterLand.root).prs['12'].phase, 'landed-offline')
+    assert.equal(lockStatus({ root: afterLand.root }).held, false)
+  } finally {
+    cleanup(afterLand.root, afterLand.remote)
   }
 })
