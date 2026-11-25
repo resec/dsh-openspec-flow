@@ -1630,7 +1630,10 @@ test('landing refuses own dirt, outside dirt, a staged index and off-main', () =
   git(root, ['reset', '-q', 'staged.txt'])
   rmSync(join(root, 'staged.txt'))
   git(root, ['checkout', '-q', '-b', 'side'])
-  assert.throws(() => planLanding({ root, number: 12, gh: fake }), /must run from main/)
+  assert.throws(
+    () => planLanding({ root, number: 12, gh: () => { throw new Error('must not be called') } }),
+    /must run from main/,
+  )
 })
 
 test('merge refuses a staged index before gh and stays reviewed', () => {
