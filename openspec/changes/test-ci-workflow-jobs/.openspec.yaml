@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+skip_specs: true
+goal: Read the CI workflow per job and per step, so a step moved into another job or
+  reordered fails the workflow test instead of passing on a whole-file substring match.
