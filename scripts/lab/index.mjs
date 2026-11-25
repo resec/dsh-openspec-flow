@@ -27,6 +27,7 @@ import {
   waitForShell,
 } from './drivers/web.mjs'
 import { findSessionLog, readSessionEvents } from './inspect/sessions.mjs'
+import { redactMessage, redactText } from './core/redact.mjs'
 
 /** Arguments that make the isolated Web profile bind an OS-assigned port. */
 export const WEB_START_ARGS = ['--profile', 'verify-web', '--port', '0', '--no-open']
@@ -139,14 +140,15 @@ export async function createLab({
       ok: false,
       model,
       version,
-      error: String(error?.stack ?? error),
+      error: redactText(String(error?.stack ?? error)),
       runDir: run.dir,
       artifacts: run.artifacts,
-      checks: [{ name: 'provisioning', status: 'fail', detail: String(error?.message ?? error) }],
+      checks: [{ name: 'provisioning', status: 'fail', detail: redactMessage(error?.message ?? error) }],
     })
     throw error
   }
   const labEnv = labEnvironmentForRun({ root, run, env })
+  let webRuntime
   const state = { web: undefined, profiles: {}, dumps: {}, checks: [], store: undefined, closed: false }
   const output = { run, dsh, mock, env: labEnv, version, plugin: pluginTarball, results: [] }
   writeJson(join(run.artifacts, 'manifest.json'), {
@@ -189,7 +191,7 @@ export async function createLab({
   }
 
   async function ensureWeb() {
-    if (state.web !== undefined) return state.web
+    if (webRuntime !== undefined) return webRuntime
     await ensureProfile('web')
     const logPath = join(run.artifacts, 'web.log')
     let processHandle
@@ -233,7 +235,10 @@ export async function createLab({
         await processHandle.stop().catch(() => {})
       },
     }
-    state.web = web
+    webRuntime = web
+    // The state keeps a printable view only: the page, the browser and the
+    // child handle must not travel with it.
+    state.web = { base, logPath }
     state.checks.push({ name: 'web', status: 'ok', evidence: logPath })
     return web
   }
@@ -347,7 +352,7 @@ export async function createLab({
     async close({ passed = true, error } = {}) {
       if (state.closed) return { runDir: run.dir, kept: true }
       state.closed = true
-      if (state.web !== undefined) await state.web.close().catch(() => {})
+      if (webRuntime !== undefined) await webRuntime.close().catch(() => {})
       if (mock !== undefined) await mock.close().catch(() => {})
       let verdict = passed
       let failure = error
@@ -372,12 +377,12 @@ export async function createLab({
           dirty: pluginTarball.dirty,
           head: pluginTarball.head,
         },
-        error: failure === undefined ? undefined : String(failure?.stack ?? failure),
+        error: failure === undefined ? undefined : redactText(String(failure?.stack ?? failure)),
         packageStore: state.store,
         checks: [
           ...state.checks,
-          { name: 'host-guard', status: hostOk ? 'ok' : 'fail', detail: hostOk ? 'host unchanged' : String(failure?.message ?? failure) },
-          { name: 'scenario', status: verdict ? 'ok' : 'fail', detail: verdict ? 'scenario completed' : String(failure?.message ?? failure) },
+          { name: 'host-guard', status: hostOk ? 'ok' : 'fail', detail: hostOk ? 'host unchanged' : redactMessage(failure?.message ?? failure) },
+          { name: 'scenario', status: verdict ? 'ok' : 'fail', detail: verdict ? 'scenario completed' : redactMessage(failure?.message ?? failure) },
         ],
       }
       return finalizeRun(run, { passed: verdict, report, keep, cleanup })
@@ -400,7 +405,13 @@ export async function loadScenario(file) {
 
 /**
  * Run scenario files.
- * @param options - files, model flags, plugin, cleanup and environment.
+ *
+ * The invocation summary is a second report next to each run's
+ * `artifacts/report.json`, so both the stored and the printed failure text go
+ * through the same redaction as the run report.
+ *
+ * @param options - files, model flags, plugin, cleanup, environment and an
+ * optional sandbox factory for tests.
  * @returns `{ passed, results }`.
  */
 export async function runScenarios({
@@ -415,6 +426,7 @@ export async function runScenarios({
   root = ROOT,
   env = process.env,
   log = console,
+  createLab: createLabImpl = createLab,
 } = {}) {
   if (includeReal && (env.CI === '1' || env.GIT_PUSH === '1' || !process.stdin.isTTY)) {
     throw new Error('--include-real-model is only allowed in an interactive local run')
@@ -434,10 +446,10 @@ export async function runScenarios({
     }
     let lab
     try {
-      lab = await createLab({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
+      lab = await createLabImpl({ pluginTarball: tarball, model: scenario.model, keep, cleanup, offline, fresh, root, env })
     } catch (error) {
-      results.push({ name: scenario.name, file, status: 'failed', error: String(error), reason: 'provisioning failed' })
-      log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
+      results.push({ name: scenario.name, file, status: 'failed', error: redactMessage(error), reason: 'provisioning failed' })
+      log.error(`FAIL ${scenario.name}: ${redactMessage(error)}`)
       continue
     }
     try {
@@ -447,8 +459,8 @@ export async function runScenarios({
       log.log(`PASS ${scenario.name}`)
     } catch (error) {
       const closed = await lab.close({ passed: false, error })
-      results.push({ name: scenario.name, file, status: 'failed', error: String(error), runDir: closed.runDir })
-      log.error(`FAIL ${scenario.name}: ${error instanceof Error ? error.message : String(error)}`)
+      results.push({ name: scenario.name, file, status: 'failed', error: redactMessage(error), runDir: closed.runDir })
+      log.error(`FAIL ${scenario.name}: ${redactMessage(error)}`)
     }
   }
   const passed = results.every((result) => result.status !== 'failed')
