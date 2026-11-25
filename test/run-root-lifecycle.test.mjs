@@ -130,6 +130,7 @@ test('a scoped run interrupted by SIGTERM removes its root and exits 143', async
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let childStderr = ''
+  child.stderr.setEncoding('utf8')
   child.stderr.on('data', (chunk) => { childStderr += chunk })
   const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)))
   const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
@@ -179,6 +180,7 @@ test('a plain run interrupted by SIGTERM removes its root and exits 143', async 
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   let childStderr = ''
+  child.stderr.setEncoding('utf8')
   child.stderr.on('data', (chunk) => { childStderr += chunk })
   const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)))
   const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
