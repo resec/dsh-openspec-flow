@@ -5,21 +5,31 @@
  * runtime would notice it going stale. This test reads it as text and compares
  * the names it uses with the code: tools registered by both plugin halves, the
  * `openspec_review` action list, the review defaults, the record layout and the
- * README link. A negative case proves a stale name is reported by name.
+ * README link. Numbers and field names the document states are compared with the
+ * implementation itself (the length constant, the accepted wait and extend
+ * bounds, the brief's base sources, the stale-round fields and the cross-change
+ * refusal), not with a literal copy of them. A negative case proves a stale
+ * name or number is reported by name.
  */
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { apply } from '../index.js'
 import { apply as reviewerApply } from '../reviewer.js'
+import { buildApplyBrief } from '../lib/review/brief.js'
 import {
   DEFAULT_APPLY_REVIEW,
   DEFAULT_DRAFT_REVIEW,
   DEFAULT_REVIEWER_MODEL,
+  normalizeReviews,
 } from '../lib/review/config.js'
+import { MAX_REQUIREMENT_DESCRIPTION } from '../lib/review/length.js'
+import { assertReport } from '../lib/review/report.js'
+import { closeStaleRound } from '../lib/review/submit.js'
 import { APPLY_REVIEW_FILE, DRAFT_REVIEW_FILE } from '../lib/review/record.js'
 import { LOCK_DIRECTORY_NAME, LOCK_FIELDS, LOCK_FILE_NAME } from '../lib/review/apply-lock.js'
 import { REVIEW_DIRECTORY, REVIEW_IGNORE_LINE } from '../lib/review/store.js'
@@ -71,6 +81,7 @@ function liveCatalog() {
       lockDirectory: LOCK_DIRECTORY_NAME,
       lockFields: LOCK_FIELDS,
     },
+    values: docValues(),
   }
 }
 
@@ -86,6 +97,179 @@ function cell(value) {
     return `{ source: "${String(value.source)}" }`
   }
   return String(value)
+}
+
+/**
+ * The fixed header fields of the apply brief; only the base source and the
+ * validation report vary between the probes below.
+ */
+const APPLY_BRIEF_BASE = {
+  round: 1,
+  change: 'add-dark-mode',
+  commitSha: 'a'.repeat(40),
+  treeSha: 'b'.repeat(40),
+  baseCommit: 'c'.repeat(40),
+  baseTreeSha: 'd'.repeat(40),
+  diffPath: 'review/diff.patch',
+  changedPaths: [],
+}
+
+/**
+ * Render one line of a freshly built apply brief.
+ * @param pattern - the line to extract.
+ * @param extra - brief options to vary.
+ * @returns the line, without its leading bullet.
+ */
+function applyBriefLine(pattern, extra) {
+  const brief = buildApplyBrief({ ...APPLY_BRIEF_BASE, ...extra })
+  const match = pattern.exec(brief)
+  assert.ok(match, `the apply brief still renders ${String(pattern)}`)
+  return match[0].replace(/^- /u, '')
+}
+
+/**
+ * The three base sources. `line` is the wording the brief renders and `phrase`
+ * the wording the document lists; the document translates the brief, so the
+ * pair lives here while the rendered line is read from the brief.
+ */
+const BASE_SOURCES = [
+  { baseSource: 'seal', line: 'seal commit', phrase: '封存 commit' },
+  { baseSource: 'explicit', line: 'explicit base', phrase: '显式 `base`' },
+  { line: 'merge-base', phrase: 'merge-base' },
+]
+
+/**
+ * Read the wait bound the settings accept.
+ * @returns `{ min, max }` from the diagnostic the configuration writes.
+ */
+function waitMinutesBounds() {
+  const { issues } = normalizeReviews({ draft: { waitMinutes: 0 } })
+  const message = issues.map((issue) => issue.message).join('; ')
+  const match = /between (\d+) and (\d+)/u.exec(message)
+  assert.ok(match, `reviews.draft.waitMinutes is bounded: ${message}`)
+  return { min: Number(match[1]), max: Number(match[2]) }
+}
+
+/**
+ * Read the extend bound the review tool accepts. The bound is inline in the
+ * argument check, so the source is the only place that states it.
+ * @returns `{ min, max }`.
+ */
+function extendMinutesBounds() {
+  const source = readFileSync(join(ROOT, 'lib', 'tools', 'review.js'), 'utf8')
+  const match = /minutes < (\d+) \|\| minutes > (\d+)/u.exec(source)
+  assert.ok(match, 'extendReview still bounds minutes')
+  return { min: Number(match[1]), max: Number(match[2]) }
+}
+
+/**
+ * Read the format of the brief's validation line.
+ * @returns the line with the issue count replaced by `N`.
+ */
+function validationLineFormat() {
+  const many = applyBriefLine(/^- validation: .*$/mu, {
+    validation: { strict: true, issues: [{ level: 'ERROR' }, { level: 'ERROR' }, { level: 'INFO' }] },
+  })
+  const one = applyBriefLine(/^- validation: .*$/mu, {
+    validation: { strict: true, issues: [{ level: 'ERROR' }] },
+  })
+  assert.match(many, /\(2 issues\)$/u)
+  assert.match(one, /\(1 issue\)$/u)
+  const format = many.replace(/\(\d+ issues\)$/u, '(N issues)')
+  assert.ok(format.startsWith('validation: host strict pass'), format)
+  return format
+}
+
+/**
+ * Close a stale round and read the fields it records.
+ * @returns the cause the document quotes and the two hash fields.
+ */
+function staleRoundFields() {
+  const root = mkdtempSync(join(tmpdir(), 'review-doc-stale-'))
+  const directory = join(root, 'review')
+  try {
+    mkdirSync(join(directory, 'round-1'), { recursive: true })
+    const opened = { round: 1, seq: 1, objectHash: 'from-hash' }
+    const openedKeys = new Set(Object.keys(opened))
+    const { record } = closeStaleRound({
+      directory,
+      record: { state: 'in-review', findings: [], rounds: [opened] },
+      currentHash: 'to-hash',
+    })
+    const round = record.rounds.at(-1)
+    const added = Object.keys(round).filter((key) => !openedKeys.has(key))
+    const causes = added.filter((key) => round[key] === 'stale-object')
+    const from = added.filter((key) => round[key] === 'from-hash')
+    const to = added.filter((key) => round[key] === 'to-hash')
+    assert.equal(causes.length, 1, 'the stale round records one cause')
+    assert.equal(from.length, 1, 'the stale round records the hash it left')
+    assert.equal(to.length, 1, 'the stale round records the hash it found')
+    return { cause: `${causes[0]}: "stale-object"`, fields: [from[0], to[0]] }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Submit a finding that names another change and read the refusal.
+ * @returns the report field the refusal points at.
+ */
+function crossChangeRefusal() {
+  let message
+  try {
+    assertReport(
+      {
+        verdict: 'pass',
+        summary: 'The planning artifacts are coherent.',
+        findings: [{
+          id: 'R1-02',
+          severity: 'minor',
+          axis: 'coherence',
+          location: 'openspec/changes/other/proposal.md',
+          title: 'Another change is out of scope',
+          problem: 'The finding asks another change to change.',
+          evidence: 'openspec/changes/other/proposal.md is not this change.',
+          suggestion: 'Record the concern in outOfScope.',
+        }],
+        verifications: [],
+        outOfScope: [],
+        residualRisks: [],
+      },
+      { round: 1, findings: [], kind: 'draft', scope: { change: 'reviewed-change' } },
+    )
+  } catch (error) {
+    message = error.message
+  }
+  assert.ok(message, 'a finding that names another change is refused')
+  assert.ok(message.includes('R1-02'), `the refusal names the finding: ${message}`)
+  const field = /report\.([A-Za-z]+) instead/u.exec(message)?.[1]
+  assert.ok(field, `the refusal names the report field: ${message}`)
+  return { field }
+}
+
+/**
+ * Read the values the document states from the implementation.
+ *
+ * Each entry is what the code does now: the length gate's constant, the bounds
+ * the settings and `extend` accept, the base sources the brief renders, the
+ * validation line format, the stale-round fields and the field a cross-change
+ * refusal points at.
+ * @returns the values and the document phrases they map to.
+ */
+function docValues() {
+  return {
+    requirementLengthLimit: MAX_REQUIREMENT_DESCRIPTION,
+    waitMinutes: waitMinutesBounds(),
+    extendMinutes: extendMinutesBounds(),
+    baseSources: BASE_SOURCES.map((source) => {
+      const line = applyBriefLine(/^- The base is .*$/mu, { baseSource: source.baseSource })
+      assert.ok(line.includes(source.line), `the ${source.phrase} source is rendered: ${line}`)
+      return source.phrase
+    }),
+    validationLine: validationLineFormat(),
+    stale: staleRoundFields(),
+    crossChange: crossChangeRefusal(),
+  }
 }
 
 /**
@@ -128,6 +312,44 @@ export function checkDocument(text, spec) {
       }
     }
   }
+  // Numbers and field names below are compared with the implementation's own
+  // values, so a changed limit, bound or field name turns this test red. The
+  // value is read out of the document rather than asserted to appear somewhere.
+  const limit = /(\d+) 字符上限/u.exec(text)
+  if (limit === null) {
+    problems.push('missing the requirement length limit')
+  } else if (Number(limit[1]) !== spec.values.requirementLengthLimit) {
+    problems.push(`stale requirement length limit: ${limit[1]}, expected ${String(spec.values.requirementLengthLimit)}`)
+  }
+  for (const kind of ['draft', 'apply']) {
+    const row = new RegExp(`^\\| \`reviews\\.${kind}\\.waitMinutes\` \\| \`[^\`]+\` \\|([^|]*)\\|`, 'mu').exec(text)
+    if (row === null) continue // the defaults table above reports the missing row
+    const bound = /(\d+)–(\d+)/u.exec(row[1])
+    const expected = `${String(spec.values.waitMinutes.min)}–${String(spec.values.waitMinutes.max)}`
+    if (bound === null) problems.push(`missing the wait bound for reviews.${kind}.waitMinutes`)
+    else if (bound[0] !== expected) problems.push(`stale wait bound for reviews.${kind}.waitMinutes: ${bound[0]}, expected ${expected}`)
+  }
+  const extend = /`minutes` (\d+–\d+)/u.exec(text)
+  const extendExpected = `${String(spec.values.extendMinutes.min)}–${String(spec.values.extendMinutes.max)}`
+  if (extend === null) problems.push('missing the extend bound for minutes')
+  else if (extend[1] !== extendExpected) problems.push(`stale extend bound: ${extend[1]}, expected ${extendExpected}`)
+  const listed = /`base` 及其来源（([^）]*)）/u.exec(text)
+  if (listed === null) {
+    problems.push('missing the apply brief base sources')
+  } else {
+    const items = listed[1].split(/[、或]/u).map((item) => item.trim()).filter((item) => item !== '')
+    if (items.join('|') !== spec.values.baseSources.join('|')) {
+      problems.push(`stale base sources: ${items.join('、')}, expected ${spec.values.baseSources.join('、')}`)
+    }
+  }
+  if (!text.includes(spec.values.validationLine)) problems.push(`missing validation line ${spec.values.validationLine}`)
+  if (!text.includes(`\`${spec.values.stale.cause}\``)) problems.push(`missing stale round cause ${spec.values.stale.cause}`)
+  for (const field of spec.values.stale.fields) {
+    if (!text.includes(field)) problems.push(`missing stale round field ${field}`)
+  }
+  if (!text.includes(`\`${spec.values.crossChange.field}\``)) {
+    problems.push(`missing cross-change refusal field ${spec.values.crossChange.field}`)
+  }
   if (text.includes('maxRounds')) problems.push('names the removed round cap maxRounds')
   if (!text.includes(spec.record.root)) problems.push(`missing record root ${spec.record.root}`)
   if (!text.includes('<git common dir>/openspec-flow/review')) problems.push('missing shared record root')
@@ -166,6 +388,16 @@ test('the review document matches the live tools, actions, defaults and record l
   const spec = liveCatalog()
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.deepEqual(checkDocument(text, spec), [])
+})
+
+test('the review document and README state the requirement length limit', () => {
+  const values = docValues()
+  const text = readFileSync(DOC_PATH, 'utf8')
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  const limit = `${String(values.requirementLengthLimit)} 字符上限`
+  assert.ok(text.includes(limit), `the document states ${limit}`)
+  assert.ok(readme.includes(limit), `the README states ${limit}`)
+  assert.ok(text.includes(values.validationLine), `the document states ${values.validationLine}`)
 })
 
 test('the README links the review document', () => {
@@ -214,7 +446,6 @@ test('the review document and README state the no-draft apply baseline', () => {
 test('the review document and README state the requirement length gate', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [
-    '500 字符上限',
     'ADDED',
     'MODIFIED',
     '历史既有超长',
@@ -227,7 +458,7 @@ test('the review document and README state the requirement length gate', () => {
   }
   assert.doesNotMatch(text, /建议压缩文本|应该压缩文本/)
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
-  for (const phrase of ['500 字符上限', 'ADDED', 'MODIFIED', '历史超长', 'resume review=draft', '不要为了过闸门压缩文本']) {
+  for (const phrase of ['ADDED', 'MODIFIED', '历史超长', 'resume review=draft', '不要为了过闸门压缩文本']) {
     assert.ok(readme.includes(phrase), `the README names ${phrase}`)
   }
 })
@@ -325,6 +556,44 @@ test('a stale tool, default or record path is reported by name', () => {
   assert.ok(checkDocument(unknownAction, spec).includes('unknown action pause'))
 
   assert.deepEqual(checkReadme('# README\n'), ['README does not link docs/review.md'])
+})
+
+test('a stale number or bound in the document is reported by name', () => {
+  const spec = liveCatalog()
+  const text = readFileSync(DOC_PATH, 'utf8')
+  const limit = spec.values.requirementLengthLimit
+
+  const longer = text.replace(`${String(limit)} 字符上限`, `${String(limit + 1)} 字符上限`)
+  const limitProblems = checkDocument(longer, spec)
+  assert.ok(
+    limitProblems.includes(`stale requirement length limit: ${String(limit + 1)}, expected ${String(limit)}`),
+    limitProblems.join('; '),
+  )
+
+  const extend = spec.values.extendMinutes
+  const wider = text.replace(
+    `\`minutes\` ${String(extend.min)}–${String(extend.max)}`,
+    `\`minutes\` ${String(extend.min)}–${String(extend.max + 5)}`,
+  )
+  const extendProblems = checkDocument(wider, spec)
+  assert.ok(
+    extendProblems.includes(`stale extend bound: ${String(extend.min)}–${String(extend.max + 5)}, expected ${String(extend.min)}–${String(extend.max)}`),
+    extendProblems.join('; '),
+  )
+
+  const droppedSource = checkDocument(text.replace('、显式 `base` 或 merge-base', '、merge-base'), spec)
+  assert.ok(
+    droppedSource.some((problem) => problem.startsWith('stale base sources')),
+    droppedSource.join('; '),
+  )
+
+  const wait = `${String(spec.values.waitMinutes.min)}–${String(spec.values.waitMinutes.max)}`
+  const weakWait = checkDocument(text.replaceAll(`，${wait} |`, '，1–240 |'), spec)
+  assert.equal(
+    weakWait.filter((problem) => problem.startsWith('stale wait bound')).length,
+    2,
+    weakWait.join('; '),
+  )
 })
 
 test('the review document states the reviewer catalog and the host strict validation', () => {
@@ -507,8 +776,12 @@ test('the review document states the stale-round block and the qualified reuse r
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /对尚无报告且对象未变的轮次再次 `resume` 只会复用该轮/)
   assert.match(text, /先把该轮记为 `blocked`/)
-  assert.match(text, /`blockedReason: "stale-object"`/)
   assert.match(text, /监视是尽力而为/)
+  // The cause and the two hash fields are checked against the record the
+  // implementation writes by `checkDocument`, not against a literal here.
+  const { cause, fields } = docValues().stale
+  assert.ok(text.includes(cause), `the document names ${cause}`)
+  for (const field of fields) assert.ok(text.includes(field), `the document names ${field}`)
 })
 
 test('the review document states the cross-change finding boundary', () => {
@@ -519,8 +792,13 @@ test('the review document states the cross-change finding boundary', () => {
     '改记到 `outOfScope`',
     '不得在轮次无报告期间要求该 change 修改产物',
     '任一结构错误或范围违规都会拒绝整份报告',
+    '错误会点名该 finding',
   ]) {
     assert.ok(text.includes(phrase), `the document states ${phrase}`)
   }
   assert.doesNotMatch(text, /任一结构错误都会拒绝整份报告/)
+  // The refusal the document describes is the one the implementation raises: it
+  // names the finding and points at the report field the document names.
+  const { field } = docValues().crossChange
+  assert.ok(text.includes(`\`${field}\``), `the document names ${field}`)
 })
