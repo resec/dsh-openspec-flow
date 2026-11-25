@@ -14,7 +14,7 @@
 
 ## 3. Assert a retry writes one manifest
 
-- [x] 3.1 Count the `.json` files in the landed directory after the manifest write failure and after the retry.
+- [x] 3.1 Block the landed directory with a file so the manifest write fails, and leave the count to the state after the retry; the blocked path cannot hold a manifest, so a pre-retry count asserts nothing.
 - [x] 3.2 Assert exactly one manifest and an unchanged `HEAD` after the retry.
 - [x] 3.3 Confirm the test fails when `finishLand` writes a second manifest.
 

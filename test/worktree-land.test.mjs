@@ -616,7 +616,6 @@ test('a manifest write failure is retried after the archive commit', async () =>
   const manifests = () => (statSync(landedDirectory).isDirectory()
     ? readdirSync(landedDirectory).filter((name) => name.endsWith('.json'))
     : [])
-  assert.equal(manifests().length, 0)
   rmSync(landedDirectory, { force: true })
   const head = run(['rev-parse', 'HEAD'])
   const retried = await call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' })
