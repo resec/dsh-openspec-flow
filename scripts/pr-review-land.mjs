@@ -81,7 +81,7 @@ function git(cwd, args) {
   return capture('git', ['-C', cwd, ...args]).trim()
 }
 
-/** Keep the two leading status columns of `git status --porcelain`. */
+/** Read the raw `git status --porcelain` output. */
 function gitStatusPorcelain(cwd) {
   return capture('git', ['-C', cwd, 'status', '--porcelain'])
 }
