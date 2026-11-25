@@ -154,7 +154,19 @@ After the apply review passes and the pull request has green CI:
 
 When the head does not contain `origin/main`, the owner rebases the plugin worktree, runs `npm run verify`, resumes the apply review in the same session (`openspec_review action=resume review=apply`), and pushes the new head by re-running the publish command with its `--token`. The pull request is reused, the local entry's head and tree are updated and the owner holds the landing lock through the new head's CI. Merge only after the new CI rollup is green.
 
-If the merge commit tree differs from the reviewed tree, `verify` refuses and the change is not archived. Re-review the merged tree or redo the landing; never retarget or land a mismatched tree.
+### Adopting a re-reviewed merge tree
+
+When the merge commit tree differs from the reviewed tree after a branch update or rebase, re-review the merged tree before recording it. The local entry still names the old reviewed tree, and `verify`/`finish` refuse until it is adopted. `adopt` is dry-run by default; only `--apply` writes:
+
+```sh
+node scripts/pr-local-land.mjs adopt <n> --tree <merged-tree> --session <id> --apply
+```
+
+It requires the recorded owner session and the latest passed apply review for the tree. It also requires a current source to corroborate the same tree: the merged pull request on `origin/main`, a landed manifest on `main`, or a clean plugin worktree head. A landed manifest takes precedence over the merged pull request, and the merged pull request over the worktree. It refuses a tree that did not land, a manifest on `main` naming another tree, an entry already `pushed`, and a tree with no current source. On success it replaces the entry's `head` and `tree`, clears the recorded error and leaves the phase unchanged.
+
+Run `adopt` after the apply review names the merged tree and before `verify`/`retarget`. After land, run it before `finish` when `finish` reports that the landed manifest records another tree. `finish` keeps its strict tree match: it never adopts by itself. The `verify` refusal names the merged tree and the exact `adopt` command; the `finish` refusal names the manifest tree and the same command.
+
+If the merged tree has no passed apply review, `verify` and `recover` refuse and the change is not archived; never retarget or land a mismatched tree.
 
 ## Recovery
 
@@ -167,10 +179,11 @@ node scripts/pr-local-land.mjs recover <n>
 The plan verifies the merge and tree and lists, in order:
 
 1. `openspec_apply_worktree action=recover scope=change expectedOwner=<token>` when the plugin change lock is held by a dead process. A corrupt lock is reported for inspection first.
-2. `node scripts/pr-local-land.mjs retarget <n> --session <session> --apply`; when the landing lock is still held, the plan appends the recorded `--token`, and a lock owned by another session must be force-released first
-3. `openspec_apply_worktree action=land change=<change> approvedBy=user`
-4. `node scripts/push-landed.mjs --push`
-5. `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <session> --apply`
+2. `node scripts/pr-local-land.mjs adopt <n> --tree <merged-tree> --session <session> --apply` when the merged tree differs from the recorded reviewed tree and the tree has a passed apply review. The plan appends the recorded `--token` when the lock is held.
+3. `node scripts/pr-local-land.mjs retarget <n> --session <session> --apply`; when the landing lock is still held, the plan appends the recorded `--token`, and a lock owned by another session must be force-released first
+4. `openspec_apply_worktree action=land change=<change> approvedBy=user`
+5. `node scripts/push-landed.mjs --push`
+6. `node scripts/pr-local-land.mjs finish <n> --phase pushed --session <session> --apply`
 
 `status` reports the entry, pull-request state, worktree, change-lock state and landed manifest without writing.
 

@@ -32,6 +32,7 @@ import {
   gitText,
   isPluginWorktree,
   readLandedManifest,
+  readLandedManifestForMain,
   readPullRequest,
 } from './pr-local-shared.mjs'
 
@@ -156,6 +157,7 @@ export function verifyLocal({
   root,
   number,
   session,
+  allowTreeMismatch = false,
   gh = ghText,
   git = gitText,
 } = {}) {
@@ -180,8 +182,12 @@ export function verifyLocal({
     throw new Error(`origin/main is ${originMain}, not the merge commit ${mergeCommit}; fetch and reconcile main before retargeting`)
   }
   const mergeTree = gitOrThrow(git, root, ['rev-parse', `${mergeCommit}^{tree}`])
+  let treeMismatch = false
   if (mergeTree !== entry.tree) {
-    throw new Error(`the merged tree ${mergeTree} differs from the reviewed tree ${entry.tree}`)
+    if (!allowTreeMismatch) {
+      throw new Error(`the merged tree ${mergeTree} differs from the reviewed tree ${entry.tree}; re-review the merged tree and run node scripts/pr-local-land.mjs adopt ${entry.number} --tree ${mergeTree} --session ${entry.ownerSession} --apply, then retry`)
+    }
+    treeMismatch = true
   }
   const record = assertReviewReady({ root, change: entry.change, tree: mergeTree })
   const dirty = gitOrThrow(git, worktree, ['status', '--porcelain'])
@@ -208,8 +214,119 @@ export function verifyLocal({
     worktree,
     branch,
     main,
+    treeMismatch,
     state,
   }
+}
+
+/**
+ * Replace the recorded reviewed tree and head after a legitimate re-review.
+ *
+ * The command requires the explicit tree, verifies the latest passed apply
+ * review, and only writes when a current repository fact corroborates the
+ * tree. It never retargets, lands, pushes or changes the phase.
+ * @param options - root, PR number, tree, session, token, apply and runners.
+ * @returns the updated entry or a dry-run report.
+ */
+export function adoptLocal({
+  root,
+  number,
+  tree,
+  session,
+  token,
+  apply = false,
+  gh = ghText,
+  git = gitText,
+} = {}) {
+  const candidate = String(tree ?? '').trim().toLowerCase()
+  if (!/^[0-9a-f]{40}$/u.test(candidate)) {
+    throw new Error('--tree must be a full 40-character git tree id')
+  }
+  const entry = requireLocalEntry(root, number)
+  requireSession(entry, session)
+  if (entry.phase === 'pushed') {
+    throw new Error(`PR #${entry.number} is already pushed; there is no local entry to adopt`)
+  }
+  requireLockOwner({ root, session, token })
+  assertReviewReady({ root, change: entry.change, tree: candidate })
+
+  const main = gitOrThrow(git, root, ['rev-parse', 'main'])
+  const sources = []
+  let head
+
+  const landed = readLandedManifestForMain(root, { change: entry.change, main })
+  if (landed !== undefined) {
+    const featureTree = String(landed.manifest.featureTree ?? '')
+    if (featureTree !== candidate) {
+      throw new Error(`the landed manifest for ${entry.change} on main records tree ${featureTree}, not ${candidate}; adopt the landed tree`)
+    }
+    const featureHead = String(landed.manifest.featureHead ?? landed.manifest.landCommit ?? '')
+    if (!/^[0-9a-f]{40}$/u.test(featureHead)) {
+      throw new Error(`the landed manifest for ${entry.change} has no usable feature head`)
+    }
+    const featureHeadTree = gitOrThrow(git, root, ['rev-parse', `${featureHead}^{tree}`])
+    if (featureHeadTree !== candidate) {
+      throw new Error(`the landed feature head ${featureHead} has tree ${featureHeadTree}, not ${candidate}`)
+    }
+    head = featureHead
+    sources.push('landed manifest')
+  }
+
+  let pr
+  try {
+    pr = readPullRequest({ root, number: entry.number, gh })
+  } catch {
+    pr = undefined
+  }
+  if (pr?.state === 'MERGED') {
+    const mergeCommit = String(pr.mergeCommit?.oid ?? '')
+    if (!/^[0-9a-f]{40}$/u.test(mergeCommit)) {
+      throw new Error(`PR #${entry.number} has no merge commit id`)
+    }
+    const mergeTree = gitOrThrow(git, root, ['rev-parse', `${mergeCommit}^{tree}`])
+    if (mergeTree !== candidate) {
+      throw new Error(`the merged pull request tree ${mergeTree} is not ${candidate}; the tree did not land`)
+    }
+    const fetched = git(root, ['fetch', 'origin', 'main'], true) !== undefined
+    const originMain = fetched ? git(root, ['rev-parse', 'origin/main']) : undefined
+    if (originMain === mergeCommit) {
+      sources.push('merged pull request')
+      if (head === undefined) head = mergeCommit
+    }
+  }
+
+  const found = findApplyState(root, { change: entry.change })
+  if (found !== undefined) {
+    const worktree = found.state.worktree
+    if (typeof worktree === 'string' && existsSync(worktree) && isPluginWorktree(root, worktree)) {
+      const dirty = gitOrThrow(git, worktree, ['status', '--porcelain'])
+      if (dirty === '') {
+        const worktreeHead = gitOrThrow(git, worktree, ['rev-parse', 'HEAD'])
+        const worktreeTree = gitOrThrow(git, worktree, ['rev-parse', 'HEAD^{tree}'])
+        if (worktreeTree === candidate) {
+          sources.push('apply worktree')
+          if (head === undefined) head = worktreeHead
+        }
+      }
+    }
+  }
+
+  if (head === undefined) {
+    throw new Error(`tree ${candidate} is not the current worktree head tree, a landed manifest tree on main, or the merged pull request tree on origin/main`)
+  }
+  if (!apply) {
+    return {
+      dryRun: true,
+      number: entry.number,
+      change: entry.change,
+      previous: { head: entry.head, tree: entry.tree },
+      head,
+      tree: candidate,
+      sources,
+      phase: entry.phase,
+    }
+  }
+  return updateLocalEntry(root, entry.number, { head, tree: candidate, error: null })
 }
 
 /** Record a failed local landing command on the owner entry. */
@@ -302,11 +419,15 @@ export function finishLocal({
     throw new Error(`PR #${entry.number} is ${entry.phase}; land it before finish`)
   }
   const check = () => {
+    const main = gitOrThrow(git, root, ['rev-parse', 'main'])
     const landed = readLandedManifest({ root, change: entry.change, tree: entry.tree })
     if (landed === undefined) {
+      const other = readLandedManifestForMain(root, { change: entry.change, main })
+      if (other !== undefined) {
+        throw new Error(`the local entry records tree ${entry.tree} but the landed manifest for ${entry.change} records ${other.manifest.featureTree}; re-review it and run node scripts/pr-local-land.mjs adopt ${entry.number} --tree ${other.manifest.featureTree} --session ${entry.ownerSession} --apply, then retry`)
+      }
       throw new Error(`no landed manifest for ${entry.change} with the reviewed tree; run openspec_apply_worktree action=land first`)
     }
-    const main = gitOrThrow(git, root, ['rev-parse', 'main'])
     if (main !== landed.manifest.archiveCommit) {
       throw new Error(`local main ${main} is not the landed archive commit ${landed.manifest.archiveCommit}`)
     }
@@ -351,7 +472,7 @@ export function finishLocal({
  */
 export function recoverLocal({ root, number, gh = ghText, git = gitText } = {}) {
   const entry = requireLocalEntry(root, number)
-  const facts = verifyLocal({ root, number: entry.number, gh, git })
+  const facts = verifyLocal({ root, number: entry.number, gh, git, allowTreeMismatch: true })
   const changeLock = inspectChangeLock(root, facts.state)
   if (changeLock.state === 'alive') {
     throw new Error(`the plugin change lock is held by live process ${String(changeLock.owner.pid)}; wait for it to finish or recover it explicitly`)
@@ -368,6 +489,9 @@ export function recoverLocal({ root, number, gh = ghText, git = gitText } = {}) 
   } else if (changeLock.state === 'corrupt') {
     steps.push('openspec_apply_worktree action=recover scope=change (inspect the corrupt change lock first)')
   }
+  if (facts.treeMismatch) {
+    steps.push(`node scripts/pr-local-land.mjs adopt ${entry.number} --tree ${facts.mergeTree} --session ${session}${tokenArg} --apply`)
+  }
   steps.push(`node scripts/pr-local-land.mjs retarget ${entry.number} --session ${session}${tokenArg} --apply`)
   steps.push(`openspec_apply_worktree action=land change=${entry.change} approvedBy=user (user approval)`)
   steps.push('node scripts/push-landed.mjs --push')
@@ -377,7 +501,7 @@ export function recoverLocal({ root, number, gh = ghText, git = gitText } = {}) 
     change: entry.change,
     phase: entry.phase,
     merged: true,
-    treeMatches: true,
+    treeMatches: !facts.treeMismatch,
     mergeCommit: facts.mergeCommit,
     changeLock: { state: changeLock.state, owner: changeLock.owner ?? null },
     lock: lock === undefined ? null : { ownerSession: lock.ownerSession, pr: lock.pr },
@@ -440,11 +564,12 @@ export function usage() {
     'commands:',
     '  status [<n>]                        report local owner entries without writing',
     '  verify <n> [--session <id>]         verify the merge, tree, worktree and main',
+    '  adopt <n> --tree <sha> --session <id> [--token <t>] --apply  replace the recorded reviewed tree and head',
     '  retarget <n> --session <id> [--token <t>] --apply  reset the worktree to the merge commit',
     '  finish <n> --session <id> [--token <t>] [--phase <phase>] --apply  record landed/landed-offline/pushed',
     '  recover <n>                         plan the recovery of a merged local PR',
     '',
-    'The default is a dry run; only --apply writes phases and resets the worktree.',
+    'The default is a dry run; only --apply writes phases, adopts a tree and resets the worktree.',
   ].join('\n')
 }
 
@@ -453,26 +578,30 @@ export function parseArgs(argv) {
   const args = [...argv]
   const command = args.shift()
   if (command === undefined || command === '--help' || command === '-h') return { command: 'help' }
-  if (!['status', 'verify', 'retarget', 'finish', 'recover'].includes(command)) {
+  if (!['status', 'verify', 'adopt', 'retarget', 'finish', 'recover'].includes(command)) {
     throw new LocalLandUsageError(`unknown command '${command}'`)
   }
-  const options = { command, apply: false, json: false, phase: 'pushed', session: undefined, token: undefined, number: undefined }
+  const options = { command, apply: false, json: false, phase: 'pushed', session: undefined, token: undefined, tree: undefined, number: undefined }
   const positional = []
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]
     if (value === '--apply') options.apply = true
     else if (value === '--json') options.json = true
-    else if (['--session', '--token', '--phase'].includes(value)) {
+    else if (['--session', '--token', '--phase', '--tree'].includes(value)) {
       const next = args[index + 1]
       if (next === undefined || next === '' || next.startsWith('--')) {
         throw new LocalLandUsageError(`${value} needs a value`)
       }
       if (value === '--session') options.session = next
       else if (value === '--token') options.token = next
+      else if (value === '--tree') options.tree = next
       else options.phase = next
       index += 1
     } else if (value.startsWith('--')) throw new LocalLandUsageError(`unknown argument '${value}'`)
     else positional.push(value)
+  }
+  if (command !== 'adopt' && options.tree !== undefined) {
+    throw new LocalLandUsageError('only adopt accepts --tree')
   }
   if (command === 'status') {
     if (positional.length > 1) throw new LocalLandUsageError('status takes at most one PR number')
@@ -488,8 +617,14 @@ export function parseArgs(argv) {
       throw new LocalLandUsageError('the PR number must be a positive integer')
     }
     if (command === 'verify' && options.apply) throw new LocalLandUsageError('verify is read-only')
-    if ((command === 'retarget' || command === 'finish') && options.session === undefined) {
+    if (['retarget', 'finish', 'adopt'].includes(command) && options.session === undefined) {
       throw new LocalLandUsageError(`${command} needs --session <id>`)
+    }
+    if (command === 'adopt') {
+      if (options.tree === undefined) throw new LocalLandUsageError('adopt needs --tree <sha>')
+      if (!/^[0-9a-f]{40}$/iu.test(options.tree)) {
+        throw new LocalLandUsageError('--tree must be a full 40-character git tree id')
+      }
     }
   }
   if (command === 'status' && positional.length === 1) {
@@ -518,6 +653,15 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       result = retargetLocal({
         root,
         number: options.number,
+        session: options.session,
+        token: options.token,
+        apply: options.apply,
+      })
+    } else if (options.command === 'adopt') {
+      result = adoptLocal({
+        root,
+        number: options.number,
+        tree: options.tree,
         session: options.session,
         token: options.token,
         apply: options.apply,
