@@ -9,7 +9,7 @@ The open list, the fallback scalar list, the per-pull-request inspection or deta
 #### Scenario: A transient read failure is retried once
 
 - **WHEN** a list, scalar-list, inspection, detail, reconcile or preflight read fails with a transient gateway error
-- **THEN** the command retries that read and uses the rows it returns
+- **THEN** the command retries that read under the shared read policy and uses the rows it returns
 
 #### Scenario: The update-branch request is never retried
 
