@@ -511,6 +511,13 @@ test('the review document states the stale-round block and the qualified reuse r
   assert.match(text, /监视是尽力而为/)
 })
 
+test('the review document states that a reused round keeps its wait deadline', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /复用未报告轮次的 `resume` 不重置该轮的计时起点/)
+  assert.match(text, /`wait` 仍按原截止时间返回 `overdue`/)
+  assert.match(text, /延长等待只能经用户批准的 `extend`/)
+})
+
 test('the review document states the cross-change finding boundary', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [

@@ -49,6 +49,113 @@ test('wait returns overdue at the deadline', async () => {
   assert.match(overdue.reasons.join(' '), /did not submit/)
 })
 
+/**
+ * Move a recorded unreported round past its wait limit.
+ * @param file - the review record file.
+ * @param read - reads the round entry that carries `startedAt`.
+ * @returns the record before the edit.
+ */
+function makeOverdue(file, read) {
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  read(record).startedAt = new Date(Date.now() - 10 * 60_000).toISOString()
+  record.limits = { ...record.limits, waitMinutes: 1 }
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  return JSON.parse(readFileSync(file, 'utf8'))
+}
+
+test('a draft resume keeps an overdue unreported round overdue', async () => {
+  const root = fixture()
+  const { fake, messages, activations } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const file = join(reviewDir(root), 'review.json')
+  const before = makeOverdue(file, (record) => record.rounds[0])
+  const first = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(first.waitState, 'overdue')
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 1)
+  const second = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'draft' })
+  assert.equal(second.waitState, 'overdue')
+  assert.match(second.nextAction, /action=extend/)
+  const saved = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(saved.rounds.length, 1)
+  assert.equal(saved.rounds[0].startedAt, before.rounds[0].startedAt)
+  assert.deepEqual(saved.extensions, before.extensions)
+  assert.deepEqual(saved.limits, before.limits)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 0)
+})
+
+test('an apply resume keeps an overdue unreported round overdue', async () => {
+  const { root, run } = gitFixture()
+  const { fake, messages, activations } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const before = makeOverdue(file, (record) => record.rounds[0])
+  const first = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'apply' })
+  assert.equal(first.waitState, 'overdue')
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(resumed.round, 1)
+  const second = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'apply' })
+  assert.equal(second.waitState, 'overdue')
+  assert.match(second.nextAction, /action=extend review=apply/)
+  const saved = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(saved.rounds.length, 1)
+  assert.equal(saved.rounds[0].startedAt, before.rounds[0].startedAt)
+  assert.deepEqual(saved.extensions, before.extensions)
+  assert.deepEqual(saved.limits, before.limits)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, 0)
+})
+
+test('an apply resume keeps an overdue unreported extra round overdue', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const { fake, messages, activations, subagents } = externalSetup(root, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 1 },
+  })
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const reviewer = createFakeContext({ cwd: readApplyState(root, null, CHANGE).worktree, subagents })
+  reviewerApply(reviewer.ctx)
+  await reviewer.tools.get('openspec_reviewer').execute({
+    action: 'submit', change: CHANGE, review: 'apply', report: report(),
+  }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal })
+  const file = join(reviewDir(root), 'apply-review.json')
+  const passed = JSON.parse(readFileSync(file, 'utf8'))
+  passed.rebaseReview = {
+    requiredAt: new Date().toISOString(),
+    mainHead: passed.baseCommit,
+    worktreeHead: passed.commitSha,
+    treeSha: 'b'.repeat(40),
+  }
+  writeFileSync(file, `${JSON.stringify(passed, null, 2)}\n`)
+  const opened = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(opened.roundToken, 'E1')
+  const before = makeOverdue(file, (record) => record.extraRounds[0])
+  const first = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'apply' })
+  assert.equal(first.waitState, 'overdue')
+  const wakes = messages.length
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  assert.equal(resumed.roundToken, 'E1')
+  const second = await call(fake, 'openspec_review', { action: 'wait', change: CHANGE, review: 'apply' })
+  assert.equal(second.waitState, 'overdue')
+  assert.match(second.nextAction, /action=extend review=apply/)
+  const saved = JSON.parse(readFileSync(file, 'utf8'))
+  assert.equal(saved.extraRounds.length, 1)
+  assert.equal(saved.extraRounds[0].startedAt, before.extraRounds[0].startedAt)
+  assert.deepEqual(saved.extensions, before.extensions)
+  assert.deepEqual(saved.limits, before.limits)
+  assert.equal(activations.length, 1)
+  assert.equal(messages.length, wakes)
+})
+
 test('wait returns ready after a submission', async () => {
   const root = fixture()
   const { fake } = externalSetup(root)
