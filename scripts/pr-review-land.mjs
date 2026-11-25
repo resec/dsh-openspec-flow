@@ -1169,9 +1169,9 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       return 0
     }
     if (options.command === 'sync-batch') {
-      const result = withRunLock(root, () => syncBatch({
+      const result = withRunTelemetry(root, 'sync-batch', () => withRunLock(root, () => syncBatch({
         root, apply: options.apply, session: options.session, token: options.token,
-      }))
+      })))
       write(`${JSON.stringify(result, null, 2)}\n`)
       return 0
     }
