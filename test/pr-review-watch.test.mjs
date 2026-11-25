@@ -1085,26 +1085,36 @@ test('a batched and a per-number read reach the same cleanup decision', () => {
         schemaVersion: 1,
         prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', worktree, status: 'commented' } },
       })
+      saveLocalEntries(root, { 13: localEntry({ number: 13, phase: 'landed-offline' }) })
       const fake = fakeGh((args) => {
-        if (args[0] === 'api') return JSON.stringify({ data: { repository: { p12: { state: 'MERGED' } } } })
+        if (args[0] === 'api') {
+          return JSON.stringify({ data: { repository: { p12: { state: 'MERGED' }, p13: { state: 'MERGED' } } } })
+        }
         return JSON.stringify({ state: 'MERGED' })
       })
       const cleaned = cleanupClosedPullRequests({ root, gh: fake.gh })
       outcomes.push({
-        cleaned: cleaned.map(({ number, change, applyState }) => ({ number, change, applyState })),
-        state: loadState(root).prs,
+        removed: cleaned.filter((entry) => entry.retained !== true)
+          .map(({ number, change, applyState }) => ({ number, change, applyState })),
+        retained: cleaned.filter((entry) => entry.retained === true)
+          .map(({ number, change, phase, state }) => ({ number, change, phase, state })),
+        tracked: loadState(root).prs,
+        local: loadLocalState(root).prs,
         calls: fake.calls.length,
       })
     } finally {
       cleanup(root, remote)
     }
   }
-  assert.deepEqual(outcomes[0].cleaned, [{ number: 12, change: 'widget', applyState: null }])
-  assert.deepEqual(outcomes[0].cleaned, outcomes[1].cleaned)
-  assert.deepEqual(outcomes[0].state, outcomes[1].state)
-  assert.deepEqual(outcomes[0].state, {})
+  assert.deepEqual(outcomes[0].removed, [{ number: 12, change: 'widget', applyState: null }])
+  assert.deepEqual(outcomes[0].retained, [{ number: 13, change: 'widget', phase: 'landed-offline', state: 'MERGED' }])
+  for (const field of ['removed', 'retained', 'tracked', 'local']) {
+    assert.deepEqual(outcomes[0][field], outcomes[1][field])
+  }
+  assert.deepEqual(outcomes[0].tracked, {})
+  assert.deepEqual(Object.keys(outcomes[0].local), ['13'])
   assert.equal(outcomes[0].calls, 1)
-  assert.equal(outcomes[1].calls, 1)
+  assert.equal(outcomes[1].calls, 2)
 })
 
 test('local cleanup decides from a supplied state map without reading', () => {
