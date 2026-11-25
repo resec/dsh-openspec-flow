@@ -18,6 +18,9 @@ export const OPEN_LANDING_PHASES = new Set([
   'prepared', 'review-failed', 'reviewed', 'archive-pending', 'archive-failed', 'archived', 'push-pending',
 ])
 
+/** One full git object id. */
+const OBJECT_ID = /^[0-9a-f]{40}$/u
+
 /** Run a command and return the spawn result. */
 export function run(command, args, { cwd, allowFailure = false } = {}) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -217,7 +220,9 @@ export function readLandedManifestForMain(root, { change, main } = {}) {
   if (typeof change !== 'string' || change === '') return undefined
   if (typeof main !== 'string' || main === '') return undefined
   return readLandedManifests(root)
-    .find(({ manifest }) => manifest.change === change && manifest.archiveCommit === main)
+    .find(({ manifest }) => manifest.change === change
+      && manifest.archiveCommit === main
+      && OBJECT_ID.test(String(manifest.featureTree ?? '')))
 }
 
 /** Read the landed manifest that matches a change and reviewed tree. */
