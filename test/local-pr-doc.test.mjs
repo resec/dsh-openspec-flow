@@ -81,6 +81,7 @@ test('the local pull-request document names recovery and the offline route', () 
   const doc = read('docs/local-pr.md')
   for (const text of [
     'node scripts/pr-local-land.mjs recover <n>',
+    'node scripts/pr-local-land.mjs adopt <n> --tree <merged-tree> --session <session> --apply',
     'openspec_apply_worktree action=recover scope=change expectedOwner=<token>',
     'npm run test:lab -- --mock-only',
     'node scripts/offline-land.mjs record --change <change> --land <sha> --apply',
@@ -89,6 +90,23 @@ test('the local pull-request document names recovery and the offline route', () 
     'deferred land and archive commits',
     'close it manually',
     'never reviews, retargets, lands or merges it',
+  ]) {
+    assert.ok(doc.includes(text), `local-pr.md names ${text}`)
+  }
+})
+
+test('the local pull-request document names the adoption route and its order', () => {
+  const doc = read('docs/local-pr.md')
+  for (const text of [
+    '### Adopting a re-reviewed merge tree',
+    'node scripts/pr-local-land.mjs adopt <n> --tree <merged-tree> --session <id> --apply',
+    'dry-run by default',
+    'A landed manifest takes precedence over the merged pull request',
+    'leaves the phase unchanged',
+    'before `verify`/`retarget`',
+    'before `finish`',
+    '`finish` keeps its strict tree match',
+    'never retarget or land a mismatched tree',
   ]) {
     assert.ok(doc.includes(text), `local-pr.md names ${text}`)
   }
