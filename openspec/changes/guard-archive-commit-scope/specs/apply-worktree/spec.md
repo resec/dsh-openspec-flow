@@ -76,13 +76,18 @@ Land SHALL create the archive commit only after requiring an empty git index and
 - **WHEN** main has an untracked file under another change's directory
 - **THEN** the archive commit completes without that file and the file remains untracked
 
-### Requirement: Resume staging resolves one archived directory
+### Requirement: Resume staging resolves at most one archived directory
 
-The resume path that stages an interrupted archive SHALL resolve exactly one archived directory for the change. A missing or ambiguous directory SHALL refuse without staging and leave the state `landing`.
+The resume path that stages an interrupted archive SHALL resolve at most one archived directory for the change. Zero matches SHALL mean the archive has not moved yet and the normal archive SHALL run; more than one match SHALL refuse without staging and leave the state `landing`.
 
-#### Scenario: The resumed directory is missing or ambiguous before staging
+#### Scenario: No archived directory is present before staging
 
-- **WHEN** the resume path finds no single archived directory for the change
+- **WHEN** the resume path finds no archived directory for the change
+- **THEN** land runs the normal archive and does not refuse
+
+#### Scenario: The resumed directory is ambiguous before staging
+
+- **WHEN** the resume path finds more than one archived directory for the change
 - **THEN** land refuses before staging and the state stays `landing`
 
 ### Requirement: A resumed archive commit matches the archive scope
