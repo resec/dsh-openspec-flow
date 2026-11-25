@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Report a passed apply review as not ready while an unwaived plan file
+  drifts from the reviewed draft, as the readiness requirement already says.

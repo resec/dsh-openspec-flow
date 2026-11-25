@@ -929,6 +929,83 @@ test('apply status reports disabled, enabled and unset git policies', async () =
   assert.match(unset.nextAction, /openspec_review action=start/)
 })
 
+test('apply status names an unwaived plan drift after the review passed', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const passed = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(passed.ready, true)
+  assert.equal(passed.state, 'passed')
+
+  const tasksPath = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  writeFileSync(tasksPath, `${readFileSync(tasksPath, 'utf8')}\n- [ ] 9.9 A late plan edit\n`)
+  const recordPath = join(reviewDir(root), 'apply-review.json')
+  const before = readFileSync(recordPath, 'utf8')
+  const drift = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(drift.ready, false)
+  assert.ok(drift.reasons.some((reason) => reason.includes('tasks.md')), drift.reasons.join('; '))
+  assert.equal(drift.nextAction, 'openspec_review action=waive scope=plan-change')
+  assert.equal(readFileSync(recordPath, 'utf8'), before, 'status writes no record')
+
+  await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'The user approved the late plan edit.', files: ['tasks.md'],
+  })
+  const waived = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(waived.ready, true)
+  assert.deepEqual(waived.reasons, [])
+  assert.equal(waived.nextAction, 'openspec_apply_next')
+})
+
+test('apply status reports a removed plan artifact instead of throwing', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  rmSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'))
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(status.ready, false)
+  const reasons = status.reasons.join('; ')
+  assert.match(reasons, /the changed plan files could not be read/)
+  assert.match(reasons, /tasks\.md/)
+})
+
+test('apply status without a draft baseline does not gate on plan drift', async () => {
+  const { root, run } = gitFixture()
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'branch'])
+  const base = run(['rev-parse', 'HEAD'])
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', baseline: 'none', base,
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const tasksPath = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  writeFileSync(tasksPath, `${readFileSync(tasksPath, 'utf8')}\n- [ ] 9.9 A late plan edit\n`)
+  const status = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'apply',
+  })
+  assert.equal(status.baseline, 'none')
+  assert.equal(status.ready, true)
+  assert.deepEqual(status.reasons, [])
+})
+
 test('a draft-only policy reports unset and migrates on the first apply start', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
@@ -1024,6 +1101,32 @@ test('apply start fails closed when a locked policy needs a reviewer but the ser
   )
 })
 
+test('apply status names the plan waiver before resume when the plan and the tree both moved', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const tasksPath = join(root, 'openspec', 'changes', CHANGE, 'tasks.md')
+  writeFileSync(tasksPath, `${readFileSync(tasksPath, 'utf8')}\n- [ ] 9.9 A late plan edit\n`)
+  writeFileSync(join(root, 'app.js'), 'export const theme = "dark"\n')
+  run(['add', 'app.js', `openspec/changes/${CHANGE}/tasks.md`])
+  run(['commit', '-m', 'commit the plan edit and move the tree'])
+  const drift = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(drift.ready, false)
+  assert.ok(drift.reasons.some((reason) => reason.includes('tasks.md')), drift.reasons.join('; '))
+  assert.equal(drift.nextAction, 'openspec_review action=waive scope=plan-change')
+
+  await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'The user approved the committed plan edit.', files: ['tasks.md'],
+  })
+  const waived = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
+  assert.equal(waived.nextAction, 'openspec_review action=resume review=apply')
+})
+
 test('apply status names resume with the apply kind when the tree moved', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
@@ -1036,8 +1139,10 @@ test('apply status names resume with the apply kind when the tree moved', async 
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply', report: report(),
   })
-  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'design.md'), '# Design\n\nChanged after the pass.\n')
-  run(['add', 'openspec'])
+  // Move the tree with an implementation file: a plan artifact would also be
+  // unwaived plan drift, which the waiver action owns, not resume.
+  writeFileSync(join(root, 'app.js'), 'export const theme = "dark"\n')
+  run(['add', 'app.js'])
   run(['commit', '-m', 'move the tree'])
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'apply' })
   assert.equal(status.nextAction, 'openspec_review action=resume review=apply')

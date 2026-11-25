@@ -46,6 +46,8 @@ git worktree apply 中，draft review 就绪后首次 `openspec_apply_next` 由�
 
 不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或 draft-only 指向 `openspec_review` 的 `start`。
 
+就绪的 apply review 也要复查 plan drift：draft 基线且 draft 段启用时，status 用与 `start`/`resume` 相同的比较（draft 记录里的工件清单与当前 change 目录），任一漂移文件不在 plan-change 豁免集合内就返回 `ready: false`，原因逐条点名该文件，下一动作是 `openspec_review action=waive scope=plan-change`。status 只读，不写记录也不改 `state`；豁免后或恢复工件后再查即为就绪。`baseline: "none"` 的 apply review 没有 draft 可比，不做这项检查。
+
 ## 并发与串行
 
 多个 change 可以同时持有 draft review：各自的记录、reviewer 槽位与等待计时器互不影响，`start`、`resume`、`self-report`、`wait` 与 `dispose` 只作用于被点名的 change。
