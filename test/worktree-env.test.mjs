@@ -17,6 +17,7 @@ import {
   resolveBrowsersPath,
   resolveEnvironment,
 } from '../scripts/worktree-env.mjs'
+import * as worktreeEnv from '../scripts/worktree-env.mjs'
 
 const MODULE = fileURLToPath(new URL('../scripts/worktree-env.mjs', import.meta.url))
 
@@ -88,8 +89,11 @@ test('the shell output carries caches and a per-worktree home but no node_module
   try {
     const environment = resolveEnvironment({ cwd: root, env: {} })
     const text = renderPrint(environment)
-    assert.match(text, /npm_config_cache=/)
-    assert.match(text, /OPENSPEC_FLOW_NPM_CACHE=/)
+    const sharedNpm = join(environment.sharedRoot, 'npm')
+    assert.equal(environment.npmCache, sharedNpm)
+    assert.ok(text.includes(`export npm_config_cache='${sharedNpm}'`))
+    assert.ok(text.includes(`export OPENSPEC_FLOW_NPM_CACHE='${sharedNpm}'`))
+    assert.equal(Object.hasOwn(worktreeEnv, 'resolveNpmCache'), false)
     assert.match(text, /PNPM_STORE_DIR=/)
     assert.match(text, /PLAYWRIGHT_BROWSERS_PATH=/)
     assert.match(text, /DSH_HOME=/)
