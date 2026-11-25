@@ -161,7 +161,11 @@ async function main() {
     }
     process.exitCode = failed ? 1 : 0
   } finally {
-    await finishRun(lastChild, finish)
+    try {
+      await finishRun(lastChild, finish)
+    } catch (error) {
+      console.error(`test entrypoint: cannot stop the run group: ${error.message}`)
+    }
   }
 }
 
