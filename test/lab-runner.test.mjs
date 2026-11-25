@@ -61,3 +61,71 @@ test('a real-model scenario requires the explicit flag', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+const startupUrl = 'http://127.0.0.1:3210/?token=startup-abc'
+const quiet = { log() {}, error() {} }
+
+test('a failed scenario keeps the startup token out of the summary report', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lab-runner-'))
+  const file = join(root, 'web.scenario.mjs')
+  writeFileSync(file, `export default { name: 'web', model: 'mock', async run() { throw new Error('dsh web: ${startupUrl} closed the page') } }\n`)
+  const lines = []
+  const fakeLab = { close: async () => ({ runDir: join(root, 'runs', 'fake') }) }
+  try {
+    const result = await runScenarios({
+      files: [file],
+      mockOnly: true,
+      plugin: fakePlugin,
+      root,
+      createLab: () => fakeLab,
+      log: { log() {}, error: (line) => lines.push(line) },
+    })
+    assert.equal(result.passed, false)
+    assert.match(result.results[0].error, /token=<redacted>/u)
+    assert.equal(result.results[0].error.includes('startup-abc'), false)
+    assert.equal(readFileSync(result.reportPath, 'utf8').includes('startup-abc'), false)
+    assert.equal(lines.join('\n').includes('startup-abc'), false, 'the printed failure carries no token')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a provisioning failure keeps the startup token out of the summary report', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lab-runner-'))
+  const file = join(root, 'web.scenario.mjs')
+  writeFileSync(file, "export default { name: 'web', model: 'mock', run() {} }\n")
+  const lines = []
+  try {
+    const result = await runScenarios({
+      files: [file],
+      mockOnly: true,
+      plugin: fakePlugin,
+      root,
+      createLab: () => {
+        throw new Error(`dsh web: ${startupUrl} did not start`)
+      },
+      log: { log() {}, error: (line) => lines.push(line) },
+    })
+    assert.equal(result.results[0].reason, 'provisioning failed')
+    assert.match(result.results[0].error, /token=<redacted>/u)
+    assert.equal(readFileSync(result.reportPath, 'utf8').includes('startup-abc'), false)
+    assert.equal(lines.join('\n').includes('startup-abc'), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a passing scenario still reaches the summary report', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-lab-runner-'))
+  const file = join(root, 'web.scenario.mjs')
+  writeFileSync(file, "export default { name: 'web', model: 'mock', async run() {} }\n")
+  const fakeLab = { close: async ({ passed }) => ({ runDir: join(root, 'runs', passed ? 'pass' : 'fail') }) }
+  try {
+    const result = await runScenarios({ files: [file], mockOnly: true, plugin: fakePlugin, root, createLab: () => fakeLab, log: quiet })
+    assert.equal(result.passed, true)
+    assert.equal(result.results[0].status, 'passed')
+    assert.equal(result.results[0].runDir, join(root, 'runs', 'pass'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
