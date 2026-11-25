@@ -41,10 +41,10 @@
 
 ## 6. Integration verification
 
-- [ ] 6.1 Run `npm run verify` on Node 24 and confirm the test summary and coverage verdict.
-- [ ] 6.2 Run `npm run lab -- doctor` and `npm run test:lab -- --mock-only` in a prepared worktree and confirm the lab uses the recorded pnpm and browser path.
-- [ ] 6.3 Run `npm run openspec:check` and `openspec_inspect` with `action: "validate"` and `strict: true`; confirm both pass.
-- [ ] 6.4 Create a scratch apply worktree, confirm its record and bucket reuse, then remove it; confirm collection keeps referenced buckets and that a second worktree reuses the same pnpm and Chromium buckets.
+- [x] 6.1 Run `npm run verify` on Node 24 and confirm the test summary and coverage verdict.
+- [x] 6.2 Run `npm run lab -- doctor` and `npm run test:lab -- --mock-only` in a prepared worktree and confirm the lab uses the recorded pnpm and browser path.
+- [x] 6.3 Run `npm run openspec:check` and `openspec_inspect` with `action: "validate"` and `strict: true`; confirm both pass.
+- [x] 6.4 Create a scratch apply worktree, confirm its record and bucket reuse, then remove it; confirm collection keeps referenced buckets and that a second worktree reuses the same pnpm and Chromium buckets.
 
 ## Workflow follow-up
 
