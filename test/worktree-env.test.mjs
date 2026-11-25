@@ -104,6 +104,18 @@ test('the shell output carries caches and a per-worktree home but no node_module
   }
 })
 
+test('resolves the Playwright-version browser bucket from the lockfile', () => {
+  const root = makeRepository()
+  try {
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/playwright-core': { version: '1.65.1' } } }))
+    const environment = resolveEnvironment({ cwd: root, env: {} })
+    assert.equal(environment.browsersPath, join(environment.sharedRoot, 'browsers', 'playwright-1.65.1'))
+    assert.equal(environment.installLock, join(environment.sharedRoot, 'browsers', 'playwright-1.65.1.install.lock'))
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('resolves the lab browser path from root and environment', () => {
   const root = '/tmp/lab-root'
   assert.equal(resolveBrowsersPath({ root, env: {} }), join(root, '.cache', 'lab', 'pw-browsers'))

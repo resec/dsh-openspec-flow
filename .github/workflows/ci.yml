@@ -72,7 +72,7 @@ jobs:
       - name: install pnpm for DSH plugin installs
         uses: pnpm/action-setup@v6
         with:
-          version: 12.6.0
+          version: 11.28.5
       - run: npm ci
       - name: point the lab at the setup-node cache
         run: echo "OPENSPEC_FLOW_NPM_CACHE=$HOME/.npm" >> "$GITHUB_ENV"
