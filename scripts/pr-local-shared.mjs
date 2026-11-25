@@ -9,7 +9,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { ghRead } from './gh-exec.mjs'
+import { ghRead, ghWrite } from './gh-exec.mjs'
 
 import { resolvePaths } from './pr-review-watch.mjs'
 
@@ -36,9 +36,23 @@ export function gitText(cwd, args, allowFailure = false) {
   return result.stdout.trim()
 }
 
-/** Gh output, or undefined when the binary is missing or the command fails. */
-export function ghText(args, cwd) {
-  return ghRead(args, { cwd, allowFailure: true })
+/** Whether one gh invocation mutates GitHub. */
+export function isGhWriteArguments(args) {
+  const [command, subcommand] = args
+  if (command === 'pr') return ['create', 'edit', 'ready', 'comment', 'merge', 'review', 'close', 'reopen'].includes(subcommand)
+  if (command === 'issue') return ['create', 'comment', 'edit', 'close', 'reopen'].includes(subcommand)
+  if (command === 'api') return args.includes('--method') || args.includes('-X')
+  return false
+}
+
+/**
+ * Gh output, or undefined when the binary is missing or the command fails.
+ * Reads retry under the shared policy; a write stays single-shot.
+ */
+export function ghText(args, cwd, options = {}) {
+  return isGhWriteArguments(args)
+    ? ghWrite(args, { cwd, allowFailure: true, ...options })
+    : ghRead(args, { cwd, allowFailure: true, ...options })
 }
 
 /** Read a JSON file, returning undefined when absent. */
