@@ -228,6 +228,7 @@ test('a scoped run interrupted by SIGTERM stops a straggler', async (t) => {
   const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
   try {
     const code = await exited
+    await stderrClosed(child)
     assert.equal(code, 143, stderrNote(childStderr))
     await triggerStraggler(markers)
     assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
@@ -254,6 +255,7 @@ test('a scoped run interrupted by SIGTERM kills a straggler that ignores it', as
   const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
   try {
     const code = await exited
+    await stderrClosed(child)
     assert.equal(code, 143, stderrNote(childStderr))
     await triggerStraggler(markers)
     assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
