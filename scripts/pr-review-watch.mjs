@@ -13,7 +13,7 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
+import { isTransientGhFailure } from './gh-retry.mjs'
 import {
   GhDeadlineError,
   fetchBase,
@@ -200,7 +200,6 @@ export function withRunTelemetry(root, command, work) {
       outcome,
     }
     appendFileSync(join(paths.cache, TELEMETRY_FILE), `${JSON.stringify(line)}\n`)
-    trimTelemetry(root)
   }
 }
 
@@ -803,23 +802,16 @@ export function pollPullRequests({
   gh = ghRead,
   state = loadState(root),
   local = localPullRequestNumbers(root),
-  retryDelayMs = 2000,
 } = {}) {
   const readList = (fields) => {
-    const text = withGhRetry(
-      () => gh(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', fields]),
-      { delayMs: retryDelayMs },
-    )
+    const text = gh(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', fields])
     if (text === undefined) throw new Error('gh pr list failed')
     return JSON.parse(text)
   }
   const readDetail = (number) => {
     let text
     try {
-      text = withGhRetry(
-        () => gh(['pr', 'view', String(number), '--json', 'files,statusCheckRollup']),
-        { delayMs: retryDelayMs },
-      )
+      text = gh(['pr', 'view', String(number), '--json', 'files,statusCheckRollup'])
     } catch (error) {
       throw new Error(`gh pr view ${number} failed: ${error instanceof Error ? error.message : String(error)}`)
     }

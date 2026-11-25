@@ -41,9 +41,26 @@ import {
   withRunLock,
 } from '../scripts/pr-review-watch.mjs'
 import { acquireLock } from '../scripts/pr-review-lock.mjs'
+import { ghRead } from '../scripts/gh-exec.mjs'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 test.after(cleanupTempDirs)
+
+/** Wrap an injected gh double with the shared read retry policy. */
+function retryingGh(handler) {
+  return (args, options) => {
+    let attempts = 0
+    try {
+      return handler(args, options)
+    } catch (first) {
+      attempts += 1
+      if (attempts >= 1 && /HTTP 5\d\d|timed out/iu.test(String(first?.message ?? first))) {
+        return handler(args, options)
+      }
+      throw first
+    }
+  }
+}
 
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
@@ -1045,22 +1062,52 @@ function pollRow(number, head, overrides = {}) {
   }
 }
 
-test('the poll retries a transient list failure without the fallback marker', () => {
+test('a retrying read recovers a transient list failure without the fallback marker', () => {
   const root = makeRepository()
   try {
     const rows = [pollRow(12, HEAD)]
     let lists = 0
-    const gh = (args) => {
+    const gh = retryingGh((args) => {
       assert.equal(args[0], 'pr')
       assert.equal(args[1], 'list')
       lists += 1
       if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
       return JSON.stringify(rows)
-    }
-    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    })
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} } })
     assert.equal(lists, 2)
     assert.equal(result.fallback, false)
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll adds no retry on top of the read policy', () => {
+  const root = makeRepository()
+  try {
+    const spawns = []
+    const spawn = (command, args) => {
+      spawns.push(args.join(' '))
+      return { status: 1, signal: null, stdout: '', stderr: 'HTTP 502: 502 Bad Gateway' }
+    }
+    const config = {
+      timeoutMs: 20_000,
+      attempts: 3,
+      backoffMs: [0, 0],
+      pollTimeoutMs: 5_000,
+      probeTimeoutMs: 5_000,
+      fetchTimeoutMs: 30_000,
+    }
+    const gh = (args) => ghRead(args, { spawn, config, sleep: () => {} })
+    assert.throws(
+      () => pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} } }),
+      /gh pr list/u,
+    )
+    const fullList = spawns.filter((line) => line.includes('files,labels,updatedAt'))
+    const scalarList = spawns.filter((line) => line.includes('isDraft,labels'))
+    assert.equal(fullList.length, 3)
+    assert.equal(scalarList.length, 3)
   } finally {
     cleanup(root)
   }
@@ -1076,13 +1123,13 @@ test('the poll falls back to a scalar list plus one detail request per evaluated
       gh: () => JSON.stringify(rows),
       state,
     })
-    let lists = 0
     const detailNumbers = []
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
-        lists += 1
-        if (lists <= 2) throw new Error('HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)')
-        assert.equal(args[args.indexOf('--json') + 1], 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels')
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)')
+        }
         return JSON.stringify(rows.map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
       }
       if (args[0] === 'pr' && args[1] === 'view') {
@@ -1093,7 +1140,7 @@ test('the poll falls back to a scalar list plus one detail request per evaluated
       }
       throw new Error(`unexpected gh ${args.join(' ')}`)
     }
-    const degraded = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    const degraded = pollPullRequests({ root, gh, state })
     assert.equal(degraded.fallback, true)
     assert.deepEqual(detailNumbers, [12, 13])
     assert.deepEqual(
@@ -1116,12 +1163,13 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
         12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented' },
       },
     }
-    let lists = 0
     const detailNumbers = []
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
-        lists += 1
-        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 504: 504 Gateway Timeout')
+        }
         return JSON.stringify([recorded, fresh].map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
       }
       if (args[0] === 'pr' && args[1] === 'view') {
@@ -1131,7 +1179,7 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
       }
       throw new Error(`unexpected gh ${args.join(' ')}`)
     }
-    const result = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    const result = pollPullRequests({ root, gh, state })
     assert.equal(result.fallback, true)
     assert.deepEqual(detailNumbers, [13])
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [13])
@@ -1140,13 +1188,13 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
   }
 })
 
-test('the poll fallback retries a detail request once', () => {
+test('a retrying read recovers a transient detail request', () => {
   const root = makeRepository()
   try {
     const row = pollRow(12, HEAD)
     let lists = 0
     let views = 0
-    const gh = (args) => {
+    const gh = retryingGh((args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
         lists += 1
         if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
@@ -1158,8 +1206,8 @@ test('the poll fallback retries a detail request once', () => {
         return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
       }
       throw new Error(`unexpected gh ${args.join(' ')}`)
-    }
-    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    })
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} } })
     assert.equal(views, 2)
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
   } finally {
@@ -1180,15 +1228,18 @@ test('the poll fails instead of reporting a partial candidate list', () => {
       throw new Error('HTTP 504: 504 Gateway Timeout')
     }
     assert.throws(
-      () => pollPullRequests({ root, gh: scalarUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      () => pollPullRequests({ root, gh: scalarUnavailable, state: { schemaVersion: 1, prs: {} } }),
       /HTTP 504/,
     )
-    assert.equal(primaryLists, 4)
+    assert.equal(primaryLists, 2)
     let lists = 0
     const detailUnavailable = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
         lists += 1
-        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 504: 504 Gateway Timeout')
+        }
         return JSON.stringify(scalarOnly)
       }
       assert.equal(args[0], 'pr')
@@ -1196,10 +1247,10 @@ test('the poll fails instead of reporting a partial candidate list', () => {
       throw new Error('HTTP 502: 502 Bad Gateway')
     }
     assert.throws(
-      () => pollPullRequests({ root, gh: detailUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      () => pollPullRequests({ root, gh: detailUnavailable, state: { schemaVersion: 1, prs: {} } }),
       /gh pr view 12 failed: HTTP 502/,
     )
-    assert.equal(lists, 3)
+    assert.equal(lists, 2)
   } finally {
     cleanup(root)
   }
