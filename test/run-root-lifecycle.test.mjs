@@ -73,7 +73,7 @@ function runScoped(args, env) {
 function stderrNote(text) {
   const captured = text.trim()
   if (captured === '') return 'entrypoint stderr: <empty>'
-  return `entrypoint stderr: ${captured.slice(0, STDERR_LIMIT)}`
+  return `entrypoint stderr: ${captured.slice(-STDERR_LIMIT)}`
 }
 
 /** Resolve when the child's stderr closes, or after the bound, whichever comes first. */
@@ -203,6 +203,9 @@ test('an empty capture renders the empty marker', () => {
   assert.equal(stderrNote(' \n'), 'entrypoint stderr: <empty>')
 })
 
-test('an over-long capture is truncated to 500 characters', () => {
-  assert.equal(stderrNote('x'.repeat(600)), `entrypoint stderr: ${'x'.repeat(500)}`)
+test('an over-long capture keeps the last 500 characters', () => {
+  const line = 'test entrypoint: cannot remove the run root at /tmp/probe'
+  const rendered = stderrNote(`${'x'.repeat(600)}${line}`)
+  assert.equal(rendered.length, 'entrypoint stderr: '.length + 500)
+  assert.ok(rendered.endsWith(line), 'the excerpt keeps the cleanup line')
 })
