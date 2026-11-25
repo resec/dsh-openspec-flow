@@ -98,6 +98,8 @@ test('AGENTS.md permits the labeled same-repository sync', () => {
   assert.match(AGENTS, /never modifies PR code or a fork branch/)
   assert.match(AGENTS, /creates a merge commit on `main`/)
   assert.match(AGENTS, /recorded and merged in the same run/)
+  assert.match(AGENTS, /re-listing returns the pull request as a not-behind landing candidate/)
+  assert.match(AGENTS, /continues in the same run through/)
 })
 
 test('CONTRIBUTING.md and AGENTS.md separate owner-review from mergeable', () => {

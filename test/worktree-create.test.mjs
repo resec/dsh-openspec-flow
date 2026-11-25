@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,7 @@ import {
 import { applyStatePath, readApplyState, writeApplyState } from '../lib/worktree/state.js'
 import { gitCommonDir } from '../lib/review/store.js'
 import { lockPath } from '../lib/worktree/lock.js'
+import { PNPM_VERSION, buildRecord, pnpmBucket, writeRecord } from '../scripts/toolchain.mjs'
 
 const roots = []
 
@@ -29,6 +30,10 @@ function repository(change = 'demo') {
   git(root, ['config', 'user.name', 'Test'])
   mkdirSync(join(root, 'openspec', 'changes', change), { recursive: true })
   writeFileSync(join(root, 'openspec', 'changes', change, 'tasks.md'), '# Tasks\n\n- [ ] 1.1 Do it\n')
+  writeFileSync(join(root, 'package.json'), '{"engines":{"node":">=24.9.0"}}\n')
+  writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3,"packages":{}}\n')
+  writeFileSync(join(root, 'coverage.baseline.json'), '{"node":{"version":"v24.22.2"}}\n')
+  writeFileSync(join(root, 'coverage.config.json'), '{"primaryNodeMajor":24}\n')
   git(root, ['add', '.'])
   git(root, ['commit', '-qm', 'seal'])
   return root
@@ -262,4 +267,75 @@ test('a retry after a failed creation reuses the same branch commit', async () =
   })
   assert.equal(state.baseCommit, head)
   assert.equal(git(root, ['rev-parse', `refs/heads/${branch}`]), head)
+})
+
+
+test('creation runs the injected preparation before publishing the state', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const calls = []
+  const state = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent: { id: 'prepare-test' },
+    signal: new AbortController().signal,
+    prepareEnvironment: async ({ worktree }) => { calls.push(worktree) },
+  })
+  assert.deepEqual(calls, [state.worktree])
+  assert.equal(readApplyState(root, null, 'demo').status, 'active')
+})
+
+test('a failed preparation rolls the worktree and state back', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head, agent: { id: 'prepare-fail' },
+      signal: new AbortController().signal,
+      prepareEnvironment: async () => { throw new Error('preparation failed') },
+    }),
+    /preparation failed/,
+  )
+  assert.equal(existsSync(applyWorktreePath(root, null, 'demo')), false)
+  assert.equal(readApplyState(root, null, 'demo'), undefined)
+})
+
+test('reuse skips a current record and prepares a stale one', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'reuse-record' }
+  const calls = []
+  const first = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+    prepareEnvironment: async () => { calls.push('first') },
+  })
+  const node = join(first.worktree, 'node')
+  const pnpmJs = join(first.worktree, 'pnpm.mjs')
+  const binDir = join(first.worktree, 'bin')
+  writeFileSync(node, '')
+  writeFileSync(pnpmJs, '')
+  mkdirSync(binDir, { recursive: true })
+  writeRecord(first.worktree, buildRecord({
+    root: first.worktree,
+    requirements: { nodeRange: '>=24.9.0', primaryNodeMajor: 24, pnpm: PNPM_VERSION },
+    node: { path: node, version: 'v24.22.2', source: 'host' },
+    npm: { path: node, version: '11.0.0' },
+    pnpm: { bucket: pnpmBucket('/shared'), version: PNPM_VERSION, js: pnpmJs, binDir, node },
+    chromium: null,
+  }))
+  const second = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+    prepareEnvironment: async () => { calls.push('second') },
+  })
+  assert.deepEqual(calls, ['first'])
+  writeFileSync(join(second.worktree, 'package-lock.json'), '{"lockfileVersion":3,"packages":{"x":{}}}\n')
+  await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+    prepareEnvironment: async () => { calls.push('stale') },
+  })
+  assert.deepEqual(calls, ['first', 'stale'])
 })

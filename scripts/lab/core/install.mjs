@@ -8,9 +8,10 @@
 
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { ROOT, resolveNpmCache } from './paths.mjs'
 import { run } from './process.mjs'
+import { resolveRecordedPnpm } from '../../toolchain.mjs'
 
 /**
  * Pack the working tree into a run directory.
@@ -69,13 +70,23 @@ export function gitHead(root = ROOT) {
  * @param options - DSH bin, profile, tarball, offline and environment.
  * @returns `{ profileDirectory, bundles, dump, name, version }`.
  */
-export function installPlugin({ dshBin, profile, tarball, offline = false, env = process.env, home, node = process.execPath }) {
+export function pluginEnvironment({ root = ROOT, env = process.env } = {}) {
+  const recorded = resolveRecordedPnpm(root)
+  if (recorded === undefined) return env
+  return {
+    ...env,
+    PATH: `${recorded.pnpm.binDir}:${dirname(recorded.node.path)}:${env.PATH ?? ''}`,
+  }
+}
+
+export function installPlugin({ dshBin, profile, tarball, offline = false, env = process.env, home, node = process.execPath, root = ROOT }) {
+  const childEnv = pluginEnvironment({ root, env })
   const args = [dshBin, 'plugin', '--profile', profile, 'add']
   if (offline) args.push('--offline')
   args.push(`file:${resolve(tarball)}`)
   const installed = run(node, args, {
     timeoutMs: 10 * 60_000,
-    env: { ...env, npm_config_cache: resolveNpmCache({ env }) },
+    env: { ...childEnv, npm_config_cache: resolveNpmCache({ env }) },
   })
   if (installed.status !== 0) {
     throw new Error(`dsh plugin add failed: ${(installed.stderr || installed.stdout).slice(-2_000)}`)
@@ -85,7 +96,7 @@ export function installPlugin({ dshBin, profile, tarball, offline = false, env =
   const manifest = readProfile(profileDirectory)
   const bundles = Array.isArray(manifest.dsh?.profile?.bundles) ? manifest.dsh.profile.bundles : []
   const dependency = findBundleDependency(profileDirectory, manifest)
-  const dump = dumpConfig({ dshBin, profile, env, node })
+  const dump = dumpConfig({ dshBin, profile, env: childEnv, node })
   if (dependency === undefined) throw new Error('the installed profile does not declare a bundle dependency')
   if (!bundles.includes(dependency.name)) throw new Error(`the installed tarball did not add bundle ${dependency.name}`)
   if (!dump.includes(dependency.name)) throw new Error(`the composed configuration does not contain ${dependency.name}`)

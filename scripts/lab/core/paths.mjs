@@ -5,9 +5,11 @@
  * the tests agree on one layout. Nothing here writes to the host home.
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { isAbsolute, join } from 'node:path'
+import { chromiumBucket, readRecord, resolvePlaywrightVersion } from '../../toolchain.mjs'
 
 /** Repository root. */
 export const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -19,7 +21,7 @@ export const LAB_ROOT = join(ROOT, '.cache', 'lab')
 export const DSH_CACHE = join(LAB_ROOT, 'dsh')
 
 /** Playwright browser binaries. */
-export const BROWSERS_PATH = join(LAB_ROOT, 'pw-browsers')
+export const BROWSERS_PATH = resolveBrowsersPath({ root: ROOT, env: {} })
 
 /** npm cache used by lab installs. */
 export const NPM_CACHE = join(LAB_ROOT, 'cache', 'npm')
@@ -44,8 +46,21 @@ export function resolveNpmCache({ env = process.env } = {}) {
  */
 export function resolveBrowsersPath({ root = ROOT, env = process.env } = {}) {
   const value = env.PLAYWRIGHT_BROWSERS_PATH
-  if (value === undefined || value.trim() === '') return join(root, '.cache', 'lab', 'pw-browsers')
-  return isAbsolute(value) ? value : join(root, value)
+  if (value !== undefined && value.trim() !== '') return isAbsolute(value) ? value : join(root, value)
+  const record = readRecord(root)
+  if (record.state === 'current' && typeof record.record.chromium?.browsersPath === 'string') {
+    return record.record.chromium.browsersPath
+  }
+  const versionRoot = existsSync(join(root, 'package-lock.json')) ? root : ROOT
+  try {
+    const listing = spawnSync('git', ['-C', versionRoot, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' })
+    const line = listing.status === 0 ? listing.stdout.split('\n').find((entry) => entry.startsWith('worktree ')) : undefined
+    const main = line === undefined ? versionRoot : line.slice('worktree '.length)
+    const sharedRoot = env.OPENSPEC_FLOW_SHARED_ROOT || join(main, '.cache', 'openspec-flow', 'shared')
+    return chromiumBucket(sharedRoot, resolvePlaywrightVersion(versionRoot))
+  } catch {
+    return join(root, '.cache', 'lab', 'pw-browsers')
+  }
 }
 
 /** Per-run directories. */
