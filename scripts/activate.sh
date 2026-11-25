@@ -19,27 +19,23 @@ else
 fi
 
 RECORD="$ACTIVATE_ROOT/.cache/toolchain/manifest.json"
-ACTIVATE_NODE=
 
-if [ -f "$RECORD" ] && command -v node >/dev/null 2>&1; then
-  ACTIVATE_NODE=$(node -e '
-    const { readFileSync } = require("node:fs")
-    try {
-      const record = JSON.parse(readFileSync(process.argv[1], "utf8"))
-      if (typeof record.node?.path === "string") process.stdout.write(record.node.path)
-    } catch {}
-  ' "$RECORD" 2>/dev/null || true)
-fi
-
-if [ -n "$ACTIVATE_NODE" ] && [ -x "$ACTIVATE_NODE" ]; then
-  ACTIVATE_BIN=$(dirname "$ACTIVATE_NODE")
-  case ":$PATH:" in
-    *":$ACTIVATE_BIN:"*) ;;
-    *) PATH="$ACTIVATE_BIN:$PATH" ;;
-  esac
-  export PATH
-  echo "bootstrap: using $("$ACTIVATE_NODE" --version) from the worktree record" >&2
-  return 0 2>/dev/null || exit 0
+if [ -f "$RECORD" ]; then
+  ACTIVATE_NODE=$(sed -n '/"node"[[:space:]]*:/,/}/p' "$RECORD" \
+    | sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | head -n 1)
+  if [ -n "$ACTIVATE_NODE" ] && [ -x "$ACTIVATE_NODE" ]; then
+    ACTIVATE_BIN=$(dirname "$ACTIVATE_NODE")
+    case ":$PATH:" in
+      *":$ACTIVATE_BIN:"*) ;;
+      *) PATH="$ACTIVATE_BIN:$PATH" ;;
+    esac
+    export PATH
+    echo "bootstrap: using $("$ACTIVATE_NODE" --version) from the worktree record" >&2
+    return 0 2>/dev/null || exit 0
+  fi
+  echo "bootstrap: the worktree record names no usable Node at ${ACTIVATE_NODE:-<missing>}; run ./scripts/bootstrap.sh --deps-only" >&2
+  return 1 2>/dev/null || exit 1
 fi
 
 LEGACY="$ACTIVATE_ROOT/.cache/toolchain/node/bin"

@@ -65,7 +65,7 @@ function runHook({ failValidation = false, stampExit = 1, checkExit = 0, input =
   const fake = fakeNpm({ failValidation })
   const fakeBin = fakeNode({ stampExit, checkExit })
   const options = {
-    cwd: ROOT,
+    cwd: fake.dir,
     encoding: 'utf8',
     env: {
       ...process.env,

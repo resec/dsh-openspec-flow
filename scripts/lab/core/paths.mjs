@@ -56,7 +56,7 @@ export function resolveBrowsersPath({ root = ROOT, env = process.env } = {}) {
     const listing = spawnSync('git', ['-C', versionRoot, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' })
     const line = listing.status === 0 ? listing.stdout.split('\n').find((entry) => entry.startsWith('worktree ')) : undefined
     const main = line === undefined ? versionRoot : line.slice('worktree '.length)
-    const sharedRoot = join(main, '.cache', 'openspec-flow', 'shared')
+    const sharedRoot = env.OPENSPEC_FLOW_SHARED_ROOT || join(main, '.cache', 'openspec-flow', 'shared')
     return chromiumBucket(sharedRoot, resolvePlaywrightVersion(versionRoot))
   } catch {
     return join(root, '.cache', 'lab', 'pw-browsers')

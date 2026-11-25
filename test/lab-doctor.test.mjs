@@ -71,10 +71,15 @@ test('a missing pnpm fails the doctor with the pinned install command', () => {
 })
 
 test('a missing pnpm reports a correction-oriented failure', () => {
-  const check = checkPnpm({ PATH: '/definitely/missing' })
-  assert.equal(check.status, 'fail')
-  assert.match(check.detail, /pnpm/)
-  assert.ok(check.detail.includes('--deps-only'))
+  const root = mkdtempSync(join(tmpdir(), 'lab-doctor-no-record-'))
+  try {
+    const check = checkPnpm({ PATH: '/definitely/missing' }, root)
+    assert.equal(check.status, 'fail')
+    assert.match(check.detail, /pnpm/)
+    assert.ok(check.detail.includes('--deps-only'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('a missing fc-list returns a correction-oriented failure', () => {

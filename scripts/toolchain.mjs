@@ -187,6 +187,12 @@ function main() {
     process.exitCode = 1
     return
   }
+  const missing = missingRecordPaths(result.record).filter((label) => label.startsWith('Node at '))
+  if (missing.length > 0) {
+    process.stderr.write(`toolchain: ${missing.join(', ')}; ${preparationCorrection()}\n`)
+    process.exitCode = 1
+    return
+  }
   process.stdout.write(`${result.record.node.path}\n`)
 }
 
