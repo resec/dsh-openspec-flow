@@ -81,13 +81,19 @@ function stderrClosed(child, timeoutMs = STDERR_DRAIN_MS) {
   const stream = child.stderr
   if (stream === null || stream === undefined || stream.closed === true) return Promise.resolve()
   return new Promise((resolve) => {
-    const finish = () => {
+    const finish = (destroy) => {
       clearTimeout(timer)
-      stream.removeListener('close', finish)
+      stream.removeListener('close', onClose)
+      if (destroy === true && stream.destroyed !== true) stream.destroy()
       resolve()
     }
-    const timer = setTimeout(finish, timeoutMs)
-    stream.once('close', finish)
+    const onClose = () => {
+      finish(false)
+    }
+    const timer = setTimeout(() => {
+      finish(true)
+    }, timeoutMs)
+    stream.once('close', onClose)
   })
 }
 
@@ -195,6 +201,7 @@ test('a held stderr pipe yields its capture after the bound', async () => {
   const started = performance.now()
   await stderrClosed({ stderr: stream }, 50)
   assert.ok(performance.now() - started >= 45, 'the drain waited for the bound')
+  assert.equal(stream.destroyed, true, 'the drain released the held pipe')
   assert.equal(stderrNote(captured), 'entrypoint stderr: test entrypoint: cannot remove the run root at /tmp/probe')
 })
 
