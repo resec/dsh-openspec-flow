@@ -3,12 +3,19 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SCRIPT = join(ROOT, 'scripts', 'affected-tests.mjs')
 const RUNNER = join(ROOT, 'scripts', 'run-tests.mjs')
+
+/** Longest entrypoint stderr excerpt an assertion message carries. */
+const STDERR_LIMIT = 500
+
+/** Longest wait for a child's stderr to close before the capture is read. */
+const STDERR_DRAIN_MS = 500
 
 /** Create a scratch probe directory that the test removes afterwards. */
 function scratch(t) {
@@ -62,6 +69,28 @@ function runScoped(args, env) {
   })
 }
 
+/** Render a child's captured stderr for an assertion message. */
+function stderrNote(text) {
+  const captured = text.trim()
+  if (captured === '') return 'entrypoint stderr: <empty>'
+  return `entrypoint stderr: ${captured.slice(0, STDERR_LIMIT)}`
+}
+
+/** Resolve when the child's stderr closes, or after the bound, whichever comes first. */
+function stderrClosed(child, timeoutMs = STDERR_DRAIN_MS) {
+  const stream = child.stderr
+  if (stream === null || stream === undefined || stream.closed === true) return Promise.resolve()
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer)
+      stream.removeListener('close', finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, timeoutMs)
+    stream.once('close', finish)
+  })
+}
+
 test('a passing scoped run removes its run root', async (t) => {
   const probe = scratch(t)
   const result = await runScoped(['--run', 'test/temp.test.mjs'], { TMPDIR: probe })
@@ -100,8 +129,9 @@ test('a scoped run interrupted by SIGTERM removes its root and exits 143', async
   const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
   try {
     const code = await exited
-    assert.equal(code, 143, `child stderr: ${childStderr.slice(0, 500)}`)
-    assert.deepEqual(readdirSync(probe), [])
+    await stderrClosed(child)
+    assert.equal(code, 143, stderrNote(childStderr))
+    assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
   } finally {
     clearTimeout(timer)
   }
@@ -140,14 +170,39 @@ test('a plain run interrupted by SIGTERM removes its root and exits 143', async 
   const child = spawn(process.execPath, [RUNNER, 'plugin', '--', '--test-name-pattern=runs init, plan, apply and archive'], {
     cwd: ROOT,
     env: childEnv({ TMPDIR: probe }),
-    stdio: ['ignore', 'ignore', 'ignore'],
+    stdio: ['ignore', 'ignore', 'pipe'],
   })
+  let childStderr = ''
+  child.stderr.on('data', (chunk) => { childStderr += chunk })
   const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)))
   const timer = setTimeout(() => child.kill('SIGTERM'), 1500)
   try {
-    assert.equal(await exited, 143)
-    assert.deepEqual(readdirSync(probe), [])
+    const code = await exited
+    await stderrClosed(child)
+    assert.equal(code, 143, stderrNote(childStderr))
+    assert.deepEqual(readdirSync(probe), [], stderrNote(childStderr))
   } finally {
     clearTimeout(timer)
   }
+})
+
+test('a held stderr pipe yields its capture after the bound', async () => {
+  const stream = new PassThrough()
+  let captured = ''
+  stream.setEncoding('utf8')
+  stream.on('data', (chunk) => { captured += chunk })
+  stream.write('test entrypoint: cannot remove the run root at /tmp/probe\n')
+  const started = performance.now()
+  await stderrClosed({ stderr: stream }, 50)
+  assert.ok(performance.now() - started >= 45, 'the drain waited for the bound')
+  assert.equal(stderrNote(captured), 'entrypoint stderr: test entrypoint: cannot remove the run root at /tmp/probe')
+})
+
+test('an empty capture renders the empty marker', () => {
+  assert.equal(stderrNote(''), 'entrypoint stderr: <empty>')
+  assert.equal(stderrNote(' \n'), 'entrypoint stderr: <empty>')
+})
+
+test('an over-long capture is truncated to 500 characters', () => {
+  assert.equal(stderrNote('x'.repeat(600)), `entrypoint stderr: ${'x'.repeat(500)}`)
 })
