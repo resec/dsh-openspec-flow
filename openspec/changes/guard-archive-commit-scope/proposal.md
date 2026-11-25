@@ -8,7 +8,7 @@ The land flow tolerates other changes' uncommitted planning files, but `git comm
 
 - Require an empty git index before land updates main and again before the archive commit is created. A non-empty index refuses and names the staged paths; land never resets them.
 - After staging, verify that the staged set is not empty and that every staged path lies under the archived change's directory, `openspec/specs`, or the removed source change directory. A path outside those prefixes refuses without committing.
-- Resolve exactly one archived directory on the resume path that stages an interrupted archive commit, and refuse a missing or ambiguous directory.
+- Resolve at most one archived directory on the resume path that stages an interrupted archive commit: zero matches mean the archive has not moved yet and runs normally, while more than one refuses.
 - Verify an archive commit already on main when a resumed land accepts it: identify its archived directory from the commit's added paths and require every other path to lie under the removed source change directory or `openspec/specs`, so a manually created commit cannot bypass the same scope.
 - Adjust the failed-land resumability statement: after a failed archive commit the operator unstages the interrupted staging with a mixed `git reset`, then a retry completes the commit without fast-forwarding or archiving twice.
 - Document the recoveries for a staged index, a missing or ambiguous archived directory, and a refused resumed commit.
