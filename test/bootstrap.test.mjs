@@ -176,6 +176,7 @@ test('deps-only skips the doctor and tests', () => {
   assert.equal(plan.lab, false)
   assert.equal(plan.chromium, true)
   assert.equal(plan.record, true)
+  assert.equal(plan.install, false)
 })
 
 test('reads the baseline Node version from coverage.baseline.json', () => {

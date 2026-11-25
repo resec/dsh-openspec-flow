@@ -146,7 +146,7 @@ export function resolvePlan(options, state) {
   const dependenciesPresent = state?.dependenciesPresent === true
   const depsOnly = options.depsOnly === true
   return {
-    install: options.skipInstall !== true,
+    install: depsOnly ? options.skipInstall !== true && !dependenciesPresent : options.skipInstall !== true,
     doctor: !depsOnly,
     plainTest: !depsOnly && options.skipTest !== true && options.full !== true,
     verification: !depsOnly && options.full === true,
@@ -202,6 +202,8 @@ export function runBrowserStep(options, { browsersPath: path = browsersPath(), n
     host: options.playwrightHost,
     cwd: ROOT,
     install: prepare,
+    requireMarker: true,
+    writeMarker: true,
     ...lockOptions,
   })
 }
@@ -412,7 +414,7 @@ function main() {
   if (plan.missingDependencies) throw new Error(dependenciesError())
 
   let step = 0
-  const total = plan.depsOnly ? 5 : options.full ? 8 : 6
+  const total = plan.depsOnly ? 4 : options.full ? 8 : 7
   const next = (message) => {
     step += 1
     log(step, total, message)
@@ -440,6 +442,17 @@ function main() {
     next(prepared.installed ? 'installed Playwright Chromium' : 'Playwright Chromium already present')
   }
 
+  const path = writeToolchainRecord({ pnpm, chromium })
+  next(`wrote ${path}`)
+
+  if (plan.gc && !options.noGc) {
+    try {
+      collectBuckets({ dryRun: options.gcDryRun })
+    } catch (error) {
+      console.error(`bootstrap: bucket collection aborted: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   const labEnv = () => ({ PLAYWRIGHT_BROWSERS_PATH: browsersPath(), ...npmEnv })
   if (plan.doctor) {
     next('checking the lab prerequisites')
@@ -459,17 +472,6 @@ function main() {
   if (plan.lab) {
     next('running the reusable lab scenarios')
     run('npm', ['run', 'test:lab', '--', '--mock-only'], labEnv())
-  }
-
-  const path = writeToolchainRecord({ pnpm, chromium })
-  next(`wrote ${path}`)
-
-  if (plan.gc && !options.noGc) {
-    try {
-      collectBuckets({ dryRun: options.gcDryRun })
-    } catch (error) {
-      console.error(`bootstrap: bucket collection aborted: ${error instanceof Error ? error.message : String(error)}`)
-    }
   }
 
   console.log('bootstrap: ready')

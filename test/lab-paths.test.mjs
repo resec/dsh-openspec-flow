@@ -9,6 +9,7 @@ test('the lab browser path follows the root and PLAYWRIGHT_BROWSERS_PATH', () =>
   assert.match(resolveBrowsersPath({ root: custom, env: {} }), /browsers[\\/]playwright-[0-9]/)
   assert.equal(resolveBrowsersPath({ root: custom, env: { PLAYWRIGHT_BROWSERS_PATH: '/shared/pw' } }), '/shared/pw')
   assert.equal(resolveBrowsersPath({ root: custom, env: { PLAYWRIGHT_BROWSERS_PATH: 'relative/pw' } }), join(custom, 'relative', 'pw'))
+  assert.match(resolveBrowsersPath({ root: custom, env: { OPENSPEC_FLOW_SHARED_ROOT: '/custom-shared' } }), /^\/custom-shared\/browsers\/playwright-/)
 })
 
 test('the lab npm cache prefers OPENSPEC_FLOW_NPM_CACHE and ignores npm_config_cache', () => {

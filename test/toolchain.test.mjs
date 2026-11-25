@@ -149,9 +149,8 @@ test('resolves the recorded pnpm and reports a missing path', () => {
   writeRecord(root, buildRecord({ root, ...toolOptions(root) }))
   const resolved = resolveRecordedPnpm(root)
   assert.equal(resolved.pnpm.version, PNPM_VERSION)
-  writeFileSync(resolved.pnpm.js, '')
-  assert.deepEqual(missingRecordPaths(resolved.record), [])
-  writeFileSync(join(root, 'delete-me'), '')
+  const missing = { ...resolved.record, pnpm: { ...resolved.pnpm, js: join(root, 'missing-pnpm.mjs') } }
+  assert.deepEqual(missingRecordPaths(missing), [`pnpm entry at ${join(root, 'missing-pnpm.mjs')}`])
 })
 
 test('a record with a missing tool path is rejected', () => {
@@ -180,6 +179,13 @@ test('the node-path command prints the recorded Node and refuses a stale record'
   const stale = spawnSync(process.execPath, [script, 'node-path'], { cwd: root, encoding: 'utf8' })
   assert.equal(stale.status, 1)
   assert.match(stale.stderr, /--deps-only/)
+  writeRecord(root, buildRecord({ root, ...toolOptions(root) }))
+  const image = JSON.parse(readFileSync(recordPath(root), 'utf8'))
+  image.node.path = join(root, 'missing-node')
+  writeFileSync(recordPath(root), JSON.stringify(image))
+  const missing = spawnSync(process.execPath, [script, 'node-path'], { cwd: root, encoding: 'utf8' })
+  assert.equal(missing.status, 1)
+  assert.match(missing.stderr, /--deps-only/)
 })
 
 

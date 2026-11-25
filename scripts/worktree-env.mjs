@@ -94,11 +94,7 @@ export function resolveEnvironment({ cwd = process.cwd(), env = process.env } = 
     if (explicit !== undefined && explicit.trim() !== '') {
       return isAbsolute(explicit) ? explicit : resolve(worktree, explicit)
     }
-    try {
-      return chromiumBucket(sharedRoot, resolvePlaywrightVersion(worktree))
-    } catch {
-      return join(sharedRoot, 'pw-browsers')
-    }
+    return chromiumBucket(sharedRoot, resolvePlaywrightVersion(worktree))
   })()
   return {
     mainRoot: main,
@@ -327,15 +323,37 @@ export function prepareChromium({
   host,
   install = installChromium,
   cwd = process.cwd(),
+  requireMarker = false,
+  writeMarker = false,
   isAlive = processAlive,
   timeoutMs,
   pollMs,
 } = {}) {
   const lockPath = installLockPath(browsersPath)
+  const markerPath = join(browsersPath, '.complete.json')
   return withInstallLockSync(lockPath, 'chromium', () => {
     if (reset) rmSync(browsersPath, { recursive: true, force: true })
-    if (!reset && findBrowserExecutable(browsersPath) !== undefined) return { installed: false, reused: true }
+    if (!reset && findBrowserExecutable(browsersPath) !== undefined) {
+      if (!requireMarker || existsSync(markerPath)) return { installed: false, reused: true }
+    }
     install({ browsersPath, host, cwd })
+    if (writeMarker) {
+      const packagePath = join(cwd, 'node_modules', 'playwright-core', 'package.json')
+      const browsersFile = join(cwd, 'node_modules', 'playwright-core', 'browsers.json')
+      if (!existsSync(packagePath) || !existsSync(browsersFile)) {
+        throw new Error(`cannot record the Chromium revisions under ${cwd}; run npm ci first`)
+      }
+      const playwrightVersion = JSON.parse(readFileSync(packagePath, 'utf8')).version
+      const parsed = JSON.parse(readFileSync(browsersFile, 'utf8'))
+      const byName = new Map((parsed.browsers ?? []).map((entry) => [entry.name, entry]))
+      const revisions = {}
+      for (const [key, name] of [['chromium', 'chromium'], ['headlessShell', 'chromium-headless-shell'], ['ffmpeg', 'ffmpeg']]) {
+        const entry = byName.get(name)
+        if (entry === undefined) throw new Error(`browsers.json names no ${name} revision under ${cwd}`)
+        revisions[key] = entry.revision
+      }
+      writeFileSync(markerPath, `${JSON.stringify({ playwrightVersion, revisions, installedAt: new Date().toISOString() }, null, 2)}\n`)
+    }
     return { installed: true, reused: false }
   }, { ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(pollMs === undefined ? {} : { pollMs }), isAlive })
 }
@@ -349,7 +367,17 @@ export function initEnvironment({ environment, browser = false, install = instal
   for (const directory of [environment.sharedRoot, environment.npmCache, environment.pnpmStore, environment.browsersPath, environment.dshHome]) {
     mkdirSync(directory, { recursive: true })
   }
-  if (browser) prepareChromium({ browsersPath: environment.browsersPath, install, cwd: environment.worktree, host })
+  if (browser) {
+    const localPackage = existsSync(join(environment.worktree, 'node_modules', 'playwright-core', 'browsers.json'))
+    prepareChromium({
+      browsersPath: environment.browsersPath,
+      install,
+      cwd: environment.worktree,
+      host,
+      requireMarker: localPackage,
+      writeMarker: localPackage,
+    })
+  }
   return environment
 }
 

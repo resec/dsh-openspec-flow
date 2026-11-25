@@ -99,6 +99,31 @@ resolve_shared() {
   esac
 }
 
+NODE_LOCK=
+node_lock_acquire() {
+  NODE_LOCK="$SHARED/toolchain/node/.${VERSION}.lock"
+  attempts=0
+  while ! mkdir "$NODE_LOCK" 2>/dev/null; do
+    if [ -f "$NODE_LOCK/pid" ]; then
+      owner=$(cat "$NODE_LOCK/pid" 2>/dev/null || true)
+      if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+        rm -rf "$NODE_LOCK"
+        continue
+      fi
+    fi
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt 600 ] || { echo "bootstrap: timed out waiting for the Node ${VERSION} bucket lock" >&2; exit 1; }
+    sleep 1
+  done
+  printf '%s' "$$" > "$NODE_LOCK/pid"
+  trap 'rm -rf "$NODE_LOCK"' EXIT
+}
+
+node_lock_release() {
+  rm -rf "$NODE_LOCK"
+  trap - EXIT
+}
+
 node_version() {
   "$1" --version 2>/dev/null || true
 }
@@ -243,6 +268,16 @@ if [ -x "$BUCKET/bin/node" ] && [ -f "$BUCKET/.complete" ]; then
 fi
 
 mkdir -p "$SHARED/toolchain/node" "$ROOT/.cache/toolchain"
+node_lock_acquire
+if [ -x "$BUCKET/bin/node" ] && [ -f "$BUCKET/.complete" ]; then
+  node_lock_release
+  ln -sfn "$BUCKET" "$ROOT/.cache/toolchain/node"
+  PATH="$BUCKET/bin:$PATH"
+  export PATH
+  export OPENSPEC_FLOW_NODE_SOURCE=bucket
+  # shellcheck disable=SC2086
+  exec "$BUCKET/bin/node" "$ROOT/scripts/bootstrap.mjs" $PASSTHROUGH
+fi
 URL="${MIRROR%/}/v${VERSION}/${ASSET}"
 SUM_URL="${MIRROR%/}/v${VERSION}/SHASUMS256.txt"
 TARBALL="$SHARED/toolchain/node/${VERSION}.tar.gz"
@@ -268,6 +303,7 @@ mkdir -p "$BUCKET"
 tar -xzf "$TARBALL" -C "$BUCKET" --strip-components=1
 [ -x "$BUCKET/bin/node" ] || { echo "bootstrap: extracted Node is missing $BUCKET/bin/node" >&2; exit 1; }
 printf '%s\n' "$VERSION" > "$BUCKET/.complete"
+node_lock_release
 ln -sfn "$BUCKET" "$ROOT/.cache/toolchain/node"
 PATH="$BUCKET/bin:$PATH"
 export PATH
