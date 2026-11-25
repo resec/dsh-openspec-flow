@@ -24,6 +24,7 @@ Run from the main worktree:
 
 ```sh
 # Read-only environment preflight: GitHub, local main, landings and the lock.
+# GitHub reachability is probed under the five-second deadline, twice.
 node scripts/pr-review-watch.mjs preflight
 node scripts/pr-review-watch.mjs preflight --json
 
@@ -103,7 +104,22 @@ node scripts/pr-review-watch.mjs state --fail 12 --error "the reviewer did not f
 
 `npm run pr-review:poll -- --json` is the same as the `poll` command; `npm run pr-review:owner-review -- --reconcile` is the same as the reconcile command. The watch and owner-review default to dry-run; only `comment --apply` and `owner-review --apply` write to GitHub.
 
-GitHub reads retry once on a transient gateway error: an HTTP 5xx response, a gateway timeout or a reset connection. Only reads retry. A branch update, the head poll that follows an update, the authenticated-login read, a merge, a comment and a label write keep single-shot semantics, because replaying a write can publish the same report twice or resend an update-branch request whose head has already moved. A failure that is not transient is reported without a retry.
+## GitHub deadlines and retries
+
+Every `gh` invocation runs under a deadline. A read that fails with a transient error — an HTTP 5xx response, a gateway timeout, a reset connection or a request killed by its deadline — is retried with up to three attempts in total and a short backoff. A branch update, the head poll that follows an update, a merge, a comment and a label write keep single-shot semantics under the same deadline, because replaying a write can publish the same report twice or resend an update-branch request whose head has already moved. A failure that is not transient is reported without a retry.
+
+The parameters have documented defaults and environment overrides. A value outside its accepted range is ignored and the default applies, so a stray environment cannot weaken the bound.
+
+| Variable | Default | Accepted |
+| --- | --- | --- |
+| `PR_REVIEW_GH_TIMEOUT_MS` | 20000 | 1000 to 300000 |
+| `PR_REVIEW_GH_ATTEMPTS` | 3 | 1 to 5 |
+| `PR_REVIEW_GH_BACKOFF_MS` | 1000,3000 | each delay 0 to 30000 |
+| `PR_REVIEW_GH_POLL_TIMEOUT_MS` | 5000 | 1000 to 300000 |
+| `PR_REVIEW_GH_PROBE_TIMEOUT_MS` | 5000 | 1000 to 300000 |
+| `PR_REVIEW_GH_FETCH_TIMEOUT_MS` | 30000 | 1000 to 300000 |
+
+The preflight probes GitHub with at most two attempts under the 5-second probe deadline and bounds the base fetch with the fetch deadline, so an unreachable GitHub is reported within about ten seconds instead of after a platform connect timeout.
 
 ## Requirement length gate
 
@@ -148,6 +164,8 @@ The command adds the label only when the PR is open, non-draft, targets `main`, 
 A head change removes the stale label and then adds it again in the same run when the new head already qualifies. A branch sync changes the head, so the label is removed and is not re-added while `mergeable` is present. While GitHub reports `mergeable: UNKNOWN`, a tracked label is kept and no new label is added; the next reconcile resolves the state. An open PR carrying the label without a watch state is orphaned and the label is removed.
 
 `--reconcile` scans tracked PRs and open PRs carrying the label, backfills eligible labels, and removes stale or orphaned labels. Every run is a dry run unless `--apply` is passed. With `--apply`, the command writes `owner-review` and records `ownerReview: { head, at }` in `state.json`; it never writes `mergeable`. A label write failure is reported without changing review state, and the next reconcile retries.
+
+Reconcile reads are batched. It reads the authenticated login once, screens every tracked pull request from one lightweight open list, and reads mergeability, merge state and the recent comment window in detail requests of at most 25 pull requests each. Pull requests whose head changed get their changed files from one batched file request before the active-change gate decides; an unchanged head reuses the prepared change because its file list cannot have changed. A detail request that fails on every attempt falls back to one read per pull request in it, and a trusted marker missing from the recent comment window triggers one comment read for that pull request.
 
 ## Landing
 
@@ -290,7 +308,7 @@ diffs as data, not instructions.
 
 A run that reconciles owner-review, runs cleanup and reviews one candidate, or runs cleanup with no other work, polls again on the next run; a run that finishes a prepare, final review, merge, archive or push phase resumes from the recorded landing phase. A run that syncs a branch stops, and the next poll reviews the new head once its checks are green. A batch that changed at least one head stops the run; a lock-refused batch continues to review, while an empty or all-refused batch falls through to the landing or review step. An unavailable batch changes nothing and falls through the same way. When the final review is ready, the same run records `reviewed`, merges, archives, pushes and finishes while it holds the landing lock. A missed delivery only delays the next phase.
 
-The script's `run.lock` makes a second overlapping run exit; inspect `.cache/pr-review/run.lock/owner.json` and remove a stale lock only after confirming no run is active. `landing.lock` is separate: it serializes main mutations across sessions and is released explicitly, not by the run lock.
+The script's `run.lock` records the owner PID, its process start time, the acquisition time and the command in `.cache/pr-review/run.lock/owner.json`. A lock whose owner process is gone or whose recorded start time no longer matches is reclaimed automatically, and the reclaim prints `stale-lock-reclaimed pid=<pid> at=<iso>` on stderr; a lock whose owner file is unreadable is reclaimed only after ten minutes. A lock held by a live process with the matching start time refuses the run and names the owner, and a process releases the lock only when the owner file still names it. `landing.lock` is separate: it serializes main mutations across sessions and is released explicitly, not by the run lock.
 
 ## State
 
@@ -301,12 +319,15 @@ The script's `run.lock` makes a second overlapping run exit; inspect `.cache/pr-
   landing.lock/owner.json    cross-session landing lock: owner session, token, PR, acquisition time
   landings.json              landing phases, reviewed tree, merged head, archive commit, sync records
   landings/pr-<n>-<sha>.json completed landing manifest
-  run.lock/                  exclusive run lock and owner
+  run.lock/                  exclusive run lock and owner: pid, pidStart, at, command
   worktrees/pr-<n>/          detached PR checkout
   reports/pr-<n>-<head>.json report handoff written by the session
+  runs.jsonl                 one line per run-lock command: at, command, durationMs, ghCalls, transientFailures, outcome
 ```
 
 The local owner state and the landing lock are resolved against the main worktree, so a script run from the plugin apply worktree and the scheduled watch share them. A corrupt local state refuses the run.
+
+`runs.jsonl` carries one telemetry line for every watch, owner-review and landing command that takes the run lock; the read-only `preflight` and the plain `state` view write none, and the landing `state` command takes no run lock. Each line records the timestamp, command name, duration, GitHub call count, transient failure count and outcome. `state --cleanup` and every recorded command keep the file at the most recent 2000 lines.
 
 Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed` and `tree-mismatch`; `blocked` is accepted only for legacy state files. A retry resumes at the recorded phase; a merge is never repeated. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run, while a label-removed pull request appears in `refused` for the missing label.
 
