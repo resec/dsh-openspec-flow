@@ -327,9 +327,13 @@ function readDetailChunk({ root, gh, owner, name, numbers }) {
   return details
 }
 
-/** Read the changed files of several pull requests in one request. */
+/**
+ * Read the changed files of several pull requests in one request. A pull
+ * request whose file list has another page is reported as truncated so the
+ * caller can read it one pull request at a time.
+ */
 function readFilesChunk({ root, gh, owner, name, numbers }) {
-  const parts = numbers.map((n) => `p${n}:pullRequest(number:${n}){files(first:100){nodes{path}}}`)
+  const parts = numbers.map((n) => `p${n}:pullRequest(number:${n}){files(first:100){pageInfo{hasNextPage} nodes{path}}}`)
   const query = `query{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${parts.join(' ')}}}`
   const text = gh(['api', 'graphql', '-f', `query=${query}`], { cwd: root })
   if (text === undefined) throw new Error('the batched file read returned nothing')
@@ -339,8 +343,13 @@ function readFilesChunk({ root, gh, owner, name, numbers }) {
   }
   const files = new Map()
   for (const number of numbers) {
-    const paths = repository[`p${number}`]?.files?.nodes
-    if (Array.isArray(paths)) files.set(number, paths)
+    const value = repository[`p${number}`]?.files
+    if (value === undefined || value === null) continue
+    if (value.pageInfo?.hasNextPage === true) {
+      files.set(number, null)
+      continue
+    }
+    if (Array.isArray(value.nodes)) files.set(number, value.nodes)
   }
   return files
 }
@@ -395,7 +404,6 @@ export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh =
   const errors = []
   const plans = new Map()
   const detailNumbers = []
-  const fileNumbers = []
   const filesFor = new Map()
 
   const stopItem = ({ number, head, labeled }, reason) => {
@@ -435,18 +443,33 @@ export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh =
 
   if (pendingFiles.length > 0) {
     const slug = repositorySlug(root)
-    if (slug === undefined) throw new Error('cannot resolve the repository owner and name from origin')
     const fileNumbers = pendingFiles.map((item) => item.number)
-    try {
-      const files = readFilesChunk({ root, gh, owner: slug.owner, name: slug.name, numbers: fileNumbers })
-      for (const [number, paths] of files) filesFor.set(number, paths)
-    } catch {
-      for (const number of fileNumbers) {
+    const readFilesOne = (numbers) => {
+      for (const number of numbers) {
         try {
           const pr = readPullRequest({ root, number, gh })
           filesFor.set(number, Array.isArray(pr?.files) ? pr.files : [])
         } catch (readError) {
           errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
+        }
+      }
+    }
+    if (slug === undefined) {
+      readFilesOne(fileNumbers)
+    } else {
+      for (let index = 0; index < fileNumbers.length; index += DETAIL_CHUNK_SIZE) {
+        const chunkNumbers = fileNumbers.slice(index, index + DETAIL_CHUNK_SIZE)
+        let chunkFiles
+        try {
+          chunkFiles = readFilesChunk({ root, gh, owner: slug.owner, name: slug.name, numbers: chunkNumbers })
+        } catch {
+          readFilesOne(chunkNumbers)
+          continue
+        }
+        for (const number of chunkNumbers) {
+          const paths = chunkFiles.get(number)
+          if (paths === undefined || paths === null) readFilesOne([number])
+          else filesFor.set(number, paths)
         }
       }
     }
@@ -466,31 +489,30 @@ export function reconcileOwnerReview({ root = process.cwd(), apply = false, gh =
   const details = new Map()
   if (detailNumbers.length > 0) {
     const slug = repositorySlug(root)
-    if (slug === undefined) throw new Error('cannot resolve the repository owner and name from origin')
-    for (let index = 0; index < detailNumbers.length; index += DETAIL_CHUNK_SIZE) {
+    const readDetailOne = (number) => {
+      try {
+        details.set(number, readPullRequest({ root, number, gh }))
+      } catch (readError) {
+        errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
+      }
+    }
+    if (slug === undefined) {
+      for (const item of detailNumbers) readDetailOne(item.number)
+    }
+    for (let index = 0; slug !== undefined && index < detailNumbers.length; index += DETAIL_CHUNK_SIZE) {
       const chunk = detailNumbers.slice(index, index + DETAIL_CHUNK_SIZE)
       const chunkNumbers = chunk.map((item) => item.number)
       let chunkDetails
       try {
         chunkDetails = readDetailChunk({ root, gh, owner: slug.owner, name: slug.name, numbers: chunkNumbers })
       } catch {
-        for (const number of chunkNumbers) {
-          try {
-            details.set(number, readPullRequest({ root, number, gh }))
-          } catch (readError) {
-            errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
-          }
-        }
+        for (const number of chunkNumbers) readDetailOne(number)
         continue
       }
       for (const number of chunkNumbers) {
         const value = chunkDetails.get(number)
         if (value === undefined) {
-          try {
-            details.set(number, readPullRequest({ root, number, gh }))
-          } catch (readError) {
-            errors.push({ number, error: readError instanceof Error ? readError.message : String(readError) })
-          }
+          readDetailOne(number)
           continue
         }
         details.set(number, value)
