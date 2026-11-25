@@ -35,6 +35,7 @@ import {
   dependenciesError,
   parseBootstrapArgs,
   playwrightEnv,
+  resolveNpmCache,
   resolvePlan,
   runBrowserStep,
 } from '../scripts/bootstrap.mjs'
@@ -337,6 +338,14 @@ test('the bootstrap browser step contends on the same shared lock', () => {
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('bootstrap resolves OPENSPEC_FLOW_NPM_CACHE and ignores npm_config_cache', () => {
+  const fallback = join(ROOT, '.cache', 'npm')
+  assert.equal(resolveNpmCache({ env: { OPENSPEC_FLOW_NPM_CACHE: '/cache' } }), '/cache')
+  assert.equal(resolveNpmCache({ env: { npm_config_cache: '/npm' } }), fallback)
+  assert.equal(resolveNpmCache({ env: { OPENSPEC_FLOW_NPM_CACHE: '/cache', npm_config_cache: '/npm' } }), '/cache')
+  assert.equal(resolveNpmCache({ env: {} }), fallback)
 })
 
 test('names npm ci when dependencies are missing', () => {

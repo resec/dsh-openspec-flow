@@ -25,12 +25,16 @@ export const BROWSERS_PATH = join(LAB_ROOT, 'pw-browsers')
 export const NPM_CACHE = join(LAB_ROOT, 'cache', 'npm')
 
 /**
- * Resolve the npm cache from the environment.
+ * Resolve the npm cache for the lab.
+ *
+ * The ambient `npm_config_cache` is ignored: npm exports it to every lifecycle
+ * script, and it names the host home cache, which a workspace-write sandbox
+ * cannot write. `OPENSPEC_FLOW_NPM_CACHE` is the explicit override.
  * @param options - environment.
  * @returns the cache path.
  */
 export function resolveNpmCache({ env = process.env } = {}) {
-  return env.LAB_NPM_CACHE ?? env.npm_config_cache ?? NPM_CACHE
+  return env.OPENSPEC_FLOW_NPM_CACHE ?? NPM_CACHE
 }
 
 /**
