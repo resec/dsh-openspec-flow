@@ -171,3 +171,31 @@ test('the flow rule states the no-edit rule and the blocked recovery', () => {
   assert.match(POLICY_TEXT, /closes the round as blocked/)
   assert.match(POLICY_TEXT, /`resume` then opens the next round and wakes the reviewer/)
 })
+
+test('every review action in the flow rule names its review kind', () => {
+  /**
+   * Report actions whose clause carries no review kind.
+   * @param paragraph - one numbered rule item.
+   * @param kind - `draft` or `apply`.
+   * @returns the offending action names.
+   */
+  function missingKind(paragraph, kind) {
+    const missing = []
+    for (const clause of paragraph.split(';')) {
+      const actions = [...clause.matchAll(/`action: "([a-z-]+)"`/gu)]
+      actions.forEach((match, index) => {
+        if (match[1] === 'waive' && clause.includes('`scope: "plan-change"`')) return
+        const end = index + 1 < actions.length ? actions[index + 1].index : clause.length
+        if (!clause.slice(match.index, end).includes(`review: "${kind}"`)) missing.push(match[1])
+      })
+    }
+    return missing
+  }
+
+  const lines = POLICY_TEXT.split('\n')
+  const draft = lines.find((line) => line.startsWith('4. '))
+  const apply = lines.find((line) => line.startsWith('6. '))
+  assert.ok(draft !== undefined && apply !== undefined, 'the rule carries a draft and an apply item')
+  assert.deepEqual(missingKind(draft, 'draft'), [], 'the draft paragraph names review: "draft" on every action')
+  assert.deepEqual(missingKind(apply, 'apply'), [], 'the apply paragraph names review: "apply" on every action')
+})
