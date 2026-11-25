@@ -1059,15 +1059,25 @@ test('cleanup reads the tracked and local numbers in one request', () => {
       }
     }
     saveState(root, { schemaVersion: 1, prs })
+    saveLocalEntries(root, { 90: localEntry({ number: 90, phase: 'landed-offline' }) })
     const fake = fakeGh((args) => {
+      if (args[0] !== 'api') throw new Error(`cleanup made an unexpected gh call: ${args.join(' ')}`)
       const query = String(args[3]).replace(/^query=/u, '')
       const numbers = [...query.matchAll(/p(\d+):pullRequest/gu)].map((match) => Number(match[1]))
-      const repository = Object.fromEntries(numbers.map((number) => [`p${number}`, { state: 'OPEN' }]))
+      const repository = Object.fromEntries(numbers.map((number) => [
+        `p${number}`,
+        { state: number === 90 ? 'MERGED' : 'OPEN' },
+      ]))
       return JSON.stringify({ data: { repository } })
     })
     const cleaned = cleanupClosedPullRequests({ root, gh: fake.gh })
-    assert.deepEqual(cleaned, [])
     assert.equal(fake.calls.length, 1)
+    assert.deepEqual(cleaned.map((entry) => ({
+      number: entry.number,
+      retained: entry.retained === true,
+      state: entry.state,
+    })), [{ number: 90, retained: true, state: 'MERGED' }])
+    assert.deepEqual(Object.keys(loadLocalState(root).prs), ['90'])
   } finally {
     cleanup(root, remote)
   }
