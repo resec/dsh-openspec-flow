@@ -1545,15 +1545,20 @@ test('cleanup keeps only the most recent telemetry lines', () => {
   }
 })
 
-test('a failing run-lock command records a failed outcome', () => {
+test('a failing run-lock command records a failed outcome without trimming', () => {
   const root = makeRepository()
   const remote = makeOrigin(root)
   const previous = process.cwd()
   try {
+    const telemetry = join(root, '.cache', 'pr-review', 'runs.jsonl')
+    mkdirSync(dirname(telemetry), { recursive: true })
+    const old = Array.from({ length: 2100 }, (_, index) => JSON.stringify({ command: `old-${index}` }))
+    writeFileSync(telemetry, `${old.join('\n')}\n`)
     process.chdir(root)
     const code = main(['state', '--fail', '999', '--error', 'boom'], () => {})
     assert.equal(code, 1)
-    const lines = readFileSync(join(root, '.cache', 'pr-review', 'runs.jsonl'), 'utf8').trim().split('\n')
+    const lines = readFileSync(telemetry, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 2101)
     const record = JSON.parse(lines.at(-1))
     assert.equal(record.command, 'state --fail')
     assert.equal(record.outcome, 'failed')

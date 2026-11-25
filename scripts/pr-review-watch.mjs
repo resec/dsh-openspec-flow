@@ -200,6 +200,7 @@ export function withRunTelemetry(root, command, work) {
       outcome,
     }
     appendFileSync(join(paths.cache, TELEMETRY_FILE), `${JSON.stringify(line)}\n`)
+    if (command === 'state --cleanup') trimTelemetry(root)
   }
 }
 
@@ -215,7 +216,9 @@ export function trimTelemetry(root, limit = TELEMETRY_MAX_LINES) {
   const lines = readFileSync(file, 'utf8').split('\n').filter((line) => line !== '')
   if (lines.length <= limit) return lines.length
   const kept = lines.slice(-limit)
-  writeFileSync(file, `${kept.join('\n')}\n`)
+  const temporary = `${file}.tmp-${process.pid}-${Date.now()}`
+  writeFileSync(temporary, `${kept.join('\n')}\n`)
+  renameSync(temporary, file)
   return kept.length
 }
 
