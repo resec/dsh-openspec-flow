@@ -7,7 +7,7 @@
 ## What Changes
 
 - The archive skill adds an `archived`-with-no-cleanup branch next to the existing `repair.action: "cleanup"` branch: report that the change is already archived and stop, without calling `openspec_archive` or land again.
-- The propose and apply skills add one sentence for the approved `waive-reviewer` call: continue with the returned `nextAction` instead of judging readiness on its own.
+- The propose and apply skills add one sentence for the approved `waive-reviewer` call: follow the returned `nextAction` only when it names another `openspec_review` action. A waiver that leaves the review ready continues with the skill's own step — present the proposal in propose, go to Finish in apply — and never calls `openspec_apply_next`.
 - `test/skills.test.mjs` asserts the `already archived` phrase and the continue-after-waiver sentence.
 
 ## Capabilities
@@ -22,6 +22,6 @@ None. The `skill-adaptation` spec already carries both scenarios; only the skill
 
 ## Impact
 
-- `skills/openspec-archive-change/SKILL.md`, `skills/openspec-propose/SKILL.md`, `skills/openspec-apply-change/SKILL.md`: one branch and one sentence each.
+- `skills/openspec-archive-change/SKILL.md`, `skills/openspec-propose/SKILL.md`, `skills/openspec-apply-change/SKILL.md`: one branch and one scoped waiver sentence each.
 - `test/skills.test.mjs`: one new test with the two phrase assertions.
 - No tool, policy text, payload, dependency, hook, coverage-baseline or `dist/` change.

@@ -3,7 +3,7 @@
 ## 1. Add the missing skill branches
 
 - [x] 1.1 In `skills/openspec-archive-change/SKILL.md`, report an already `archived` state with no pending cleanup as already archived and stop, keeping the existing `repair.action: "cleanup"` branch.
-- [x] 1.2 In `skills/openspec-propose/SKILL.md` and `skills/openspec-apply-change/SKILL.md`, tell the agent to continue with the returned `nextAction` after the user approves `waive-reviewer`.
+- [x] 1.2 In `skills/openspec-propose/SKILL.md` and `skills/openspec-apply-change/SKILL.md`, tell the agent to follow the returned `nextAction` only when it names another `openspec_review` action after the user approves `waive-reviewer`, and otherwise continue with the skill's own step: present the proposal in propose, go to Finish in apply, and never call `openspec_apply_next` from a waiver result.
 
 ## 2. Guard the text
 
