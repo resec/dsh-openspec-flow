@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 import {
+  acquireRunLock,
   activeChangeNames,
   checksGreen,
   cleanupClosedPullRequests,
@@ -24,10 +25,15 @@ import {
   pollText,
   preflight,
   preparePullRequest,
+  processStartTime,
   publishComment,
   readReport,
+  reclaimStaleRunLock,
+  releaseRunLock,
   renderReport,
+  runLockOwner,
   resolvePaths,
+  runLockAgeMs,
   saveLocalState,
   saveState,
   stateCommand,
@@ -339,7 +345,7 @@ test('comment dry-run renders without a GitHub write, and --apply posts once', (
     assert.equal(dry.dryRun, true)
     assert.match(dry.text, /Apply review/)
     assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'comment'), false)
-    const posted = publishComment({ root, number: 12, reportPath: report, apply: true, gh })
+    const posted = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
     assert.equal(posted.published, true)
     assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 1)
     assert.equal(loadState(root).prs['12'].status, 'commented')
@@ -362,7 +368,7 @@ test('a trusted marker for the same head suppresses a second publish', () => {
       }
       return undefined
     })
-    const result = publishComment({ root, number: 12, reportPath: report, apply: true, gh })
+    const result = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
     assert.equal(result.already, true)
     assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'comment'), false)
   } finally {
@@ -470,7 +476,7 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
     }
     const firstReport = report(join(root, '.cache', 'pr-review', 'reports', `pr-12-${head}.json`), 1)
     assert.equal(publishComment({ root, number: 12, reportPath: firstReport, gh }).dryRun, true)
-    assert.equal(publishComment({ root, number: 12, reportPath: firstReport, apply: true, gh }).published, true)
+    assert.equal(publishComment({ root, number: 12, reportPath: firstReport, apply: true, gh, ghWrite: gh }).published, true)
     comments.push({ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${head} round=1 -->` })
 
     git(root, ['checkout', '-q', 'pr-head'])
@@ -482,7 +488,7 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
     const second = preparePullRequest({ root, number: 12, gh })
     assert.notEqual(second.head, first.head)
     const secondReport = report(join(root, '.cache', 'pr-review', 'reports', `pr-12-${head}.json`), 2)
-    assert.equal(publishComment({ root, number: 12, reportPath: secondReport, apply: true, gh }).published, true)
+    assert.equal(publishComment({ root, number: 12, reportPath: secondReport, apply: true, gh, ghWrite: gh }).published, true)
     assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 2)
   } finally {
     cleanup(root, remote)
@@ -587,7 +593,7 @@ test('a failed publish records the failure and keeps the head eligible', () => {
       if (args[0] === 'pr' && args[1] === 'comment') return undefined
       return undefined
     })
-    assert.throws(() => publishComment({ root, number: 12, reportPath: report, apply: true, gh }), /pr comment/)
+    assert.throws(() => publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh }), /pr comment/)
     assert.equal(loadState(root).prs['12'].status, 'failed')
     const candidates = filterCandidates([{ number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] }], loadState(root))
     assert.equal(candidates.length, 1)
@@ -1234,7 +1240,7 @@ test('a comment publish is attempted once and the failure is recorded', () => {
       throw new Error(`unexpected gh ${args.join(' ')}`)
     }
     assert.throws(
-      () => publishComment({ root, number: 12, reportPath: report, apply: true, gh }),
+      () => publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh }),
       /HTTP 502/,
     )
     assert.equal(comments, 1)
@@ -1243,5 +1249,265 @@ test('a comment publish is attempted once and the failure is recorded', () => {
     assert.match(state.prs['12'].error, /HTTP 502/)
   } finally {
     cleanup(root)
+  }
+})
+
+/** The PID of a process that does not exist. */
+const DEAD_PID = 2_147_483_647
+
+/** Write a run-lock owner file for a test. */
+function writeLockOwner(root, owner) {
+  const { lock } = resolvePaths(root)
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify(owner))
+  return lock
+}
+
+/** Capture everything written to stderr while running the callback. */
+function captureStderr(run) {
+  const chunks = []
+  const original = process.stderr.write
+  process.stderr.write = (chunk) => {
+    chunks.push(String(chunk))
+    return true
+  }
+  try {
+    run()
+  } finally {
+    process.stderr.write = original
+  }
+  return chunks
+}
+
+test('a run lock whose owner is gone is reclaimed and reported', () => {
+  const root = makeRepository()
+  try {
+    writeLockOwner(root, { pid: DEAD_PID, at: new Date().toISOString() })
+    const chunks = captureStderr(() => {
+      const acquired = acquireRunLock(root)
+      assert.equal(acquired.owner.pid, process.pid)
+      assert.equal(runLockOwner(resolvePaths(root).lock).pid, process.pid)
+    })
+    assert.ok(chunks.some((line) => line.includes(`stale-lock-reclaimed pid=${DEAD_PID}`)))
+    assert.equal(releaseRunLock(root), true)
+    assert.equal(existsSync(resolvePaths(root).lock), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a live owner with the matching start time refuses the run', () => {
+  const root = makeRepository()
+  try {
+    const lock = writeLockOwner(root, {
+      pid: process.pid,
+      pidStart: processStartTime(process.pid),
+      at: new Date().toISOString(),
+    })
+    assert.throws(() => acquireRunLock(root), /another PR review run holds/)
+    assert.equal(existsSync(lock), true)
+    rmSync(lock, { recursive: true, force: true })
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a reused PID is reclaimed because its start time differs', () => {
+  const root = makeRepository()
+  try {
+    const current = processStartTime(process.pid)
+    assert.notEqual(current, '1')
+    writeLockOwner(root, { pid: process.pid, pidStart: '1', at: new Date().toISOString() })
+    const acquired = acquireRunLock(root)
+    assert.equal(acquired.owner.pid, process.pid)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('an owner file without identity fields age out after the reclaim age', () => {
+  const root = makeRepository()
+  try {
+    const now = new Date().toISOString()
+    writeLockOwner(root, { pid: process.pid, at: now })
+    assert.throws(() => acquireRunLock(root), /another PR review run holds/)
+
+    const old = new Date(Date.now() - 11 * 60_000).toISOString()
+    const lock = resolvePaths(root).lock
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, at: old }))
+    assert.ok(runLockAgeMs(lock, runLockOwner(lock)) > 10 * 60_000)
+    const acquired = acquireRunLock(root)
+    assert.equal(acquired.owner.pid, process.pid)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a corrupt owner file is reclaimed only after the reclaim age', () => {
+  const root = makeRepository()
+  try {
+    const { lock } = resolvePaths(root)
+    mkdirSync(lock, { recursive: true })
+    writeFileSync(join(lock, 'owner.json'), 'not json')
+    assert.throws(() => acquireRunLock(root), /owner file is unreadable/)
+    const old = new Date(Date.now() - 11 * 60_000)
+    utimesSync(lock, old, old)
+    const acquired = acquireRunLock(root)
+    assert.equal(acquired.owner.pid, process.pid)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a delayed reclaimer restores a lock another process acquired', () => {
+  const root = makeRepository()
+  try {
+    const lock = writeLockOwner(root, {
+      pid: DEAD_PID,
+      at: '2026-01-01T00:00:00.000Z',
+    })
+    const judged = runLockOwner(lock)
+    const acquired = acquireRunLock(root)
+    assert.equal(reclaimStaleRunLock(lock, judged), false)
+    const owner = runLockOwner(lock)
+    assert.equal(owner.pid, process.pid)
+    assert.equal(owner.at, acquired.owner.at)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a displaced owner cannot release a later owner lock', () => {
+  const root = makeRepository()
+  try {
+    const { lock } = acquireRunLock(root)
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify({
+      pid: process.pid + 1,
+      pidStart: '1',
+      at: new Date().toISOString(),
+    }))
+    assert.equal(releaseRunLock(root), false)
+    assert.equal(existsSync(lock), true)
+    rmSync(lock, { recursive: true, force: true })
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the recorded start time is stable and is not the RSS field', () => {
+  const first = processStartTime(process.pid)
+  const second = processStartTime(process.pid)
+  assert.equal(first, second)
+  assert.match(String(first), /^\d+$/u)
+  const stat = readFileSync(`/proc/${process.pid}/stat`, 'utf8')
+  const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/u)
+  assert.equal(first, fields[19])
+  assert.notEqual(first, fields[21])
+})
+
+test('preflight reports offline when the probe is killed by its deadline', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const result = preflight({
+      root,
+      gh: () => { throw new Error('gh api user timed out after 5000 ms (ETIMEDOUT)') },
+    })
+    assert.equal(result.online, false)
+    assert.equal(result.reason, 'github-unreachable')
+    assert.equal(result.offlineLand, true)
+    assert.match(result.command, /offline|test:lab/u)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('preflight reports origin-unreachable when the fetch is killed', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const result = preflight({
+      root,
+      gh: () => JSON.stringify({ login: 'maintainer' }),
+      fetch: () => false,
+    })
+    assert.equal(result.online, true)
+    assert.equal(result.reason, 'origin-unreachable')
+    assert.equal(result.offlineLand, true)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a run-lock command records one telemetry line and keeps the JSON result', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const previous = process.cwd()
+  try {
+    process.chdir(root)
+    const output = []
+    const code = main(['state', '--cleanup', '--json'], (text) => output.push(text))
+    assert.equal(code, 0)
+    assert.deepEqual(JSON.parse(output.join('')), [])
+    const telemetry = join(root, '.cache', 'pr-review', 'runs.jsonl')
+    const lines = readFileSync(telemetry, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 1)
+    const record = JSON.parse(lines[0])
+    assert.equal(record.command, 'state --cleanup')
+    assert.equal(record.ghCalls, 0)
+    assert.equal(record.transientFailures, 0)
+    assert.equal(record.outcome, 'ok')
+    assert.ok(Number.isInteger(record.durationMs) && record.durationMs >= 0)
+
+    const before = readFileSync(telemetry, 'utf8')
+    main(['state', '--json'], () => {})
+    assert.equal(readFileSync(telemetry, 'utf8'), before)
+  } finally {
+    process.chdir(previous)
+    cleanup(root, remote)
+  }
+})
+
+test('cleanup keeps only the most recent telemetry lines', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const previous = process.cwd()
+  try {
+    const telemetry = join(root, '.cache', 'pr-review', 'runs.jsonl')
+    mkdirSync(dirname(telemetry), { recursive: true })
+    const old = Array.from({ length: 2100 }, (_, index) => JSON.stringify({ command: `old-${index}` }))
+    writeFileSync(telemetry, `${old.join('\n')}\n`)
+    process.chdir(root)
+    const code = main(['state', '--cleanup', '--json'], () => {})
+    assert.equal(code, 0)
+    const lines = readFileSync(telemetry, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 2000)
+    assert.equal(JSON.parse(lines.at(-1)).command, 'state --cleanup')
+    assert.equal(JSON.parse(lines[0]).command, 'old-101')
+  } finally {
+    process.chdir(previous)
+    cleanup(root, remote)
+  }
+})
+
+test('a failing run-lock command records a failed outcome', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const previous = process.cwd()
+  try {
+    process.chdir(root)
+    const code = main(['state', '--fail', '999', '--error', 'boom'], () => {})
+    assert.equal(code, 1)
+    const lines = readFileSync(join(root, '.cache', 'pr-review', 'runs.jsonl'), 'utf8').trim().split('\n')
+    const record = JSON.parse(lines.at(-1))
+    assert.equal(record.command, 'state --fail')
+    assert.equal(record.outcome, 'failed')
+  } finally {
+    process.chdir(previous)
+    cleanup(root, remote)
   }
 })
