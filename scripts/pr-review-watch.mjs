@@ -8,12 +8,22 @@
  * GitHub/git work around it.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { isTransientGhFailure, withGhRetry } from './gh-retry.mjs'
+import { isTransientGhFailure } from './gh-retry.mjs'
+import {
+  GhDeadlineError,
+  fetchBase,
+  ghCounters,
+  ghProbe,
+  ghRead as ghReadCommand,
+  ghWrite as ghWriteCommand,
+  resetGhCounters,
+  resolveGhConfig,
+} from './gh-exec.mjs'
 
 /** Cache directory under the main worktree. */
 export const CACHE_DIRECTORY = join('.cache', 'pr-review')
@@ -49,13 +59,17 @@ export class UsageError extends Error {
   }
 }
 
-/** Run a command and return stdout, throwing on a non-zero exit. */
+/** Run a command and return its result; a deadline kill is reported as such. */
 function capture(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
   })
+  const deadline = result.error?.code === 'ETIMEDOUT'
+    || (result.status === null && result.signal !== null && result.signal !== undefined)
+  if (deadline) throw new GhDeadlineError(command, args, options.timeoutMs ?? 0)
   if (result.error) throw result.error
   if (result.status !== 0 && options.allowFailure !== true) {
     const detail = String(result.stderr ?? '').trim() || String(result.stdout ?? '').trim()
@@ -64,34 +78,135 @@ function capture(command, args, options = {}) {
   return result
 }
 
-/** Git text helper. */
-function gitText(cwd, args, allowFailure = false) {
-  const result = capture('git', ['-C', cwd, ...args], { allowFailure })
+/** Git text helper, optionally under a deadline. */
+function gitText(cwd, args, allowFailure = false, timeoutMs = undefined) {
+  const result = capture('git', ['-C', cwd, ...args], { allowFailure, timeoutMs })
   if (result.status !== 0) return undefined
   return result.stdout.trim()
 }
 
-/** Gh text helper; a missing gh binary is reported as unreachable. */
+/** Gh read helper; a missing gh binary or a failed read is reported as undefined. */
 function ghText(args, options = {}) {
-  let result
   try {
-    result = capture('gh', args, { cwd: options.cwd, allowFailure: options.allowFailure })
+    return ghReadCommand(args, { cwd: options.cwd, allowFailure: true })
   } catch (error) {
     if (error?.code === 'ENOENT') return undefined
     throw error
   }
-  if (result.status !== 0) return undefined
-  return result.stdout.trim()
 }
 
-/** Gh text helper that throws with stderr, for reads that retry. */
+/** Gh read helper that throws with stderr, under the read retry policy. */
 function ghRead(args, options = {}) {
-  const result = capture('gh', args, { cwd: options.cwd, allowFailure: true })
-  if (result.status !== 0) {
-    const detail = String(result.stderr ?? '').trim() || String(result.stdout ?? '').trim()
-    throw new Error(`gh ${args.join(' ')} failed${detail === '' ? '' : `: ${detail}`}`)
+  return ghReadCommand(args, { cwd: options.cwd })
+}
+
+/** Gh write helper; a single attempt under the deadline, undefined when it fails. */
+function ghWriteText(args, options = {}) {
+  try {
+    return ghWriteCommand(args, { cwd: options.cwd, allowFailure: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined
+    throw error
   }
-  return result.stdout.trim()
+}
+
+/** Gh reachability probe; every failure is reported as unreachable. */
+function ghProbeText(args, options = {}) {
+  try {
+    return ghProbe(args, { cwd: options.cwd })
+  } catch {
+    return undefined
+  }
+}
+
+/** Maximum pull requests read in one batched state request. */
+export const STATE_CHUNK_SIZE = 100
+
+/**
+ * Resolve the repository owner and name from the origin remote.
+ * @param root - main worktree.
+ * @returns `{ owner, name }`, or undefined when the remote does not name GitHub.
+ */
+export function repositorySlug(root) {
+  let url
+  try {
+    url = gitText(root, ['remote', 'get-url', 'origin'], true)
+  } catch {
+    return undefined
+  }
+  if (url === undefined) return undefined
+  const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/u.exec(url)
+  return match === null ? undefined : { owner: match[1], name: match[2] }
+}
+
+/** Read one pull request's state through its own request. */
+function readStateOnce({ root, gh, number }) {
+  const text = gh(['pr', 'view', String(number), '--json', 'state'], { cwd: root })
+  if (text === undefined) throw new Error(`gh pr view ${number} failed`)
+  const state = JSON.parse(text)?.state
+  if (typeof state !== 'string' || state === '') throw new Error(`gh pr view ${number} returned no state`)
+  return state
+}
+
+/**
+ * Read one batched state request and return the state of each resolved number.
+ * @param options - root, gh runner, repository owner and name, and numbers.
+ * @returns map from number to state; a number the response leaves out is absent.
+ */
+function readStateChunk({ root, gh, owner, name, numbers }) {
+  const parts = numbers.map((number) => `p${number}:pullRequest(number:${number}){state}`)
+  const query = `query{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${parts.join(' ')}}}`
+  const text = gh(['api', 'graphql', '-f', `query=${query}`], { cwd: root })
+  if (text === undefined) throw new Error('the batched state read returned nothing')
+  const repository = JSON.parse(text)?.data?.repository
+  if (repository === null || typeof repository !== 'object') {
+    throw new Error('the batched state read returned no repository')
+  }
+  const states = new Map()
+  for (const number of numbers) {
+    const node = repository[`p${number}`]
+    if (node === null || typeof node !== 'object' || typeof node.state !== 'string') continue
+    states.set(number, node.state)
+  }
+  return states
+}
+
+/**
+ * Read the state of every given pull request number in batched requests, resolving
+ * a number the batch leaves out with its own read. A batch that fails for a reason
+ * other than a transient network failure falls back to one read per number, and a
+ * transient failure is reported.
+ * @param options - root, numbers and gh runner.
+ * @returns map from number to state.
+ */
+export function readPullRequestStates({ root = process.cwd(), numbers = [], gh = ghRead } = {}) {
+  const wanted = [...new Set(numbers.map(Number))]
+    .filter((number) => Number.isInteger(number) && number > 0)
+    .sort((first, second) => first - second)
+  const states = new Map()
+  const readOne = (number) => states.set(number, readStateOnce({ root, gh, number }))
+  const slug = wanted.length === 0 ? undefined : repositorySlug(root)
+  if (slug === undefined) {
+    for (const number of wanted) readOne(number)
+    return states
+  }
+  for (let index = 0; index < wanted.length; index += STATE_CHUNK_SIZE) {
+    const chunk = wanted.slice(index, index + STATE_CHUNK_SIZE)
+    let chunkStates
+    try {
+      chunkStates = readStateChunk({ root, gh, ...slug, numbers: chunk })
+    } catch (error) {
+      if (isTransientGhFailure(error) || error instanceof GhDeadlineError) throw error
+      for (const number of chunk) readOne(number)
+      continue
+    }
+    for (const number of chunk) {
+      const state = chunkStates.get(number)
+      if (state === undefined) readOne(number)
+      else states.set(number, state)
+    }
+  }
+  return states
 }
 
 /**
@@ -139,6 +254,62 @@ export function writeJsonAtomic(file, value) {
   const temporary = `${file}.tmp-${process.pid}-${Date.now()}`
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`)
   renameSync(temporary, file)
+}
+
+/** Telemetry file name under the cache directory. */
+export const TELEMETRY_FILE = 'runs.jsonl'
+/** Telemetry lines retained by cleanup. */
+export const TELEMETRY_MAX_LINES = 2000
+
+/**
+ * Record one run-lock command's duration, GitHub calls and outcome.
+ * @param root - main worktree.
+ * @param command - the command name.
+ * @param work - the command body.
+ * @returns the command result.
+ */
+export function withRunTelemetry(root, command, work) {
+  const started = Date.now()
+  resetGhCounters()
+  let outcome = 'ok'
+  try {
+    return work()
+  } catch (error) {
+    outcome = 'failed'
+    throw error
+  } finally {
+    const counters = ghCounters()
+    const paths = resolvePaths(root)
+    mkdirSync(paths.cache, { recursive: true })
+    const line = {
+      at: new Date().toISOString(),
+      command,
+      durationMs: Date.now() - started,
+      ghCalls: counters.calls,
+      transientFailures: counters.transientFailures,
+      outcome,
+    }
+    appendFileSync(join(paths.cache, TELEMETRY_FILE), `${JSON.stringify(line)}\n`)
+    if (command === 'state --cleanup') trimTelemetry(root)
+  }
+}
+
+/**
+ * Keep only the most recent telemetry lines.
+ * @param root - main worktree.
+ * @param limit - lines to keep.
+ * @returns the number of retained lines.
+ */
+export function trimTelemetry(root, limit = TELEMETRY_MAX_LINES) {
+  const file = join(resolvePaths(root).cache, TELEMETRY_FILE)
+  if (!existsSync(file)) return 0
+  const lines = readFileSync(file, 'utf8').split('\n').filter((line) => line !== '')
+  if (lines.length <= limit) return lines.length
+  const kept = lines.slice(-limit)
+  const temporary = `${file}.tmp-${process.pid}-${Date.now()}`
+  writeFileSync(temporary, `${kept.join('\n')}\n`)
+  renameSync(temporary, file)
+  return kept.length
 }
 
 /**
@@ -267,25 +438,25 @@ export function deleteLocalEntry(root, number) {
 
 /**
  * Remove closed or completed local owner entries, retaining unfinished ones.
- * @param options - root and gh runner.
+ * @param options - root, gh runner and an optional pre-read state map.
  * @returns removed and retained entries.
  */
-export function cleanupLocalEntries({ root = process.cwd(), gh = ghText } = {}) {
+export function cleanupLocalEntries({ root = process.cwd(), gh = ghRead, states = undefined } = {}) {
   const state = loadLocalState(root)
   const removed = []
   const retained = []
   for (const [key, entry] of Object.entries(state.prs)) {
-    const text = gh(['pr', 'view', key, '--json', 'state'])
-    if (text === undefined) throw new Error(`gh pr view ${key} failed`)
-    const pr = JSON.parse(text)
+    const number = Number(key)
+    const prState = states === undefined ? readStateOnce({ root, gh, number }) : states.get(number)
+    if (prState === undefined) throw new Error(`gh pr view ${key} failed`)
     const landed = entry.phase === 'landed' || entry.phase === 'landed-offline'
     const remove = entry.phase === 'pushed'
-      || (pr.state === 'CLOSED' && !landed)
+      || (prState === 'CLOSED' && !landed)
     if (remove) {
       delete state.prs[key]
       removed.push({ number: entry.number, change: entry.change, local: true, removed: true })
-    } else if (pr.state !== 'OPEN') {
-      retained.push({ number: entry.number, change: entry.change, phase: entry.phase, state: pr.state })
+    } else if (prState !== 'OPEN') {
+      retained.push({ number: entry.number, change: entry.change, phase: entry.phase, state: prState })
     }
   }
   saveLocalState(root, state)
@@ -340,11 +511,28 @@ function openLandings(root) {
  * @param options - root, gh and git runners.
  * @returns online, local-main, landing and lock facts.
  */
-export function preflight({ root = mainWorktree(), gh = ghText, git = gitText } = {}) {
+export function preflight({
+  root = mainWorktree(),
+  gh = ghProbeText,
+  fetch = () => fetchBase(root),
+  git = gitText,
+} = {}) {
   const paths = resolvePaths(root)
-  const repo = gh(['repo', 'view', '--json', 'nameWithOwner'])
-  const online = repo !== undefined
-  const fetched = online && git(root, ['fetch', 'origin', 'main'], true) !== undefined
+  let login
+  try {
+    login = gh(['api', 'user', '--jq', '.login'])
+  } catch {
+    login = undefined
+  }
+  const online = login !== undefined
+  let fetched = false
+  if (online) {
+    try {
+      fetched = fetch() === true
+    } catch {
+      fetched = false
+    }
+  }
   const originMain = git(root, ['rev-parse', 'origin/main'])
   const main = git(root, ['rev-parse', 'main'])
   const ahead = originMain === undefined || main === undefined
@@ -374,6 +562,191 @@ export function preflight({ root = mainWorktree(), gh = ghText, git = gitText } 
   }
 }
 
+/** Age after which a run lock without usable owner identity is reclaimed. */
+export const RUN_LOCK_RECLAIM_MINUTES = 10
+
+/**
+ * Read the start time of a process from `/proc/<pid>/stat`, parsing after the
+ * final `)` so a command name containing spaces or parentheses cannot shift it.
+ * @param pid - process identifier.
+ * @returns the starttime field, or null when unreadable.
+ */
+export function processStartTime(pid) {
+  try {
+    const text = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const close = text.lastIndexOf(')')
+    if (close < 0) return null
+    const fields = text.slice(close + 1).trim().split(/\s+/u)
+    return /^\d+$/u.test(fields[19] ?? '') ? fields[19] : null
+  } catch {
+    return null
+  }
+}
+
+/** Whether a process with this identifier exists. */
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error?.code === 'EPERM'
+  }
+}
+
+/** Read the run-lock owner file, or undefined when absent or unreadable. */
+export function runLockOwner(lock) {
+  try {
+    const value = readJson(join(lock, 'owner.json'))
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The age of a run lock in milliseconds, from its owner timestamp or its mtime. */
+export function runLockAgeMs(lock, owner, now = Date.now()) {
+  if (typeof owner?.at === 'string') {
+    const parsed = Date.parse(owner.at)
+    if (!Number.isNaN(parsed)) return Math.max(0, now - parsed)
+  }
+  try {
+    return Math.max(0, now - statSync(lock).mtimeMs)
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Whether a run lock may be reclaimed: its owner is gone or reused, or the lock
+ * carries no usable owner identity and is older than the reclaim age.
+ * @param owner - the owner file value, when readable.
+ * @param ageMs - the lock age in milliseconds.
+ * @returns whether the lock is stale.
+ */
+export function isStaleRunLockOwner(owner, ageMs) {
+  const pid = owner?.pid
+  const reclaimAge = RUN_LOCK_RECLAIM_MINUTES * 60_000
+  if (!Number.isInteger(pid) || pid < 1) return ageMs > reclaimAge
+  if (!processAlive(pid)) return true
+  const recorded = owner?.pidStart
+  const current = processStartTime(pid)
+  if (typeof recorded === 'string' && current !== null) return recorded !== current
+  return ageMs > reclaimAge
+}
+
+/**
+ * Reclaim a run lock judged stale. The judgement is verified against the moved
+ * owner before anything is deleted, so a reclaimer that judged an owner stale
+ * cannot remove a lock another process acquired in the meantime.
+ * @param lock - the lock directory.
+ * @param judged - the owner observed when the lock was judged stale, or
+ *                 undefined when the owner file was unreadable.
+ * @returns whether this call reclaimed the lock.
+ */
+export function reclaimStaleRunLock(lock, judged) {
+  const moved = `${lock}.reclaim-${process.pid}-${Date.now()}`
+  try {
+    renameSync(lock, moved)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+  const movedOwner = runLockOwner(moved)
+  const same = judged === undefined
+    ? movedOwner === undefined
+    : movedOwner !== undefined
+      && movedOwner.pid === judged.pid
+      && (movedOwner.pidStart ?? null) === (judged.pidStart ?? null)
+      && (movedOwner.at ?? null) === (judged.at ?? null)
+  if (!same) {
+    try {
+      if (!existsSync(lock)) renameSync(moved, lock)
+    } catch {
+      // A concurrent reclaimer owns the path; leave the moved directory alone.
+    }
+    return false
+  }
+  rmSync(moved, { recursive: true, force: true })
+  process.stderr.write(`stale-lock-reclaimed pid=${String(judged?.pid ?? 'unknown')} at=${String(judged?.at ?? 'unknown')}\n`)
+  return true
+}
+
+/**
+ * Acquire the run lock, reclaiming a stale owner.
+ * @param root - main worktree.
+ * @returns the lock directory and the recorded owner.
+ */
+export function acquireRunLock(root) {
+  const { lock } = resolvePaths(root)
+  mkdirSync(dirname(lock), { recursive: true })
+  const reclaimAge = RUN_LOCK_RECLAIM_MINUTES * 60_000
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      mkdirSync(lock)
+      const owner = {
+        pid: process.pid,
+        pidStart: processStartTime(process.pid),
+        at: new Date().toISOString(),
+        command: process.argv.slice(2).join(' '),
+      }
+      writeJsonAtomic(join(lock, 'owner.json'), owner)
+      return { lock, owner }
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+    }
+    const owner = runLockOwner(lock)
+    if (owner !== undefined && !isStaleRunLockOwner(owner, runLockAgeMs(lock, owner))) {
+      throw new Error(`another PR review run holds ${lock} (pid ${String(owner.pid ?? 'unknown')}); inspect the owner and remove the stale lock`)
+    }
+    if (owner === undefined && runLockAgeMs(lock, undefined) <= reclaimAge) {
+      throw new Error(`another PR review run holds ${lock}; the owner file is unreadable; inspect it and remove the stale lock`)
+    }
+    reclaimStaleRunLock(lock, owner)
+  }
+  throw new Error(`another PR review run holds ${lock}; inspect the owner and remove the stale lock`)
+}
+
+/**
+ * Release the run lock only when its owner file names this process.
+ * @param root - main worktree.
+ * @returns whether the lock was removed.
+ */
+export function releaseRunLock(root) {
+  const { lock } = resolvePaths(root)
+  const owner = runLockOwner(lock)
+  const ours = owner !== undefined
+    && owner.pid === process.pid
+    && (owner.pidStart ?? null) === (processStartTime(process.pid) ?? null)
+  if (!ours) {
+    process.stderr.write(`lock-release-skipped pid=${String(owner?.pid ?? 'unknown')}\n`)
+    return false
+  }
+  const moved = `${lock}.release-${process.pid}-${Date.now()}`
+  try {
+    renameSync(lock, moved)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    process.stderr.write('lock-release-skipped pid=unknown\n')
+    return false
+  }
+  const movedOwner = runLockOwner(moved)
+  const stillOurs = movedOwner !== undefined
+    && movedOwner.pid === owner.pid
+    && (movedOwner.pidStart ?? null) === (owner.pidStart ?? null)
+    && (movedOwner.at ?? null) === (owner.at ?? null)
+  if (!stillOurs) {
+    try {
+      if (!existsSync(lock)) renameSync(moved, lock)
+    } catch {
+      // Another owner holds the path; leave the moved directory alone.
+    }
+    process.stderr.write(`lock-release-skipped pid=${String(movedOwner?.pid ?? 'unknown')}\n`)
+    return false
+  }
+  rmSync(moved, { recursive: true, force: true })
+  return true
+}
+
 /**
  * Run one command under the exclusive run lock.
  * @param root - main worktree.
@@ -381,21 +754,11 @@ export function preflight({ root = mainWorktree(), gh = ghText, git = gitText } 
  * @returns callback result.
  */
 export function withRunLock(root, work) {
-  const { lock } = resolvePaths(root)
-  mkdirSync(dirname(lock), { recursive: true })
+  acquireRunLock(root)
   try {
-    mkdirSync(lock)
-  } catch (error) {
-    if (error?.code === 'EEXIST') {
-      throw new Error(`another PR review run holds ${lock}; inspect the owner and remove the stale lock`)
-    }
-    throw error
-  }
-  try {
-    writeJsonAtomic(join(lock, 'owner.json'), { pid: process.pid, at: new Date().toISOString() })
     return work()
   } finally {
-    rmSync(lock, { recursive: true, force: true })
+    releaseRunLock(root)
   }
 }
 
@@ -554,23 +917,16 @@ export function pollPullRequests({
   gh = ghRead,
   state = loadState(root),
   local = localPullRequestNumbers(root),
-  retryDelayMs = 2000,
 } = {}) {
   const readList = (fields) => {
-    const text = withGhRetry(
-      () => gh(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', fields]),
-      { delayMs: retryDelayMs },
-    )
+    const text = gh(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', fields])
     if (text === undefined) throw new Error('gh pr list failed')
     return JSON.parse(text)
   }
   const readDetail = (number) => {
     let text
     try {
-      text = withGhRetry(
-        () => gh(['pr', 'view', String(number), '--json', 'files,statusCheckRollup']),
-        { delayMs: retryDelayMs },
-      )
+      text = gh(['pr', 'view', String(number), '--json', 'files,statusCheckRollup'])
     } catch (error) {
       throw new Error(`gh pr view ${number} failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -650,8 +1006,9 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
 
   const paths = resolvePaths(root)
   if (paths.commonDir === undefined) throw new Error(`${root} is not a git repository`)
-  git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`])
-  git(root, ['fetch', 'origin', `+refs/heads/${baseRefName}:refs/pr-review/base-${n}`])
+  const fetchTimeoutMs = resolveGhConfig().fetchTimeoutMs
+  git(root, ['fetch', 'origin', `+pull/${n}/head:refs/pr-review/pr-${n}`], false, fetchTimeoutMs)
+  git(root, ['fetch', 'origin', `+refs/heads/${baseRefName}:refs/pr-review/base-${n}`], false, fetchTimeoutMs)
   const fetchedHead = git(root, ['rev-parse', `refs/pr-review/pr-${n}`])
   const baseTip = git(root, ['rev-parse', `refs/pr-review/base-${n}`])
   const mergeBase = git(root, ['merge-base', baseTip, fetchedHead])
@@ -827,7 +1184,14 @@ export function readReport(file, number, head) {
  * @param options - root, PR number, report path, apply flag, gh runner.
  * @returns `{ published, marker, dryRun }`.
  */
-export function publishComment({ root = process.cwd(), number, reportPath, apply = false, gh = ghText } = {}) {
+export function publishComment({
+  root = process.cwd(),
+  number,
+  reportPath,
+  apply = false,
+  gh = ghText,
+  ghWrite = ghWriteText,
+} = {}) {
   const n = Number(number)
   if (localPullRequestNumbers(root).has(String(n))) {
     throw new Error(`PR #${n} is owner-managed locally; the watch does not review or comment on it`)
@@ -852,7 +1216,7 @@ export function publishComment({ root = process.cwd(), number, reportPath, apply
     const temp = join(resolvePaths(root).cache, `.comment-${number}-${process.pid}.md`)
     writeFileSync(temp, text)
     try {
-      const result = gh(['pr', 'comment', String(number), '--body-file', temp])
+      const result = ghWrite(['pr', 'comment', String(number), '--body-file', temp])
       if (result === undefined) throw new Error(`gh pr comment on #${number} failed`)
       state.prs[String(number)] = { ...entry, round, status: 'commented', error: null, commentId: result, updatedAt: new Date().toISOString() }
       saveState(root, state)
@@ -948,19 +1312,27 @@ export function forgetPullRequest({ root = process.cwd(), number, change, worktr
  * @param options - root, gh runner.
  * @returns cleanup results.
  */
-export function cleanupClosedPullRequests({ root = process.cwd(), gh = ghText } = {}) {
+export function cleanupClosedPullRequests({ root = process.cwd(), gh = ghRead } = {}) {
   const state = loadState(root)
+  const local = loadLocalState(root)
+  const numbers = [
+    ...Object.keys(state.prs).map(Number),
+    ...Object.keys(local.prs).map(Number),
+  ]
+  const states = readPullRequestStates({ root, numbers, gh })
   const cleaned = []
   for (const [key, entry] of Object.entries(state.prs)) {
-    const pr = ghJson(gh, ['pr', 'view', key, '--json', 'state,mergedAt'])
-    if (pr.state === 'OPEN') continue
+    const prState = states.get(Number(key))
+    if (prState === undefined) throw new Error(`gh pr view ${key} failed`)
+    if (prState === 'OPEN') continue
     cleaned.push(forgetPullRequest({ root, number: entry.number, change: entry.change, worktree: entry.worktree }))
   }
-  const local = cleanupLocalEntries({ root, gh })
+  const localResult = cleanupLocalEntries({ root, gh, states })
+  trimTelemetry(root)
   return [
     ...cleaned,
-    ...local.removed,
-    ...local.retained.map((entry) => ({ ...entry, local: true, retained: true })),
+    ...localResult.removed,
+    ...localResult.retained.map((entry) => ({ ...entry, local: true, retained: true })),
   ]
 }
 
@@ -1060,7 +1432,10 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
     }
     if (options.command === 'state') {
       if (options.cleanup || options.change !== undefined || options.fail !== undefined) {
-        const result = withRunLock(root, () => {
+        const label = options.fail !== undefined
+          ? 'state --fail'
+          : options.cleanup ? 'state --cleanup' : 'state --forget'
+        const result = withRunTelemetry(root, label, () => withRunLock(root, () => {
           if (options.fail !== undefined) {
             const number = Number(options.fail)
             if (!Number.isInteger(number) || number < 1) throw new UsageError('--fail needs a positive PR number')
@@ -1069,7 +1444,7 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
           return options.cleanup
             ? cleanupClosedPullRequests({ root })
             : stateCommand({ root, change: options.change, forget: true })
-        })
+        }))
         write(`${JSON.stringify(result, null, 2)}\n`)
         return 0
       }
@@ -1077,12 +1452,12 @@ export function main(argv = process.argv.slice(2), write = (text) => process.std
       write(options.json ? `${JSON.stringify(state, null, 2)}\n` : `${JSON.stringify(state.prs, null, 2)}\n`)
       return 0
     }
-    const result = withRunLock(root, () => {
+    const result = withRunTelemetry(root, options.command, () => withRunLock(root, () => {
       if (options.command === 'poll') return pollPullRequests({ root })
       if (options.command === 'prepare') return preparePullRequest({ root, number: options.number })
       if (options.report === undefined) throw new UsageError('comment needs --report <path>')
       return publishComment({ root, number: options.number, reportPath: options.report, apply: options.apply })
-    })
+    }))
     if (options.command === 'comment' && !options.apply) {
       write(result.text)
       return 0

@@ -74,6 +74,8 @@ jobs:
         with:
           version: 12.6.0
       - run: npm ci
+      - name: point the lab at the setup-node cache
+        run: echo "OPENSPEC_FLOW_NPM_CACHE=$HOME/.npm" >> "$GITHUB_ENV"
       - name: install CJK font
         run: sudo apt-get update && sudo apt-get install -y fonts-wqy-zenhei
       - uses: actions/cache@v6

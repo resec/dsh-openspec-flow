@@ -75,3 +75,43 @@ test('sleepSync waits only for a positive delay', () => {
   assert.equal(sleepSync(-5), undefined)
   assert.equal(sleepSync(1), undefined)
 })
+
+test('the attempt budget bounds the retries and uses the delay schedule', () => {
+  let calls = 0
+  const delays = []
+  const value = withGhRetry(() => {
+    calls += 1
+    if (calls < 3) throw new Error('HTTP 502: 502 Bad Gateway')
+    return 'rows'
+  }, { attempts: 3, delays: [10, 20], sleep: (milliseconds) => delays.push(milliseconds) })
+  assert.equal(value, 'rows')
+  assert.equal(calls, 3)
+  assert.deepEqual(delays, [10, 20])
+})
+
+test('a three-attempt read reports the failure after the third attempt', () => {
+  let calls = 0
+  assert.throws(() => withGhRetry(() => {
+    calls += 1
+    throw new Error('gh pr list timed out after 20000 ms (ETIMEDOUT)')
+  }, { attempts: 3, delays: [0, 0], sleep: () => {} }), /timed out/u)
+  assert.equal(calls, 3)
+})
+
+test('a single attempt never retries', () => {
+  let calls = 0
+  assert.throws(() => withGhRetry(() => {
+    calls += 1
+    throw new Error('HTTP 503: Service Unavailable')
+  }, { attempts: 1, sleep: () => {} }), /HTTP 503/u)
+  assert.equal(calls, 1)
+})
+
+test('a non-transient failure is not retried even with attempts left', () => {
+  let calls = 0
+  assert.throws(() => withGhRetry(() => {
+    calls += 1
+    throw new Error('HTTP 404: Not Found')
+  }, { attempts: 3, delays: [0, 0], sleep: () => {} }), /HTTP 404/u)
+  assert.equal(calls, 1)
+})
