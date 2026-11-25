@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-11-25
+goal: 让 main 上连续两次推送的运行都到达终态结论，同时保持拉取请求的新推送取消旧运行。
