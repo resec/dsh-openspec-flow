@@ -401,7 +401,7 @@ test('a missing lock layout is reported by name', () => {
 test('the review document explains the cards and the model rule', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [
-    'cards/<sessionKey>-<phase>-<round>.json',
+    'cards/<sessionKey>-<kind>-<phase>-<round>.json',
     'reviewCards/get',
     'card-delivery.json',
     'conversation.chat.turnTail',
