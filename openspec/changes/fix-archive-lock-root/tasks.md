@@ -18,4 +18,4 @@
 ## 3. Verify
 
 - [x] 3.1 Run `node --test test/review-serial.test.mjs`.
-- [x] 3.2 Run `/tmp/b3/gates.sh fix-archive-lock-root`.
+- [x] 3.2 Run `npm run verify` on Node 24 on the committed tree and record its test summary and coverage verdict; 3.1 stays as the scoped supplementary check.
