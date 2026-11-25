@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Prevent repository tooling from writing the host home npm cache under a
+  workspace-write sandbox, and rename LAB_NPM_CACHE to OPENSPEC_FLOW_NPM_CACHE
+  across lab, bootstrap and the worktree environment.

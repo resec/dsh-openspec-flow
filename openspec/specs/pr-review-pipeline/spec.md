@@ -299,17 +299,22 @@ The repository SHALL document a five-minute fixed DSH scheduled session that run
 
 ### Requirement: Archive on main after merge
 
-After a matching merged tree, the session SHALL run `openspec_archive` on main, commit the archive and push. The `archive` command SHALL record the archive commit, and the `push` command SHALL record the pushed head and verify local main equals `origin/main`. An archive, commit or push failure SHALL leave the pull request merged and the change active, and SHALL be retried from the recorded landing phase without merging again.
+After a matching merged tree, the session SHALL run `openspec_archive` on main and then `archive <n> --apply`, which commits the archive from the paths it owns, and SHALL push. The `push` command SHALL record the pushed head and verify local main equals `origin/main`. An archive, commit or push failure SHALL leave the pull request merged and the change active, and SHALL be retried from the recorded landing phase without merging again.
 
 #### Scenario: Archive and push succeed
 
-- **WHEN** the merged tree matches and archive succeeds
+- **WHEN** the merged tree matches, `openspec_archive` succeeds and `archive --apply` commits the path-scoped archive
 - **THEN** main carries the archive commit and the push command records the pushed head
 
 #### Scenario: Archive fails after merge
 
 - **WHEN** `openspec_archive` fails after the pull request is merged
 - **THEN** the change stays active on main, the state records `archive-failed`, and a later attempt retries only archive
+
+#### Scenario: A pre-existing archive commit is recorded
+
+- **WHEN** the archive commit already exists and `archive <n> --commit <sha> --apply` runs
+- **THEN** the command verifies the commit paths and records it without creating another commit
 
 #### Scenario: Push fails after archive
 
@@ -559,8 +564,8 @@ Checks SHALL be grouped by workflow name and check name, or by status context na
 
 #### Scenario: Dirty main worktree
 
-- **WHEN** the main worktree is not clean
-- **THEN** `candidates` reports the dirty worktree once and lists no pull request
+- **WHEN** a path outside every `openspec/changes/` directory is uncommitted in the main worktree
+- **THEN** `candidates` reports the blocked worktree once and lists no pull request
 
 #### Scenario: Listing writes nothing
 
@@ -1167,12 +1172,12 @@ The batch SHALL read the open list with scalar fields only and SHALL obtain each
 
 ### Requirement: Retry boundary
 
-The open list, the fallback scalar list and the per-pull-request inspection or detail read SHALL be retried at most once when they fail with a transient gateway error: an HTTP 5xx response, a gateway timeout or a reset connection. The update-branch request, the head poll after an update, the authenticated-login read, a merge, a comment and a label write SHALL keep single-shot semantics, and a failure that is not transient SHALL be reported without a retry.
+The open list, the fallback scalar list, the per-pull-request inspection or detail read and the reconcile and preflight reads SHALL be retried when they fail with a transient gateway error: an HTTP 5xx response, a gateway timeout, a reset connection or a request killed by its deadline. The update-branch request, the head poll after an update, a merge, a comment and a label write SHALL keep single-shot semantics, and a failure that is not transient SHALL be reported without a retry.
 
 #### Scenario: A transient read failure is retried once
 
-- **WHEN** a list, scalar-list, inspection or detail read fails with a transient gateway error
-- **THEN** the command repeats that read once and uses the rows it returns
+- **WHEN** a list, scalar-list, inspection, detail, reconcile or preflight read fails with a transient gateway error
+- **THEN** the command retries that read under the shared read policy and uses the rows it returns
 
 #### Scenario: The update-branch request is never retried
 
@@ -1186,11 +1191,11 @@ The open list, the fallback scalar list and the per-pull-request inspection or d
 
 ### Requirement: Unavailable batch list
 
-When the open list still fails after one retry, the batch SHALL report an unavailable outcome with `unavailable: true` and `changed: false`, write no `syncs` record, update no branch and create no landing entry, and SHALL exit successfully so the scheduled run continues to the landing or review step.
+When the open list still fails after its read attempts, the batch SHALL report an unavailable outcome with `unavailable: true` and `changed: false`, write no `syncs` record, update no branch and create no landing entry, and SHALL exit successfully so the scheduled run continues to the landing or review step.
 
 #### Scenario: A gateway failure leaves the list unavailable
 
-- **WHEN** the list request fails with a transient gateway error on the attempt and on its retry
+- **WHEN** the list request fails with a transient gateway error on every read attempt
 - **THEN** the batch reports `unavailable: true` with `changed: false`
 
 #### Scenario: An unavailable batch changes nothing
@@ -1205,16 +1210,16 @@ When the open list still fails after one retry, the batch SHALL report an unavai
 
 ### Requirement: Poll retry and fallback
 
-The poll SHALL retry its transiently failing full-detail list request once. When it still fails, the poll SHALL read a scalar list plus one detail request per pull request that needs evaluation, report the same candidates as the full-detail read and mark the result `fallback: true`. A remaining scalar-list or detail failure SHALL fail the poll instead of reporting a partial candidate list.
+The poll SHALL retry its transiently failing full-detail list request under the shared read retry policy. When it still fails, the poll SHALL read a scalar list plus one detail request per pull request that needs evaluation, report the same candidates as the full-detail read and mark the result `fallback: true`. A remaining scalar-list or detail failure SHALL fail the poll instead of reporting a partial candidate list.
 
 #### Scenario: A transient list failure is retried
 
 - **WHEN** the full-detail list request fails once with a gateway error
-- **THEN** the poll retries it and reports its candidates without the fallback marker
+- **THEN** the poll retries it under the read policy and reports its candidates without the fallback marker
 
 #### Scenario: The fallback reports the same candidates
 
-- **WHEN** the full-detail request fails on both attempts
+- **WHEN** the full-detail request fails on every read attempt
 - **THEN** the poll reports the candidate numbers the full-detail read would report
 
 #### Scenario: The fallback is marked
@@ -1229,5 +1234,284 @@ The poll SHALL retry its transiently failing full-detail list request once. When
 
 #### Scenario: A partial candidate list is not reported
 
-- **WHEN** the scalar list or any detail request remains unavailable after its retry
+- **WHEN** the scalar list or any detail request remains unavailable after its read attempts
 - **THEN** the poll fails and reports no candidate list
+
+### Requirement: Candidate worktree tolerance
+
+`candidates` SHALL tolerate uncommitted paths under every `openspec/changes/` directory and SHALL report no blocked worktree for them. A path outside every such directory SHALL still report the blocked worktree once.
+
+#### Scenario: Another change's planning directory
+
+- **WHEN** the only uncommitted paths in the main worktree are under other changes' `openspec/changes/<name>/` directories
+- **THEN** `candidates` lists the eligible pull requests and reports no blocked worktree
+
+### Requirement: Landing worktree tolerance
+
+`plan`, `prepare` and `merge` SHALL evaluate the main worktree against the landing change. An uncommitted path under another change's `openspec/changes/<name>/` directory SHALL be accepted. A path under the landing change's own directory, a path outside every `openspec/changes/` directory, a non-empty git index and a `HEAD` outside `main` SHALL be refused.
+
+#### Scenario: Another change's planning directory is uncommitted
+
+- **WHEN** the main worktree contains only uncommitted files under another change's `openspec/changes/<name>/` directory and the landing change's directory and the git index are clean
+- **THEN** `plan`, `prepare` and `merge` proceed without refusing
+
+#### Scenario: The landing change's own directory is uncommitted
+
+- **WHEN** a path under the landing change's own `openspec/changes/<change>/` directory is uncommitted
+- **THEN** the landing command refuses and names that path
+
+#### Scenario: A path outside the changes tree is uncommitted
+
+- **WHEN** a tracked file outside every `openspec/changes/` directory is modified, or an untracked path outside them exists
+- **THEN** the landing command refuses and names that path
+
+#### Scenario: The git index carries staged changes
+
+- **WHEN** the git index contains one or more staged paths, even under another change's directory
+- **THEN** `merge` refuses before calling `gh pr merge` and keeps the landing at `reviewed`
+
+#### Scenario: HEAD is not on main
+
+- **WHEN** the main worktree's `HEAD` is not the `main` branch
+- **THEN** the landing command refuses before evaluating the pull request
+
+### Requirement: Sync worktree independence
+
+`sync` and `sync-batch` SHALL NOT require a clean main worktree. They SHALL keep the main-branch, landing-lock and local-`main`-ahead gates.
+
+#### Scenario: A dirty main worktree does not refuse a sync
+
+- **WHEN** a tracked file is modified or an untracked file exists in the main worktree and every sync eligibility gate passes
+- **THEN** `sync` proceeds to update the branch
+
+#### Scenario: A dirty main worktree does not stop a batch
+
+- **WHEN** the main worktree is dirty and the batch has eligible behind branches
+- **THEN** `sync-batch` evaluates and updates them instead of refusing the run
+
+#### Scenario: A non-main branch still refuses
+
+- **WHEN** the main worktree's `HEAD` is not the `main` branch
+- **THEN** `sync` and `sync-batch` refuse without changing a branch
+
+### Requirement: Archive worktree readiness
+
+After `openspec_archive`, `archive <n> --apply` SHALL accept its own outputs: deletions under the source change directory, additions under the archived directory, the `openspec/specs` capability directories the archived change's delta names, plus another change's uncommitted planning directory. It SHALL refuse a staged git index, an untracked path under the source change directory, a spec change outside those capability directories, and any other uncommitted path.
+
+#### Scenario: The archive outputs and a parallel draft are accepted
+
+- **WHEN** the only uncommitted paths are the source change deletions, the archived directory, the named `openspec/specs` capability directories and another change's planning directory, and the index is empty
+- **THEN** `archive` stages the archive outputs and commits
+
+#### Scenario: An unexpected path is uncommitted
+
+- **WHEN** a path outside the source change directory, the archived directory, the capability directories the archived change names and another change's planning directory is uncommitted
+- **THEN** `archive` refuses before committing and records `archive-failed`
+
+#### Scenario: A spec change outside the change's capabilities
+
+- **WHEN** a path under `openspec/specs` is uncommitted but the archived change names no such capability
+- **THEN** `archive` refuses before committing and records `archive-failed`
+
+#### Scenario: A leftover under the source change directory
+
+- **WHEN** an untracked path remains under the source change directory after the archive
+- **THEN** `archive` refuses before committing
+
+#### Scenario: The git index carries staged changes
+
+- **WHEN** the git index contains any staged path
+- **THEN** `archive` refuses before staging
+
+### Requirement: Path-scoped archive commit
+
+`archive <n> --apply` without `--commit` SHALL require exactly one archived directory and a change name other than `.` or `..`, stage only the archived directory, the capability directories the archived change names under `openspec/specs`, and the source deletion, verify every staged path is in that set, commit `chore(openspec): archive <change>` with no body, and record the commit. `--commit <sha>` SHALL verify that commit is `HEAD`, changes only those paths and leaves the index empty.
+
+#### Scenario: A parallel draft stays out of the archive commit
+
+- **WHEN** another change's uncommitted planning directory exists and the archive has moved the landing change
+- **THEN** the commit contains only the archived directory, the named capability directories and the source deletion, and the other change's directory stays untracked and uncommitted
+
+#### Scenario: The archive commit has no body
+
+- **WHEN** the command creates the archive commit
+- **THEN** the subject is exactly `chore(openspec): archive <change>` and the body is empty
+
+#### Scenario: A supplied commit changes a path outside the set
+
+- **WHEN** `--commit <sha>` names `HEAD` and that commit changes a path outside the allowed set
+- **THEN** the command refuses to record the archive commit
+
+#### Scenario: The archived directory is missing or ambiguous
+
+- **WHEN** no archived directory matches the change, or more than one matches it
+- **THEN** the command refuses before staging and records the `archive-failed` phase
+
+### Requirement: Read retry policy
+
+A transiently failing read SHALL receive at most three attempts in total with a short backoff between attempts. The read deadline and the attempt count SHALL default to 20 seconds and three attempts, and SHALL be overridable by environment variables within documented bounds.
+
+#### Scenario: A read stops after three attempts
+
+- **WHEN** a read fails transiently on every attempt
+- **THEN** the command stops after the third attempt and reports the failure
+
+#### Scenario: A request killed by its deadline is transient
+
+- **WHEN** a read is killed because it exceeded its deadline
+- **THEN** the command treats it as a transient failure and retries it under the policy
+
+#### Scenario: An override outside its range falls back to the default
+
+- **WHEN** a deadline or attempt override falls outside its documented range
+- **THEN** the command uses the documented default instead of the override
+
+### Requirement: Batched owner-review reads
+
+Reconcile SHALL read the authenticated login at most once per run, SHALL screen tracked pull requests from one lightweight open list, and SHALL read mergeability, merge state and recent comments in chunks of at most 25 pull requests per request. A chunk that stays unavailable after its attempts SHALL be re-read one pull request at a time, and a single pull request's failure SHALL be reported without aborting the others.
+
+#### Scenario: Bounded reads for a large tracked set
+
+- **WHEN** 85 tracked pull requests need a decision
+- **THEN** reconcile issues one login read, one lightweight open list and at most four detail requests
+
+#### Scenario: Batched and per-pull-request reads agree
+
+- **WHEN** a pull request is evaluated once from a detail chunk and once from its own detail read
+- **THEN** reconcile reaches the same action, reason and recorded head for both reads
+
+#### Scenario: A failed chunk falls back to per-pull-request reads
+
+- **WHEN** a detail chunk fails transiently on every attempt
+- **THEN** each pull request in that chunk is read individually and its action is reported
+
+#### Scenario: One pull request failure does not abort reconcile
+
+- **WHEN** one pull request's read fails after its attempts
+- **THEN** the remaining pull requests are still evaluated and the failure is listed for that pull request
+
+#### Scenario: A changed head reads its files
+
+- **WHEN** a tracked pull request's head differs from its recorded head
+- **THEN** its changed files are read before the active-change gate decides, instead of trusting the recorded change
+
+### Requirement: Run lock recovery
+
+The run lock SHALL record the owner PID and its process start time. A command SHALL reclaim the lock when the owner PID is gone or its recorded start time no longer matches, SHALL reclaim a corrupt owner file only when the lock is older than ten minutes, and SHALL refuse and report the owner when a live process with the matching start time holds it. A reclaim SHALL be reported as `stale-lock-reclaimed`.
+
+#### Scenario: A killed run no longer blocks the next one
+
+- **WHEN** the recorded owner PID no longer exists
+- **THEN** the next command reclaims the lock and proceeds with its work
+
+#### Scenario: A reused PID is not a live owner
+
+- **WHEN** the recorded PID belongs to a process whose start time differs from the recorded start time
+- **THEN** the command reclaims the lock and proceeds
+
+#### Scenario: A live owner still refuses the run
+
+- **WHEN** the recorded PID is alive with the matching start time
+- **THEN** the command exits, reports the owner, and changes nothing
+
+#### Scenario: A lock without identity ages out
+
+- **WHEN** the owner file predates the identity fields and the lock is older than ten minutes
+- **THEN** the command reclaims the lock and proceeds
+
+#### Scenario: Two commands reclaim one stale lock
+
+- **WHEN** two commands find the same stale lock at the same time
+- **THEN** exactly one reclaims it and the other refuses with the owner that claimed it
+
+#### Scenario: A reclaim is reported
+
+- **WHEN** a stale lock is reclaimed
+- **THEN** the command prints `stale-lock-reclaimed` with the previous owner PID and timestamp and still produces its normal result
+
+### Requirement: Preflight probe deadline
+
+`preflight` SHALL probe GitHub reachability with at most two attempts under a five-second deadline each and SHALL bound the base-branch fetch with a 30-second deadline. It SHALL report `github-unreachable` or `origin-unreachable` within those bounds instead of waiting for a platform connect timeout.
+
+#### Scenario: A stalled probe reports offline quickly
+
+- **WHEN** the reachability probe is killed by its deadline on both attempts
+- **THEN** the preflight reports `github-unreachable` within about ten seconds and the session stops pull-request work
+
+#### Scenario: The second attempt recovers
+
+- **WHEN** the first probe attempt fails transiently and the second succeeds
+- **THEN** the preflight reports GitHub online
+
+#### Scenario: A stalled fetch stops landing
+
+- **WHEN** the base-branch fetch exceeds its deadline
+- **THEN** the preflight reports `origin-unreachable` and the session stops landing
+
+### Requirement: Run telemetry
+
+Each watch, owner-review and landing command that takes the run lock SHALL append one line to `.cache/pr-review/runs.jsonl` holding its timestamp, command name, duration, GitHub call count, transient failure count and outcome, and `state --cleanup` SHALL keep the most recent 2000 lines. A command that takes no run lock — `preflight`, the plain `state` view and the landing `state` command — SHALL write none. Telemetry SHALL NOT alter a command's standard output or JSON result.
+
+#### Scenario: A finished command records one line
+
+- **WHEN** a watch, owner-review or landing command that takes the run lock finishes
+- **THEN** one JSON line with those fields is appended to `.cache/pr-review/runs.jsonl`
+
+#### Scenario: The commands without the run lock write no telemetry
+
+- **WHEN** `preflight`, the plain `state` view or the landing `state` command runs
+- **THEN** it appends no telemetry line and its output is unchanged
+
+#### Scenario: Cleanup keeps the most recent lines
+
+- **WHEN** cleanup runs and the telemetry file holds more than 2000 lines
+- **THEN** only the most recent 2000 lines remain
+
+#### Scenario: Telemetry changes no output
+
+- **WHEN** a command records telemetry
+- **THEN** its standard output and its `--json` result equal the result a run without telemetry produces
+
+### Requirement: Batched cleanup state reads
+
+`state --cleanup` SHALL read the state of every tracked pull request and local owner entry in batches of at most 100 numbers and SHALL decide removals from them. It SHALL take the repository from the origin remote and read each number individually when that remote names no GitHub repository. A non-transient batch failure SHALL be re-read one number at a time; a transient one SHALL be reported after its attempts, not repeated per number.
+
+#### Scenario: One request for a large tracked set
+
+- **WHEN** a cleanup run needs the state of 88 tracked and local numbers
+- **THEN** it issues one batched state request and no per-number read
+
+#### Scenario: Batched and per-number reads agree
+
+- **WHEN** a pull request is evaluated once from a batched read and once from its own read
+- **THEN** cleanup reaches the same removal decision and the same retained report
+
+#### Scenario: A failed batch falls back to per-number reads
+
+- **WHEN** a batched read fails for a reason other than a transient network failure
+- **THEN** every number in that batch is read individually and its decision is reported
+
+#### Scenario: A transient batch failure is not repeated per number
+
+- **WHEN** a batched read fails with a transient network error on every attempt
+- **THEN** cleanup reports the failure and issues no per-number read
+
+#### Scenario: A number missing from the batch result
+
+- **WHEN** a batched result carries no node for one number
+- **THEN** cleanup reads that number individually
+
+#### Scenario: A missing number that cannot be read
+
+- **WHEN** the individual read of a missing number fails after its attempts
+- **THEN** the command fails and reports that number
+
+#### Scenario: Origin remote without a GitHub repository
+
+- **WHEN** the origin remote names no GitHub repository
+- **THEN** cleanup reads every number individually and reports the same removed and retained entries
+
+#### Scenario: Local entries share the batched read
+
+- **WHEN** a local owner entry needs a state decision
+- **THEN** cleanup issues no separate request for it

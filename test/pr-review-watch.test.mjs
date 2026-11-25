@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 import {
+  acquireRunLock,
   activeChangeNames,
   checksGreen,
   cleanupClosedPullRequests,
@@ -24,10 +25,16 @@ import {
   pollText,
   preflight,
   preparePullRequest,
+  processStartTime,
   publishComment,
+  readPullRequestStates,
   readReport,
+  reclaimStaleRunLock,
+  releaseRunLock,
   renderReport,
+  runLockOwner,
   resolvePaths,
+  runLockAgeMs,
   saveLocalState,
   saveState,
   stateCommand,
@@ -35,9 +42,26 @@ import {
   withRunLock,
 } from '../scripts/pr-review-watch.mjs'
 import { acquireLock } from '../scripts/pr-review-lock.mjs'
+import { ghRead } from '../scripts/gh-exec.mjs'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 test.after(cleanupTempDirs)
+
+/** Wrap an injected gh double with the shared read retry policy. */
+function retryingGh(handler) {
+  return (args, options) => {
+    let attempts = 0
+    try {
+      return handler(args, options)
+    } catch (first) {
+      attempts += 1
+      if (attempts >= 1 && /HTTP 5\d\d|timed out/iu.test(String(first?.message ?? first))) {
+        return handler(args, options)
+      }
+      throw first
+    }
+  }
+}
 
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
@@ -69,6 +93,11 @@ function makeOrigin(root) {
   git(root, ['remote', 'add', 'origin', remote])
   git(root, ['push', '-q', '-u', 'origin', 'main'])
   return remote
+}
+
+/** Point origin at a GitHub URL so the batched state read resolves a repository. */
+function useGithubOrigin(root) {
+  git(root, ['remote', 'set-url', 'origin', 'https://github.com/owner/repo.git'])
 }
 
 function cleanup(...directories) {
@@ -339,7 +368,7 @@ test('comment dry-run renders without a GitHub write, and --apply posts once', (
     assert.equal(dry.dryRun, true)
     assert.match(dry.text, /Apply review/)
     assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'comment'), false)
-    const posted = publishComment({ root, number: 12, reportPath: report, apply: true, gh })
+    const posted = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
     assert.equal(posted.published, true)
     assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 1)
     assert.equal(loadState(root).prs['12'].status, 'commented')
@@ -362,7 +391,7 @@ test('a trusted marker for the same head suppresses a second publish', () => {
       }
       return undefined
     })
-    const result = publishComment({ root, number: 12, reportPath: report, apply: true, gh })
+    const result = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
     assert.equal(result.already, true)
     assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'comment'), false)
   } finally {
@@ -422,7 +451,13 @@ test('cleanup removes a tracked merged PR checkout and state entry', () => {
     git(root, ['checkout', '-q', 'main'])
     const { gh } = fakeGh(() => prJson({ headRefOid: head }))
     const facts = preparePullRequest({ root, number: 12, gh })
-    const cleanupGh = fakeGh(() => JSON.stringify({ state: 'MERGED', mergedAt: '2026-01-01T00:00:00Z' })).gh
+    useGithubOrigin(root)
+    const cleanupGh = fakeGh((args) => {
+      if (args[0] === 'api' && args[1] === 'graphql') {
+        return JSON.stringify({ data: { repository: { p12: { state: 'MERGED' } } } })
+      }
+      throw new Error(`cleanup made an unexpected gh call: ${args.join(' ')}`)
+    }).gh
     const cleaned = cleanupClosedPullRequests({ root, gh: cleanupGh })
     assert.equal(cleaned.length, 1)
     assert.equal(existsSync(facts.worktree), false)
@@ -470,7 +505,7 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
     }
     const firstReport = report(join(root, '.cache', 'pr-review', 'reports', `pr-12-${head}.json`), 1)
     assert.equal(publishComment({ root, number: 12, reportPath: firstReport, gh }).dryRun, true)
-    assert.equal(publishComment({ root, number: 12, reportPath: firstReport, apply: true, gh }).published, true)
+    assert.equal(publishComment({ root, number: 12, reportPath: firstReport, apply: true, gh, ghWrite: gh }).published, true)
     comments.push({ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${head} round=1 -->` })
 
     git(root, ['checkout', '-q', 'pr-head'])
@@ -482,7 +517,7 @@ test('poll, prepare, publish and re-prepare after a new head', () => {
     const second = preparePullRequest({ root, number: 12, gh })
     assert.notEqual(second.head, first.head)
     const secondReport = report(join(root, '.cache', 'pr-review', 'reports', `pr-12-${head}.json`), 2)
-    assert.equal(publishComment({ root, number: 12, reportPath: secondReport, apply: true, gh }).published, true)
+    assert.equal(publishComment({ root, number: 12, reportPath: secondReport, apply: true, gh, ghWrite: gh }).published, true)
     assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 2)
   } finally {
     cleanup(root, remote)
@@ -587,7 +622,7 @@ test('a failed publish records the failure and keeps the head eligible', () => {
       if (args[0] === 'pr' && args[1] === 'comment') return undefined
       return undefined
     })
-    assert.throws(() => publishComment({ root, number: 12, reportPath: report, apply: true, gh }), /pr comment/)
+    assert.throws(() => publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh }), /pr comment/)
     assert.equal(loadState(root).prs['12'].status, 'failed')
     const candidates = filterCandidates([{ number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] }], loadState(root))
     assert.equal(candidates.length, 1)
@@ -857,7 +892,6 @@ test('state cleanup reports a retained unfinished local entry', () => {
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'view') {
         const number = Number(args[2])
-        if (args.includes('mergedAt')) return JSON.stringify({ state: number === 12 ? 'MERGED' : 'OPEN', mergedAt: null })
         return JSON.stringify({ state: number === 12 ? 'MERGED' : 'OPEN' })
       }
       return '[]'
@@ -869,6 +903,246 @@ test('state cleanup reports a retained unfinished local entry', () => {
     assert.deepEqual(Object.keys(loadLocalState(root).prs), ['12'])
   } finally {
     cleanup(root, remote)
+  }
+})
+
+test('the state read batches numbers within one request', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const answer = (args) => {
+      const query = String(args[3]).replace(/^query=/u, '')
+      const numbers = [...query.matchAll(/p(\d+):pullRequest/gu)].map((match) => Number(match[1]))
+      const repository = Object.fromEntries(numbers.map((number) => [`p${number}`, { state: 'OPEN' }]))
+      return JSON.stringify({ data: { repository } })
+    }
+    const once = fakeGh(answer)
+    const states = readPullRequestStates({
+      root,
+      numbers: Array.from({ length: 88 }, (_, index) => index + 1),
+      gh: once.gh,
+    })
+    assert.equal(once.calls.length, 1)
+    assert.equal(states.size, 88)
+    assert.equal(states.get(88), 'OPEN')
+
+    const twice = fakeGh(answer)
+    const all = readPullRequestStates({
+      root,
+      numbers: Array.from({ length: 101 }, (_, index) => index + 1),
+      gh: twice.gh,
+    })
+    assert.equal(twice.calls.length, 2)
+    assert.equal(all.size, 101)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a number the batch leaves out is read on its own', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const fake = fakeGh((args) => {
+      if (args[0] === 'api') return JSON.stringify({ data: { repository: { p7: null, p8: { state: 'OPEN' } } } })
+      return JSON.stringify({ state: 'MERGED' })
+    })
+    const states = readPullRequestStates({ root, numbers: [7, 8], gh: fake.gh })
+    assert.equal(states.get(7), 'MERGED')
+    assert.equal(states.get(8), 'OPEN')
+    assert.deepEqual(fake.calls.map((args) => args.slice(0, 3)), [['api', 'graphql', '-f'], ['pr', 'view', '7']])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a failed individual read fails the state read', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const fake = fakeGh((args) => (args[0] === 'api'
+      ? JSON.stringify({ data: { repository: { p7: null } } })
+      : undefined))
+    assert.throws(() => readPullRequestStates({ root, numbers: [7], gh: fake.gh }), /gh pr view 7 failed/u)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a rejected batch falls back per number while a transient failure is reported', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const rejected = fakeGh((args) => {
+      if (args[0] === 'api') throw new Error('HTTP 422: Something went wrong while executing your query')
+      return JSON.stringify({ state: 'OPEN' })
+    })
+    const states = readPullRequestStates({ root, numbers: [3, 4], gh: rejected.gh })
+    assert.deepEqual([...states.keys()], [3, 4])
+    assert.deepEqual(rejected.calls.map((args) => args[0]), ['api', 'pr', 'pr'])
+
+    const transient = fakeGh((args) => {
+      if (args[0] === 'api') throw new Error('HTTP 503 Service Unavailable')
+      return JSON.stringify({ state: 'OPEN' })
+    })
+    assert.throws(() => readPullRequestStates({ root, numbers: [3, 4], gh: transient.gh }), /503/u)
+    assert.equal(transient.calls.length, 1)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('an origin that is not GitHub reads each number without a batch', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const fake = fakeGh(() => JSON.stringify({ state: 'OPEN' }))
+    const states = readPullRequestStates({ root, numbers: [1, 2], gh: fake.gh })
+    assert.deepEqual([...states.keys()], [1, 2])
+    assert.deepEqual(fake.calls.map((args) => args[1]), ['view', 'view'])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('the state read issues no request without a number to read', () => {
+  const root = makeRepository()
+  try {
+    const fake = fakeGh(() => {
+      throw new Error('no read expected')
+    })
+    assert.deepEqual([...readPullRequestStates({ root, numbers: [], gh: fake.gh })], [])
+    assert.deepEqual([...readPullRequestStates({ root, numbers: [0, -1, 'x'], gh: fake.gh })], [])
+    assert.equal(fake.calls.length, 0)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('an empty or unreadable batch falls back per number', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const empty = fakeGh((args) => (args[0] === 'api' ? undefined : JSON.stringify({ state: 'OPEN' })))
+    const emptyStates = readPullRequestStates({ root, numbers: [3, 4], gh: empty.gh })
+    assert.deepEqual([...emptyStates.keys()], [3, 4])
+    assert.deepEqual(empty.calls.map((args) => args[0]), ['api', 'pr', 'pr'])
+
+    const unreadable = fakeGh((args) => (args[0] === 'api' ? JSON.stringify({ data: { repository: null } }) : JSON.stringify({ state: 'OPEN' })))
+    const unreadableStates = readPullRequestStates({ root, numbers: [3], gh: unreadable.gh })
+    assert.equal(unreadableStates.get(3), 'OPEN')
+    assert.equal(unreadable.calls.length, 2)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('cleanup reads the tracked and local numbers in one request', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    useGithubOrigin(root)
+    const prs = {}
+    for (let number = 1; number <= 88; number += 1) {
+      prs[number] = {
+        number,
+        head: HEAD,
+        base: BASE,
+        change: 'widget',
+        worktree: join(root, '.cache', 'pr-review', 'worktrees', `pr-${number}`),
+        status: 'commented',
+      }
+    }
+    saveState(root, { schemaVersion: 1, prs })
+    saveLocalEntries(root, { 90: localEntry({ number: 90, phase: 'landed-offline' }) })
+    const fake = fakeGh((args) => {
+      if (args[0] !== 'api') throw new Error(`cleanup made an unexpected gh call: ${args.join(' ')}`)
+      const query = String(args[3]).replace(/^query=/u, '')
+      const numbers = [...query.matchAll(/p(\d+):pullRequest/gu)].map((match) => Number(match[1]))
+      const repository = Object.fromEntries(numbers.map((number) => [
+        `p${number}`,
+        { state: number === 90 ? 'MERGED' : 'OPEN' },
+      ]))
+      return JSON.stringify({ data: { repository } })
+    })
+    const cleaned = cleanupClosedPullRequests({ root, gh: fake.gh })
+    assert.equal(fake.calls.length, 1)
+    assert.deepEqual(cleaned.map((entry) => ({
+      number: entry.number,
+      retained: entry.retained === true,
+      state: entry.state,
+    })), [{ number: 90, retained: true, state: 'MERGED' }])
+    assert.deepEqual(Object.keys(loadLocalState(root).prs), ['90'])
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a batched and a per-number read reach the same cleanup decision', () => {
+  const outcomes = []
+  for (const mode of ['batched', 'individual']) {
+    const root = makeRepository()
+    const remote = makeOrigin(root)
+    try {
+      if (mode === 'batched') useGithubOrigin(root)
+      const worktree = join(root, '.cache', 'pr-review', 'worktrees', 'pr-12')
+      saveState(root, {
+        schemaVersion: 1,
+        prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', worktree, status: 'commented' } },
+      })
+      saveLocalEntries(root, { 13: localEntry({ number: 13, phase: 'landed-offline' }) })
+      const fake = fakeGh((args) => {
+        if (args[0] === 'api') {
+          return JSON.stringify({ data: { repository: { p12: { state: 'MERGED' }, p13: { state: 'MERGED' } } } })
+        }
+        return JSON.stringify({ state: 'MERGED' })
+      })
+      const cleaned = cleanupClosedPullRequests({ root, gh: fake.gh })
+      outcomes.push({
+        removed: cleaned.filter((entry) => entry.retained !== true)
+          .map(({ number, change, applyState }) => ({ number, change, applyState })),
+        retained: cleaned.filter((entry) => entry.retained === true)
+          .map(({ number, change, phase, state }) => ({ number, change, phase, state })),
+        tracked: loadState(root).prs,
+        local: loadLocalState(root).prs,
+        calls: fake.calls.length,
+      })
+    } finally {
+      cleanup(root, remote)
+    }
+  }
+  assert.deepEqual(outcomes[0].removed, [{ number: 12, change: 'widget', applyState: null }])
+  assert.deepEqual(outcomes[0].retained, [{ number: 13, change: 'widget', phase: 'landed-offline', state: 'MERGED' }])
+  for (const field of ['removed', 'retained', 'tracked', 'local']) {
+    assert.deepEqual(outcomes[0][field], outcomes[1][field])
+  }
+  assert.deepEqual(outcomes[0].tracked, {})
+  assert.deepEqual(Object.keys(outcomes[0].local), ['13'])
+  assert.equal(outcomes[0].calls, 1)
+  assert.equal(outcomes[1].calls, 2)
+})
+
+test('local cleanup decides from a supplied state map without reading', () => {
+  const root = makeRepository()
+  try {
+    saveLocalEntries(root, {
+      12: localEntry({ number: 12, phase: 'landed-offline' }),
+      13: localEntry({ number: 13, phase: 'pushed' }),
+    })
+    const fake = fakeGh(() => {
+      throw new Error('no read expected')
+    })
+    const result = cleanupLocalEntries({ root, gh: fake.gh, states: new Map([[12, 'MERGED'], [13, 'OPEN']]) })
+    assert.deepEqual(result.removed.map((entry) => entry.number), [13])
+    assert.deepEqual(result.retained.map((entry) => entry.number), [12])
+    assert.equal(fake.calls.length, 0)
+  } finally {
+    cleanup(root)
   }
 })
 
@@ -1039,22 +1313,52 @@ function pollRow(number, head, overrides = {}) {
   }
 }
 
-test('the poll retries a transient list failure without the fallback marker', () => {
+test('a retrying read recovers a transient list failure without the fallback marker', () => {
   const root = makeRepository()
   try {
     const rows = [pollRow(12, HEAD)]
     let lists = 0
-    const gh = (args) => {
+    const gh = retryingGh((args) => {
       assert.equal(args[0], 'pr')
       assert.equal(args[1], 'list')
       lists += 1
       if (lists === 1) throw new Error('gh pr list failed: HTTP 504: 504 Gateway Timeout')
       return JSON.stringify(rows)
-    }
-    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    })
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} } })
     assert.equal(lists, 2)
     assert.equal(result.fallback, false)
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll adds no retry on top of the read policy', () => {
+  const root = makeRepository()
+  try {
+    const spawns = []
+    const spawn = (command, args) => {
+      spawns.push(args.join(' '))
+      return { status: 1, signal: null, stdout: '', stderr: 'HTTP 502: 502 Bad Gateway' }
+    }
+    const config = {
+      timeoutMs: 20_000,
+      attempts: 3,
+      backoffMs: [0, 0],
+      pollTimeoutMs: 5_000,
+      probeTimeoutMs: 5_000,
+      fetchTimeoutMs: 30_000,
+    }
+    const gh = (args) => ghRead(args, { spawn, config, sleep: () => {} })
+    assert.throws(
+      () => pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} } }),
+      /gh pr list/u,
+    )
+    const fullList = spawns.filter((line) => line.includes('files,labels,updatedAt'))
+    const scalarList = spawns.filter((line) => line.includes('isDraft,labels'))
+    assert.equal(fullList.length, 3)
+    assert.equal(scalarList.length, 3)
   } finally {
     cleanup(root)
   }
@@ -1070,13 +1374,13 @@ test('the poll falls back to a scalar list plus one detail request per evaluated
       gh: () => JSON.stringify(rows),
       state,
     })
-    let lists = 0
     const detailNumbers = []
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
-        lists += 1
-        if (lists <= 2) throw new Error('HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)')
-        assert.equal(args[args.indexOf('--json') + 1], 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels')
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)')
+        }
         return JSON.stringify(rows.map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
       }
       if (args[0] === 'pr' && args[1] === 'view') {
@@ -1087,7 +1391,7 @@ test('the poll falls back to a scalar list plus one detail request per evaluated
       }
       throw new Error(`unexpected gh ${args.join(' ')}`)
     }
-    const degraded = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    const degraded = pollPullRequests({ root, gh, state })
     assert.equal(degraded.fallback, true)
     assert.deepEqual(detailNumbers, [12, 13])
     assert.deepEqual(
@@ -1110,12 +1414,13 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
         12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented' },
       },
     }
-    let lists = 0
     const detailNumbers = []
     const gh = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
-        lists += 1
-        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 504: 504 Gateway Timeout')
+        }
         return JSON.stringify([recorded, fresh].map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
       }
       if (args[0] === 'pr' && args[1] === 'view') {
@@ -1125,7 +1430,7 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
       }
       throw new Error(`unexpected gh ${args.join(' ')}`)
     }
-    const result = pollPullRequests({ root, gh, state, retryDelayMs: 0 })
+    const result = pollPullRequests({ root, gh, state })
     assert.equal(result.fallback, true)
     assert.deepEqual(detailNumbers, [13])
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [13])
@@ -1134,13 +1439,13 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
   }
 })
 
-test('the poll fallback retries a detail request once', () => {
+test('a retrying read recovers a transient detail request', () => {
   const root = makeRepository()
   try {
     const row = pollRow(12, HEAD)
     let lists = 0
     let views = 0
-    const gh = (args) => {
+    const gh = retryingGh((args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
         lists += 1
         if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
@@ -1152,8 +1457,8 @@ test('the poll fallback retries a detail request once', () => {
         return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
       }
       throw new Error(`unexpected gh ${args.join(' ')}`)
-    }
-    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 })
+    })
+    const result = pollPullRequests({ root, gh, state: { schemaVersion: 1, prs: {} } })
     assert.equal(views, 2)
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12])
   } finally {
@@ -1174,15 +1479,18 @@ test('the poll fails instead of reporting a partial candidate list', () => {
       throw new Error('HTTP 504: 504 Gateway Timeout')
     }
     assert.throws(
-      () => pollPullRequests({ root, gh: scalarUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      () => pollPullRequests({ root, gh: scalarUnavailable, state: { schemaVersion: 1, prs: {} } }),
       /HTTP 504/,
     )
-    assert.equal(primaryLists, 4)
+    assert.equal(primaryLists, 2)
     let lists = 0
     const detailUnavailable = (args) => {
       if (args[0] === 'pr' && args[1] === 'list') {
         lists += 1
-        if (lists <= 2) throw new Error('HTTP 504: 504 Gateway Timeout')
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 504: 504 Gateway Timeout')
+        }
         return JSON.stringify(scalarOnly)
       }
       assert.equal(args[0], 'pr')
@@ -1190,10 +1498,10 @@ test('the poll fails instead of reporting a partial candidate list', () => {
       throw new Error('HTTP 502: 502 Bad Gateway')
     }
     assert.throws(
-      () => pollPullRequests({ root, gh: detailUnavailable, state: { schemaVersion: 1, prs: {} }, retryDelayMs: 0 }),
+      () => pollPullRequests({ root, gh: detailUnavailable, state: { schemaVersion: 1, prs: {} } }),
       /gh pr view 12 failed: HTTP 502/,
     )
-    assert.equal(lists, 3)
+    assert.equal(lists, 2)
   } finally {
     cleanup(root)
   }
@@ -1234,7 +1542,7 @@ test('a comment publish is attempted once and the failure is recorded', () => {
       throw new Error(`unexpected gh ${args.join(' ')}`)
     }
     assert.throws(
-      () => publishComment({ root, number: 12, reportPath: report, apply: true, gh }),
+      () => publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh }),
       /HTTP 502/,
     )
     assert.equal(comments, 1)
@@ -1243,5 +1551,270 @@ test('a comment publish is attempted once and the failure is recorded', () => {
     assert.match(state.prs['12'].error, /HTTP 502/)
   } finally {
     cleanup(root)
+  }
+})
+
+/** The PID of a process that does not exist. */
+const DEAD_PID = 2_147_483_647
+
+/** Write a run-lock owner file for a test. */
+function writeLockOwner(root, owner) {
+  const { lock } = resolvePaths(root)
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify(owner))
+  return lock
+}
+
+/** Capture everything written to stderr while running the callback. */
+function captureStderr(run) {
+  const chunks = []
+  const original = process.stderr.write
+  process.stderr.write = (chunk) => {
+    chunks.push(String(chunk))
+    return true
+  }
+  try {
+    run()
+  } finally {
+    process.stderr.write = original
+  }
+  return chunks
+}
+
+test('a run lock whose owner is gone is reclaimed and reported', () => {
+  const root = makeRepository()
+  try {
+    writeLockOwner(root, { pid: DEAD_PID, at: new Date().toISOString() })
+    const chunks = captureStderr(() => {
+      const acquired = acquireRunLock(root)
+      assert.equal(acquired.owner.pid, process.pid)
+      assert.equal(runLockOwner(resolvePaths(root).lock).pid, process.pid)
+    })
+    assert.ok(chunks.some((line) => line.includes(`stale-lock-reclaimed pid=${DEAD_PID}`)))
+    assert.equal(releaseRunLock(root), true)
+    assert.equal(existsSync(resolvePaths(root).lock), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a live owner with the matching start time refuses the run', () => {
+  const root = makeRepository()
+  try {
+    const lock = writeLockOwner(root, {
+      pid: process.pid,
+      pidStart: processStartTime(process.pid),
+      at: new Date().toISOString(),
+    })
+    assert.throws(() => acquireRunLock(root), /another PR review run holds/)
+    assert.equal(existsSync(lock), true)
+    rmSync(lock, { recursive: true, force: true })
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a reused PID is reclaimed because its start time differs', () => {
+  const root = makeRepository()
+  try {
+    const current = processStartTime(process.pid)
+    assert.notEqual(current, '1')
+    writeLockOwner(root, { pid: process.pid, pidStart: '1', at: new Date().toISOString() })
+    const acquired = acquireRunLock(root)
+    assert.equal(acquired.owner.pid, process.pid)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('an owner file without identity fields age out after the reclaim age', () => {
+  const root = makeRepository()
+  try {
+    const now = new Date().toISOString()
+    writeLockOwner(root, { pid: process.pid, at: now })
+    assert.throws(() => acquireRunLock(root), /another PR review run holds/)
+
+    const old = new Date(Date.now() - 11 * 60_000).toISOString()
+    const lock = resolvePaths(root).lock
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, at: old }))
+    assert.ok(runLockAgeMs(lock, runLockOwner(lock)) > 10 * 60_000)
+    const acquired = acquireRunLock(root)
+    assert.equal(acquired.owner.pid, process.pid)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a corrupt owner file is reclaimed only after the reclaim age', () => {
+  const root = makeRepository()
+  try {
+    const { lock } = resolvePaths(root)
+    mkdirSync(lock, { recursive: true })
+    writeFileSync(join(lock, 'owner.json'), 'not json')
+    assert.throws(() => acquireRunLock(root), /owner file is unreadable/)
+    const old = new Date(Date.now() - 11 * 60_000)
+    utimesSync(lock, old, old)
+    const acquired = acquireRunLock(root)
+    assert.equal(acquired.owner.pid, process.pid)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a delayed reclaimer restores a lock another process acquired', () => {
+  const root = makeRepository()
+  try {
+    const lock = writeLockOwner(root, {
+      pid: DEAD_PID,
+      at: '2026-01-01T00:00:00.000Z',
+    })
+    const judged = runLockOwner(lock)
+    const acquired = acquireRunLock(root)
+    assert.equal(reclaimStaleRunLock(lock, judged), false)
+    const owner = runLockOwner(lock)
+    assert.equal(owner.pid, process.pid)
+    assert.equal(owner.at, acquired.owner.at)
+    assert.equal(releaseRunLock(root), true)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a displaced owner cannot release a later owner lock', () => {
+  const root = makeRepository()
+  try {
+    const { lock } = acquireRunLock(root)
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify({
+      pid: process.pid + 1,
+      pidStart: '1',
+      at: new Date().toISOString(),
+    }))
+    assert.equal(releaseRunLock(root), false)
+    assert.equal(existsSync(lock), true)
+    rmSync(lock, { recursive: true, force: true })
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the recorded start time is stable and is not the RSS field', () => {
+  const first = processStartTime(process.pid)
+  const second = processStartTime(process.pid)
+  assert.equal(first, second)
+  assert.match(String(first), /^\d+$/u)
+  const stat = readFileSync(`/proc/${process.pid}/stat`, 'utf8')
+  const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/u)
+  assert.equal(first, fields[19])
+  assert.notEqual(first, fields[21])
+})
+
+test('preflight reports offline when the probe is killed by its deadline', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const result = preflight({
+      root,
+      gh: () => { throw new Error('gh api user timed out after 5000 ms (ETIMEDOUT)') },
+    })
+    assert.equal(result.online, false)
+    assert.equal(result.reason, 'github-unreachable')
+    assert.equal(result.offlineLand, true)
+    assert.match(result.command, /offline|test:lab/u)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('preflight reports origin-unreachable when the fetch is killed', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    const result = preflight({
+      root,
+      gh: () => JSON.stringify({ login: 'maintainer' }),
+      fetch: () => false,
+    })
+    assert.equal(result.online, true)
+    assert.equal(result.reason, 'origin-unreachable')
+    assert.equal(result.offlineLand, true)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('a run-lock command records one telemetry line and keeps the JSON result', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const previous = process.cwd()
+  try {
+    process.chdir(root)
+    const output = []
+    const code = main(['state', '--cleanup', '--json'], (text) => output.push(text))
+    assert.equal(code, 0)
+    assert.deepEqual(JSON.parse(output.join('')), [])
+    const telemetry = join(root, '.cache', 'pr-review', 'runs.jsonl')
+    const lines = readFileSync(telemetry, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 1)
+    const record = JSON.parse(lines[0])
+    assert.equal(record.command, 'state --cleanup')
+    assert.equal(record.ghCalls, 0)
+    assert.equal(record.transientFailures, 0)
+    assert.equal(record.outcome, 'ok')
+    assert.ok(Number.isInteger(record.durationMs) && record.durationMs >= 0)
+
+    const before = readFileSync(telemetry, 'utf8')
+    main(['state', '--json'], () => {})
+    assert.equal(readFileSync(telemetry, 'utf8'), before)
+  } finally {
+    process.chdir(previous)
+    cleanup(root, remote)
+  }
+})
+
+test('cleanup keeps only the most recent telemetry lines', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const previous = process.cwd()
+  try {
+    const telemetry = join(root, '.cache', 'pr-review', 'runs.jsonl')
+    mkdirSync(dirname(telemetry), { recursive: true })
+    const old = Array.from({ length: 2100 }, (_, index) => JSON.stringify({ command: `old-${index}` }))
+    writeFileSync(telemetry, `${old.join('\n')}\n`)
+    process.chdir(root)
+    const code = main(['state', '--cleanup', '--json'], () => {})
+    assert.equal(code, 0)
+    const lines = readFileSync(telemetry, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 2000)
+    assert.equal(JSON.parse(lines.at(-1)).command, 'state --cleanup')
+    assert.equal(JSON.parse(lines[0]).command, 'old-101')
+  } finally {
+    process.chdir(previous)
+    cleanup(root, remote)
+  }
+})
+
+test('a failing run-lock command records a failed outcome without trimming', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  const previous = process.cwd()
+  try {
+    const telemetry = join(root, '.cache', 'pr-review', 'runs.jsonl')
+    mkdirSync(dirname(telemetry), { recursive: true })
+    const old = Array.from({ length: 2100 }, (_, index) => JSON.stringify({ command: `old-${index}` }))
+    writeFileSync(telemetry, `${old.join('\n')}\n`)
+    process.chdir(root)
+    const code = main(['state', '--fail', '999', '--error', 'boom'], () => {})
+    assert.equal(code, 1)
+    const lines = readFileSync(telemetry, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 2101)
+    const record = JSON.parse(lines.at(-1))
+    assert.equal(record.command, 'state --fail')
+    assert.equal(record.outcome, 'failed')
+  } finally {
+    process.chdir(previous)
+    cleanup(root, remote)
   }
 })

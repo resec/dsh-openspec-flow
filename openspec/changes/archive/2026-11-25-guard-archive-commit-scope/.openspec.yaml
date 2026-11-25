@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Land only commits the archive directory, openspec/specs and the removed
+  change directory; a non-empty index or an out-of-scope staged/resumed path
+  refuses without committing.

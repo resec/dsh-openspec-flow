@@ -37,17 +37,27 @@ export function isTransientGhFailure(error) {
 }
 
 /**
- * Run one read call, retrying it once after a delay on a transient failure.
+ * Run one read call under the retry policy. A transient failure is retried
+ * until the attempt budget is spent; a failure that is not transient is
+ * rethrown at once.
  * @param run - the call to run.
- * @param options - the retry delay and the sleep function.
+ * @param options - total attempts, the delays between them, a single delay
+ *                  fallback, and the sleep function.
  * @returns the call's return value.
  */
-export function withGhRetry(run, { delayMs = 2000, sleep = sleepSync } = {}) {
-  try {
-    return run()
-  } catch (error) {
-    if (!isTransientGhFailure(error)) throw error
-    if (delayMs > 0) sleep(delayMs)
-    return run()
+export function withGhRetry(run, { attempts = 2, delays, delayMs = 2000, sleep = sleepSync } = {}) {
+  const total = Number.isInteger(attempts) && attempts >= 1 ? attempts : 2
+  const schedule = Array.isArray(delays) && delays.length > 0 ? delays : [delayMs]
+  let lastError
+  for (let attempt = 1; attempt <= total; attempt += 1) {
+    try {
+      return run()
+    } catch (error) {
+      lastError = error
+      if (attempt === total || !isTransientGhFailure(error)) throw error
+      const delay = schedule[Math.min(attempt - 1, schedule.length - 1)]
+      if (delay > 0) sleep(delay)
+    }
   }
+  throw lastError
 }

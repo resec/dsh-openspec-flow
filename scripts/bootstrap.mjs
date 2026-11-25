@@ -16,7 +16,21 @@ import { MIN_FREE_BYTES } from './bootstrap-lib.mjs'
 import { prepareChromium, resolveBrowsersPath } from './worktree-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const NPM_CACHE = process.env.npm_config_cache ?? join(ROOT, '.cache', 'npm')
+
+/**
+ * Resolve the npm cache for bootstrap.
+ *
+ * The ambient `npm_config_cache` is ignored: npm exports it to every lifecycle
+ * script and it names the host home cache, which a workspace-write sandbox
+ * cannot write. `OPENSPEC_FLOW_NPM_CACHE` is the explicit override.
+ * @param options - environment.
+ * @returns the cache path.
+ */
+export function resolveNpmCache({ env = process.env } = {}) {
+  return env.OPENSPEC_FLOW_NPM_CACHE ?? join(ROOT, '.cache', 'npm')
+}
+
+const NPM_CACHE = resolveNpmCache()
 
 /**
  * Resolve the browser path bootstrap uses for this run.
@@ -41,6 +55,10 @@ Options:
   --force                Continue past the free-disk threshold.
   --registry URL         npm registry for npm ci and npx.
   --help                 Show this usage and exit.
+
+Environment: OPENSPEC_FLOW_NPM_CACHE selects the npm cache (default
+.cache/npm); an exported npm_config_cache is ignored; PLAYWRIGHT_BROWSERS_PATH
+selects the Chromium directory.
 
 The script never edits shell rc files, global Git configuration or DSH
 profiles, and never runs the CLI's init or update commands.
@@ -125,6 +143,22 @@ export function playwrightEnv(host) {
 }
 
 /**
+ * Environment additions for bootstrap's npm children.
+ *
+ * Both selectors carry the same directory so `npm ci`, `npm run verify` and
+ * `npm run test:lab` cannot resolve different caches.
+ * @param options - resolved cache and optional registry.
+ * @returns the environment fragment.
+ */
+export function npmEnvFor({ cache = NPM_CACHE, registry } = {}) {
+  return {
+    npm_config_cache: cache,
+    OPENSPEC_FLOW_NPM_CACHE: cache,
+    ...(registry === undefined ? {} : { npm_config_registry: registry }),
+  }
+}
+
+/**
  * Run the Chromium preparation step, including the download-host option.
  * @param options - parsed bootstrap options.
  * @param overrides - browser path, npm environment and install seam.
@@ -203,7 +237,7 @@ function main() {
     )
   }
 
-  const npmEnv = { npm_config_cache: NPM_CACHE, ...(options.registry === undefined ? {} : { npm_config_registry: options.registry }) }
+  const npmEnv = npmEnvFor({ cache: NPM_CACHE, registry: options.registry })
   const total = options.full ? 7 : 5
   const plan = resolvePlan(options, {
     dependenciesPresent: existsSync(join(ROOT, 'node_modules')),
