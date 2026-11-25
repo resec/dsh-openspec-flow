@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Pin pnpm to the DSH target's declared version, prepare bootstrap-managed
+  tools into shared version-keyed buckets, record the resolved toolchain per
+  worktree, make lab and the pre-push hook use that record, collect unreferenced
+  buckets in bootstrap, and prepare a new apply worktree automatically.

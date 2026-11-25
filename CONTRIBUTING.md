@@ -15,7 +15,7 @@ Using the plugin locally is allowed and can make the workflow faster. The requir
 - macOS or Linux.
 - Node 24 satisfying `engines.node >=24.9.0`. The bootstrap resolves it; you do not need a version manager.
 - `git`, `curl` and a network connection to the Node distribution and npm registry.
-- `pnpm` 12.6.0 for every bootstrap run (its doctor step checks it), the lab, `--full` and the pre-push lab gate; see [Lab prerequisites](#lab-prerequisites).
+- Bootstrap prepares the pinned `pnpm` 11.28.5 bucket and records it; the lab, `--full`, the pre-push lab gate and CI use that same pin. A host pnpm is not required; see [Lab prerequisites](#lab-prerequisites).
 - About 3 GiB free for Chromium, the pinned DSH and a lab run.
 
 ## Bootstrap
@@ -28,9 +28,9 @@ From the repository root:
 
 The script:
 
-1. Uses a qualifying Node 24 from `PATH` or a common global install location, or downloads the version recorded in `coverage.baseline.json` into `.cache/toolchain/` and verifies its checksum.
+1. Uses a qualifying Node 24 from `PATH` or a common global install location, or downloads the version recorded in `coverage.baseline.json` into the shared `<shared>/toolchain/node/<version>/` bucket and verifies its checksum.
 2. Runs `npm ci` unless `--skip-install` reuses `node_modules`, and installs the Git hooks.
-3. Installs Playwright Chromium under `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`, unless it is already present or skipped.
+3. Prepares the pinned pnpm bucket and installs Playwright Chromium under `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `<shared>/browsers/playwright-<version>/`, unless it is already present or skipped.
 4. Runs `npm run lab -- doctor`.
 5. Runs the plain test suite in default mode.
 
@@ -42,22 +42,22 @@ Use the full gate when your change touches behavior covered by the lab:
 
 Full mode runs `npm run verify` and `npm run test:lab -- --mock-only` instead of step 5: the instrumented verification runs the same tests, so the plain suite is not repeated.
 
-If bootstrap downloaded a clone-local Node, put it first on `PATH` in the current shell:
+Bootstrap writes the worktree's toolchain record. Put the recorded Node first on `PATH` in the current shell with:
 
 ```sh
 source scripts/activate.sh
 ```
 
-`activate.sh` works when sourced from bash or zsh. It changes only the current shell's `PATH`.
+`activate.sh` reads the record, falls back to the legacy clone-local runtime, works when sourced from bash or zsh, and changes only the current shell's `PATH`. Use `./scripts/bootstrap.sh --deps-only` to rewrite the buckets and record when the inputs change.
 
 ### Lab prerequisites
 
-Chromium is installed where the lab looks: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise `.cache/lab/pw-browsers`. Do not install it into the host's default Playwright cache. An apply worktree can share the main checkout's browser and package caches through [`docs/apply-worktree-dev.md`](docs/apply-worktree-dev.md).
+Chromium is installed where the lab looks: `PLAYWRIGHT_BROWSERS_PATH` when set, otherwise the worktree's Playwright-version bucket. Do not install it into the host's default Playwright cache. An apply worktree can share the main checkout's browser and package caches through [`docs/apply-worktree-dev.md`](docs/apply-worktree-dev.md).
 
-The lab also needs pnpm on `PATH`; DSH forwards plugin installation to it. Bootstrap's doctor step and the pre-push lab gate also require it, so install it before the first bootstrap or push. Install the version pinned by the CI workflow:
+The lab also needs pnpm; DSH forwards plugin installation to it. Bootstrap prepares the pinned bucket, and the lab uses the record's pnpm. CI installs the same pin with `pnpm/action-setup`. A manual host install is only a fallback:
 
 ```sh
-npm install --global pnpm@12.6.0
+npm install --global pnpm@11.28.5
 ```
 
 On Linux, the lab doctor also requires a CJK font. If the doctor reports one missing, install a distribution CJK font or point `FONTCONFIG_FILE` at a configuration that resolves one, then rerun the doctor. Bootstrap deliberately does not install host packages, edit shell rc files, change global Git configuration or touch DSH profiles.
@@ -196,7 +196,7 @@ Keep the reproduction, acceptance commands and evidence in the issue and pull re
 CI runs on Ubuntu for every pull request and on `main`:
 
 - `verify` checks out the full history, installs the Node version from `coverage.baseline.json`, runs `npm ci`, the change and generated-skill checks, `npm run openspec:check`, `npm run check:requirement-length` and `npm run verify`.
-- `lab` installs pnpm 12.6.0 and Chromium under `.cache/lab/pw-browsers` with its system dependencies, installs the CJK font, restores the DSH and browser caches, runs `npm run lab -- doctor` and `npm run test:lab -- --mock-only`.
+- `lab` installs pnpm 11.28.5 and Chromium under `.cache/lab/pw-browsers` with its system dependencies, installs the CJK font, restores the DSH and browser caches, runs `npm run lab -- doctor` and `npm run test:lab -- --mock-only`.
 
 A fork pull request may wait for maintainer approval before CI starts. Once it runs, a red check must be fixed in the pull request. Do not weaken a check or add an approval input; the restricted-path check is deliberately absolute.
 

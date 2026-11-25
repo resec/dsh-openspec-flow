@@ -78,7 +78,7 @@ Before enabling the scheduled watch, the maintainer SHALL confirm that the profi
 
 ### Requirement: Apply review on the pull-request branch
 
-The session SHALL call `openspec_review` with `review: "apply"`, `baseline: "none"`, the merge base as `base`, and the PR worktree. The review object SHALL be the committed pull-request head tree; for a prepared landing the head contains the pre-merge main and is reviewed with it as `base`. No PR code SHALL be executed.
+The session SHALL call `openspec_review` with `review: "apply"`, `baseline: "none"`, the merge base as `base`, and the PR worktree. The review object SHALL be the committed pull-request head tree; for a prepared landing the head contains the pre-merge main and is reviewed with it as `base`. A passed record matching the landing tree SHALL replace the prepared-landing review. No PR code SHALL be executed.
 
 #### Scenario: First review round
 
@@ -94,6 +94,11 @@ The session SHALL call `openspec_review` with `review: "apply"`, `baseline: "non
 
 - **WHEN** the reviewer inspects the PR worktree
 - **THEN** it reads the committed head tree and CI evidence only, and it does not run the PR's install, test or build commands
+
+#### Scenario: Passed record replaces the landing review
+
+- **WHEN** a pull request is prepared for landing, the recorded apply review is passed and its `treeSha` equals the landing tree
+- **THEN** the session advances `reviewed` without starting the prepared-landing review
 
 ### Requirement: Finding disposition on a new head
 
@@ -578,13 +583,14 @@ The session SHALL reconcile `owner-review` and clean up each run. It SHALL advan
 
 #### Scenario: A run stops after one landing phase
 
-- **WHEN** a run completes a sync or a prepare
-- **THEN** it stops, and a later run resumes from the recorded landing phase or reviews the synced head
+- **WHEN** a run completes a sync, or a prepare outside the same-run review landing, or a landing gate refuses
+- **THEN** it stops, and a later run resumes from the recorded landing phase, syncs a same-repository branch, or reviews the new head
 
 #### Scenario: A polling run
 
 - **WHEN** a run runs cleanup and reviews one candidate
-- **THEN** it stops and the next run polls again after cleanup without resuming a landing
+- **THEN** it stops after the review, or continues into landing when the same-run review landing requirement applies
+- **AND** the next run polls again after cleanup without resuming a landing
 
 #### Scenario: A cleanup-only run
 
@@ -630,7 +636,7 @@ The session SHALL reconcile `owner-review` and clean up each run. It SHALL advan
 
 ### Requirement: Fixed-session reviewer reuse
 
-The scheduled session SHALL reuse one fixed session for every run. The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer subagent stays bound to the session. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
+The session SHALL reuse one fixed session for every run. The landing stage SHALL resume the apply review in the same DSH session that started it, so the independent reviewer stays bound to the session. It SHALL skip the resume for a passed landing record. The final review SHALL use `openspec_review action=resume`, not `start`. A failed resume SHALL be recorded as the `review-failed` landing phase and stop the run; the session SHALL NOT call `replace`, start another session, or continue to merge.
 
 #### Scenario: Final review resumes the reviewer
 
@@ -646,6 +652,11 @@ The scheduled session SHALL reuse one fixed session for every run. The landing s
 
 - **WHEN** the apply review record already exists for the change
 - **THEN** the final review does not call `start`
+
+#### Scenario: A passed record skips the resume
+
+- **WHEN** the apply review record is passed and its `treeSha` equals the landing tree
+- **THEN** `reviewed` advances without `openspec_review action=resume`; otherwise the run uses the resume path
 
 ### Requirement: Same-repository branch sync eligibility
 
@@ -1515,3 +1526,25 @@ Each watch, owner-review and landing command that takes the run lock SHALL appen
 
 - **WHEN** a local owner entry needs a state decision
 - **THEN** cleanup issues no separate request for it
+
+### Requirement: Same-run review landing
+
+After a review run publishes a pass, the session SHALL re-list landing candidates and SHALL continue in the same run only when that listing returns the reviewed pull request as a landing candidate that is not behind `origin/main`; it SHALL then acquire the lock for that pull request and run `plan`, `prepare`, `reviewed`, `merge`, `openspec_archive`, `archive`, `push` and `finish`, with `finish` releasing the lock.
+
+#### Scenario: A review pass continues into landing
+
+- **WHEN** the re-listing returns the reviewed pull request as a candidate with `behind: false`, no other landing is unfinished, and the landing lock is free
+- **THEN** the same run acquires the lock for that pull request and runs `plan`, `prepare`, `reviewed`, `merge`, `openspec_archive`, `archive`, `push` and `finish`
+- **AND** `finish` releases the lock
+
+#### Scenario: A behind pass waits for sync
+
+- **WHEN** the re-listing returns the reviewed pull request as a candidate behind `origin/main`
+- **THEN** the run stops before acquiring the lock
+- **AND** a later run syncs a same-repository branch and reviews the new head
+
+#### Scenario: An unlisted pass stops
+
+- **WHEN** the re-listing does not return the reviewed pull request as a candidate because it lacks `mergeable`, another landing is unfinished, the landing lock is held, or a behind fork is refused with an author-update reason
+- **THEN** the run stops without acquiring the lock and the next run follows the existing flow
+- **AND** a behind fork is reported to its author

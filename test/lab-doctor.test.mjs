@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkCjkFont, checkPnpm, formatDoctor, PNPM_VERSION, runDoctor } from '../scripts/lab/core/doctor.mjs'
+import { buildRecord, pnpmBucket, writeRecord } from '../scripts/toolchain.mjs'
 
 function ok(name) {
   return { name, status: 'ok', detail: 'fixture' }
@@ -70,10 +71,15 @@ test('a missing pnpm fails the doctor with the pinned install command', () => {
 })
 
 test('a missing pnpm reports a correction-oriented failure', () => {
-  const check = checkPnpm({ PATH: '/definitely/missing' })
-  assert.equal(check.status, 'fail')
-  assert.match(check.detail, /pnpm/)
-  assert.ok(check.detail.includes(`npm install --global pnpm@${PNPM_VERSION}`))
+  const root = mkdtempSync(join(tmpdir(), 'lab-doctor-no-record-'))
+  try {
+    const check = checkPnpm({ PATH: '/definitely/missing' }, root)
+    assert.equal(check.status, 'fail')
+    assert.match(check.detail, /pnpm/)
+    assert.ok(check.detail.includes('--deps-only'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('a missing fc-list returns a correction-oriented failure', () => {
@@ -117,4 +123,36 @@ test('an unsupported runtime fails before any DSH check', () => {
   })
   assert.equal(result.ok, false)
   assert.equal(result.checks[0].name, 'runtime')
+})
+
+
+test('the doctor uses the current record and refuses a stale one', () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-doctor-record-'))
+  try {
+    writeFileSync(join(root, 'package.json'), '{"engines":{"node":">=24.9.0"}}\n')
+    writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3,"packages":{}}\n')
+    writeFileSync(join(root, 'coverage.baseline.json'), '{"node":{"version":"v24.22.2"}}\n')
+    writeFileSync(join(root, 'coverage.config.json'), '{"primaryNodeMajor":24}\n')
+    const pnpmJs = join(root, 'pnpm.mjs')
+    const binDir = join(root, 'bin')
+    writeFileSync(pnpmJs, `console.log('${PNPM_VERSION}')\n`)
+    mkdirSync(binDir, { recursive: true })
+    writeRecord(root, buildRecord({
+      root,
+      requirements: { nodeRange: '>=24.9.0', primaryNodeMajor: 24, pnpm: PNPM_VERSION },
+      node: { path: process.execPath, version: process.version, source: 'host' },
+      npm: { path: process.execPath, version: '11.0.0' },
+      pnpm: { bucket: pnpmBucket('/shared'), version: PNPM_VERSION, js: pnpmJs, binDir, node: process.execPath },
+      chromium: null,
+    }))
+    const current = checkPnpm({}, root)
+    assert.equal(current.status, 'ok')
+    assert.match(current.detail, /recorded pnpm/)
+    writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3,"packages":{"x":{}}}\n')
+    const stale = checkPnpm({}, root)
+    assert.equal(stale.status, 'fail')
+    assert.match(stale.detail, /--deps-only/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
