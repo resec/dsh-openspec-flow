@@ -16,6 +16,8 @@ import {
   failLanding,
   finishLanding,
   hasLandingLabel,
+  isGhWrite,
+  isHeadPoll,
   listLandingCandidates,
   loadLandings,
   main,
@@ -1833,4 +1835,13 @@ test('archive refuses an unsafe capability name and a staged index', () => {
   git(second.root, ['add', 'staged.txt'])
   assert.throws(() => archiveLanding({ root: second.root, number: 12, apply: true }), /empty index/)
   assert.equal(loadLandings(second.root).lands['12'].phase, 'archive-failed')
+})
+
+test('the landing runner classifies writes and the head poll', () => {
+  assert.equal(isGhWrite(['pr', 'merge', '12', '--rebase']), true)
+  assert.equal(isGhWrite(['api', '--method', 'PUT', 'repos/{owner}/{repo}/pulls/12/update-branch']), true)
+  assert.equal(isGhWrite(['api', 'user', '--jq', '.login']), false)
+  assert.equal(isHeadPoll(['pr', 'view', '12', '--json', 'headRefOid']), true)
+  assert.equal(isHeadPoll(['pr', 'view', '12', '--json', 'files']), false)
+  assert.equal(isHeadPoll(['pr', 'list', '--state', 'open']), false)
 })
