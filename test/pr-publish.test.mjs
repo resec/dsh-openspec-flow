@@ -587,3 +587,25 @@ test('a missing gh binary routes the publish gates to offline-land and other spa
     cleanup(fixture.root, fixture.remote, bin, blocked)
   }
 })
+
+test('the shared local gh helper writes once and retries reads', () => {
+  const spawns = []
+  const spawn = (command, args) => {
+    spawns.push(args.join(' '))
+    return { status: 1, signal: null, stdout: '', stderr: 'HTTP 502: 502 Bad Gateway' }
+  }
+  const config = {
+    timeoutMs: 20_000,
+    attempts: 3,
+    backoffMs: [0, 0],
+    pollTimeoutMs: 5_000,
+    probeTimeoutMs: 5_000,
+    fetchTimeoutMs: 30_000,
+  }
+  assert.equal(ghText(['pr', 'create', '--draft'], '/tmp', { spawn, config, sleep: () => {} }), undefined)
+  assert.equal(spawns.length, 1)
+
+  spawns.length = 0
+  assert.equal(ghText(['pr', 'view', '7', '--json', 'state'], '/tmp', { spawn, config, sleep: () => {} }), undefined)
+  assert.equal(spawns.length, 3)
+})

@@ -101,6 +101,7 @@ After validation and before the coverage step, a push that includes `refs/heads/
 | unmatched or ambiguous selection | pass a full `--land` (or legacy `--merge`) or an exact `--manifest`; remove a duplicate only after confirming which record is real |
 | land commit is not an ancestor of the archive commit | do not push; re-derive the landed pair or re-land |
 | dirty path outside `openspec/changes/` | commit or remove the change; only other changes' planning files are exempt |
+| land refuses because the index is not empty or the archive commit would carry a foreign path | unstage with a mixed `git reset` (the working tree is untouched), then retry land; never reset the working tree; for a refused resumed commit, inspect its added archived directory and recreate it within the archive scope |
 | uncommitted path under the landed change's own directory | remove or commit it; the landed change must not reappear |
 | wrong branch or detached HEAD | switch the main worktree to `main` |
 | `approvedBy` is not `user` | re-run land with the user's explicit approval |

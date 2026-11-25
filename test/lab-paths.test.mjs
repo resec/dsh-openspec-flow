@@ -11,8 +11,9 @@ test('the lab browser path follows the root and PLAYWRIGHT_BROWSERS_PATH', () =>
   assert.equal(resolveBrowsersPath({ root: custom, env: { PLAYWRIGHT_BROWSERS_PATH: 'relative/pw' } }), join(custom, 'relative', 'pw'))
 })
 
-test('the lab npm cache prefers LAB_NPM_CACHE then npm_config_cache', () => {
-  assert.equal(resolveNpmCache({ env: { LAB_NPM_CACHE: '/lab' } }), '/lab')
-  assert.equal(resolveNpmCache({ env: { npm_config_cache: '/npm' } }), '/npm')
+test('the lab npm cache prefers OPENSPEC_FLOW_NPM_CACHE and ignores npm_config_cache', () => {
+  assert.equal(resolveNpmCache({ env: { OPENSPEC_FLOW_NPM_CACHE: '/cache' } }), '/cache')
+  assert.equal(resolveNpmCache({ env: { npm_config_cache: '/npm' } }), NPM_CACHE)
+  assert.equal(resolveNpmCache({ env: { OPENSPEC_FLOW_NPM_CACHE: '/cache', npm_config_cache: '/npm' } }), '/cache')
   assert.equal(resolveNpmCache({ env: {} }), NPM_CACHE)
 })

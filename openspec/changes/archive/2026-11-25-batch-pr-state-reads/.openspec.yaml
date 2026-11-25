@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Cut the state --cleanup GitHub call count from one per tracked pull
+  request to one batched query, keeping closed/merged detection and removal
+  behavior identical.
