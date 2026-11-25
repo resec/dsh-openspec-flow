@@ -1438,3 +1438,17 @@ test('a staged foreign path refuses the archive commit', async () => {
   }
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
 })
+
+test('a resumed archive commit with two archived directories refuses', async () => {
+  const { root, run, fake } = await prepareLegacyLanding({ archive: true })
+  const second = join(root, 'openspec', 'changes', 'archive', `2026-11-21-${CHANGE}`)
+  mkdirSync(second, { recursive: true })
+  writeFileSync(join(second, 'proposal.md'), '# second\n')
+  run(['add', `openspec/changes/archive/2026-11-21-${CHANGE}`])
+  run(['commit', '--amend', '--no-edit'])
+  await assert.rejects(
+    call(fake, 'openspec_apply_worktree', { action: 'land', change: CHANGE, approvedBy: 'user' }),
+    /does not add exactly one archived directory/,
+  )
+  assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
+})
