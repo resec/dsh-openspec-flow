@@ -6,7 +6,7 @@
 
 ## What Changes
 
-- Let `prJson()` take arbitrary overrides and add one prepare-refusal test per gate: closed, draft, failed or pending CI, and zero or two active changes. Each asserts the error text and that no `pr-12` worktree exists.
+- Add one prepare-refusal test per gate: closed, draft, failed or pending CI, and zero or two active changes. Each asserts the error text and that no `pr-12` worktree exists. The existing `prJson(overrides)` parameter already carried the overrides, so it stays unchanged.
 - Rename the mixed filter test to the spec scenario and add a failed-check and a pending-check PR; assert the whole eligible candidate object, including `baseRefOid`, `baseRefName`, `worktree`, `status` and `resume`.
 
 ## Capabilities
@@ -21,5 +21,5 @@ None. The poll requirement already filters drafts, failed and pending checks, em
 
 ## Impact
 
-- `test/pr-review-watch.test.mjs`: the `prJson` helper, one rewritten filter test and four prepare-refusal tests.
+- `test/pr-review-watch.test.mjs`: one rewritten filter test and four prepare-refusal tests; the `prJson` helper is reused as is.
 - No script, spec, document, dependency, workflow, hook, coverage-baseline or `dist/` change.

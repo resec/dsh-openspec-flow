@@ -2,7 +2,7 @@
 
 ## 1. Guard the prepare gates
 
-- [x] 1.1 Let `prJson()` take arbitrary overrides instead of a fixed shape.
+- [x] 1.1 Reuse the existing `prJson(overrides)` parameter for the new cases instead of reshaping the helper.
 - [x] 1.2 Add a prepare-refusal test for a closed PR, asserting the error text and that no worktree is created.
 - [x] 1.3 Add the same test for a draft PR.
 - [x] 1.4 Add the same test for a failing rollup and for a pending rollup.
