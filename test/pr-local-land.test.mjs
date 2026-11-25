@@ -552,6 +552,9 @@ test('landed manifest lookup selects the manifest whose archive commit is main',
     assert.equal(found.manifest.featureTree, fixture.tree)
     assert.equal(readLandedManifestForMain(fixture.root, { change: CHANGE, main: 'c'.repeat(40) }), undefined)
     assert.equal(readLandedManifestForMain(fixture.root, { change: 'other', main: archiveCommit }), undefined)
+    rmSync(join(fixture.common, 'openspec-flow', 'landed', `land-${fixture.merge}.json`))
+    writeLandedManifest(fixture, archiveCommit, 'not-a-tree', { file: 'land-bad-tree.json' })
+    assert.equal(readLandedManifestForMain(fixture.root, { change: CHANGE, main: archiveCommit }), undefined)
   } finally {
     cleanup(fixture.root, fixture.remote)
   }
@@ -820,7 +823,7 @@ test('verify names adopt on a merged-tree mismatch and recover plans it', () => 
 test('finish names adopt when the landed manifest on main records another tree', () => {
   const fixture = makeFixture()
   try {
-    simulateArchive(fixture)
+    const archiveCommit = simulateArchive(fixture)
     updateLocalEntry(fixture.root, 12, { tree: 'e'.repeat(40) })
     assert.throws(
       () => finishLocal({
@@ -829,7 +832,21 @@ test('finish names adopt when the landed manifest on main records another tree',
       new RegExp(`records tree e+ but .* records ${fixture.tree}.*adopt 12 --tree ${fixture.tree}`),
     )
     assert.equal(loadLocalState(fixture.root).prs['12'].phase, 'failed')
+    writeFileSync(join(fixture.common, 'openspec-flow', 'landed', `land-${fixture.merge}.json`), `${JSON.stringify({
+      change: CHANGE,
+      featureHead: fixture.featureHead,
+      landCommit: fixture.merge,
+      archiveCommit,
+      approvedBy: 'user',
+    }, null, 2)}\n`)
+    assert.throws(
+      () => finishLocal({
+        root: fixture.root, number: 12, phase: 'landed-offline', session: SESSION, token: TOKEN, apply: true, gh: mergedGh(fixture), git: runGit,
+      }),
+      /no landed manifest/,
+    )
   } finally {
     cleanup(fixture.root, fixture.remote)
   }
 })
+
