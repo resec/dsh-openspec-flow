@@ -67,7 +67,7 @@ test('the scheduled-run requirement keeps its scenarios and adds the acquire ord
     assert.ok(section.includes(`#### Scenario: ${scenario}`), `scheduled-run spec keeps scenario ${scenario}`)
   }
   assert.doesNotMatch(section, /Without a held `landing\.lock`/)
-  assert.match(section, /stop the run and release the lock/)
+  assert.match(section, /A synced head stops the run/)
   assert.match(section, /syncs a same-repository branch/)
 })
 

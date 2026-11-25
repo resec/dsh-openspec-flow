@@ -4,7 +4,7 @@
 
 ### Requirement: Scheduled run sequencing
 
-The session SHALL reconcile `owner-review` and clean up each run. It SHALL advance one landing phase in order: resume or prepare a landing, land a mergeable candidate including a same-repository sync. When no landing phase advances, or a local owner holds the lock, it MAY review one candidate. A ready final review SHALL merge, archive and push in the same locked run. A synced head SHALL stop the run and release the lock. Local pull requests SHALL be reported, never reviewed or landed.
+The session SHALL reconcile `owner-review` and clean up each run. It SHALL advance one landing phase: resume or prepare a landing, land a mergeable candidate including a same-repository sync, except a not-behind review pass continuing in the same run. When no phase advances or a local owner holds the lock, it MAY review one candidate. A ready final review SHALL merge, archive and push in the same locked run. A synced head stops the run. Local pull requests SHALL be reported, never landed.
 
 #### Scenario: A run stops after one landing phase
 
