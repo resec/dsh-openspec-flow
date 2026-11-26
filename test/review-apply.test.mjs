@@ -180,6 +180,9 @@ test('apply review refuses a plan change that grows a MODIFIED requirement', asy
   const fake = setup(root)
   await passDraft(fake, root, run)
 
+  const policyPath = join(reviewDir(root), 'policy.json')
+  const policyBefore = readFileSync(policyPath, 'utf8')
+
   const mainDir = join(root, 'openspec', 'specs', 'theme')
   mkdirSync(mainDir, { recursive: true })
   const baseline = 'The app SHALL let users switch between light and dark themes, defaulting to the system preference.'
@@ -226,6 +229,7 @@ ${grown}
     call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
     /apply review refuses change 'add-dark-mode'.*requirement description limit.*openspec_review action=start review=apply/s,
   )
+  assert.equal(readFileSync(policyPath, 'utf8'), policyBefore)
 })
 
 test('apply review accepts a plan change and records the drift', async () => {

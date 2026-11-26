@@ -12,7 +12,7 @@ The plugin pins `@fission-ai/openspec` to one exact version and projects that ve
 - Record the verified compatibility facts in `design.md`: the JSON contract check reports no consumed field change, `version --json` still reports `schemaVersion: 1`, the target CLI declares `engines.node >=22.20.0` (below the plugin's `>=24.9.0`), `init --tools none --no-animation` still writes only the `openspec/` structure, and `instructions apply` returns the same instruction text and task shapes.
 - Update the README CLI table's `init` row for the new `--scope` option and add the 2.2.0 router skill row to the skills table, marking it as not provided by the plugin.
 - Re-measure the `instructions apply --json` byte count on the documented 39-task fixture with 2.2.0 and update the README verification sentence.
-- The runtime code does not change: no tool parameter, output field, projection, task rule, schema gate or CLI invocation moves.
+- The tool surface does not change: no tool parameter, output field, projection, task rule, schema gate or CLI invocation moves. One runtime check adapts: 2.2.0's `validate --strict` now warns when a MODIFIED requirement grows past 500 characters, so the change defers that single warning to the existing waiver-aware length gate instead of refusing with the CLI's issue list; the strict-validation position before policy locking and preflights is unchanged.
 
 ## Capabilities
 
@@ -28,6 +28,7 @@ None.
 
 - `package.json`, `package-lock.json`: the pin, the plugin version 0.10.0 and its lockfile entry.
 - `lib/tasks.js`: the parser's two mirrored-version comments (lines 5 and 36) move to 2.2.0.
+- `lib/tools/review.js`: 2.2.0's MODIFIED-length strict warning is deferred to the existing length gate; `test/review-apply.test.mjs` keeps the length-gate refusal and checks that no policy is written before the refusal.
 - `test/openspec.test.mjs`, `test/skills.test.mjs`, `test/check-generated-skills.test.mjs`: version literals in assertions and fixtures.
 - `skills/*/SKILL.md` (five files): `metadata.upstream` becomes `openspec@2.2.0`, `metadata.generatedBy` becomes `dsh-openspec-flow@0.10.0`.
 - `README.md`: both tag-pinned tables, the version descriptions, the test-suite sentence, the limitations section, the CLI table's `init` row, the skills table's router row and the re-measured `instructions apply` figure.

@@ -5,7 +5,7 @@
 - [x] 1.1 Run the JSON contract check before the pin moves, so the baseline is still 2.0.0; verify `npm run contract:check -- --candidate 2.2.0` prints `baseline: 2.0.0` and exits 0 with no `FAIL` line, and record the candidate version it reports.
 - [x] 1.2 Move the `@fission-ai/openspec` dependency to `2.2.0` and the plugin version to `0.10.0` in `package.json`; verify `node -e "const p=require('./package.json'); console.log(p.dependencies['@fission-ai/openspec'], p.version)"` prints `2.2.0 0.10.0`.
 - [x] 1.3 Install the new dependency with Node 24 and let npm rewrite the lockfile; verify `node -e "console.log(require('./node_modules/@fission-ai/openspec/package.json').version)"` prints `2.2.0` and `node node_modules/@fission-ai/openspec/bin/openspec.js version --json` prints `"version": "2.2.0"` and `"schemaVersion": 1`.
-- [x] 1.4 Review the lockfile diff; verify `git diff package-lock.json` changes the root package version and the `@fission-ai/openspec` version, resolved URL and integrity; adds `skills`, `nostics`, `tar` and `tar`'s tree (`chownr`, `minizlib`, `minipass`, `yallist`, `@isaacs/fs-minipass`); moves `chalk` from 5.6.2 to 6.0.1 with a nested 5.6.2 kept under `ora`; and leaves `yaml` at 2.9.1, with any other entry explained.
+- [x] 1.4 Review the lockfile diff; verify `git diff package-lock.json` changes the root package version and the `@fission-ai/openspec` version, resolved URL and integrity; adds `skills`, `nostics`, `tar` and `tar`'s tree (`chownr`, `minizlib`, `minipass`, `yallist`, `@isaacs/fs-minipass`); keeps the hoisted `chalk` at 5.6.2 for `ora` and adds a nested 6.0.1 under `@fission-ai/openspec`; and leaves `yaml` at 2.9.1, with any other entry explained.
 
 ## 2. Version literals and packaged skills
 
@@ -29,6 +29,11 @@
 
 - [x] 4.1 Run the full suite and coverage gate on Node 24; verify `npm run verify` exits 0 and reports both the test summary and the coverage verdict.
 - [x] 4.2 Run strict OpenSpec validation over the main specs and the change; verify `npm run openspec:check` exits 0 and `openspec_inspect` with `action: "validate"` and `strict: true` reports the change valid.
+
+## 5. Runtime compatibility
+
+- [x] 5.1 Defer 2.2.0's MODIFIED-length `--strict` warning in `lib/tools/review.js` to the existing waiver-aware length gate, keeping strict validation before policy resolution; verify `node --test test/review-apply.test.mjs` passes and the refusal still names the requirement limit and the recovery action.
+- [x] 5.2 Assert in `test/review-apply.test.mjs` that a refused apply start leaves the policy file unchanged; verify the case fails when 5.1 is reverted and passes with 5.1.
 
 ## Workflow follow-up
 
