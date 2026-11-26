@@ -1,15 +1,16 @@
 /**
- * Browser half: the review configuration page.
+ * Browser half: the read-only review configuration page.
  *
  * One `plugins.row.config` entry for the `openspec-flow` row, keyed by the
- * installed package name and the row id from `cordis.patch.yml`. The page draws
- * the draft and apply review sections, the reviewer model cascade, and the
- * locked policies of every OpenSpec project the Host reports.
+ * installed package name and the row id from `cordis.patch.yml`. The page shows
+ * the global review switch, the legacy-section notice, and for every OpenSpec
+ * project the Host reports: its profiles, its draft and apply entries, its
+ * schema error and its locked policies.
  *
- * The page owns no review decision. A controller holds the form, calls the Host
- * channel and publishes state; the React component is a thin renderer over that
- * controller. A save is validated twice Host-side (shape, then the model
- * catalog) and only a save that passes both reaches the profile.
+ * The page owns no review decision and writes nothing. A controller reads the
+ * Host channel and publishes state; the React component is a thin renderer over
+ * that controller. Review parameters live in the project review file and the
+ * switch lives in the profile row config.
  *
  * The file is a hand-written loader bundle because the package ships no build
  * step: `window.__ModuleLoader__.load` receives one lazy factory, React comes from
@@ -301,14 +302,7 @@ window.__ModuleLoader__.load({
       display: 'flex', flexDirection: 'column', gap: '12px', padding: '4px 2px',
       font: 'var(--dsw-font-xs-13)', color: 'var(--dsw-alias-label-primary)',
     }
-    const sectionStyle = {
-      display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px',
-      border: '1px solid var(--dsw-alias-separator-secondary)', borderRadius: '8px',
-    }
     const headingStyle = { margin: 0, font: 'var(--dsw-font-sm-14)' }
-    const rowStyle = { display: 'grid', gridTemplateColumns: '160px 1fr auto', gap: '8px', alignItems: 'center' }
-    const labelStyle = { color: 'var(--dsw-alias-label-secondary)' }
-    const controlStyle = { display: 'inline-flex', gap: '6px', alignItems: 'center' }
     const noteStyle = { margin: 0, color: 'var(--dsw-alias-label-secondary)', font: 'var(--dsw-font-xxs-12)' }
     const cardStyle = {
       display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 10px',
