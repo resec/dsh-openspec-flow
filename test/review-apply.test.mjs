@@ -950,6 +950,32 @@ test('a draft-only policy reports unset and migrates on the first apply start', 
   assert.equal(migrated.reviews.apply.enabled, true)
 })
 
+test('a draft-only policy migrates from the supplied configuration path', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const policyPath = join(reviewDir(root), 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  delete policy.reviews.apply
+  writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
+
+  const outside = mkdtempSync(join(tmpdir(), 'openspec-flow-baseline-'))
+  const custom = join(outside, 'reviews.json')
+  writeFileSync(custom, JSON.stringify({
+    profiles: {
+      d: { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      t: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 30, reviewerModel: { source: 'inherit' } },
+    },
+    reviews: { draft: 'd', apply: 't' },
+  }))
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'apply', configPath: custom,
+  })
+  assert.equal(started.review, 'apply')
+  const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.equal(migrated.reviews.apply.waitMinutes, 30)
+})
+
 test('starting the same round twice before a report resumes it', async () => {
   const root = fixture()
   const fake = setup(root)
