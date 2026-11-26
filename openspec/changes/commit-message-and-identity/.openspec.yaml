@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-26
+goal: "Add two development conventions: every commit message is English,
+  restated in CONTRIBUTING.md and AGENTS.md, and no commit invents or overrides
+  the repository identity, stated in AGENTS.md only. One development-workflow
+  requirement records the documentation rule; no gate."
