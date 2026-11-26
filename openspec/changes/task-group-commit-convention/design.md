@@ -18,7 +18,7 @@ See `proposal.md` - Why. Three surfaces carry this repository's process today: `
 - **`openspec/config.yaml` carries the rule as apply guidance.** `operations.apply.guidance` is the project config's channel for repository-level apply conventions, and `openspec_apply_next` returns it as `guidance`, so the rule also arrives at apply start without a second document. A pointer to `AGENTS.md` would add indirection for one sentence.
 - **`CONTRIBUTING.md` carries the contributor statement.** The external path is CLI-only and reads that document; it must not depend on `AGENTS.md` or the plugin. The statement covers the group rule and the no-CI-check fact, not the maintainer-only review boundary.
 - **The group boundary is the numbered heading.** Groups are `## 1.` through `## N.` in `tasks.md`; a task id's number prefix names its group (`1.1` belongs to group `1`). Unnumbered trailing sections such as `## Workflow follow-up` are not task groups.
-- **A commit belongs to one group.** It carries only that group's changes, so no commit combines two groups; a group may still take several commits. The rule is satisfied by committing each group as it completes: a later split of one final tree would need path-level staging and would blur which edit belongs to which group.
+- **A commit belongs to one group.** It carries only that group's changes, so no commit combines two groups; a group may still take several commits. The rule is satisfied by committing each group as it completes: a later split of one final tree would need path-level staging and would blur which edit belongs to which group. A commit that records only checked boxes in `tasks.md` is flow bookkeeping and belongs to no group, so a verification-only group still leaves no group commit.
 - **Attribution follows the files.** A commit belongs to the group whose subtasks name the files it changes. When two groups change one file, the commit's message names the group it carries; the identifier rule bans review identifiers, not task ids, so this is allowed.
 - **A missing boundary is corrected before the first review.** When the pre-review read finds a changing group without its own commit, the implementer commits the group's remaining files, or splits the apply branch when the group's edits went into another commit's patch. The apply base stays the seal commit.
 - **A review round keeps its own unit.** A finding's fix may touch files from several groups, so review commits follow `Apply review commits address one finding`. The finding-scoped read is limited to commits made since the round's reviewed base, where group commits from the implementation phase are exempt.
@@ -31,7 +31,7 @@ See `proposal.md` - Why. Three surfaces carry this repository's process today: `
 - Three surfaces can drift → each states the same one-sentence rule for a different audience; the operator reads them together before the apply review, and the requirement fixes the content.
 - Two groups edit the same file → the attribution rule resolves ownership, and a group commit carries only its own edits.
 - A group commit may not pass `npm run verify` alone → the completion gate runs on the final tree, as it already does for finding-scoped review commits.
-- Extra history entries reach `main` → land already requires a linear feature history, and each entry maps to one group.
+- Extra history entries reach `main` → land already requires a linear feature history, and each implementation entry maps to one group, while the checkbox bookkeeping commit maps to none.
 
 ## Migration Plan
 

@@ -4,7 +4,7 @@
 
 ### Requirement: Apply commits follow task groups
 
-The repository SHALL require each numbered top-level `tasks.md` group that changes files to own at least one commit carrying only its changes, so no commit combines two groups. Subtasks of one group MAY share it; a group that only verifies SHALL leave none. The rule SHALL cover implementation commits before the first apply review; a review round SHALL keep one finding per commit. `AGENTS.md` SHALL state the rule and `openspec/config.yaml` SHALL carry it as apply guidance.
+The repository SHALL require each numbered top-level `tasks.md` group that changes files to own at least one commit carrying only its changes, so no commit combines two groups. Subtasks of one group MAY share it; a group that only verifies SHALL leave no implementation commit. The rule SHALL cover implementation commits before the first apply review; a review round SHALL keep one finding per commit. `AGENTS.md` SHALL state the rule and `openspec/config.yaml` SHALL carry it as apply guidance.
 
 #### Scenario: A changing group owns its commit
 
@@ -24,10 +24,16 @@ The repository SHALL require each numbered top-level `tasks.md` group that chang
 - **THEN** it satisfies neither group's requirement
 - **AND** each group still needs its own commit
 
-#### Scenario: A verification-only group leaves no commit
+#### Scenario: A verification-only group leaves no implementation commit
 
-- **WHEN** a group runs checks without changing a file
-- **THEN** it leaves no commit
+- **WHEN** a group runs checks without changing an implementation file
+- **THEN** it leaves no implementation commit
+
+#### Scenario: Checkbox bookkeeping is not a group commit
+
+- **WHEN** a commit records only checked boxes in `tasks.md`
+- **THEN** it is flow bookkeeping and belongs to no group
+- **AND** a group that only verifies still owns no group commit
 
 #### Scenario: A review round keeps its own unit
 
