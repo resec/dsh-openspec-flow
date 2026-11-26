@@ -520,7 +520,7 @@ The README review section SHALL state that `reviewCards/get` accepts a batch tur
 
 ### Requirement: The review document states the stale-round block
 
-The review document SHALL state that editing the change artifacts during an open draft round closes that round as blocked with no findings, that the reviewer receives one watch notice and submits `blocked`, and that `resume` opens the next round for the current artifacts. The document's existing statement that resuming an unreported round reuses it without another wakeup SHALL be qualified by the unchanged-object condition.
+`docs/review.md` SHALL state that editing the change artifacts during an open draft round gives one watch notice per changed object version, that the reviewer submits `blocked`, that a blocked attempt does not consume a round number, and that `resume` archives the attempt under `round-N/revisions/MM/` and refreshes the same round. It SHALL state that the archived brief, hashes, report, cause and notice stay readable and that the unreported-round reuse rule requires an unchanged object.
 
 #### Scenario: The document states the no-edit rule
 
@@ -534,8 +534,14 @@ The review document SHALL state that editing the change artifacts during an open
 
 #### Scenario: The document states the recovery
 
-- **WHEN** the review document describes a blocked stale round
-- **THEN** it states that `resume` opens the next round
+- **WHEN** the review document describes a blocked attempt
+- **THEN** it states that `resume` archives the attempt and refreshes the same round
+- **AND** it states that the round number does not advance
+
+#### Scenario: The document states the audit
+
+- **WHEN** the review document describes an archived attempt
+- **THEN** it names the revision directory and the preserved brief, hashes, report, cause and notice
 
 ### Requirement: The review document states the cross-change boundary
 
@@ -597,3 +603,31 @@ The review document SHALL state that editing the change artifacts during an open
 
 - **WHEN** the row config switch or the file path changes in the code
 - **THEN** the documentation test fails until the README matches
+
+### Requirement: The document states the attempt revision layout
+
+`docs/review.md` SHALL state that a refreshed draft round keeps its previous attempts under `round-N/revisions/MM/` as `brief.md`, an optional `report.json` and the recorded hashes, cause and archive time, and that the review record lists them in a `revisions` array.
+
+#### Scenario: The layout is documented
+
+- **WHEN** a reader looks up where a replaced attempt is stored
+- **THEN** the document names `round-N/revisions/MM/` and the record's `revisions` array
+
+#### Scenario: The preserved facts are documented
+
+- **WHEN** a reader looks up the audit facts
+- **THEN** the document names the brief, hashes, optional blocked report, cause and archive time
+
+### Requirement: The README states the blocked-round reuse
+
+`README.md` SHALL state that a blocked draft attempt does not consume a round number, that `resume` refreshes the same round, and that the replaced attempt stays readable under `round-N/revisions/MM/`. It SHALL name `docs/review.md` for the details.
+
+#### Scenario: The README states the reuse
+
+- **WHEN** the README review section is read
+- **THEN** it states that a blocked draft attempt does not consume a round number and that its audit stays readable
+
+#### Scenario: The README links the document
+
+- **WHEN** the README describes the blocked-round reuse
+- **THEN** it names `docs/review.md`

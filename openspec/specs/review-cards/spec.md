@@ -7,7 +7,7 @@ Lets the plugin report every review round through a self-contained card in the c
 
 ### Requirement: A review round writes one card file
 
-At the review and resolution points the Host SHALL write one card JSON file at `cards/<sessionKey>-<kind>-<phase>-<round>.json`, where `sessionKey` is a short SHA-256 of the session id and `kind` is `draft` or `apply`. A card written under the earlier name without a kind SHALL stay readable. The plugin SHALL NOT append a Session event and SHALL NOT import an `@deepseek-ai/*` package for the card.
+At the review and resolution points the Host SHALL write one card JSON file at `cards/<sessionKey>-<kind>-<phase>-<round>[-a<attempt>].json`, where `sessionKey` is a short SHA-256 of the session id and `kind` is `draft` or `apply`. A review card's first attempt keeps the suffix-less name and a later attempt carries `-a<n>`. A card written under the earlier name without a kind SHALL stay readable. The plugin SHALL NOT append a Session event or import an `@deepseek-ai/*` package for the card.
 
 #### Scenario: Review point writes a card file
 
@@ -36,6 +36,12 @@ At the review and resolution points the Host SHALL write one card JSON file at `
 
 - **WHEN** a card file carries the earlier name without a kind
 - **THEN** the reader still returns that card
+
+#### Scenario: A refreshed attempt writes its own card
+
+- **WHEN** a round's earlier attempt already wrote a review card and the refreshed round submits a report
+- **THEN** a second review card file with `-a2` in its name is written
+- **AND** the earlier card file and its turn binding stay on disk
 
 ### Requirement: The card payload carries the round facts
 
@@ -538,3 +544,18 @@ The card payload SHALL carry `roundToken`, and the plugin documentation SHALL st
 
 - **WHEN** the review documentation is read
 - **THEN** it states that the summary shows the extra round token instead of the numeric round
+
+### Requirement: A refreshed attempt keeps the earlier card
+
+When a refreshed draft attempt writes a later card, the earlier attempt's card SHALL stay on disk and keep its turn binding and payload. The new card SHALL use its own attempt-suffixed file name, record the attempt in its marker, and bind independently.
+
+#### Scenario: The earlier card survives the refresh
+
+- **WHEN** a refreshed attempt writes its card
+- **THEN** the earlier attempt's card still answers the turn it was bound to
+- **AND** its payload still carries the earlier report
+
+#### Scenario: The new card binds its own turn
+
+- **WHEN** the refreshed attempt's card is returned for a later turn
+- **THEN** it carries the new report and its own binding
