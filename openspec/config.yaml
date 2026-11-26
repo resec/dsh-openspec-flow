@@ -22,11 +22,8 @@ schema: spec-driven
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.
 # This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+
+operations:
+  apply:
+    guidance:
+      - Each numbered top-level `tasks.md` group that changes files owns a commit carrying only that group's changes; the subtasks of one group may share it, a group that only verifies leaves no implementation commit, and a commit that only records checked boxes is bookkeeping.
