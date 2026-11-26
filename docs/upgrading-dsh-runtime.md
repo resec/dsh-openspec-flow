@@ -7,7 +7,7 @@
 - DSH：`=0.2.2-rc.2`（`package.json:10`）
 - Node：`>=24.9.0`（`package.json:9`）
 - 测试主版本：24（`coverage.config.json:2`）
-- OpenSpec CLI：`@fission-ai/openspec` 2.0.0（`package.json` 的 `dependencies`）
+- OpenSpec CLI：`@fission-ai/openspec` 2.2.0（`package.json` 的 `dependencies`）
 
 DSH 在加载 profile 时逐个读取 bundle 的 `package.json`，用运行中的 DSH 版本检查 `engines.dsh`。不匹配时，安装可能被拒绝，已安装的 bundle 会在启动时被跳过；工具、技能与流程规则都不会注册。兼容声明是启动闸门，不是文档约定，因此升级必须同时移动声明、Node 基线与验证证据。
 
@@ -116,7 +116,7 @@ gh api "repos/deepseek-ai/deepseek-harness/contents/package.json?ref=dsh-v<versi
 | 位置 | 依赖的内容 | 升级检查 |
 | --- | --- | --- |
 | `package.json:8-10` | `engines.node` 与精确的 `engines.dsh` | 目标下限与精确版本 |
-| `package.json` 的 `dependencies` | 仅 `@fission-ai/openspec` 2.0.0；插件不依赖 `@deepseek-ai/*` | 运行时只允许 Node built-ins 与相对模块 |
+| `package.json` 的 `dependencies` | 仅 `@fission-ai/openspec` 2.2.0；插件不依赖 `@deepseek-ai/*` | 运行时只允许 Node built-ins 与相对模块 |
 | `package.json:18-21` | `dsh.bundle.patch` 指向 `cordis.patch.yml` | 目标 loader 仍接受该声明 |
 | `cordis.patch.yml:6-9` | 一行 `insert`，`id: openspec-flow`，`name: dsh-openspec-flow` | `--dump-config` 中仍有该行 |
 | `index.js:29` | Cordis 插件名 `openspec-flow` | 与 profile 行、日志前缀一致 |

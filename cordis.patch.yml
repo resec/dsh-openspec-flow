@@ -1,6 +1,6 @@
 # One Host row and one reviewer preset.
 #
-# The plugin runs its bundled @fission-ai/openspec 2.0.0. There is no cliPath
+# The plugin runs its bundled @fission-ai/openspec 2.2.0. There is no cliPath
 # setting: PATH, project-local .bin, and config overrides are not consulted.
 # Only timeoutMs is configurable.
 - insert:
