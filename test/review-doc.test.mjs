@@ -512,11 +512,12 @@ test('the review document names the extra round contract', () => {
   }
 })
 
-test('the review document states the stale-round block and the qualified reuse rule', () => {
+test('the review document states the blocked-attempt refresh and the qualified reuse rule', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /对尚无报告且对象未变的轮次再次 `resume` 只会复用该轮/)
-  assert.match(text, /先把该轮记为 `blocked`/)
-  assert.match(text, /`blockedReason: "stale-object"`/)
+  assert.match(text, /原地刷新同一轮/)
+  assert.match(text, /round-<n>\/revisions\/<mm>\//)
+  assert.match(text, /轮号不变/)
   assert.match(text, /监视是尽力而为/)
 })
 
