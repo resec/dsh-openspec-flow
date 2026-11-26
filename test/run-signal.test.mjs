@@ -51,6 +51,58 @@ function exited(child) {
   return new Promise((resolve) => child.once('exit', resolve))
 }
 
+/**
+ * Resolve with the first complete stdout line a child writes that `matches`.
+ *
+ * The promise settles once, and the exit listener is removed when the line
+ * arrives. A child that exits first rejects with `label`, so a caller waiting
+ * for a readiness line reports which line never arrived.
+ *
+ * @param child - the child whose stdout carries the line.
+ * @param label - the line's name in the rejection message.
+ * @param matches - predicate over one complete line, without its newline.
+ * @returns the matching line.
+ */
+function readLine(child, label, matches) {
+  return new Promise((resolve, reject) => {
+    let buffer = ''
+    let settled = false
+    const settle = () => {
+      settled = true
+      child.stdout.off('data', onData)
+      child.off('exit', onExit)
+    }
+    const scan = () => {
+      let newline = buffer.indexOf('\n')
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline)
+        buffer = buffer.slice(newline + 1)
+        if (matches(line)) return line
+        newline = buffer.indexOf('\n')
+      }
+      return undefined
+    }
+    const onData = (chunk) => {
+      if (settled) return
+      buffer += chunk
+      const line = scan()
+      if (line === undefined) return
+      settle()
+      resolve(line)
+    }
+    const onExit = () => {
+      if (settled) return
+      const line = scan()
+      settle()
+      if (line === undefined) reject(new Error(`the child exited before it wrote ${label}`))
+      else resolve(line)
+    }
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', onData)
+    child.once('exit', onExit)
+  })
+}
+
 test('spawnRunChild starts the leader of its own process group', async (t) => {
   const child = spawnRunChild(process.execPath, ['-e', childCode('setTimeout(() => {}, 60000)')], {
     stdio: 'ignore',
@@ -78,16 +130,9 @@ test('stopRunChild kills a grandchild in the same group', async (t) => {
     ],
     { stdio: ['ignore', 'pipe', 'ignore'] },
   )
-  const grandchildPid = await new Promise((resolve, reject) => {
-    let buffer = ''
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk) => {
-      buffer += chunk
-      const match = buffer.match(/^(\d+)\n/)
-      if (match !== null) resolve(Number(match[1]))
-    })
-    child.once('exit', () => reject(new Error('the child exited before reporting its grandchild')))
-  })
+  const grandchildPid = Number(
+    await readLine(child, 'the grandchild pid', (line) => /^\d+$/.test(line)),
+  )
   t.after(() => kill(grandchildPid))
   assert.equal(alive(grandchildPid), true, 'the grandchild is running before the stop')
   await stopRunChild(child)
@@ -96,14 +141,31 @@ test('stopRunChild kills a grandchild in the same group', async (t) => {
   assert.equal(alive(child.pid), false, 'the child died with the group')
 })
 
+test('readLine rejects when the child exits before the line', async () => {
+  const child = spawnRunChild(process.execPath, ['-e', childCode('')], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  await assert.rejects(
+    readLine(child, 'the readiness line', (line) => line === 'ready'),
+    /the child exited before it wrote the readiness line/,
+  )
+})
+
 test('stopRunChild escalates past a descendant that ignores SIGTERM', async (t) => {
   const child = spawnRunChild(
     process.execPath,
-    ['-e', childCode("process.on('SIGTERM', () => {})\nsetTimeout(() => {}, 60000)")],
-    { stdio: 'ignore' },
+    [
+      '-e',
+      childCode(
+        "process.on('SIGTERM', () => {})\n" +
+          "process.stdout.write('ready\\n')\n" +
+          'setTimeout(() => {}, 60000)',
+      ),
+    ],
+    { stdio: ['ignore', 'pipe', 'ignore'] },
   )
   t.after(() => kill(child.pid))
-  await new Promise((resolve) => setTimeout(resolve, 80))
+  await readLine(child, 'the SIGTERM readiness line', (line) => line === 'ready')
   signalRunChild(child, 'SIGTERM')
   await new Promise((resolve) => setTimeout(resolve, 80))
   assert.equal(alive(child.pid), true, 'the child survives the ignored SIGTERM')
