@@ -13,6 +13,7 @@ import { reviewDirectory } from '../lib/review/store.js'
 import { readApplyState } from '../lib/worktree/state.js'
 import { buildSealCommit, pinSeal, sealBranchName, sealRefName } from '../lib/worktree/seal.js'
 import { prepareApplyWorktree } from '../lib/tools/apply.js'
+import { assertApplyReviewReady, assertDraftReviewReady } from '../lib/tools/review.js'
 
 test.after(cleanupFixtures)
 
@@ -974,6 +975,30 @@ test('a draft-only policy migrates from the supplied configuration path', async 
   assert.equal(started.review, 'apply')
   const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
   assert.equal(migrated.reviews.apply.waitMinutes, 30)
+})
+
+test('the disabled switch clears both review gates for a locked change', async () => {
+  const { root } = gitFixture()
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit', provider: 'deepseek', model: 'deepseek-flash' } },
+    apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit', provider: 'deepseek', model: 'deepseek-flash' } },
+  })
+  const signal = new AbortController().signal
+  const off = setup(root, undefined, { reviewEnabled: false })
+  const draft = await assertDraftReviewReady(off.ctx, off.settings, root, CHANGE, undefined, signal)
+  assert.ok(draft.context)
+  const apply = await assertApplyReviewReady(off.ctx, off.settings, root, CHANGE, undefined, signal)
+  assert.ok(apply.context)
+
+  const on = setup(root, undefined, { reviewEnabled: true })
+  await assert.rejects(
+    assertDraftReviewReady(on.ctx, on.settings, root, CHANGE, undefined, signal),
+    /draft review has not started/,
+  )
+  await assert.rejects(
+    assertApplyReviewReady(on.ctx, on.settings, root, CHANGE, undefined, signal),
+    /apply review has not started/,
+  )
 })
 
 test('starting the same round twice before a report resumes it', async () => {
