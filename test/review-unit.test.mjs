@@ -1331,3 +1331,43 @@ test('a blocked apply report keeps its verdict reason', () => {
   assert.equal(readiness.ready, false)
   assert.match(readiness.reasons.join(' '), /verdict is blocked/)
 })
+
+
+test('archiveDraftAttempt falls back to the copied file facts', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'openspec-flow-revision-legacy-'))
+  try {
+    const round = {
+      round: 2,
+      objectHash: 'old-object',
+      artifactHash: 'old-artifact',
+      brief: { path: 'round-2/brief.md' },
+      blockedReason: 'stale-object',
+      staleFrom: 'from',
+      staleTo: 'to',
+      staleNotice: { round: 2, from: 'from', to: 'to', at: '2026-01-01T00:00:00.000Z' },
+    }
+    mkdirSync(join(directory, 'round-2'), { recursive: true })
+    writeFileSync(join(directory, 'round-2', 'brief.md'), 'brief')
+    const revision = archiveDraftAttempt({ directory, round, cause: 'object-changed' })
+    assert.equal(revision.brief.sha256, sha256('brief'))
+    assert.equal(revision.brief.bytes, 5)
+    assert.deepEqual(revision.artifactFiles, [])
+    assert.equal(revision.blockedReason, 'stale-object')
+    assert.equal(revision.staleFrom, 'from')
+    assert.equal(revision.staleTo, 'to')
+    assert.equal(revision.notice.to, 'to')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('archiveDraftAttempt refuses a missing round and an unknown cause', () => {
+  assert.throws(
+    () => archiveDraftAttempt({ directory: '/nonexistent', round: null, cause: 'object-changed' }),
+    /has no round attempt/,
+  )
+  assert.throws(
+    () => archiveDraftAttempt({ directory: '/nonexistent', round: { round: 1 }, cause: 'other' }),
+    /unknown draft attempt cause/,
+  )
+})
