@@ -205,7 +205,7 @@ CLI 来源固定：
 | `reviewModels.providers` | `reviewModels/providers` | 已注册的 LLM provider |
 | `reviewModels.models` | `reviewModels/models` | 某 provider 的模型 |
 | `reviewModels.efforts` | `reviewModels/efforts` | 某 provider/model 的可选努力与默认努力 |
-| `reviewSettings.get` | `reviewSettings/get` | 当前 draft/apply 设置、字段上下界、是否可保存 |
+| `reviewSettings.get` | `reviewSettings/get` | 评审开关、遗留段标志、各项目已解析的配置或 schema 错误，以及锁定策略 |
 | `reviewPolicies.list` | `reviewPolicies/list` | 当前活动 agent 所在 OpenSpec 项目的锁定策略摘要 |
 
 模型目录按端点缓存 60 秒；查询失败返回错误并保留上一次的值。`reviewPolicies.list` 只读取 `policy.json`，不返回 review 记录、报告或 finding；项目来自活动 agent 的工作目录（向上找到含 `openspec/` 的目录），去重后按路径排序。无 git 的项目在该项目下标注“应用评审不可用”，draft 设置不受影响。
