@@ -171,8 +171,13 @@ test('stopRunChild escalates past a descendant that ignores SIGTERM', async (t) 
     [
       '-e',
       childCode(
-        "process.on('SIGTERM', () => {})\n" +
-          "process.stdout.write('ready\\n')\n" +
+        // The handler arrives late, as it does on a loaded host, so a
+        // reintroduced fixed wait signals before the handler exists and the
+        // survival assertion fails on an idle host too.
+        'setTimeout(() => {\n' +
+          "  process.on('SIGTERM', () => {})\n" +
+          "  process.stdout.write('ready\\n')\n" +
+          '}, 500)\n' +
           'setTimeout(() => {}, 60000)',
       ),
     ],
