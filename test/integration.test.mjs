@@ -1101,6 +1101,24 @@ test('new change follows the review switch and reports a legacy section', async 
   assert.equal(result.change.id, 'off-change')
 })
 
+test('change creation fails closed on a missing or invalid review file', async () => {
+  const root = fixture()
+  rmSync(join(root, 'openspec', 'reviews.json'))
+  const fake = setup(root)
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'needs-config' }),
+    /review configuration not found/,
+  )
+  assert.equal(existsSync(join(root, 'openspec', 'changes', 'needs-config')), false)
+
+  writeFileSync(join(root, 'openspec', 'reviews.json'), '{ broken')
+  await assert.rejects(
+    call(fake, 'openspec_new_change', { name: 'needs-config' }),
+    /not valid JSON/,
+  )
+  assert.equal(existsSync(join(root, 'openspec', 'changes', 'needs-config')), false)
+})
+
 test('the management block keeps three tools out of a gated session', () => {
   clearCache()
   const fake = createFakeContext({ cwd: process.cwd(), commands: true, spawnMode: 'process' })
