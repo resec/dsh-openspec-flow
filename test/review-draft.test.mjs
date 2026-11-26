@@ -1291,26 +1291,28 @@ test('an unchanged unreported round is reused without a new round', async () => 
   assert.equal(record.rounds[0].report, undefined)
 })
 
-test('resume closes a stale draft round as blocked and opens the next round', async () => {
+test('resume refreshes a stale draft attempt without consuming its number', async () => {
   const root = fixture()
   const fake = setup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
   const before = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
   editTasks(root)
   const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
-  assert.equal(resumed.round, 2)
+  assert.equal(resumed.round, 1)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
-  const stale = record.rounds[0]
-  assert.equal(stale.verdict, 'blocked')
-  assert.equal(stale.report.verdict, 'blocked')
-  assert.equal(stale.blockedReason, 'stale-object')
-  assert.equal(stale.staleFrom, before.objectHash)
-  assert.equal(stale.staleTo, resumed.objectHash)
-  assert.deepEqual(record.findings, [])
-  assert.equal(record.rounds[1].report, undefined)
+  assert.equal(record.rounds.length, 1)
+  const attempt = record.rounds[0]
+  assert.equal(attempt.report, undefined)
+  assert.equal(attempt.revisions.length, 1)
+  assert.equal(attempt.revisions[0].cause, 'object-changed')
+  assert.equal(attempt.revisions[0].objectHash, before.objectHash)
+  assert.equal(attempt.revisions[0].report, undefined)
+  assert.equal(attempt.objectHash, resumed.objectHash)
+  assert.equal(existsSync(join(reviewDir(root), attempt.revisions[0].brief.path)), true)
+  assert.equal(existsSync(join(reviewDir(root), 'round-1', 'revisions', '01', 'meta.json')), true)
 })
 
-test('a stale close leaves a fixed finding awaiting verification untouched', async () => {
+test('a refresh leaves a fixed finding awaiting verification untouched', async () => {
   const root = fixture()
   const fake = setup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
@@ -1324,38 +1326,62 @@ test('a stale close leaves a fixed finding awaiting verification untouched', asy
   await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
   editTasks(root)
   const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
-  assert.equal(resumed.round, 3)
+  assert.equal(resumed.round, 2)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
-  assert.equal(record.rounds[1].verdict, 'blocked')
+  assert.equal(record.rounds.length, 2)
+  assert.equal(record.rounds[1].revisions.length, 1)
+  assert.equal(record.rounds[1].revisions[0].cause, 'object-changed')
   assert.equal(record.findings[0].status, 'fixed')
   assert.equal(record.findings[0].verifiedInRound, undefined)
 })
 
-test('a stale draft round wakes the reviewer for the next round', async () => {
+test('a stale draft attempt wakes the reviewer for the same round', async () => {
   const root = fixture()
   const { fake, messages } = externalSetup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
   const wakes = messages.length
   editTasks(root)
   const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
-  assert.equal(resumed.round, 2)
+  assert.equal(resumed.round, 1)
   assert.equal(messages.length, wakes + 1)
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
-  assert.equal(record.rounds[0].verdict, 'blocked')
-  assert.equal(record.reviewers.slots[0].round, 2)
+  assert.equal(record.rounds[0].report, undefined)
+  assert.equal(record.reviewers.slots[0].round, 1)
   assert.equal(record.reviewers.slots[0].agentId, 'reviewer-1')
 })
 
-test('a mismatched round leaves the stale round unclosed', async () => {
+test('a mismatched round leaves the stale attempt unarchived', async () => {
   const root = fixture()
   const fake = setup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
   editTasks(root)
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 3 }),
-    /next draft review round is 2, not 3/,
+    /next draft review round is 1, not 3/,
   )
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
   assert.equal(record.rounds.length, 1)
+  assert.equal(record.rounds[0].revisions, undefined)
   assert.equal(record.rounds[0].report, undefined)
+})
+
+test('a blocked draft report is archived and the same round is refreshed', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'blocked', summary: 'The artifacts could not be reviewed.' }),
+  })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 1)
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds.length, 1)
+  assert.equal(record.rounds[0].report, undefined)
+  assert.equal(record.rounds[0].revisions.length, 1)
+  const revision = record.rounds[0].revisions[0]
+  assert.equal(revision.cause, 'blocked-report')
+  assert.equal(revision.report.verdict, 'blocked')
+  assert.equal(existsSync(join(reviewDir(root), revision.report.path)), true)
+  assert.equal(existsSync(join(reviewDir(root), revision.brief.path)), true)
 })
