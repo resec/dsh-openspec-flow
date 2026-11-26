@@ -1385,3 +1385,24 @@ test('a blocked draft report is archived and the same round is refreshed', async
   assert.equal(existsSync(join(reviewDir(root), revision.report.path)), true)
   assert.equal(existsSync(join(reviewDir(root), revision.brief.path)), true)
 })
+
+test('status lists an archived draft attempt', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'blocked', summary: 'The artifacts could not be reviewed.' }),
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.round, 1)
+  assert.equal(status.revisions.length, 1)
+  assert.equal(status.revisions[0].round, 1)
+  assert.equal(status.revisions[0].revision, 1)
+  assert.equal(status.revisions[0].cause, 'blocked-report')
+  assert.equal(status.revisions[0].verdict, 'blocked')
+  assert.equal(typeof status.revisions[0].briefPath, 'string')
+  assert.equal(typeof status.revisions[0].reportPath, 'string')
+  assert.equal(typeof status.revisions[0].archivedAt, 'string')
+})
