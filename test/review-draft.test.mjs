@@ -890,6 +890,15 @@ test('a changed project review file does not relock or fail a resume', async () 
   assert.equal(status.mode, 'self')
 })
 
+test('the review tool declares the configuration path parameter', () => {
+  const root = fixture()
+  const fake = setup(root)
+  const tool = fake.tools.get('openspec_review')
+  assert.equal(tool.parameters.properties.configPath.type, 'string')
+  assert.match(tool.parameters.properties.configPath.description, /review configuration/i)
+  assert.equal(Object.hasOwn(fake.tools.get('openspec_new_change').parameters.properties, 'configPath'), false)
+})
+
 test('status reports a not-started review', async () => {
   const root = fixture()
   const fake = setup(root)
