@@ -3,8 +3,8 @@ name: openspec-explore
 description: Explore an OpenSpec project with the openspec_* tools, reading the root, changes, specs and artifact instructions, then reasoning about options without writing files. Use when the user wants to think through a change.
 whenToUse: The user wants a thinking partner before or during a change, and no artifact should be written yet.
 metadata:
-  generatedBy: dsh-openspec-flow@0.9.0
-  upstream: openspec@2.0.0
+  generatedBy: dsh-openspec-flow@0.10.0
+  upstream: openspec@2.2.0
 ---
 
 # Explore an OpenSpec project

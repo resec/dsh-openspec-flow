@@ -8,7 +8,7 @@ import { assertCliVersion, parseJson, PINNED_CLI_VERSION, resolveBundledCli, wit
 const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'))
 
 test('pins an exact bundled CLI version', () => {
-  assert.equal(PINNED_CLI_VERSION, '2.0.0')
+  assert.equal(PINNED_CLI_VERSION, '2.2.0')
   assert.match(PINNED_CLI_VERSION, /^\d+\.\d+\.\d+$/)
   assert.equal(manifest.dependencies['@fission-ai/openspec'], PINNED_CLI_VERSION)
   assert.equal(manifest.devDependencies?.['@fission-ai/openspec'], undefined)
@@ -32,7 +32,7 @@ test('accepts the pinned version and JSON envelope', () => {
 test('rejects a mismatched CLI version or schema envelope', () => {
   assert.throws(
     () => assertCliVersion({ version: '1.15.0', schemaVersion: 1 }),
-    /reports version '1\.15\.0'.*pins '2\.0\.0'/s,
+    /reports version '1\.15\.0'.*pins '2\.2\.0'/s,
   )
   assert.throws(
     () => assertCliVersion({ version: PINNED_CLI_VERSION, schemaVersion: 2 }),
