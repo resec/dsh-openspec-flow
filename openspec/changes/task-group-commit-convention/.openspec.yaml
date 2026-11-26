@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-26
+goal: Apply 阶段每个改动文件的一级任务组至少对应一个独立 commit，子任务可合并；纯验证组不提交；评审轮次仍按 finding 提交；不设脚本或
+  CI 门禁。
