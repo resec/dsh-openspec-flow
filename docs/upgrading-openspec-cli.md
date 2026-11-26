@@ -69,8 +69,8 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | 仅帮助文本、日志、性能 | 无 | 改版本号、锁文件、断言、文档 |
 | `--json` 字段改名、删除、类型变化 | 投影读不到字段，工具输出缺字段或报错 | 改 `lib/state.js` 与 `lib/tools/*` 的投影，补测试 |
 | `validate` / `archive` 判定规则变化 | 投影不变，但用户项目的校验与归档结果变化 | 补行为测试，更新 README 的限制与升级说明 |
-| `instructions` 正文变化 | 命令片段可能漏映射为工具名 | 改 `lib/state.js:800` 的映射表，补投影测试 |
-| 任务行解析变化 | 插件与 CLI 对任务数量、完成状态不一致 | 改 `lib/tasks.js:20` 的正则与测试 |
+| `instructions` 正文变化 | 命令片段可能漏映射为工具名 | 改 `lib/state.js:868` 的映射表，补投影测试 |
+| 任务行解析变化 | 插件与 CLI 对任务数量、完成状态不一致 | 改 `lib/tasks.js:24` 的正则与测试 |
 | schema 解析顺序或目录变化 | 内置 `spec-driven` 闸门可能误判 | 改 `lib/schema.js:35` 与相关测试 |
 | Node 引擎下限提高 | 插件测试与 DSH 运行时可能不满足 | 评估 DSH 与插件的 `engines.node`，同步调整 |
 
@@ -150,7 +150,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
    判断标准见“契约检查”一节。失败时先判断是 fixture 问题、清单过期，还是 CLI 真的改了字段。
 
-2. 把 `package.json:56` 改为目标精确版本，不加 `^` 或 `~`。
+2. 把 `package.json:69` 改为目标精确版本，不加 `^` 或 `~`。
 
 3. 更新锁文件与安装树：
 
