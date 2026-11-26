@@ -47,9 +47,9 @@
 ## 8. Integration checks
 
 - [x] 8.1 Run `npm test` on Node 24 and fix every failure. Verify the summary reports zero failing tests.
-- [ ] 8.2 Run `npm run verify` and confirm the coverage gate passes. Verify the command exits zero.
-- [ ] 8.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change and confirm no findings.
-- [ ] 8.4 Manually exercise a scratch project: create a change with the file absent (fails with the path), add the default file via `openspec_init`, create a change (locks `schemaVersion: 2` with the source), and start a draft review with a profile that has `reviewers: 0`.
+- [x] 8.2 Run `npm run verify` and confirm the coverage gate passes. Verify the command exits zero.
+- [x] 8.3 Run `openspec_inspect` with `action: "validate"` and `strict: true` for the change and confirm no findings.
+- [x] 8.4 Manually exercise a scratch project: create a change with the file absent (fails with the path), add the default file via `openspec_init`, create a change (locks `schemaVersion: 2` with the source), and start a draft review with a profile that has `reviewers: 0`.
 
 ## Workflow follow-up
 
