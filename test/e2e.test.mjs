@@ -79,8 +79,16 @@ function project() {
 
 function setup(root) {
   clearCache()
+  mkdirSync(join(root, 'openspec'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'reviews.json'), JSON.stringify({
+    profiles: {
+      'e2e-directory': { object: 'directory', enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      'e2e-tree': { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    },
+    reviews: { draft: 'e2e-directory', apply: 'e2e-tree' },
+  }, null, 2))
   const fake = createFakeContext({ cwd: root, spawnMode: 'process' })
-  apply(fake.ctx, { timeoutMs: 30_000, reviews: { draft: { enabled: false } } })
+  apply(fake.ctx, { timeoutMs: 30_000 })
   return fake
 }
 

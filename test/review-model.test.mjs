@@ -23,6 +23,18 @@ import { ensureReviewerModel, readPolicy } from '../lib/review/policy.js'
 import { writeJsonAtomic } from '../lib/review/store.js'
 import { createFakeContext } from './fake-context.mjs'
 
+/** Build one parsed review document for a model migration test. */
+function configOf(overrides = {}) {
+  const section = (extra = {}) => ({
+    enabled: true,
+    reviewers: 0,
+    waitMinutes: 15,
+    reviewerModel: { source: 'inherit' },
+    ...extra,
+  })
+  return { draft: section(overrides.draft), apply: section(overrides.apply) }
+}
+
 /**
  * A context carrying only the services the model module reads.
  * @param options - default selection and agent selection.
@@ -173,7 +185,7 @@ test('a policy written before the model existed migrates once', () => {
     writeJsonAtomic(join(directory, 'policy.json'), policy)
     const resolveModel = () => ({ provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' })
     const migrated = ensureReviewerModel(directory, policy, {
-      settings: { reviews: {} },
+      config: configOf(),
       resolveModel,
     })
     assert.deepEqual(migrated.reviews.draft.reviewerModel, {
@@ -185,7 +197,7 @@ test('a policy written before the model existed migrates once', () => {
 
     // A second migration pass changes nothing: the fields are already locked.
     const again = ensureReviewerModel(directory, migrated, {
-      settings: { reviews: { draft: { reviewerModel: { source: 'explicit', provider: 'other', model: 'other' } } } },
+      config: configOf({ draft: { reviewerModel: { source: 'explicit', provider: 'other', model: 'other' } } }),
       resolveModel: () => ({ provider: 'other', model: 'other' }),
     })
     assert.equal(again, migrated)
@@ -198,14 +210,14 @@ test('a policy written before the model existed migrates once', () => {
         apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
       },
     }
-    const filled = ensureReviewerModel(directory, partial, { settings: {}, resolveModel })
+    const filled = ensureReviewerModel(directory, partial, { config: configOf(), resolveModel })
     assert.deepEqual(filled.reviews.apply.reviewerModel, {
       source: 'inherit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
     })
 
     // A damaged record without sections is left exactly as it is.
-    assert.equal(ensureReviewerModel(directory, { change: 'demo' }, { settings: {}, resolveModel }).change, 'demo')
-    assert.equal(ensureReviewerModel(directory, undefined, { settings: {}, resolveModel }), undefined)
+    assert.equal(ensureReviewerModel(directory, { change: 'demo' }, { config: configOf(), resolveModel }).change, 'demo')
+    assert.equal(ensureReviewerModel(directory, undefined, { config: configOf(), resolveModel }), undefined)
     assert.equal(
       ensureReviewerModel(directory, { reviews: { draft: { enabled: true, reviewerModel: { source: 'inherit' } } } }, {})
         .reviews.draft.reviewerModel.source,

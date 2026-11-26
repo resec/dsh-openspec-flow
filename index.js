@@ -16,6 +16,8 @@
  * are files under the change's review directory and are served by the review
  * channel; nothing is appended to the Session log. Tools are plain
  * `ToolDefinition` objects and the skill is a plain `SkillRegistration`.
+ * Review parameters come from the project review file; the row config keeps one
+ * switch and reports a legacy `reviews` section.
  *
  * @module dsh-openspec-flow
  */
@@ -26,7 +28,6 @@ import { registerPolicy } from './lib/policy.js'
 import { registerReviewChannel } from './lib/review/settings.js'
 import { registerSkillProvider } from './lib/skill.js'
 import { registerTools } from './lib/tools/index.js'
-import { normalizeReviews } from './lib/review/config.js'
 import { clearReviewDeadlines } from './lib/review/wakeup.js'
 import { clearRoundWatches } from './lib/review/watch.js'
 
@@ -48,7 +49,8 @@ export const inject = ['tools', 'subprocess', 'workingDirectory', 'systemPrompt'
 export function apply(ctx, config) {
   const settings = {
     timeoutMs: Number.isInteger(config?.timeoutMs) ? config.timeoutMs : 30_000,
-    reviews: config?.reviews ?? normalizeReviews(undefined).value,
+    reviewEnabled: config?.reviewEnabled !== false,
+    legacyReviews: config?.legacyReviews === true,
     worktree: config?.worktree ?? { enabled: true },
   }
   registerAdminGate(ctx)

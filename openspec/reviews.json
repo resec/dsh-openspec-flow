@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "standard-directory": {
+      "object": "directory",
+      "enabled": true,
+      "reviewers": 1,
+      "waitMinutes": 15,
+      "reviewerModel": { "source": "inherit" }
+    },
+    "standard-tree": {
+      "object": "tree",
+      "enabled": true,
+      "reviewers": 1,
+      "waitMinutes": 15,
+      "reviewerModel": { "source": "inherit" }
+    }
+  },
+  "reviews": { "draft": "standard-directory", "apply": "standard-tree" }
+}

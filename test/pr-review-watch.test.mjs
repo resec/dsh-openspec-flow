@@ -82,6 +82,13 @@ function makeRepository() {
   writeFileSync(join(change, '.openspec.yaml'), 'schema: spec-driven\n')
   writeFileSync(join(change, 'proposal.md'), '# Widget\n')
   writeFileSync(join(directory, '.gitignore'), '.cache/\n')
+  writeFileSync(join(directory, 'openspec', 'reviews.json'), JSON.stringify({
+    profiles: {
+      'test-directory': { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      'test-tree': { object: 'tree', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    },
+    reviews: { draft: 'test-directory', apply: 'test-tree' },
+  }, null, 2))
   git(directory, ['add', '.'])
   git(directory, ['commit', '-qm', 'initial'])
   return directory
@@ -604,6 +611,49 @@ test('prepare uses the fork point after the base branch advances', () => {
     const facts = preparePullRequest({ root, number: 12, gh })
     assert.equal(facts.base, fork)
     assert.notEqual(facts.base, advanced)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('prepare copies the baseline configuration and ignores the PR head file', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    // The PR head carries a different file; the baseline must win.
+    writeFileSync(join(root, 'openspec', 'reviews.json'), '{"profiles":{"x":{"object":"tree","enabled":false,"reviewers":0,"waitMinutes":1,"reviewerModel":{"source":"inherit"}}},"reviews":{"apply":"x"}}')
+    git(root, ['add', 'openspec/reviews.json'])
+    git(root, ['commit', '-qm', 'PR head'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    const facts = preparePullRequest({ root, number: 12, gh })
+    const baseline = join(root, '.cache', 'pr-review', 'reviews.json')
+    assert.equal(facts.reviewConfig, baseline)
+    assert.equal(readFileSync(baseline, 'utf8'), readFileSync(join(root, 'openspec', 'reviews.json'), 'utf8'))
+    assert.equal(JSON.parse(readFileSync(baseline, 'utf8')).reviews.apply, 'test-tree')
+    assert.equal(loadState(root).prs['12'].reviewConfig, baseline)
+  } finally {
+    cleanup(root, remote)
+  }
+})
+
+test('prepare refuses a missing baseline review configuration', () => {
+  const root = makeRepository()
+  const remote = makeOrigin(root)
+  try {
+    git(root, ['checkout', '-qb', 'pr-head'])
+    git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['push', '-q', 'origin', 'pr-head'])
+    git(remote, ['update-ref', 'refs/pull/12/head', head])
+    git(root, ['checkout', '-q', 'main'])
+    rmSync(join(root, 'openspec', 'reviews.json'))
+    const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /no openspec\/reviews\.json/)
   } finally {
     cleanup(root, remote)
   }

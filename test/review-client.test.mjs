@@ -213,68 +213,6 @@ test('the bundle repeats the channel and endpoint literals exactly', () => {
   }
 })
 
-test('the form sections default and copy independently', async () => {
-  const { plugin } = await loadBundle()
-  const { initialForm } = plugin.__test
-  const form = initialForm(undefined)
-  assert.deepEqual(form, {
-    draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-    apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-  })
-
-  const copied = initialForm({
-    draft: {
-      enabled: false,
-      reviewers: 1,
-      waitMinutes: 20,
-      reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
-    },
-    apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'explicit', provider: 'p', model: '' } },
-  })
-  assert.equal(copied.draft.enabled, false)
-  assert.equal(copied.draft.reviewers, 1)
-  assert.deepEqual(copied.draft.reviewerModel, {
-    source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
-  })
-  assert.deepEqual(copied.apply.reviewerModel, { source: 'explicit', provider: 'p', model: '' })
-})
-
-test('the cascade clears the fields a choice no longer names', async () => {
-  const { plugin } = await loadBundle()
-  const { initialForm, chooseProvider, chooseModel, chooseEffort, patchSection, setModel } = plugin.__test
-  let form = initialForm(undefined)
-
-  form = patchSection(form, 'draft', { enabled: false, waitMinutes: 20 })
-  assert.equal(form.draft.enabled, false)
-  assert.equal(form.apply.enabled, true)
-
-  form = chooseProvider(form, 'draft', 'deepseek')
-  assert.deepEqual(form.draft.reviewerModel, { source: 'explicit', provider: 'deepseek', model: '' })
-
-  form = chooseModel(form, 'draft', 'deepseek-flash')
-  assert.deepEqual(form.draft.reviewerModel, { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash' })
-
-  form = chooseEffort(form, 'draft', 'max')
-  assert.equal(form.draft.reviewerModel.reasoningEffort, 'max')
-
-  // Selecting the adapter default drops the effort rather than storing an empty string.
-  form = chooseEffort(form, 'draft', '')
-  assert.equal('reasoningEffort' in form.draft.reviewerModel, false)
-
-  // A new provider clears the model and the effort it belonged to.
-  form = chooseProvider(form, 'apply', 'other')
-  assert.deepEqual(form.apply.reviewerModel, { source: 'explicit', provider: 'other', model: '' })
-  form = setModel(form, 'apply', { source: 'inherit' })
-  assert.deepEqual(form.apply.reviewerModel, { source: 'inherit' })
-})
-
-test('the save payload carries both sections', async () => {
-  const { plugin } = await loadBundle()
-  const { initialForm, savePayload } = plugin.__test
-  const form = initialForm(undefined)
-  assert.deepEqual(savePayload(form), { reviews: { draft: form.draft, apply: form.apply } })
-})
-
 test('a locked section is described in one line', async () => {
   const { plugin } = await loadBundle()
   const { lockLine } = plugin.__test
@@ -285,9 +223,9 @@ test('a locked section is described in one line', async () => {
 })
 
 /**
- * Drive the page controller with a scripted channel.
+ * Drive the read-only page controller with a scripted channel.
  * @param answers - endpoint to answer function; a thrown error models a transport failure.
- * @returns the controller, its calls and a wait helper for its queued work.
+ * @returns the controller and its calls.
  */
 async function controllerWith(answers) {
   const { plugin } = await loadBundle()
@@ -299,159 +237,61 @@ async function controllerWith(answers) {
     if (answer === undefined) throw new Error(`unexpected endpoint ${endpoint}`)
     return await answer(payload)
   }
-  const t = (key) => key
-  const controller = plugin.__test.createController({ call, t })
+  const controller = plugin.__test.createController({ call })
   return { controller, calls }
 }
 
-test('the controller loads settings, providers and project facts', async () => {
+test('the controller reads the switch and each project configuration', async () => {
   const settings = {
-    reviews: {
-      draft: { enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' } },
-      apply: { enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-    },
-    bounds: { reviewers: { min: 0, max: 1 }, waitMinutes: { min: 1, max: 120 } },
-    canSave: true,
+    reviewEnabled: false,
+    legacyReviews: true,
+    projects: [
+      {
+        path: '/p',
+        git: true,
+        changes: [],
+        config: {
+          profiles: {
+            d: { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+            a: { object: 'tree', enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' } },
+          },
+          reviews: { draft: 'd', apply: 'a' },
+        },
+        configPath: 'openspec/reviews.json',
+      },
+      { path: '/q', git: false, changes: [], configError: 'openspec/reviews.json: reviewers is required' },
+    ],
   }
   const { controller, calls } = await controllerWith({
     'reviewSettings/get': () => ({ ok: true, value: settings }),
-    'reviewPolicies/list': () => ({
-      ok: true,
-      value: { projects: [{ path: '/p', git: false, changes: [] }] },
-    }),
-    'reviewModels/providers': () => ({ ok: true, value: [{ id: 'deepseek', name: 'DeepSeek' }] }),
   })
   const seen = []
   controller.subscribe(() => { seen.push(controller.getState().status) })
   await controller.load()
-  assert.deepEqual(calls.map((entry) => entry.endpoint).sort(), [
-    'reviewModels/providers', 'reviewPolicies/list', 'reviewSettings/get',
-  ])
+  assert.deepEqual(calls.map((entry) => entry.endpoint), ['reviewSettings/get'])
   const state = controller.getState()
   assert.equal(state.status, 'ready')
-  assert.equal(state.form.draft.reviewers, 1)
-  assert.equal(state.form.apply.enabled, false)
-  assert.equal(state.form.apply.waitMinutes, 15)
-  assert.equal(state.canSave, true)
-  assert.deepEqual(state.providers, [{ id: 'deepseek', name: 'DeepSeek' }])
-  assert.deepEqual(state.projects, [{ path: '/p', git: false, changes: [] }])
+  assert.equal(state.reviewEnabled, false)
+  assert.equal(state.legacyReviews, true)
+  assert.equal(state.projects.length, 2)
+  assert.equal(state.projects[0].config.reviews.apply, 'a')
+  assert.match(state.projects[1].configError, /reviewers is required/)
   assert.ok(seen.includes('ready'))
 
-  // A failed settings read is the one failure that stops the page.
+  // A failed read is the one failure that stops the page.
   const failing = await controllerWith({
-    'reviewSettings/get': () => ({ ok: false, error: { code: 'reviewSettings/unavailable', message: 'no config' } }),
-    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
-    'reviewModels/providers': () => ({ ok: false, error: { code: 'reviewModels/unavailable', message: 'no catalog' } }),
+    'reviewSettings/get': () => ({ ok: false, error: { code: 'reviewSettings/invalid', message: 'no config' } }),
   })
   await failing.controller.load()
   assert.equal(failing.controller.getState().status, 'error')
   assert.match(failing.controller.getState().error, /no config/)
 })
 
-test('a save reports acceptance and the Host rejection verbatim', async () => {
-  const base = {
-    'reviewSettings/get': () => ({
-      ok: true,
-      value: {
-        reviews: {
-          draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-          apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
-        },
-        bounds: undefined,
-        canSave: true,
-      },
-    }),
-    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
-    'reviewModels/providers': () => ({ ok: true, value: [] }),
-  }
-
-  const accepted = await controllerWith({
-    ...base,
-    'reviewSettings/update': (payload) => ({ ok: true, value: payload }),
-  })
-  await accepted.controller.load()
-  accepted.controller.onChange('draft', { reviewers: 1 })
-  const saved = await accepted.controller.save()
-  assert.equal(saved.ok, true)
-  const update = accepted.calls.find((entry) => entry.endpoint === 'reviewSettings/update')
-  assert.equal(update.payload.reviews.draft.reviewers, 1)
-  assert.equal(update.payload.reviews.apply.enabled, true)
-  assert.deepEqual(accepted.controller.getState().message, { kind: 'ok', text: 'saved' })
-
-  const rejected = await controllerWith({
-    ...base,
-    'reviewSettings/update': () => ({
-      ok: false,
-      error: { code: 'reviewSettings/invalid', message: 'reviews.draft.reviewers must be an integer between 0 and 1' },
-    }),
-  })
-  await rejected.controller.load()
-  const refused = await rejected.controller.save()
-  assert.equal(refused.ok, false)
-  assert.deepEqual(rejected.controller.getState().message, {
-    kind: 'error',
-    text: 'reviews.draft.reviewers must be an integer between 0 and 1',
-  })
-  assert.equal(rejected.controller.getState().busy, false)
-
-  // A transport failure is folded into the same shape rather than thrown at the page.
-  const broken = await controllerWith({
-    ...base,
-    'reviewSettings/update': () => {
-      throw new Error('connection lost')
-    },
-  })
-  await broken.controller.load()
-  const lost = await broken.controller.save()
-  assert.equal(lost.ok, false)
-  assert.match(broken.controller.getState().message.text, /connection lost/)
-})
-
-test('the provider and model cascade loads the next selectors', async () => {
-  const { controller, calls } = await controllerWith({
-    'reviewSettings/get': () => ({
-      ok: true,
-      value: { reviews: {}, bounds: undefined, canSave: true },
-    }),
-    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
-    'reviewModels/providers': () => ({ ok: true, value: [{ id: 'other', name: 'Other' }] }),
-    'reviewModels/models': () => ({
-      ok: true,
-      value: [{ provider: 'other', id: 'm1', name: 'M1' }, { provider: 'other', id: 'm2', name: 'M2' }],
-    }),
-    'reviewModels/efforts': () => ({
-      ok: true,
-      value: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' },
-    }),
-  })
-  await controller.load()
-  await controller.onProvider('apply', 'other')
-  const state = controller.getState()
-  assert.deepEqual(state.form.apply.reviewerModel, {
-    source: 'explicit', provider: 'other', model: 'm1', reasoningEffort: 'low',
-  })
-  assert.deepEqual(state.models.apply.map((entry) => entry.id), ['m1', 'm2'])
-
-  await controller.onModel('apply', 'm2')
-  assert.equal(controller.getState().form.apply.reviewerModel.model, 'm2')
-  controller.onEffort('apply', 'high')
-  assert.equal(controller.getState().form.apply.reviewerModel.reasoningEffort, 'high')
-  controller.onEffort('apply', '')
-  assert.equal('reasoningEffort' in controller.getState().form.apply.reviewerModel, false)
-
-  // A failing catalog keeps the form and reports it instead of throwing.
-  const failing = await controllerWith({
-    'reviewSettings/get': () => ({ ok: true, value: { reviews: {}, canSave: true } }),
-    'reviewPolicies/list': () => ({ ok: true, value: { projects: [] } }),
-    'reviewModels/providers': () => ({ ok: true, value: [] }),
-    'reviewModels/models': () => ({ ok: false, error: { code: 'reviewModels/unavailable', message: 'catalog down' } }),
-    'reviewModels/efforts': () => ({ ok: true, value: { efforts: [], defaultEffort: null } }),
-  })
-  await failing.controller.load()
-  await failing.controller.onProvider('draft', 'other')
-  assert.deepEqual(failing.controller.getState().models.draft, [])
-  assert.match(failing.controller.getState().message.text, /modelsFailed/)
-  assert.ok(calls.some((entry) => entry.endpoint === 'reviewModels/models'))
+test('the page has no write path', () => {
+  const text = readFileSync(join(ROOT, 'client.js'), 'utf8')
+  assert.equal(text.includes('reviewSettings/update'), false)
+  assert.equal(text.includes('configEditor'), false)
+  assert.equal(text.includes('type="submit"'), false)
 })
 
 test('the package exports the client half and packs it', () => {

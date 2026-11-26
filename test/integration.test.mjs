@@ -11,6 +11,7 @@ import { clearCliVerification, resolveBundledCli } from '../lib/openspec.js'
 import { parseTaskLines, taskKey } from '../lib/tasks.js'
 import { createFakeContext } from './fake-context.mjs'
 import { PROBE_ROOT } from './review-fixtures.mjs'
+import { defaultReviewConfigText } from '../lib/review/file.js'
 
 const CHANGE = 'add-dark-mode'
 const CHANGE_DIR = 'openspec/changes/add-dark-mode'
@@ -33,6 +34,7 @@ const created = []
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-e2e-'))
   cpSync(PROBE_ROOT, join(root, 'openspec'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'reviews.json'), defaultReviewConfigText())
   created.push(root)
   return root
 }
@@ -1070,13 +1072,33 @@ test('initializes an empty project without writing skills', async () => {
   const result = await call(fake, 'openspec_init', {})
   assert.equal(result.root, root)
   assert.equal(result.config, 'created')
+  assert.equal(result.reviewConfig, 'created')
   assert.ok(existsSync(join(root, 'openspec', 'config.yaml')))
   assert.ok(existsSync(join(root, 'openspec', 'specs')))
+  assert.ok(existsSync(join(root, 'openspec', 'reviews.json')))
   assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
 
   const again = await call(fake, 'openspec_init', {})
   assert.equal(again.config, 'exists')
+  assert.equal(again.reviewConfig, 'exists')
   assert.equal(existsSync(join(root, '.dsh', 'skills')), false)
+})
+
+test('new change follows the review switch and reports a legacy section', async () => {
+  const legacyRoot = fixture()
+  clearCache()
+  const legacy = createFakeContext({ cwd: legacyRoot, spawnMode: 'process' })
+  apply(legacy.ctx, { timeoutMs: 30_000, reviewEnabled: true, legacyReviews: true })
+  const created = await call(legacy, 'openspec_new_change', { name: 'legacy-change' })
+  assert.match(created.configNotice, /ignored/)
+
+  const offRoot = fixture()
+  clearCache()
+  const off = createFakeContext({ cwd: offRoot, spawnMode: 'process' })
+  apply(off.ctx, { timeoutMs: 30_000, reviewEnabled: false })
+  rmSync(join(offRoot, 'openspec', 'reviews.json'))
+  const result = await call(off, 'openspec_new_change', { name: 'off-change' })
+  assert.equal(result.change.id, 'off-change')
 })
 
 test('the management block keeps three tools out of a gated session', () => {

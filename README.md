@@ -175,14 +175,9 @@ npm run bundle:pack
 | --- | --- | --- |
 | `timeoutMs` | `30000` | 单次 CLI 调用的墙钟上限，1000–300000。 |
 | `worktree.enabled` | `true` | 是否把 git apply 放进每 change 的 worktree；关闭时保留旧的单树 apply，供兼容或排查使用。 |
-| `reviews.draft.enabled` | `true` | 新 change 是否锁定 draft review。 |
-| `reviews.draft.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
-| `reviews.draft.waitMinutes` | `15` | draft review 的默认等待上限，1–120。 |
-| `reviews.draft.reviewerModel` | `{ source: "inherit" }` | reviewer 模型：`inherit` 在锁定 policy 时解析为执行变更的模型；`explicit` 需 `provider` 与 `model`，模型有可选努力时还需 `reasoningEffort`。 |
-| `reviews.apply.enabled` | `true` | 新 change 是否锁定 apply review；非 git 项目忽略该值并锁定关闭，旧策略可能仍记录启用但 status 报告不可用。 |
-| `reviews.apply.reviewers` | `0` | 0 为 changer 自评审，1 为独立 reviewer。 |
-| `reviews.apply.waitMinutes` | `15` | apply review 的默认等待上限，1–120。 |
-| `reviews.apply.reviewerModel` | `{ source: "inherit" }` | 同 `reviews.draft.reviewerModel`，锁定到 apply review 的 policy。 |
+| `reviewEnabled` | `true` | 评审总开关。关闭时不注册 `openspec_review`，新建 change 不锁定策略，评审门禁放行，也不为锁定或门禁读取项目文件。 |
+
+评审参数不在 profile 里：它们来自项目内的 `openspec/reviews.json`，`openspec_init` 在文件不存在时写入默认文档。文件缺失、不可读、JSON 非法或 schema 非法时，新建 change 与首次评审直接失败，不回退默认值。profile 里遗留的 `reviews` 段会被忽略，并在首次读取时提示迁移。
 
 CLI 来源固定：
 
@@ -192,14 +187,16 @@ CLI 来源固定：
 
 ## 评审配置页
 
-profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需要改 `cordis.patch.yml`：Plugins → `dsh-openspec-flow` 行 → Configure，打开 `dsh-openspec-flow#openspec-flow` 这一页。
+页面只读：Plugins → `dsh-openspec-flow` 行 → Configure，打开 `dsh-openspec-flow#openspec-flow`。它展示 `reviewEnabled`、profile 遗留段提示、每个 OpenSpec 项目的档案与用途映射（或 schema 错误）以及已锁定 change 的策略；不提供保存，也不调用 `configEditor`。
 
-页面分 draft 与 apply 两段，字段为 enabled、reviewers（0/1）、waitMinutes 与 reviewer 模型；draft 与 apply review 不设轮次上限。模型有两种来源：
+评审参数来自项目的 `openspec/reviews.json`：`profiles` 声明具名档案（`object` 为 `directory` 或 `tree`，另含 `enabled`、`reviewers`、`waitMinutes`、`reviewerModel`），`reviews.draft` 与 `reviews.apply` 分别引用一个类型匹配的档案。`openspec_init` 写入的默认文档使用 `standard-directory` 与 `standard-tree`，均为 reviewers 0、waitMinutes 15、`{ source: "inherit" }`。
+
+模型有两种来源：
 
 - `inherit`：新 change 锁定 policy 时解析执行变更的模型（先 `agentDefaultModel`，再当前 agent 的模型），把 provider、model 与 effort 写进评审记录目录的 `policy.json`（git 项目为 `<git common dir>/openspec-flow/review/<store>#<change>/`）；解析不到时拒绝创建 change。
 - `explicit`：provider 与 model 必填；模型暴露可选努力时 effort 必填，否则省略并按适配器默认。
 
-保存分两阶段校验：先按 Config schema 校验完整候选（形状与上下界），再用 `llm` 目录校验 provider、model 与 effort；两次都通过才调用 `configEditor.edit` 写入 profile。被拒绝时不改文件并把原因返回页面。保存成功后该插件行会重启，已锁定 change 的 policy 不受影响。
+锁定后的 policy 记录 `schemaVersion: 2` 与 `source`（配置文件路径、内容 sha256、两个档案名）；修改文件只影响之后新建的 change，没有重新锁定入口。`openspec_review` 的 `configPath` 只在本次调用写入策略或补写缺失段时生效，仓库侧 PR 流程用它读取基线 `main` 的配置。
 
 页面数据来自插件自己的 `/openspec-review` 通道（注册在 `webServer` 的 prefix 路由上，由 `connection.admit` 施加与平台 API 相同的 Host/Origin 与 cookie 校验），端点与错误包络在 `lib/client/channel.js` 里声明一次：
 
@@ -209,7 +206,6 @@ profile 里的 `reviews` 可以在 Web GUI 的插件配置页里编辑，不需�
 | `reviewModels.models` | `reviewModels/models` | 某 provider 的模型 |
 | `reviewModels.efforts` | `reviewModels/efforts` | 某 provider/model 的可选努力与默认努力 |
 | `reviewSettings.get` | `reviewSettings/get` | 当前 draft/apply 设置、字段上下界、是否可保存 |
-| `reviewSettings.update` | `reviewSettings/update` | 校验并保存完整候选 |
 | `reviewPolicies.list` | `reviewPolicies/list` | 当前活动 agent 所在 OpenSpec 项目的锁定策略摘要 |
 
 模型目录按端点缓存 60 秒；查询失败返回错误并保留上一次的值。`reviewPolicies.list` 只读取 `policy.json`，不返回 review 记录、报告或 finding；项目来自活动 agent 的工作目录（向上找到含 `openspec/` 的目录），去重后按路径排序。无 git 的项目在该项目下标注“应用评审不可用”，draft 设置不受影响。

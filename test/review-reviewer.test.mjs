@@ -12,7 +12,7 @@ import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import { readApplyState } from '../lib/worktree/state.js'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, writePolicy, report, majorFinding, minorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, writePolicy, writeReviewConfig, report, majorFinding, minorFinding, gitFixture, passDraft, externalSetup, reviewerPresetDeclaration, reviewerPresetToolNames, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -465,10 +465,8 @@ test('a provider without agent preset support refuses the reviewer', async () =>
   }
   clearCache()
   const fake = createFakeContext({ cwd: root, subagents })
-  apply(fake.ctx, {
-    timeoutMs: 30_000,
-    reviews: { draft: { enabled: true, reviewers: 1 } },
-  })
+  writeReviewConfig(root, { draft: { enabled: true, reviewers: 1 } })
+  apply(fake.ctx, { timeoutMs: 30_000, reviewEnabled: true })
   await assert.rejects(
     call(fake, 'openspec_review', {
       action: 'start', change: CHANGE, intent: 'Add a theme selector.',
@@ -564,10 +562,8 @@ test('retry fails closed without a reviewer service', async () => {
   const root = fixture()
   clearCache()
   const fake = createFakeContext({ cwd: root })
-  apply(fake.ctx, {
-    timeoutMs: 30_000,
-    reviews: { draft: { enabled: true, reviewers: 1 } },
-  })
+  writeReviewConfig(root, { draft: { enabled: true, reviewers: 1 } })
+  apply(fake.ctx, { timeoutMs: 30_000, reviewEnabled: true })
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'retry', change: CHANGE, review: 'draft' }),
     /reviewer service is unavailable/,
@@ -633,10 +629,8 @@ test('a reviewer service without provider lookup still activates a reviewer', as
   }
   clearCache()
   const fake = createFakeContext({ cwd: root, subagents })
-  apply(fake.ctx, {
-    timeoutMs: 30_000,
-    reviews: { draft: { enabled: true, reviewers: 1 } },
-  })
+  writeReviewConfig(root, { draft: { enabled: true, reviewers: 1 } })
+  apply(fake.ctx, { timeoutMs: 30_000, reviewEnabled: true })
   const started = await call(fake, 'openspec_review', {
     action: 'start', change: CHANGE, intent: 'Add a theme selector.',
   })
@@ -657,10 +651,8 @@ test('a reviewer activation without a child id fails closed', async () => {
   }
   clearCache()
   const fake = createFakeContext({ cwd: root, subagents })
-  apply(fake.ctx, {
-    timeoutMs: 30_000,
-    reviews: { draft: { enabled: true, reviewers: 1 } },
-  })
+  writeReviewConfig(root, { draft: { enabled: true, reviewers: 1 } })
+  apply(fake.ctx, { timeoutMs: 30_000, reviewEnabled: true })
   await assert.rejects(
     call(fake, 'openspec_review', {
       action: 'start', change: CHANGE, intent: 'Add a theme selector.',

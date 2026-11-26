@@ -8,7 +8,7 @@ import { cacheKey, clearCache, readCache } from '../lib/cache.js'
 import { apply } from '../index.js'
 import { createFakeContext } from './fake-context.mjs'
 import {
-  CHANGE, DRAFT_OPENING, fixture, setup, call, reviewDir, report, majorFinding, minorFinding, captureSpawn, gitFixture, passDraft, externalSetup, cleanupFixtures,
+  CHANGE, DRAFT_OPENING, fixture, setup, call, writeReviewConfig, writePolicy, reviewDir, report, majorFinding, minorFinding, captureSpawn, gitFixture, passDraft, externalSetup, cleanupFixtures,
 } from './review-fixtures.mjs'
 
 test.after(cleanupFixtures)
@@ -826,12 +826,68 @@ test('an old policy gains its reviewer model on the first review start', async (
   assert.equal(JSON.parse(readFileSync(policyPath, 'utf8')).reviews.draft.reviewerModel.provider, 'other')
 })
 
-test('the review tool is absent when both reviews are disabled', async () => {
+test('the review tool is absent when the switch is off and the gates pass', async () => {
   const root = fixture()
-  const fake = setup(root, { draft: { enabled: false, reviewers: 0 }, apply: { enabled: false } })
+  const fake = setup(root, undefined, { reviewEnabled: false })
   assert.equal(fake.tools.has('openspec_review'), false)
   const applied = await call(fake, 'openspec_apply_next', { change: CHANGE })
   assert.equal(applied.state, 'all_done')
+})
+
+test('the first start locks from a supplied configuration path and ignores a blank one', async () => {
+  const root = fixture()
+  const custom = join(root, 'custom-reviews.json')
+  writeFileSync(custom, JSON.stringify({
+    profiles: {
+      c: {
+        object: 'directory', enabled: true, reviewers: 0, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+      },
+      t: {
+        object: 'tree', enabled: true, reviewers: 0, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+      },
+    },
+    reviews: { draft: 'c', apply: 't' },
+  }))
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 } })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.', configPath: custom,
+  })
+  const policy = JSON.parse(readFileSync(join(reviewDir(root), 'policy.json'), 'utf8'))
+  assert.equal(policy.source.path, 'custom-reviews.json')
+  assert.equal(policy.reviews.draft.waitMinutes, 20)
+
+  const blank = fixture()
+  const blankFake = setup(blank, { draft: { enabled: true, reviewers: 0 } })
+  await call(blankFake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.', configPath: '   ',
+  })
+  const blankPolicy = JSON.parse(readFileSync(join(reviewDir(blank), 'policy.json'), 'utf8'))
+  assert.equal(blankPolicy.source.path, 'openspec/reviews.json')
+})
+
+test('a first start with a complete policy does not read the project file', async () => {
+  const root = fixture()
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit', provider: 'deepseek', model: 'deepseek-flash' } },
+    apply: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit', provider: 'deepseek', model: 'deepseek-flash' } },
+  })
+  const fake = setup(root)
+  rmSync(join(root, 'openspec', 'reviews.json'))
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  assert.equal(started.mode, 'self')
+})
+
+test('a changed project review file does not relock or fail a resume', async () => {
+  const root = fixture()
+  const fake = setup(root, { draft: { enabled: true, reviewers: 0 } })
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  writeReviewConfig(root, { draft: { enabled: true, reviewers: 1, waitMinutes: 30 } })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.mode, 'self')
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.mode, 'self')
 })
 
 test('status reports a not-started review', async () => {

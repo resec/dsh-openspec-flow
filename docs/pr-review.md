@@ -5,16 +5,18 @@ This is the repository-side loop for reviewing open pull requests with the insta
 ## Prerequisites
 
 - `gh` is authenticated for `resec/dsh-openspec-flow`.
-- The profile enables apply review with one independent reviewer:
+- The baseline `main` worktree carries `openspec/reviews.json` whose apply entry names a tree profile with one independent reviewer:
 
-  ```yaml
-  reviews:
-    apply:
-      enabled: true
-      reviewers: 1
+  ```json
+  {
+    "profiles": {
+      "standard-tree": { "object": "tree", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } }
+    },
+    "reviews": { "apply": "standard-tree" }
+  }
   ```
 
-  Confirm this before enabling the schedule. An apply review with `reviewers: 0` is self-review and is not used by this loop.
+  Confirm this before enabling the schedule. An apply review with `reviewers: 0` is self-review and is not used by this loop. `prepare` copies the baseline file to `.cache/pr-review/reviews.json`; the session passes that path as `openspec_review`'s `configPath`, so the PR head's own file never supplies the review parameters.
 - The main worktree is clean apart from other changes' uncommitted planning files under `openspec/changes/`. The script creates its own checkout under `.cache/pr-review/worktrees/` and never writes the main worktree.
 - The `owner-review` label exists. Verify it with `gh label list --search owner-review`; if it is absent, create it with `gh label create owner-review --description "require owner review before auto merge"`.
 
@@ -353,7 +355,7 @@ Do not loop `prepare` -> status -> `state --fail` indefinitely. A repeated `stat
 
 If the first start returns self-review mode, the policy is already locked and cannot be changed. With user approval:
 
-1. Fix the profile so `reviews.apply.reviewers` is `1`.
+1. Fix the baseline `main` `openspec/reviews.json` so the apply entry names a tree profile with `reviewers: 1`.
 2. Remove `policy.json` and `apply-review.json` from `<git common dir>/openspec-flow/review/<store>#<change>/`.
 3. Run `node scripts/pr-review-watch.mjs state --forget <change>` to remove the PR checkout and matching apply state.
 4. Rerun the poll. A fresh change name is the alternative if the old record cannot be removed.

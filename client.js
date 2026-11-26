@@ -31,7 +31,6 @@ window.__ModuleLoader__.load({
       models: 'reviewModels/models',
       efforts: 'reviewModels/efforts',
       settings: 'reviewSettings/get',
-      update: 'reviewSettings/update',
       policies: 'reviewPolicies/list',
       cards: 'reviewCards/get',
     }
@@ -54,199 +53,72 @@ window.__ModuleLoader__.load({
     }
 
     const zh = {
-      summary: '草稿与应用评审的配置',
+      summary: '项目评审配置（只读）',
       title: '评审配置',
-      note: '设置保存在当前 profile，只影响之后新建的变更；已锁定策略不会被这里修改。',
-      draft: '草稿评审',
-      apply: '应用评审',
+      note: '评审参数由项目的 openspec/reviews.json 提供；页面只读展示，开关 reviewEnabled 在 profile 中修改。',
+      switchLabel: '评审开关',
+      switchOn: '开启',
+      switchOff: '关闭',
+      legacy: 'profile 中仍有 reviews 段，已被忽略；请把参数迁移到 openspec/reviews.json。',
+      profiles: '档案',
+      entries: '用途映射',
+      object: '评审对象',
+      objectDirectory: '目录',
+      objectTree: 'git tree',
       enabled: '启用',
       reviewers: '评审人数',
       waitMinutes: '等待分钟',
       model: '评审模型',
-      inherit: '跟随执行变更的模型',
-      explicit: '指定模型',
-      provider: '提供方',
-      modelId: '模型',
-      effort: '推理档位',
-      effortDefault: '适配器默认',
-      chooseProvider: '选择提供方',
-      chooseModel: '选择模型',
-      save: '保存',
-      saving: '保存中…',
-      saved: '已保存；配置已写入 profile，插件行会重启，必要时刷新页面。',
-      loading: '读取配置中…',
-      failed: '读取配置失败',
-      retry: '重试',
-      locked: '已锁定策略',
-      noProjects: '当前没有正在使用 OpenSpec 项目的会话，因此没有可展示的锁定策略。',
+      modelInherit: '继承当前模型',
+      configError: '配置错误',
+      noProjects: '当前没有正在使用 OpenSpec 项目的会话。',
       gitYes: 'git 可用',
       gitNo: '无 git',
       applyUnavailable: '应用评审不可用（该项目没有 git 仓库）',
+      locked: '已锁定策略',
       lockDraft: '草稿',
       lockApply: '应用',
       enabledOn: '启用',
       enabledOff: '关闭',
       reviewersText: '{n} 人',
-      canSave: '可以保存',
-      cannotSave: '无法保存',
-      providersFailed: '提供方读取失败。',
-      modelsFailed: '模型目录读取失败，保留原值。',
+      loading: '读取配置中…',
+      failed: '读取配置失败',
+      retry: '重试',
     }
     const en = {
-      summary: 'Draft and apply review settings',
-      title: 'Review settings',
-      note: 'Saved in this profile and applied to new changes only; locked policies are not changed here.',
-      draft: 'Draft review',
-      apply: 'Apply review',
+      summary: 'Project review configuration (read-only)',
+      title: 'Review configuration',
+      note: 'Review parameters come from the project openspec/reviews.json; this page is read-only and reviewEnabled is set in the profile.',
+      switchLabel: 'Review switch',
+      switchOn: 'on',
+      switchOff: 'off',
+      legacy: 'The profile still carries a reviews section; it is ignored. Move the parameters to openspec/reviews.json.',
+      profiles: 'Profiles',
+      entries: 'Entries',
+      object: 'Object',
+      objectDirectory: 'directory',
+      objectTree: 'git tree',
       enabled: 'Enabled',
       reviewers: 'Reviewers',
       waitMinutes: 'Wait minutes',
       model: 'Reviewer model',
-      inherit: 'Follow the changing model',
-      explicit: 'Explicit model',
-      provider: 'Provider',
-      modelId: 'Model',
-      effort: 'Reasoning effort',
-      effortDefault: 'Adapter default',
-      chooseProvider: 'Choose a provider',
-      chooseModel: 'Choose a model',
-      save: 'Save',
-      saving: 'Saving…',
-      saved: 'Saved; the row restarts, refresh the page if the form looks stale.',
-      loading: 'Reading settings…',
-      failed: 'Could not read the settings',
-      retry: 'Retry',
-      locked: 'Locked policies',
-      noProjects: 'No session is working in an OpenSpec project right now, so there is no locked policy to show.',
+      modelInherit: 'Follow the current model',
+      configError: 'Configuration error',
+      noProjects: 'No session is working in an OpenSpec project right now.',
       gitYes: 'git available',
       gitNo: 'no git',
       applyUnavailable: 'Apply review is unavailable (this project has no git repository)',
+      locked: 'Locked policies',
       lockDraft: 'Draft',
       lockApply: 'Apply',
       enabledOn: 'enabled',
       enabledOff: 'off',
       reviewersText: '{n} reviewer(s)',
-      canSave: 'Saving is available',
-      cannotSave: 'Saving is unavailable',
-      providersFailed: 'Could not read the providers.',
-      modelsFailed: 'Could not read the model catalog; the previous values were kept.',
+      loading: 'Reading configuration…',
+      failed: 'Could not read the configuration',
+      retry: 'Retry',
     }
 
-    /** Bounds the Host reports, with a standalone fallback. */
-    const DEFAULT_BOUNDS = {
-      reviewers: { min: 0, max: 1 },
-      waitMinutes: { min: 1, max: 120 },
-    }
-
-    /**
-     * Copy one review section into the form's shape.
-     * @param raw - section from the Host, or undefined.
-     * @param kind - `draft` or `apply`.
-     * @returns the form section.
-     */
-    function sectionOf(raw, kind = 'draft') {
-      const present = typeof raw === 'object' && raw !== null
-      const section = present ? raw : {}
-      const model = typeof section.reviewerModel === 'object' && section.reviewerModel !== null
-        ? section.reviewerModel
-        : { source: 'inherit' }
-      const reviewerModel = model.source === 'explicit'
-        ? {
-          source: 'explicit',
-          provider: typeof model.provider === 'string' ? model.provider : '',
-          model: typeof model.model === 'string' ? model.model : '',
-          ...(typeof model.reasoningEffort === 'string' && model.reasoningEffort !== ''
-            ? { reasoningEffort: model.reasoningEffort }
-            : {}),
-        }
-        : { source: 'inherit' }
-      return {
-        enabled: present ? section.enabled === true : true,
-        reviewers: section.reviewers === 1 ? 1 : 0,
-        waitMinutes: Number.isInteger(section.waitMinutes) ? section.waitMinutes : 15,
-        reviewerModel,
-      }
-    }
-
-    /**
-     * Build the form from a Host settings payload.
-     * @param reviews - `{ draft, apply }`.
-     * @returns the form.
-     */
-    function initialForm(reviews) {
-      return {
-        draft: sectionOf(reviews?.draft, 'draft'),
-        apply: sectionOf(reviews?.apply, 'apply'),
-      }
-    }
-
-    /**
-     * Replace one section field.
-     * @param form - current form.
-     * @param kind - `draft` or `apply`.
-     * @param patch - fields to merge.
-     * @returns the next form.
-     */
-    function patchSection(form, kind, patch) {
-      return { ...form, [kind]: { ...form[kind], ...patch } }
-    }
-
-    /**
-     * Replace one section's reviewer model.
-     * @param form - current form.
-     * @param kind - `draft` or `apply`.
-     * @param model - the next model record.
-     * @returns the next form.
-     */
-    function setModel(form, kind, model) {
-      return patchSection(form, kind, { reviewerModel: model })
-    }
-
-    /**
-     * Choose a provider for one section: drop the model and effort it no longer names.
-     * @param form - current form.
-     * @param kind - `draft` or `apply`.
-     * @param provider - provider id.
-     * @returns the next form.
-     */
-    function chooseProvider(form, kind, provider) {
-      return setModel(form, kind, { source: 'explicit', provider, model: '' })
-    }
-
-    /**
-     * Choose a model for one section and clear the effort it no longer names.
-     * @param form - current form.
-     * @param kind - `draft` or `apply`.
-     * @param model - model id.
-     * @returns the next form.
-     */
-    function chooseModel(form, kind, model) {
-      const current = form[kind].reviewerModel
-      return setModel(form, kind, { source: 'explicit', provider: current.provider, model })
-    }
-
-    /**
-     * Choose a reasoning effort, or the adapter default when `effort` is empty.
-     * @param form - current form.
-     * @param kind - `draft` or `apply`.
-     * @param effort - effort id, or the empty string.
-     * @returns the next form.
-     */
-    function chooseEffort(form, kind, effort) {
-      const current = form[kind].reviewerModel
-      const next = { source: 'explicit', provider: current.provider, model: current.model }
-      if (effort !== '') next.reasoningEffort = effort
-      return setModel(form, kind, next)
-    }
-
-    /**
-     * The payload `reviewSettings/update` expects.
-     * @param form - current form.
-     * @returns the payload.
-     */
-    function savePayload(form) {
-      return { reviews: { draft: form.draft, apply: form.apply } }
-    }
 
     /**
      * One line describing a locked review section.
@@ -295,26 +167,19 @@ window.__ModuleLoader__.load({
     /**
      * The page's state machine.
      *
-     * It owns every read and write the page performs, so the React half only
-     * renders: `load` reads settings, project facts and providers, the cascade
-     * loads models and efforts, and `save` validates through the Host.
-     * @param options - channel caller and translate.
+     * It owns the one read the page performs: the global switch, the legacy
+     * notice and every known project's parsed configuration or schema error,
+     * with that project's locked policies. The page never writes.
+     * @param options - channel caller.
      * @returns the controller.
      */
-    function createController({ call, t }) {
+    function createController({ call }) {
       let state = {
         status: 'loading',
         error: '',
-        form: initialForm(undefined),
-        bounds: DEFAULT_BOUNDS,
-        canSave: false,
-        saveReason: '',
-        providers: [],
-        models: { draft: [], apply: [] },
-        efforts: { draft: null, apply: null },
+        reviewEnabled: true,
+        legacyReviews: false,
         projects: [],
-        busy: false,
-        message: null,
       }
       const listeners = new Set()
 
@@ -324,121 +189,21 @@ window.__ModuleLoader__.load({
         for (const listener of [...listeners]) listener()
       }
 
-      /** Apply a change to the form and notify. */
-      function updateForm(next) {
-        publish({ form: next, message: null })
-      }
-
       /** Read everything the page renders. */
       async function load() {
         publish({ status: 'loading', error: '' })
-        const [settings, policies, providers] = await Promise.all([
-          rpc(call, ENDPOINTS.settings, {}),
-          rpc(call, ENDPOINTS.policies, {}),
-          rpc(call, ENDPOINTS.providers, {}),
-        ])
-        if (!settings.ok) {
-          publish({ status: 'error', error: settings.error.message })
+        const answer = await rpc(call, ENDPOINTS.settings, {})
+        if (!answer.ok) {
+          publish({ status: 'error', error: answer.error.message })
           return
         }
         publish({
           status: 'ready',
           error: '',
-          form: initialForm(settings.value.reviews),
-          bounds: settings.value.bounds ?? DEFAULT_BOUNDS,
-          canSave: settings.value.canSave === true,
-          saveReason: typeof settings.value.saveReason === 'string' ? settings.value.saveReason : '',
-          providers: providers.ok ? providers.value : [],
-          projects: policies.ok ? policies.value.projects : [],
-          message: providers.ok ? null : { kind: 'error', text: t('providersFailed') },
+          reviewEnabled: answer.value.reviewEnabled !== false,
+          legacyReviews: answer.value.legacyReviews === true,
+          projects: Array.isArray(answer.value.projects) ? answer.value.projects : [],
         })
-      }
-
-      /** Replace one section field, or the whole reviewer model when asked. */
-      function onChange(kind, patch, replaceModel = false) {
-        const section = replaceModel
-          ? { ...state.form[kind], reviewerModel: patch.reviewerModel }
-          : { ...state.form[kind], ...patch }
-        updateForm({ ...state.form, [kind]: section })
-      }
-
-      /** Load one section's models and their effort metadata. */
-      async function loadModels(kind, provider) {
-        const answer = await rpc(call, ENDPOINTS.models, { provider })
-        if (!answer.ok) {
-          publish({
-            models: { ...state.models, [kind]: [] },
-            efforts: { ...state.efforts, [kind]: null },
-            message: { kind: 'error', text: t('modelsFailed') },
-          })
-          return
-        }
-        const models = answer.value
-        publish({
-          models: { ...state.models, [kind]: models },
-          form: models.length === 0 ? state.form : chooseModel(state.form, kind, models[0].id),
-        })
-        if (models.length > 0) await loadEfforts(kind, provider, models[0].id)
-      }
-
-      /** Load one section's effort metadata for the chosen model. */
-      async function loadEfforts(kind, provider, model) {
-        if (provider === undefined || provider === '') return
-        const answer = await rpc(call, ENDPOINTS.efforts, { provider, model })
-        if (!answer.ok) {
-          publish({ efforts: { ...state.efforts, [kind]: null } })
-          return
-        }
-        const efforts = answer.value
-        let form = state.form
-        const currentModel = form[kind].reviewerModel
-        const accepted = efforts.efforts.some((entry) => entry.id === currentModel.reasoningEffort)
-        if (currentModel.model === model && efforts.efforts.length > 0 && !accepted) {
-          form = setModel(form, kind, {
-            source: 'explicit',
-            provider: currentModel.provider,
-            model,
-            reasoningEffort: efforts.defaultEffort ?? efforts.efforts[0].id,
-          })
-        }
-        publish({ efforts: { ...state.efforts, [kind]: efforts }, form })
-      }
-
-      /** Choose a provider and load its models. */
-      async function onProvider(kind, provider) {
-        updateForm(chooseProvider(state.form, kind, provider))
-        if (provider !== '') await loadModels(kind, provider)
-      }
-
-      /** Choose a model and load its efforts. */
-      async function onModel(kind, model) {
-        updateForm(chooseModel(state.form, kind, model))
-        if (model !== '') await loadEfforts(kind, state.form[kind].reviewerModel.provider, model)
-      }
-
-      /** Choose an effort. */
-      function onEffort(kind, effort) {
-        updateForm(chooseEffort(state.form, kind, effort))
-      }
-
-      /** Persist the form and report the Host's answer. */
-      async function save() {
-        publish({ busy: true, message: null })
-        const answer = await rpc(call, ENDPOINTS.update, savePayload(state.form))
-        if (!answer.ok) {
-          publish({ busy: false, message: { kind: 'error', text: answer.error.message } })
-          return answer
-        }
-        publish({ busy: false, message: { kind: 'ok', text: t('saved') } })
-        // A save restarts the row; the re-read reconciles a restarted Host.
-        const settings = await rpc(call, ENDPOINTS.settings, {})
-        if (settings.ok) {
-          publish({
-            form: initialForm(settings.value.reviews),
-            canSave: settings.value.canSave === true,
-          })
-        }
-        return answer
       }
 
       return {
@@ -452,122 +217,57 @@ window.__ModuleLoader__.load({
           return state
         },
         load,
-        onChange,
-        onProvider,
-        onModel,
-        onEffort,
-        save,
       }
     }
 
-    /** One labelled row of the form. */
-    function Row({ label, children, note }) {
-      return h('label', { style: rowStyle },
-        h('span', { style: labelStyle }, label),
-        h('span', { style: controlStyle }, children),
-        note === undefined ? null : h('span', { style: noteStyle }, note))
+    /** One profile's read-only row. */
+    function ProfileRow({ t, name, profile }) {
+      const model = profile?.reviewerModel
+      const modelText = model?.source === 'explicit'
+        ? `${String(model.provider)}/${String(model.model)}`
+        : t('modelInherit')
+      return h('li', { style: { margin: '2px 0' }, 'data-openspec-profile': name },
+        h('strong', null, name), ' — ',
+        `${t('object')}: ${profile?.object === 'tree' ? t('objectTree') : t('objectDirectory')}`, ' · ',
+        `${t('enabled')}: ${profile?.enabled === true ? t('enabledOn') : t('enabledOff')}`, ' · ',
+        `${t('reviewers')}: ${String(profile?.reviewers)}`, ' · ',
+        `${t('waitMinutes')}: ${String(profile?.waitMinutes)}`, ' · ',
+        `${t('model')}: ${modelText}`)
     }
 
-    /** One review section form. */
-    function Section({ kind, t, controller, state }) {
-      const section = state.form[kind]
-      const model = section.reviewerModel
-      const models = state.models[kind] ?? []
-      const effortOptions = state.efforts[kind]?.efforts ?? []
-      return h('section', { style: sectionStyle, 'data-openspec-review': kind },
-        h('h3', { style: headingStyle }, kind === 'draft' ? t('draft') : t('apply')),
-        h(Row, { label: t('enabled') },
-          h('input', {
-            type: 'checkbox',
-            checked: section.enabled,
-            'data-openspec-field': `${kind}.enabled`,
-            onChange: (event) => { controller.onChange(kind, { enabled: event.target.checked }) },
-          })),
-        h(Row, { label: t('reviewers') },
-          h('select', {
-            value: String(section.reviewers),
-            'data-openspec-field': `${kind}.reviewers`,
-            onChange: (event) => { controller.onChange(kind, { reviewers: Number(event.target.value) }) },
-          }, h('option', { value: '0' }, '0'), h('option', { value: '1' }, '1'))),
-        h(Row, {
-          label: t('waitMinutes'),
-          note: `${String(state.bounds.waitMinutes.min)}–${String(state.bounds.waitMinutes.max)}`,
-        },
-        h('input', {
-          type: 'number',
-          min: state.bounds.waitMinutes.min,
-          max: state.bounds.waitMinutes.max,
-          value: String(section.waitMinutes),
-          'data-openspec-field': `${kind}.waitMinutes`,
-          onChange: (event) => { controller.onChange(kind, { waitMinutes: Number(event.target.value) }) },
-        })),
-        h(Row, { label: t('model') },
-          h('select', {
-            value: model.source,
-            'data-openspec-field': `${kind}.source`,
-            onChange: (event) => {
-              controller.onChange(kind, {
-                reviewerModel: event.target.value === 'inherit'
-                  ? { source: 'inherit' }
-                  : { source: 'explicit', provider: '', model: '' },
-              }, true)
-            },
-          },
-          h('option', { value: 'inherit' }, t('inherit')),
-          h('option', { value: 'explicit' }, t('explicit')))),
-        model.source === 'explicit'
-          ? [
-            h(Row, { key: `${kind}-provider`, label: t('provider') },
-              h('select', {
-                value: model.provider,
-                'data-openspec-field': `${kind}.provider`,
-                onChange: (event) => { void controller.onProvider(kind, event.target.value) },
-              },
-              h('option', { value: '' }, t('chooseProvider')),
-              state.providers.map((provider) => h('option', { key: provider.id, value: provider.id }, provider.name || provider.id)))),
-            h(Row, { key: `${kind}-model`, label: t('modelId') },
-              h('select', {
-                value: model.model,
-                'data-openspec-field': `${kind}.model`,
-                disabled: models.length === 0,
-                onChange: (event) => { void controller.onModel(kind, event.target.value) },
-              },
-              h('option', { value: '' }, t('chooseModel')),
-              models.map((entry) => h('option', { key: entry.id, value: entry.id }, entry.name || entry.id)))),
-            h(Row, { key: `${kind}-effort`, label: t('effort') },
-              h('select', {
-                value: model.reasoningEffort ?? '',
-                'data-openspec-field': `${kind}.effort`,
-                disabled: effortOptions.length === 0,
-                onChange: (event) => { controller.onEffort(kind, event.target.value) },
-              },
-              h('option', { value: '' }, t('effortDefault')),
-              effortOptions.map((entry) => h('option', { key: entry.id, value: entry.id }, entry.name || entry.id)))),
-          ]
-          : null)
-    }
-
-    /** The locked-policy list. */
-    function LockedPolicies({ t, projects }) {
-      if (projects.length === 0) return h('p', { style: noteStyle }, t('noProjects'))
-      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-        projects.map((project) => h('div', { key: project.path, style: cardStyle },
-          h('div', { style: { display: 'flex', gap: '8px', alignItems: 'baseline' } },
-            h('code', { style: { font: 'var(--dsw-font-xs-13)' } }, project.path),
-            h('span', { style: badgeStyle(project.git) }, project.git ? t('gitYes') : t('gitNo'))),
-          project.git ? null : h('p', { style: noteStyle }, t('applyUnavailable')),
-          project.changes.length === 0
-            ? null
-            : h('ul', { style: { margin: '6px 0 0', paddingLeft: '18px' } },
-              project.changes.map((change) => h('li', { key: change.change, 'data-openspec-locked': change.change },
+    /** One project's read-only configuration and its locked policies. */
+    function ProjectCard({ t, project }) {
+      const config = project.config
+      const changes = Array.isArray(project.changes) ? project.changes : []
+      return h('div', { key: project.path, style: cardStyle },
+        h('div', { style: { display: 'flex', gap: '8px', alignItems: 'baseline' } },
+          h('code', { style: { font: 'var(--dsw-font-xs-13)' } }, project.path),
+          h('span', { style: badgeStyle(project.git) }, project.git ? t('gitYes') : t('gitNo'))),
+        project.git ? null : h('p', { style: noteStyle }, t('applyUnavailable')),
+        config === undefined
+          ? h('p', { style: { margin: 0, color: 'var(--dsw-alias-label-error)' } },
+            `${t('configError')}: ${project.configError ?? 'openspec/reviews.json'}`)
+          : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+            h('h4', { style: headingStyle }, t('profiles')),
+            h('ul', { style: { margin: 0, paddingLeft: '18px' } },
+              Object.entries(config.profiles ?? {}).map(([name, profile]) =>
+                h(ProfileRow, { key: name, t, name, profile }))),
+            h('p', { style: noteStyle },
+              `${t('entries')}: ${t('lockDraft')} → ${String(config.reviews?.draft)} · ${t('lockApply')} → ${String(config.reviews?.apply)}`)),
+        changes.length === 0
+          ? null
+          : h('div', null,
+            h('h4', { style: headingStyle }, t('locked')),
+            h('ul', { style: { margin: 0, paddingLeft: '18px' } },
+              changes.map((change) => h('li', { key: change.change, 'data-openspec-locked': change.change },
                 h('strong', null, change.change), ' — ',
                 lockLine(t, change.reviews.draft, 'draft'), ' · ',
-                lockLine(t, change.reviews.apply, 'apply')))))))
+                lockLine(t, change.reviews.apply, 'apply'))))))
     }
 
     /** The page root. */
     function Page({ t, call }) {
-      const controller = React.useMemo(() => createController({ call, t }), [call, t])
+      const controller = React.useMemo(() => createController({ call }), [call])
       const state = React.useSyncExternalStore(controller.subscribe, controller.getState)
       React.useEffect(() => {
         void controller.load()
@@ -583,28 +283,17 @@ window.__ModuleLoader__.load({
       return h('div', { style: pageStyle },
         h('h2', { style: { margin: 0, font: 'var(--dsw-font-lg-16)' } }, t('title')),
         h('p', { style: noteStyle }, t('note')),
-        h(Section, { kind: 'draft', t, controller, state }),
-        h(Section, { kind: 'apply', t, controller, state }),
-        h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
-          h('button', {
-            type: 'button',
-            disabled: state.busy || !state.canSave,
-            'data-openspec-save': 'review-settings',
-            onClick: () => { void controller.save() },
-          }, state.busy ? t('saving') : t('save')),
-          h('span', { style: noteStyle }, state.canSave ? t('canSave') : `${t('cannotSave')}: ${state.saveReason}`)),
-        state.message === null
-          ? null
-          : h('p', {
-            style: {
-              margin: 0,
-              color: state.message.kind === 'ok' ? 'var(--dsw-alias-label-success)' : 'var(--dsw-alias-label-error)',
-            },
-          }, state.message.text),
-        h('h3', { style: headingStyle }, t('locked')),
-        h(LockedPolicies, { t, projects: state.projects }))
+        h('p', { style: noteStyle },
+          `${t('switchLabel')}: ${state.reviewEnabled ? t('switchOn') : t('switchOff')}`),
+        state.legacyReviews
+          ? h('p', { style: { margin: 0, color: 'var(--dsw-alias-label-warning)' } }, t('legacy'))
+          : null,
+        h('h3', { style: headingStyle }, t('profiles')),
+        state.projects.length === 0
+          ? h('p', { style: noteStyle }, t('noProjects'))
+          : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+            state.projects.map((project) => h(ProjectCard, { key: project.path, t, project }))))
     }
-
     const pageStyle = {
       display: 'flex', flexDirection: 'column', gap: '12px', padding: '4px 2px',
       font: 'var(--dsw-font-xs-13)', color: 'var(--dsw-alias-label-primary)',
@@ -1003,13 +692,6 @@ window.__ModuleLoader__.load({
       __test: {
         ENDPOINTS,
         NS,
-        initialForm,
-        patchSection,
-        setModel,
-        chooseProvider,
-        chooseModel,
-        chooseEffort,
-        savePayload,
         lockLine,
         createController,
         selectCards,

@@ -85,9 +85,10 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 - `reviews.draft`、`reviews.apply`：`enabled`、`reviewers`、`waitMinutes`、`reviewerModel`。
 - `git.enabled`：创建时该目录是否有 git 仓库。
-- `change`、`store`、`lockedAt`、`lockedBy`、`configHash`。
+- `change`、`store`、`lockedAt`、`lockedBy`、`configHash`、`schemaVersion`。
+- `source`：配置文件路径（项目内为项目相对路径，项目外为绝对路径）、内容 sha256 与两个档案名。
 
-更早的 policy 没有 `reviewerModel` 时，下一次 `start` 或 `resume` 会解析一次并补写字段；已有模型的策略不会被重写，所以事后修改配置页只影响新变更。改动默认值不会移动已锁定评审的模型或等待上限。
+策略记录 `schemaVersion: 2`。更早的 policy 没有 `reviewerModel` 或 apply 段时，下一次 `start` 或 `resume` 会用项目文件（或调用传入的 `configPath`）补写缺失段；已记录的段不会被重写。`schemaVersion: 1` 的记录按只读兼容读取，不会被改写以补 `source`。修改 `openspec/reviews.json` 只影响之后新建的变更，没有重新锁定入口。
 
 ## 报告与 finding
 
@@ -207,20 +208,48 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 
 ## 配置
 
-评审默认值由插件行配置的 `reviews` 段提供，也可以在 Web GUI 的插件配置页编辑（Plugins → `dsh-openspec-flow` 行 → Configure），保存即写入 profile：
+评审参数只来自项目内 `openspec/reviews.json`。插件行配置只保留全局开关 `reviewEnabled`（默认 `true`）；profile 里遗留的 `reviews` 段会被忽略，并在首次读取时提示迁移。
+
+文件由具名档案与用途映射组成：
+
+```json
+{
+  "profiles": {
+    "standard-directory": { "object": "directory", "enabled": true, "reviewers": 0, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } },
+    "standard-tree": { "object": "tree", "enabled": true, "reviewers": 0, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } }
+  },
+  "reviews": { "draft": "standard-directory", "apply": "standard-tree" }
+}
+```
+
+- `object` 只能是 `directory` 或 `tree`；`reviews.draft` 必须引用 directory 档案，`reviews.apply` 必须引用 tree 档案。
+- `reviews.draft` 与 `reviews.apply` 都必须存在；`pr` 等其他用途会被拒绝。
+- 每个档案必须写全 `enabled`、`reviewers`、`waitMinutes`、`reviewerModel`，缺失即报错，不回退内置默认。
+- 顶层只接受 `profiles` 与 `reviews`，未知键即报错。
+
+`openspec_init` 在文件不存在时写入上面的默认文档，已存在则保留并报告 `exists`。文件缺失、不可读、JSON 非法或 schema 非法时，`openspec_new_change` 与首次评审 `start` 直接失败，并给出路径与出错字段；不会回退默认值。
+
+默认档案的字段值（文档测试逐项比对）：
 
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
-| `reviews.draft.enabled` | `true` | 新变更是否锁定 draft review |
-| `reviews.draft.reviewers` | `0` | 0 自评审，1 独立 reviewer |
-| `reviews.draft.waitMinutes` | `15` | draft 等待上限，1–120 |
-| `reviews.draft.reviewerModel` | `{ source: "inherit" }` | reviewer 模型来源 |
-| `reviews.apply.enabled` | `true` | 新变更是否锁定 apply review |
-| `reviews.apply.reviewers` | `0` | 0 自评审，1 独立 reviewer |
-| `reviews.apply.waitMinutes` | `15` | apply 等待上限，1–120 |
-| `reviews.apply.reviewerModel` | `{ source: "inherit" }` | reviewer 模型来源 |
+| `profiles.standard-directory.object` | `directory` | draft 评审对象为目录内容 |
+| `profiles.standard-directory.enabled` | `true` | 新变更是否锁定 draft review |
+| `profiles.standard-directory.reviewers` | `0` | 0 自评审，1 独立 reviewer |
+| `profiles.standard-directory.waitMinutes` | `15` | draft 等待上限，1–120 |
+| `profiles.standard-tree.object` | `tree` | apply 评审对象为一个 git tree |
+| `profiles.standard-tree.enabled` | `true` | 新变更是否锁定 apply review |
+| `profiles.standard-tree.reviewers` | `0` | 0 自评审，1 独立 reviewer |
+| `profiles.standard-tree.waitMinutes` | `15` | apply 等待上限，1–120 |
 
-配置页保存分两阶段校验：先按 Config schema 校验形状与上下界，再用 `llm` 目录校验显式模型的 provider、model 与 effort；两次都通过才调用 `configEditor.edit`。拒绝时文件不变，页面显示原因。保存成功后插件行重启，已锁定策略不受影响。
+`reviewerModel` 默认为 `{ source: "inherit" }`，锁定时解析为执行变更的当前模型；`source: "explicit"` 时必须带非空 `provider` 与 `model`。
+
+`reviewEnabled: false` 时不注册 `openspec_review`，`openspec_new_change` 不锁定策略，评审门禁放行，也不为锁定或门禁读取项目文件；配置页仍可只读展示文件状态。该开关在 profile 的插件行配置里修改，页面本身只读。
+
+`openspec_review` 的 `configPath` 参数只在本次调用写入策略或补写缺失段时生效；目标段已记录时忽略。它用于仓库侧的 PR 流程读取基线 `main` 的配置：`scripts/pr-review-watch.mjs prepare` 把基线文件复制到 `.cache/pr-review/reviews.json`，评审会话把该绝对路径作为 `configPath` 传入，PR 分支自带的文件不参与锁定。
+
+配置页（Plugins → `dsh-openspec-flow` 行 → Configure）只读：展示 `reviewEnabled`、迁移提示、每个项目的档案、用途映射、schema 错误与已锁定策略，不提供保存。
+
 
 ### 等待与唤醒
 
@@ -252,7 +281,7 @@ openspec_archive { "change": "add-export-api" }
 ## 示例：reviewers 1（独立 reviewer）
 
 ```text
-# 新变更的 draft 与 apply 段都锁定 1 名 reviewer（配置页或 profile 里的 reviews.*.reviewers: 1）
+# 新变更的 draft 与 apply 段都锁定 1 名 reviewer（openspec/reviews.json 里两个档案的 reviewers 设为 1）
 openspec_new_change { "name": "add-export-api" }
 openspec_review { "action": "start", "change": "add-export-api",
                   "intent": "Export the issue list as CSV; keep the JSON API unchanged." }

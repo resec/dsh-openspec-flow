@@ -66,16 +66,23 @@ function catalog({ failProviders = false, failModels = false, failResolve = fals
 function project({ git = false, extraChange = undefined } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-openspec-settings-'))
   mkdirSync(join(root, 'openspec', 'changes'), { recursive: true })
-  const settings = {
-    reviews: {
-      draft: { enabled: true, reviewers: 1, maxRounds: 3, waitMinutes: 15 },
-      apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
-    },
+  const config = {
+    draft: { object: 'directory', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    apply: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
   }
+  const source = { path: 'openspec/reviews.json', sha256: 'a'.repeat(64), profiles: { draft: 'draft', apply: 'apply' } }
+  writeFileSync(join(root, 'openspec', 'reviews.json'), JSON.stringify({
+    profiles: {
+      draft: { object: 'directory', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      apply: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    },
+    reviews: { draft: 'draft', apply: 'apply' },
+  }, null, 2))
   ensurePolicy({
     projectRoot: root,
     change: 'add-dark-mode',
-    settings,
+    config,
+    source,
     gitEnabled: git,
     lockedBy: 'new-change',
     resolveModel: () => RESOLVED,
@@ -95,7 +102,8 @@ function project({ git = false, extraChange = undefined } = {}) {
       projectRoot: root,
       change: extraChange,
       store: 'team',
-      settings,
+      config,
+      source,
       gitEnabled: git,
       lockedBy: 'first-review',
       resolveModel: () => RESOLVED,
@@ -313,151 +321,58 @@ test('the catalog rejects a bad argument and a malformed catalog answer', async 
   }
 })
 
-test('settings reads return both sections and whether they are writable', async () => {
+test('settings reads report the switch and each project configuration read-only', async () => {
   const dir = project()
   try {
-    const settings = {
-      timeoutMs: 30_000,
-      reviews: {
-        draft: { enabled: false, reviewers: 1, maxRounds: 4, waitMinutes: 20 },
-        apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
-      },
-    }
+    const settings = { timeoutMs: 30_000, reviewEnabled: true, legacyReviews: true }
     const { ctx } = channelContext({ directory: dir.root, llm: catalog().llm })
     const channel = createReviewChannel({ ctx, settings })
     const read = await channel.dispatch(REVIEW_ENDPOINTS.settings, {})
-    assert.equal(read.value.reviews.draft.enabled, false)
-    assert.equal(read.value.reviews.draft.maxRounds, undefined)
-    assert.deepEqual(read.value.reviews.draft.reviewerModel, { source: 'inherit' })
-    assert.equal(read.value.bounds.maxRounds, undefined)
-    assert.equal(read.value.canSave, true)
-    assert.equal(read.value.saveReason, undefined)
-
-    // No configuration editor: the page still reads, but cannot save.
-    const withoutEditor = createReviewChannel({
-      ctx: (() => {
-        const built = channelContext({ directory: dir.root, llm: catalog().llm })
-        built.ctx.fiber = undefined
-        return built.ctx
-      })(),
-      settings,
-    })
-    const limited = await withoutEditor.dispatch(REVIEW_ENDPOINTS.settings, {})
-    assert.equal(limited.value.canSave, false)
-    assert.match(limited.value.saveReason, /cannot be saved/)
+    assert.equal(read.ok, true)
+    assert.equal(read.value.reviewEnabled, true)
+    assert.equal(read.value.legacyReviews, true)
+    assert.equal(read.value.projects.length, 1)
+    const [first] = read.value.projects
+    assert.equal(first.path, dir.root)
+    assert.equal(first.config.reviews.draft, 'draft')
+    assert.equal(first.config.draft.reviewers, 1)
+    assert.equal(first.configError, undefined)
+    assert.equal('reviews' in read.value, false, 'the channel no longer returns editable sections')
   } finally {
     dir.dispose()
   }
 })
 
-test('a settings save validates the candidate and writes the complete config', async () => {
+test('settings reads report a schema error without failing', async () => {
   const dir = project()
   try {
-    const { ctx, edits } = channelContext({ directory: dir.root, llm: catalog().llm })
-    const settings = {
-      timeoutMs: 45_000,
-      reviews: {
-        draft: { enabled: true, reviewers: 0, maxRounds: 3, waitMinutes: 15 },
-        apply: { enabled: true, reviewers: 0, maxRounds: 5, waitMinutes: 15 },
-      },
-    }
+    writeFileSync(join(dir.root, 'openspec', 'reviews.json'), '{ broken')
+    const settings = { timeoutMs: 30_000, reviewEnabled: false, legacyReviews: false }
+    const { ctx } = channelContext({ directory: dir.root, llm: catalog().llm })
     const channel = createReviewChannel({ ctx, settings })
-    const candidate = {
-      draft: {
-        enabled: true,
-        reviewers: 1,
-        maxRounds: 6,
-        waitMinutes: 30,
-        reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max' },
-      },
-      apply: {
-        enabled: false,
-        reviewers: 0,
-        maxRounds: 5,
-        waitMinutes: 15,
-        reviewerModel: { source: 'inherit' },
-      },
-    }
-    const saved = await channel.dispatch(REVIEW_ENDPOINTS.update, { reviews: candidate })
-    assert.equal(saved.ok, true)
-    assert.equal(saved.value.reviews.draft.reviewers, 1)
-    assert.equal(saved.value.reviews.draft.maxRounds, undefined)
-    assert.equal(edits.length, 1)
-    assert.equal(edits[0].next.reviews.draft.maxRounds, undefined)
-    assert.equal(edits[0].entry.id, 'openspec-flow')
-    // The editor receives the complete config: the untouched timeout survives.
-    assert.equal(edits[0].next.timeoutMs, 30_000)
-    assert.equal(edits[0].next.reviews.apply.enabled, false)
-
-    const invalid = await channel.dispatch(REVIEW_ENDPOINTS.update, { reviews: { draft: { reviewers: 2 } } })
-    assert.equal(invalid.error.code, 'reviewSettings/invalid')
-    assert.match(invalid.error.message, /reviewers must be an integer between 0 and 1/)
-    assert.ok(Array.isArray(invalid.error.details.issues))
-    assert.equal(edits.length, 1)
-
-    const unknown = await channel.dispatch(REVIEW_ENDPOINTS.update, { reviews: { draft: { other: true } } })
-    assert.match(unknown.error.message, /not supported/)
-
-    const missing = await channel.dispatch(REVIEW_ENDPOINTS.update, {})
-    assert.equal(missing.error.code, 'reviewSettings/invalid')
-
-    // An explicit model must exist in the catalog.
-    const unavailable = await channel.dispatch(REVIEW_ENDPOINTS.update, {
-      reviews: {
-        draft: {
-          reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'missing-model' },
-        },
-      },
-    })
-    assert.equal(unavailable.error.code, 'reviewSettings/model')
-    assert.match(unavailable.error.message, /reviews\.draft\.reviewerModel: model 'deepseek\/missing-model' is unavailable/)
-
-    const unknownEffort = await channel.dispatch(REVIEW_ENDPOINTS.update, {
-      reviews: {
-        apply: {
-          reviewerModel: { source: 'explicit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'low' },
-        },
-      },
-    })
-    assert.equal(unknownEffort.error.code, 'reviewSettings/model')
-    assert.match(unknownEffort.error.message, /reasoning effort 'low' is unavailable/)
-    assert.equal(edits.length, 1)
+    const read = await channel.dispatch(REVIEW_ENDPOINTS.settings, {})
+    assert.equal(read.ok, true)
+    assert.equal(read.value.reviewEnabled, false)
+    const [first] = read.value.projects
+    assert.match(first.configError, /not valid JSON/)
+    assert.equal(first.config, undefined)
   } finally {
     dir.dispose()
   }
 })
 
-test('a save reports a refusal and a missing editor', async () => {
+test('there is no settings update endpoint', async () => {
   const dir = project()
   try {
-    const rejecting = channelContext({
-      directory: dir.root,
-      llm: catalog().llm,
-      editor: {
-        async edit() {
-          throw new Error('a higher layer overrides reviews')
-        },
-      },
-    })
-    const channel = createReviewChannel({ ctx: rejecting.ctx, settings: { timeoutMs: 30_000, reviews: {} } })
-    const refused = await channel.dispatch(REVIEW_ENDPOINTS.update, {
-      reviews: { draft: { enabled: true }, apply: { enabled: true } },
-    })
-    assert.equal(refused.error.code, 'reviewSettings/rejected')
-    assert.match(refused.error.message, /higher layer overrides/)
-
-    const withoutEditor = channelContext({ directory: dir.root, llm: catalog().llm })
-    withoutEditor.ctx.fiber = undefined
-    const noEditor = createReviewChannel({ ctx: withoutEditor.ctx, settings: { timeoutMs: 30_000, reviews: {} } })
-    const unavailable = await noEditor.dispatch(REVIEW_ENDPOINTS.update, {
-      reviews: { draft: { enabled: true }, apply: { enabled: true } },
-    })
-    assert.equal(unavailable.error.code, 'reviewSettings/unavailable')
+    const { ctx } = channelContext({ directory: dir.root, llm: catalog().llm })
+    const channel = createReviewChannel({ ctx, settings: { timeoutMs: 30_000 } })
+    const refused = await channel.dispatch('reviewSettings/update', {})
+    assert.equal(refused.error.code, 'reviewChannel/unknown-endpoint')
+    assert.equal(REVIEW_ENDPOINTS.update, undefined)
   } finally {
     dir.dispose()
   }
 })
-
 test('locked policies list only the review sections of each project', async () => {
   const dir = project({ git: true, extraChange: 'add-light-mode' })
   try {

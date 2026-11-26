@@ -8,7 +8,7 @@
  * GitHub/git work around it.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
@@ -37,6 +37,8 @@ export const WORKTREE_DIRECTORY = 'worktrees'
 export const REPORT_DIRECTORY = 'reports'
 /** Local owner state file name. */
 export const LOCAL_STATE_FILE = 'local-prs.json'
+/** Baseline review configuration file name under the cache directory. */
+export const BASELINE_REVIEW_CONFIG = 'reviews.json'
 /** Local owner phases. */
 export const LOCAL_PHASES = ['published', 'merged', 'retargeted', 'landed', 'pushed', 'landed-offline', 'failed']
 /** Cross-session landing lock directory name. */
@@ -1039,6 +1041,16 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
     throw new Error(`PR #${n} does not contain the change ${change}`)
   }
 
+  // The review parameters must come from the baseline main configuration, never
+  // from the pull-request head: the reviewer count and limits protect main.
+  const baselineSource = join(root, 'openspec', 'reviews.json')
+  if (!existsSync(baselineSource)) {
+    throw new Error(`${root} has no openspec/reviews.json; the pull-request review needs the baseline review configuration`)
+  }
+  mkdirSync(paths.cache, { recursive: true })
+  const reviewConfig = join(paths.cache, BASELINE_REVIEW_CONFIG)
+  copyFileSync(baselineSource, reviewConfig)
+
   const state = loadState(root)
   const previous = state.prs[String(n)] ?? {}
   state.prs[String(n)] = {
@@ -1048,6 +1060,7 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
     baseTip,
     change,
     worktree,
+    reviewConfig,
     round: previous.round ?? 0,
     status: 'prepared',
     error: null,
@@ -1056,7 +1069,7 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
     updatedAt: new Date().toISOString(),
   }
   saveState(root, state)
-  return { number: n, head, base: mergeBase, baseTip, change, worktree }
+  return { number: n, head, base: mergeBase, baseTip, change, worktree, reviewConfig }
 }
 
 /** Escape a Markdown table cell. */

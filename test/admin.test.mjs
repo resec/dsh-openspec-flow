@@ -161,17 +161,17 @@ test('a command registry without register keeps every tool visible', () => {
   resetAdminState()
 })
 
-test('the review tool follows the enabled reviews', () => {
+test('the review tool follows the global switch', () => {
   resetAdminState()
-  const onlyApply = createFakeContext({ cwd: process.cwd(), commands: true })
-  apply(onlyApply.ctx, { reviews: { draft: { enabled: false }, apply: { enabled: true } } })
-  const onlyApplyAgent = onlyApply.createAgent().agent
-  assert.ok(visibleTools(onlyApply, onlyApplyAgent).includes('openspec_review'), 'apply review keeps the tool')
+  const enabled = createFakeContext({ cwd: process.cwd(), commands: true })
+  apply(enabled.ctx, { reviewEnabled: true })
+  const enabledAgent = enabled.createAgent().agent
+  assert.ok(visibleTools(enabled, enabledAgent).includes('openspec_review'), 'the switch keeps the tool')
 
   resetAdminState()
-  const neither = createFakeContext({ cwd: process.cwd(), commands: true })
-  apply(neither.ctx, { reviews: { draft: { enabled: false }, apply: { enabled: false } } })
-  const neitherAgent = neither.createAgent().agent
-  assert.equal(visibleTools(neither, neitherAgent).includes('openspec_review'), false, 'no enabled review hides the tool')
+  const disabled = createFakeContext({ cwd: process.cwd(), commands: true })
+  apply(disabled.ctx, { reviewEnabled: false })
+  const disabledAgent = disabled.createAgent().agent
+  assert.equal(visibleTools(disabled, disabledAgent).includes('openspec_review'), false, 'the switch hides the tool')
   resetAdminState()
 })

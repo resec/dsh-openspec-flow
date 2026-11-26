@@ -23,7 +23,7 @@ import {
   withReviewLockAsync,
   writeJsonAtomic,
 } from '../lib/review/store.js'
-import { normalizeReviews, draftSettings } from '../lib/review/config.js'
+import { normalizeReviewDocument, reviewSection } from '../lib/review/config.js'
 import { buildApplyBrief, buildDraftBrief, renderReportContract } from '../lib/review/brief.js'
 import { diffArtifactFiles, draftObject } from '../lib/review/object.js'
 import {
@@ -45,10 +45,39 @@ import {
 } from '../lib/review/record.js'
 import { closeStaleRound, submitReport } from '../lib/review/submit.js'
 import { anotherChangeInLocation } from '../lib/review/scope.js'
-import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy } from '../lib/review/policy.js'
+import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy, requireReviewConfig } from '../lib/review/policy.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
 
 const CREATED = []
+
+/** Build one parsed review document from section-shaped fixtures. */
+function reviewConfigOf(reviews = {}) {
+  const draft = reviews.draft ?? {}
+  const apply = reviews.apply ?? {}
+  return {
+    profiles: {},
+    reviews: { draft: 'd', apply: 'a' },
+    draft: {
+      object: 'directory',
+      enabled: draft.enabled !== false,
+      reviewers: draft.reviewers ?? 0,
+      waitMinutes: draft.waitMinutes ?? 15,
+      reviewerModel: draft.reviewerModel ?? { source: 'inherit' },
+    },
+    apply: {
+      object: 'tree',
+      enabled: apply.enabled !== false,
+      reviewers: apply.reviewers ?? 0,
+      waitMinutes: apply.waitMinutes ?? 15,
+      reviewerModel: apply.reviewerModel ?? { source: 'inherit' },
+    },
+  }
+}
+
+/** Build one policy source fact set for tests. */
+function sourceOf(path = 'openspec/reviews.json') {
+  return { path, sha256: 'a'.repeat(64), profiles: { draft: 'd', apply: 'a' } }
+}
 
 function temp() {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-review-unit-'))
@@ -161,18 +190,27 @@ test('the lock is exclusive and released', () => {
   assert.doesNotThrow(() => withReviewLock(directory, 'again', () => {}))
 })
 
-test('review config normalizes defaults and limits', () => {
-  assert.deepEqual(normalizeReviews(undefined).value, {
-    draft: {
-      enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+test('review config validates profiles and entries', () => {
+  const good = normalizeReviewDocument({
+    profiles: {
+      d: {
+        object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      },
+      a: {
+        object: 'tree', enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+      },
     },
-    apply: {
-      enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
-    },
+    reviews: { draft: 'd', apply: 'a' },
   })
-  const invalid = normalizeReviews({ draft: { enabled: 'yes', reviewers: 2, maxRounds: 0, waitMinutes: 121 } })
-  assert.equal(invalid.issues.length, 3)
-  assert.deepEqual(draftSettings({ reviews: { draft: { enabled: false } } }), {
+  assert.deepEqual(good.issues, [])
+  assert.equal(good.value.draft.enabled, true)
+  assert.equal(good.value.apply.reviewers, 1)
+  const invalid = normalizeReviewDocument({
+    profiles: { d: { object: 'directory', enabled: 'yes', reviewers: 2, waitMinutes: 121 } },
+    reviews: { draft: 'd' },
+  })
+  assert.ok(invalid.issues.length >= 3)
+  assert.deepEqual(reviewSection(reviewConfigOf({ draft: { enabled: false } }), 'draft'), {
     enabled: false,
     reviewers: 0,
     waitMinutes: 15,
@@ -604,13 +642,16 @@ test('policy helpers lock, read and remove one change', () => {
     projectRoot: root,
     change: 'demo',
     store: undefined,
-    settings: { reviews: { draft: { enabled: true, reviewers: 0, maxRounds: 4, waitMinutes: 20 } } },
+    config: reviewConfigOf({ draft: { enabled: true, waitMinutes: 20 } }),
+    source: sourceOf(),
     gitEnabled: false,
     lockedBy: 'new-change',
     resolveModel,
   })
   assert.equal(locked.created, true)
-  assert.equal(locked.policy.reviews.draft.maxRounds, undefined)
+  assert.equal(locked.policy.schemaVersion, 2)
+  assert.equal(locked.policy.source.path, 'openspec/reviews.json')
+  assert.equal(locked.policy.reviews.draft.waitMinutes, 20)
   assert.deepEqual(locked.policy.reviews.draft.reviewerModel, {
     source: 'inherit', provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'max',
   })
@@ -621,7 +662,8 @@ test('policy helpers lock, read and remove one change', () => {
   const again = ensurePolicy({
     projectRoot: root,
     change: 'demo',
-    settings: { reviews: { draft: { enabled: false } } },
+    config: reviewConfigOf({ draft: { enabled: false } }),
+    source: sourceOf(),
     gitEnabled: false,
     lockedBy: 'first-review',
     resolveModel,
@@ -630,6 +672,33 @@ test('policy helpers lock, read and remove one change', () => {
   assert.equal(again.policy.reviews.draft.enabled, true)
   removePolicy(locked.directory)
   assert.equal(readPolicy(locked.directory), undefined)
+})
+
+test('requireReviewConfig refuses a failed read with its issues', () => {
+  assert.equal(requireReviewConfig({ ok: true, value: { draft: {} } }).ok, true)
+  assert.throws(
+    () => requireReviewConfig({ ok: false, issues: [{ message: 'a' }, { message: 'b' }] }),
+    /a; b/,
+  )
+  assert.throws(() => requireReviewConfig({ ok: false }), /could not be read/)
+})
+
+test('a v1 policy without a source stays readable and unrewritten', () => {
+  const root = temp()
+  const directory = join(root, 'openspec', '.review', 'local#legacy')
+  mkdirSync(directory, { recursive: true })
+  const legacy = {
+    schemaVersion: 1,
+    change: 'legacy',
+    reviews: {
+      draft: { enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit', provider: 'p', model: 'm' } },
+    },
+  }
+  writeJsonAtomic(join(directory, 'policy.json'), legacy)
+  const read = readPolicy(directory)
+  assert.equal(read.schemaVersion, 1)
+  assert.equal(read.source, undefined)
+  assert.equal(draftEnabled(read), true)
 })
 
 test('the draft object rejects a missing required artifact and empty specs', () => {
@@ -924,10 +993,10 @@ test('apply policy helpers migrate and default', () => {
   mkdirSync(directory, { recursive: true })
   writeJsonAtomic(join(directory, 'policy.json'), policy)
   const migrated = ensureApplyPolicy(directory, policy, {
-    reviews: { apply: { enabled: true, reviewers: 0, maxRounds: 6, waitMinutes: 20 } },
+    config: reviewConfigOf({ apply: { enabled: true, waitMinutes: 20 } }),
   })
-  assert.equal(migrated.reviews.apply.maxRounds, undefined)
-  assert.equal(readPolicy(directory).reviews.apply.maxRounds, undefined)
+  assert.equal(migrated.reviews.apply.waitMinutes, 20)
+  assert.equal(readPolicy(directory).reviews.apply.waitMinutes, 20)
   assert.deepEqual(policyApply({}), {
     enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
   })

@@ -26,15 +26,77 @@ const CREATED = []
 export function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'openspec-flow-review-'))
   cpSync(PROBE_ROOT, join(root, 'openspec'), { recursive: true })
+  writeReviewConfig(root, { draft: { enabled: true }, apply: { enabled: true } })
   CREATED.push(root)
   return root
+}
+
+/**
+ * Fold a rewritten review file into the fixture's base commit.
+ *
+ * The file is repository content: keeping it in the base commit keeps the
+ * working tree clean for the seal and apply checks.
+ * @param root - fixture root.
+ * @returns nothing; a root without git is left as is.
+ */
+function amendBase(root) {
+  const probe = spawnSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8' })
+  if (probe.status !== 0) return
+  const added = spawnSync('git', ['-C', root, 'add', 'openspec/reviews.json'], { encoding: 'utf8' })
+  if (added.status !== 0) return
+  spawnSync('git', ['-C', root, 'commit', '--amend', '--no-edit', '--quiet'], { encoding: 'utf8' })
+}
+
+/**
+ * Write the project review file from one section-shaped fixture.
+ *
+ * Tests still describe draft and apply as sections; the file translates them
+ * into the two profiles and the two entries the plugin reads.
+ * @param root - fixture root.
+ * @param reviews - `{ draft?, apply? }` section shapes.
+ * @returns the written document.
+ */
+export function writeReviewConfig(root, reviews = {}) {
+  const draft = reviews?.draft ?? {}
+  const apply = reviews?.apply ?? {}
+  const document = {
+    profiles: {
+      'test-draft': {
+        object: 'directory',
+        enabled: draft.enabled !== false,
+        reviewers: draft.reviewers ?? 0,
+        waitMinutes: draft.waitMinutes ?? 15,
+        reviewerModel: draft.reviewerModel ?? { source: 'inherit' },
+      },
+      'test-apply': {
+        object: 'tree',
+        enabled: apply.enabled !== false,
+        reviewers: apply.reviewers ?? 0,
+        waitMinutes: apply.waitMinutes ?? 15,
+        reviewerModel: apply.reviewerModel ?? { source: 'inherit' },
+      },
+    },
+    reviews: { draft: 'test-draft', apply: 'test-apply' },
+  }
+  mkdirSync(join(root, 'openspec'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'reviews.json'), `${JSON.stringify(document, null, 2)}\n`)
+  return document
 }
 
 export function setup(root, reviews, options = {}) {
   clearCache()
   const fake = createFakeContext({ cwd: root })
+  if (options.reviewFile === undefined) {
+    if (reviews !== undefined) {
+      writeReviewConfig(root, reviews)
+      amendBase(root)
+    }
+  } else {
+    writeFileSync(join(root, 'openspec', 'reviews.json'), options.reviewFile)
+    amendBase(root)
+  }
   const settings = {
-    reviews: reviews ?? { draft: { enabled: true }, apply: { enabled: true } },
+    reviewEnabled: options.reviewEnabled ?? true,
     worktree: options.worktree ?? { enabled: false },
   }
   apply(fake.ctx, {
@@ -139,6 +201,7 @@ export async function passDraft(fake, root, run) {
       run(['add', 'openspec/.gitignore'])
     }
     run(['add', `openspec/changes/${CHANGE}`])
+    if (existsSync(join(root, 'openspec', 'reviews.json'))) run(['add', 'openspec/reviews.json'])
     run(['commit', '-m', 'seal the draft'])
   }
   await call(fake, 'openspec_apply_next', { change: CHANGE })
@@ -198,8 +261,11 @@ export function externalSetup(root, reviews = { draft: { enabled: true, reviewer
     if (typeof result === 'function') disposers.push(result)
     return result
   }
-  apply(fake.ctx, { timeoutMs: 30_000, reviews })
-  fake.settings = { reviews, worktree: { enabled: true } }
+  writeReviewConfig(root, reviews)
+  amendBase(root)
+  const settings = { reviewEnabled: true, worktree: { enabled: true } }
+  apply(fake.ctx, { timeoutMs: 30_000, ...settings })
+  fake.settings = settings
   return { fake, activations, messages, steered, subagents, disposers }
 }
 

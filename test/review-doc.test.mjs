@@ -16,9 +16,10 @@ import { fileURLToPath } from 'node:url'
 import { apply } from '../index.js'
 import { apply as reviewerApply } from '../reviewer.js'
 import {
-  DEFAULT_APPLY_REVIEW,
-  DEFAULT_DRAFT_REVIEW,
+  DEFAULT_DIRECTORY_PROFILE,
+  DEFAULT_REVIEW_CONFIG,
   DEFAULT_REVIEWER_MODEL,
+  DEFAULT_TREE_PROFILE,
 } from '../lib/review/config.js'
 import { APPLY_REVIEW_FILE, DRAFT_REVIEW_FILE } from '../lib/review/record.js'
 import { LOCK_DIRECTORY_NAME, LOCK_FIELDS, LOCK_FILE_NAME } from '../lib/review/apply-lock.js'
@@ -45,7 +46,7 @@ function liveCatalog() {
   const fake = createFakeContext({ cwd: ROOT })
   apply(fake.ctx, {
     timeoutMs: 30_000,
-    reviews: { draft: { enabled: true }, apply: { enabled: true } },
+    reviewEnabled: true,
   })
   const reviewer = createFakeContext({ cwd: ROOT })
   reviewerApply(reviewer.ctx)
@@ -56,8 +57,14 @@ function liveCatalog() {
     tools,
     reviewActions: reviewTool.parameters.properties.action.enum,
     defaults: {
-      draft: DEFAULT_DRAFT_REVIEW,
-      apply: DEFAULT_APPLY_REVIEW,
+      draft: {
+        profile: DEFAULT_DIRECTORY_PROFILE,
+        section: DEFAULT_REVIEW_CONFIG.profiles[DEFAULT_DIRECTORY_PROFILE],
+      },
+      apply: {
+        profile: DEFAULT_TREE_PROFILE,
+        section: DEFAULT_REVIEW_CONFIG.profiles[DEFAULT_TREE_PROFILE],
+      },
       reviewerModel: DEFAULT_REVIEWER_MODEL,
     },
     record: {
@@ -115,15 +122,16 @@ export function checkDocument(text, spec) {
     }
   }
   for (const kind of ['draft', 'apply']) {
-    const defaults = spec.defaults[kind]
-    for (const [key, value] of Object.entries(defaults)) {
-      const row = new RegExp(`^\\| \`reviews\\.${kind}\\.${key}\` \\| \`([^\`]+)\``, 'mu').exec(text)
+    const { profile, section } = spec.defaults[kind]
+    for (const [key, value] of Object.entries(section)) {
+      if (typeof value === 'object' && value !== null) continue
+      const row = new RegExp(`^\\| \`profiles\\.${profile}\\.${key}\` \\| \`([^\`]+)\``, 'mu').exec(text)
       if (row === null) {
-        problems.push(`missing config key reviews.${kind}.${key}`)
+        problems.push(`missing config key profiles.${profile}.${key}`)
         continue
       }
       if (row[1] !== cell(value)) {
-        problems.push(`stale default for reviews.${kind}.${key}: ${row[1]}, expected ${cell(value)}`)
+        problems.push(`stale default for profiles.${profile}.${key}: ${row[1]}, expected ${cell(value)}`)
       }
     }
   }
@@ -301,16 +309,16 @@ test('a stale tool, default or record path is reported by name', () => {
   assert.ok(toolProblems.includes('missing tool openspec_apply_next'))
   assert.ok(toolProblems.includes('unknown tool openspec_apply_old'))
 
-  const staleDefault = `${text}\n| \`reviews.draft.maxRounds\` | \`3\` |\n`
+  const staleDefault = `${text}\n| \`profiles.standard-directory.maxRounds\` | \`3\` |\n`
   const defaultProblems = checkDocument(staleDefault, spec)
   assert.ok(
     defaultProblems.includes('names the removed round cap maxRounds'),
     defaultProblems.join('; '),
   )
 
-  const renamedKey = text.replace('`reviews.apply.waitMinutes`', '`reviews.apply.wait`')
+  const renamedKey = text.replace('`profiles.standard-tree.waitMinutes`', '`profiles.standard-tree.wait`')
   const keyProblems = checkDocument(renamedKey, spec)
-  assert.ok(keyProblems.includes('missing config key reviews.apply.waitMinutes'))
+  assert.ok(keyProblems.includes('missing config key profiles.standard-tree.waitMinutes'))
 
   const movedRoot = text.replaceAll(`openspec/${REVIEW_DIRECTORY}/`, 'openspec/reviews/')
   const pathProblems = checkDocument(movedRoot, spec)
