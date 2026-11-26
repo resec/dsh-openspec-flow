@@ -21,7 +21,7 @@
 ## 4. Status and schema
 
 - [x] 4.1 Project an optional `revisions` summary (round, revision, object hash, cause, archive time, brief and report paths) from the draft record; verify with a status test that names an archived attempt.
-- [x] 4.2 Declare the optional `revisions` array in the `openspec_review` output schema; verify `test/schema.test.mjs` accepts a result with and without the array.
+- [x] 4.2 Declare the optional `revisions` array in the `openspec_review` output schema; verify `test/descriptions.test.mjs` names the declaration and `test/review-draft.test.mjs` covers a status result with and without the array.
 - [x] 4.3 Keep the tool description aligned with the result fields; verify `test/descriptions.test.mjs` passes.
 
 ## 5. Watch
