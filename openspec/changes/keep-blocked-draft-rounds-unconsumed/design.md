@@ -72,6 +72,12 @@ A refresh reuses the same slot and sends a wake message naming the same round wi
 
 `openspec_review` results add an optional `revisions` array derived from every round's `revisions` entries: round, revision, object hash, cause, archive time, brief path and optional report path plus verdict. The archived bodies stay on disk; the summary only allows finding them. The output schema declares the array as optional.
 
+### A refreshed attempt writes its own card
+
+A review card is keyed by session, kind, phase, round and the attempt number. The first attempt keeps the historical file name; a later attempt appends `-a<n>`. The marker carries the attempt, so the refreshed report is not refused as a duplicate and the replaced attempt's card stays on disk with its turn binding. Readiness, delivery and withholding continue to read the card file, so no card-specific result field is added.
+
+Alternative: delete the replaced card when it is not yet delivered and only keep a claimed one. Rejected because a delivered card's file carries its turn binding: deleting or overwriting it makes the earlier turn's card disappear.
+
 ### Compatibility
 
 `readReview` and the projections use `Array.isArray(round.revisions) ? round.revisions : []`. Records written before this change have no `revisions` and behave as before until their next resume, which archives the then-current attempt.

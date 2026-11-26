@@ -40,6 +40,12 @@
 - [x] 7.1 Run `npm run test:affected` for the touched modules and the full `npm run verify` on Node 24; verify both exit zero.
 - [x] 7.2 Run `openspec_inspect` with `action: "validate"` and `strict: true`; verify no findings.
 
+## 8. Attempt cards
+
+- [ ] 8.1 Give a refreshed draft review card its own attempt-suffixed file name and marker; verify with the card-path test in `test/review-cards.test.mjs`.
+- [ ] 8.2 Keep the replaced attempt's card and turn binding and let the refreshed report write a separate card; verify with the blocked-resume-pass test in `test/review-draft.test.mjs`.
+- [ ] 8.3 Document the attempt suffix and the preserved card in `docs/review.md`; verify `test/review-doc.test.mjs`.
+
 ## Workflow follow-up
 
 - Start and complete the draft review for this change.
