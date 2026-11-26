@@ -16,6 +16,7 @@ The review record must keep the audit trail of every artifact version that was r
 - `openspec_review` status reports the recorded revisions of each draft round.
 - The draft documentation describes the blocked-round reuse, the revision layout and the preserved audit trail.
 - The registered flow rule and the shipped policy text state the archived attempt and the same-round refresh.
+- A refreshed draft attempt writes its own review card file (`-a<n>`) while the replaced attempt keeps its card and turn binding.
 - A substantive report (`pass` or `changes-requested`) keeps the existing behavior: the next round opens and consumes the next number.
 - The apply review is not changed.
 
@@ -27,6 +28,7 @@ The review record must keep the audit trail of every artifact version that was r
   - `tool-surface`: status output carries round revisions and blocked rounds name the same round entry.
   - `review-documentation`: the review document and README describe the blocked-round reuse and the revision layout.
   - `flow-policy`: the registered flow rule states the revision archive and the same-round refresh instead of the removed close-as-blocked recovery.
+  - `review-cards`: a refreshed attempt keeps the earlier card and its turn binding, and writes its own attempt-suffixed card file.
 
 ## Impact
 
@@ -38,6 +40,7 @@ The review record must keep the audit trail of every artifact version that was r
 - `lib/review/watch.js`: per-object-version notice after a refresh.
 - `lib/review/revision.js`: new archive module for the previous brief, report and metadata.
 - `lib/policy.js`: the flow rule text names the archived attempt and the same-round refresh.
+- `lib/review/cards.js`: attempt-aware review card names and markers.
 - `openspec/specs/flow-policy`: the main rule text changes with the policy.
 - `lib/tools/review.js` output schema and `docs/review.md`, `README.md`.
 - Tests for draft resume, blocked submits, watch notices, readiness, status output and documentation.

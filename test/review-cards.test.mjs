@@ -465,3 +465,19 @@ test('a card without a known review kind is neither named nor written', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+
+test('a refreshed attempt writes its own card file name and marker', () => {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-flow-card-attempt-'))
+  try {
+    const first = cardFilePath(root, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1 })
+    const second = cardFilePath(root, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1, attempt: 2 })
+    assert.equal(basename(first), `${sessionKeyOf('card-session')}-draft-review-1.json`)
+    assert.equal(basename(second), `${sessionKeyOf('card-session')}-draft-review-1-a2.json`)
+    const record = { cards: [{ sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1, attempt: 1 }] }
+    assert.equal(hasCardMarker(record, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1, attempt: 1 }), true)
+    assert.equal(hasCardMarker(record, { sessionId: 'card-session', kind: 'draft', phase: 'review', round: 1, attempt: 2 }), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

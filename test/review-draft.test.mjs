@@ -1425,16 +1425,24 @@ test('a refreshed round rewrites its review card for the new report', async () =
   assert.equal(before.length, 1)
   assert.equal(JSON.parse(readFileSync(join(cardsDir, before[0]), 'utf8')).payload.verdict, 'blocked')
   await execute({ action: 'resume', change: CHANGE })
-  assert.deepEqual(readdirSync(cardsDir), [])
+  const kept = readdirSync(cardsDir)
+  assert.equal(kept.length, 1)
+  assert.equal(JSON.parse(readFileSync(join(cardsDir, kept[0]), 'utf8')).payload.verdict, 'blocked')
   await execute({
     action: 'self-report', change: CHANGE,
     report: report(),
   })
-  const after = readdirSync(cardsDir)
-  assert.equal(after.length, 1)
-  assert.equal(JSON.parse(readFileSync(join(cardsDir, after[0]), 'utf8')).payload.verdict, 'pass')
+  const after = readdirSync(cardsDir).sort()
+  assert.equal(after.length, 2)
+  assert.deepEqual(
+    after.map((name) => JSON.parse(readFileSync(join(cardsDir, name), 'utf8')).payload.verdict).sort(),
+    ['blocked', 'pass'],
+  )
+  assert.ok(after.some((name) => name.includes('-a2.json')), 'the refreshed attempt writes its own file')
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
-  assert.equal(record.cards.filter((card) => card.phase === 'review' && card.round === 1).length, 1)
+  const markers = record.cards.filter((card) => card.phase === 'review' && card.round === 1)
+  assert.equal(markers.length, 2)
+  assert.deepEqual(markers.map((card) => card.attempt).sort(), [1, 2])
 })
 
 

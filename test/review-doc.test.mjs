@@ -408,7 +408,7 @@ test('a missing lock layout is reported by name', () => {
 test('the review document explains the cards and the model rule', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   for (const phrase of [
-    'cards/<sessionKey>-<kind>-<phase>-<round>.json',
+    'cards/<sessionKey>-<kind>-<phase>-<round>[-a<attempt>].json',
     'reviewCards/get',
     'card-delivery.json',
     'conversation.chat.turnTail',
@@ -420,6 +420,7 @@ test('the review document explains the cards and the model rule', () => {
     '四档计数',
     '摘要不显示下一步',
     '评审卡不投递',
+    'blocked 尝试的 review 卡片文件与标记保留',
     '`review.json` 或 `apply-review.json`',
     '升级前写入的同类卡同样不投递',
     '汇报类型 · change 名 · 评审类型',
