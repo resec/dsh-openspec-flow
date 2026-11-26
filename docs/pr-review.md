@@ -5,14 +5,15 @@ This is the repository-side loop for reviewing open pull requests with the insta
 ## Prerequisites
 
 - `gh` is authenticated for `resec/dsh-openspec-flow`.
-- The baseline `main` worktree carries `openspec/reviews.json` whose apply entry names a tree profile with one independent reviewer:
+- The baseline `main` worktree carries a complete `openspec/reviews.json`: both entries are mandatory, and the apply entry must name a tree profile with one independent reviewer. The repository's committed file already satisfies this; a project without one can start from this document:
 
   ```json
   {
     "profiles": {
+      "standard-directory": { "object": "directory", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } },
       "standard-tree": { "object": "tree", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } }
     },
-    "reviews": { "apply": "standard-tree" }
+    "reviews": { "draft": "standard-directory", "apply": "standard-tree" }
   }
   ```
 
