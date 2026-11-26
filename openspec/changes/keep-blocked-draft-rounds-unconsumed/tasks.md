@@ -42,9 +42,9 @@
 
 ## 8. Attempt cards
 
-- [ ] 8.1 Give a refreshed draft review card its own attempt-suffixed file name and marker; verify with the card-path test in `test/review-cards.test.mjs`.
-- [ ] 8.2 Keep the replaced attempt's card and turn binding and let the refreshed report write a separate card; verify with the blocked-resume-pass test in `test/review-draft.test.mjs`.
-- [ ] 8.3 Document the attempt suffix and the preserved card in `docs/review.md`; verify `test/review-doc.test.mjs`.
+- [x] 8.1 Give a refreshed draft review card its own attempt-suffixed file name and marker; verify with the card-path test in `test/review-cards.test.mjs`.
+- [x] 8.2 Keep the replaced attempt's card and turn binding and let the refreshed report write a separate card; verify with the blocked-resume-pass test in `test/review-draft.test.mjs`.
+- [x] 8.3 Document the attempt suffix and the preserved card in `docs/review.md`; verify `test/review-doc.test.mjs`.
 
 ## Workflow follow-up
 
