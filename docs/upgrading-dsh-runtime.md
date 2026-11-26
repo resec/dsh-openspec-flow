@@ -220,7 +220,7 @@ DSH 侧对应的声明文件与符号：
    - 用满足新下限的 Node 重跑 `npm run coverage:baseline`，更新 `coverage.baseline.json` 的 `node.version` 与 `node.range`。
    - 在 change 的 delta spec 中更新 `project-invariants` 的 `Runtime baseline`；不要直接改主 spec，归档时由 `openspec_archive` 合并。
    - 核对 `scripts/node-version.mjs`、`scripts/run-tests.mjs`、`scripts/coverage.mjs`、`scripts/coverage-gate.mjs` 的提示文本与 Node 24 假设。
-   - 更新 `AGENTS.md:25` 与 `README.md` 的「测试运行时」段落。
+   - 更新 `AGENTS.md:47` 与 `README.md` 的「测试运行时」段落。
 9. 不要用 `^`、`~` 或 `>=` 代替精确 pin，也不要先加 `compatibility.json` 豁免再升级。
 
 **pnpm pin**：把 `scripts/toolchain.mjs` 的 `PNPM_VERSION` 改为目标 tag 声明的版本，并同步 `.github/workflows/ci.yml`、`docs/lab.md` 与 `CONTRIBUTING.md`；`test/ci-workflow.test.mjs` 会校验三处一致。不要把这个版本写进本仓库 `package.json` 的 `packageManager`，也不要改为 devDependency。
@@ -341,7 +341,7 @@ DSH 侧对应的声明文件与符号：
 - `scripts/node-version.mjs`、`scripts/run-tests.mjs`、`scripts/coverage.mjs`、`scripts/coverage-gate.mjs`：Node 门槛与覆盖率入口。
 - `coverage.config.json:2`、`coverage.baseline.json`：主版本与基线。
 - `test/fake-context.mjs:23`：Host 替身。
-- `README.md`「版本兼容性」「测试运行时」「验证」；`AGENTS.md:24-25`；`docs/upgrading-openspec-cli.md:9`：版本字样与说明。
+- `README.md`「版本兼容性」「测试运行时」「验证」；`AGENTS.md:47`；`docs/upgrading-openspec-cli.md:9`：版本字样与说明。
 
 DSH 安装树（全局 npm 安装，相对 `$(npm root -g)/@deepseek-ai/dsh`）：
 

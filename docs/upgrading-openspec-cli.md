@@ -133,7 +133,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 | `README.md:242` | 测试使用真实 CLI 的说明 | 更新版本号 |
 | `README.md:302` | 限制：CLI 固定版本 | 更新版本号 |
 | `README.md:304` | 限制：技能正文对齐 | 更新版本号 |
-| `AGENTS.md:45` | 精确版本 | 更新版本号 |
+| `AGENTS.md:49` | 精确版本 | 更新版本号 |
 | `cordis.patch.yml:3` | 注释中的精确版本 | 更新版本号 |
 | `package-lock.json` | `@fission-ai/openspec` 的版本与 integrity | 用 `npm install` 更新，不手改 |
 | `test/inproc-cli.mjs` | `createInprocSpawner` 读取 CLI 导出的 `program` 与 Commander 的 `parseAsync`；缺失时回退到 `runCli` 轮询 | 确认 `program.parseAsync` 仍可调用；若缺失，核对回退路径与相关测试，必要时更新夹具 |
@@ -175,7 +175,7 @@ node node_modules/@fission-ai/openspec/bin/openspec.js version --json
 
 10. 更新 README 的两个对照表与版本说明。两个表的引用都按 tag 固定；升版本时把两处当前 tag 改为目标 tag，并按新 tag 的 CLI/skills 参考重新核对表格。若目标 tag 的官方技能清单有变化（例如新增始终安装的 router），同步调整“官方技能对照”的行数与引导句。
 
-11. 更新 `AGENTS.md:45` 与 `cordis.patch.yml:3` 的版本字样。
+11. 更新 `AGENTS.md:49` 与 `cordis.patch.yml:3` 的版本字样。
 
 12. 更新本文档的基线、示例与来源。
 
@@ -328,7 +328,7 @@ npm run contract:check -- --candidate <version> --json
 - `lib/tasks.js:5`、`:24`、`:36`、`:42`、`:58`：镜像版本注释、任务行解析、文本断行与硬换行规则。
 - `lib/schema.js:35`、`:115`、`:128`：schema 目录与闸门。
 - `lib/tools/query.js`、`lib/tools/write.js`、`lib/init.js`：命令与选项。
-- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`:35`、`test/skills.test.mjs:46`、`README.md:69`、`README.md:100`、`AGENTS.md:45`、`cordis.patch.yml:3`：版本字样与对照表。
+- `skills/*/SKILL.md:7`、`test/openspec.test.mjs:11`、`:35`、`test/skills.test.mjs:46`、`README.md:69`、`README.md:100`、`AGENTS.md:49`、`cordis.patch.yml:3`：版本字样与对照表。
 - `scripts/cli-contract.json`、`scripts/check-cli-contract.mjs`、`test/cli-contract.test.mjs`：契约检查。
 
 上游文档与 release：
