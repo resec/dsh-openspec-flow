@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-26
+goal: 评审配置改由项目内 openspec/reviews.json 提供：具名档案声明评审对象类型（directory 或
+  tree），reviews.draft 与 reviews.apply 分别引用档案；change 创建时把解析结果连同来源 hash 快照进
+  policy.json；插件行配置不再承载评审参数，只保留一个 reviewEnabled 总开关；配置缺失或非法即报错；配置页只读浏览项目配置。
