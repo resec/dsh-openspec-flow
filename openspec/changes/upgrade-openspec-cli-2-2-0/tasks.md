@@ -27,8 +27,8 @@
 
 ## 4. Integration checks
 
-- [ ] 4.1 Run the full suite and coverage gate on Node 24; verify `npm run verify` exits 0 and reports both the test summary and the coverage verdict.
-- [ ] 4.2 Run strict OpenSpec validation over the main specs and the change; verify `npm run openspec:check` exits 0 and `openspec_inspect` with `action: "validate"` and `strict: true` reports the change valid.
+- [x] 4.1 Run the full suite and coverage gate on Node 24; verify `npm run verify` exits 0 and reports both the test summary and the coverage verdict.
+- [x] 4.2 Run strict OpenSpec validation over the main specs and the change; verify `npm run openspec:check` exits 0 and `openspec_inspect` with `action: "validate"` and `strict: true` reports the change valid.
 
 ## Workflow follow-up
 
