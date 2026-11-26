@@ -32,11 +32,11 @@
 
 ## 5. Runtime compatibility
 
-- [x] 5.1 Defer 2.2.0's MODIFIED-length `--strict` warning in `lib/tools/review.js` to the existing waiver-aware length gate, keeping strict validation before policy resolution; verify `node --test test/review-apply.test.mjs` passes and the refusal still names the requirement limit and the recovery action.
-- [x] 5.2 Assert in `test/review-apply.test.mjs` that a refused apply start leaves the policy file unchanged; verify the case fails when 5.1 is reverted and passes with 5.1.
+- [x] 5.1 Defer 2.2.0's MODIFIED-length `--strict` warning in `lib/tools/review.js` to the existing actionable length gate, keeping strict validation before policy resolution; verify `node --test test/review-apply.test.mjs` passes and the refusal still names the requirement limit and the recovery action.
+- [x] 5.2 Assert in `test/review-apply.test.mjs` that a refused apply start leaves the policy file unchanged and that an overlong ADDED requirement still refuses with the CLI strict message; verify the policy case fails when 5.1 is reverted and passes with 5.1.
 
 ## Workflow follow-up
 
 - Archive the change after the draft review and the apply review are ready, then commit the archive, the merged `project-invariants` spec and the documentation updates.
 - Push `origin/main` and verify the local branch and the remote agree.
-- Repack and reinstall the profile bundle only when a release needs the new dependency tree; the runtime code does not change in this upgrade, so a reinstall is not required to complete this change.
+- Repack and reinstall the profile bundle only when a release needs the new dependency tree or the length-warning deferral; the installed copy is frozen, so the archive can complete without repacking.

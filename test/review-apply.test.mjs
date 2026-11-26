@@ -232,6 +232,34 @@ ${grown}
   assert.equal(readFileSync(policyPath, 'utf8'), policyBefore)
 })
 
+test('apply review keeps refusing an overlong ADDED requirement with the CLI message', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+
+  const specDirectory = join(root, 'openspec', 'changes', CHANGE, 'specs', 'theme')
+  mkdirSync(specDirectory, { recursive: true })
+  writeFileSync(join(specDirectory, 'spec.md'), `## ADDED Requirements
+
+### Requirement: Theme growth
+
+The app SHALL ${'show '.repeat(120)}a theme.
+
+#### Scenario: Theme renders
+
+- **WHEN** the app starts
+- **THEN** the theme renders
+`)
+  run(['add', '-A'])
+  run(['commit', '-m', 'add an overlong requirement'])
+
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /apply review refuses change 'add-dark-mode' that does not pass strict validation[\s\S]*Requirement text is very long/,
+  )
+  assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
+})
+
 test('apply review accepts a plan change and records the drift', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
