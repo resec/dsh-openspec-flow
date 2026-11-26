@@ -54,9 +54,11 @@ function exited(child) {
 /**
  * Resolve with the first complete stdout line a child writes that `matches`.
  *
- * The promise settles once, and the exit listener is removed when the line
- * arrives. A child that exits first rejects with `label`, so a caller waiting
- * for a readiness line reports which line never arrived.
+ * The promise settles once, and the listener is removed when the line
+ * arrives. The missing-line verdict waits for the child's `close`, which
+ * follows its stdio streams, so a final chunk written just before the exit is
+ * still scanned. A child that closes first rejects with `label`, so a caller
+ * waiting for a readiness line reports which line never arrived.
  *
  * @param child - the child whose stdout carries the line.
  * @param label - the line's name in the rejection message.
@@ -70,7 +72,7 @@ function readLine(child, label, matches) {
     const settle = () => {
       settled = true
       child.stdout.off('data', onData)
-      child.off('exit', onExit)
+      child.off('close', onClose)
     }
     const scan = () => {
       let newline = buffer.indexOf('\n')
@@ -90,7 +92,7 @@ function readLine(child, label, matches) {
       settle()
       resolve(line)
     }
-    const onExit = () => {
+    const onClose = () => {
       if (settled) return
       const line = scan()
       settle()
@@ -99,7 +101,7 @@ function readLine(child, label, matches) {
     }
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', onData)
-    child.once('exit', onExit)
+    child.once('close', onClose)
   })
 }
 
@@ -148,6 +150,18 @@ test('readLine rejects when the child exits before the line', async () => {
   await assert.rejects(
     readLine(child, 'the readiness line', (line) => line === 'ready'),
     /the child exited before it wrote the readiness line/,
+  )
+})
+
+test('readLine reports a line written just before the child exits', async () => {
+  const child = spawnRunChild(
+    process.execPath,
+    ['-e', childCode("process.stdout.write('last line\\n')")],
+    { stdio: ['ignore', 'pipe', 'ignore'] },
+  )
+  assert.equal(
+    await readLine(child, 'the last line', (line) => line === 'last line'),
+    'last line',
   )
 })
 
