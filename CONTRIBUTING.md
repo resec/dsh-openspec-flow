@@ -101,7 +101,7 @@ Every pull request must carry exactly one active change under `openspec/changes/
    ```
 
 4. Write `proposal.md`, the delta specs, `design.md` when the change needs a technical decision, and `tasks.md`.
-5. Implement the change. Check every task whose specified behavior is complete. You may edit the `tasks.md` checkboxes by hand; if you use the plugin, `openspec_mark_task_done` is the equivalent. Do not leave unchecked tasks when you open the pull request.
+5. Implement the change. Check every task whose specified behavior is complete. You may edit the `tasks.md` checkboxes by hand; if you use the plugin, `openspec_mark_task_done` is the equivalent. Do not leave unchecked tasks when you open the pull request. Commit each numbered top-level task group in `tasks.md` that changes files as its own commit carrying only that group's changes; the subtasks of one group may share a commit, a group that only runs checks leaves none, and no CI check enforces this convention.
 6. Validate:
 
    ```sh
