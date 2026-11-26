@@ -26,11 +26,15 @@ Checkbox state changes go through `openspec_mark_task_done`; that keeps the cach
 
 ## Commit conventions
 
+One commit per task group, at least. Each numbered `## N.` group in `tasks.md` that changes files owns at least one commit carrying only that group's changes, and no commit combines two groups; the subtasks of one group (for example `1.1`–`1.3`) may share one commit, and a group may take several. A group that only verifies leaves no implementation commit, and a commit that only records checked boxes in `tasks.md` is flow bookkeeping, not a group commit. A commit belongs to the group whose subtasks name the files it changes; when two groups change one file, its message names the group it carries. This covers the implementation commits before the first apply review; a review round's fixes still follow one finding per commit. The repository treats this as a development convention, not a gate: no script or CI check enforces it.
+
 One finding per commit. Every apply review commit answers at most one finding: it carries that finding's fix, or the rework a later round demands, with its regression test when behavior changes, and no other finding's changes. A finding may take several commits, because a later round can overturn an earlier fix; a finding that changes no committed file, such as one deferred, rejected or waived, leaves no commit. Commit a round's findings before the next round opens. This section refines the round-level commit instruction in step 6: several finding-scoped commits still commit the round.
 
 Committed content states the defect, the fix and the reason. Round numbers and extra-round tokens (`round 2`, `E1`), finding ids (`R2-01`, `E1-02`), review record paths and card files stay out of commit messages, change READMEs and every other committed artifact, because a reader of the history cannot resolve them: restate the finding's substance instead. Text that defines or implements these formats may name them. History written before this convention is not retrofitted with these identifiers, and a history rewrite that removes a host path stays allowed.
 
-Before resuming a round and before land, read `git log <base>..HEAD` and check that each commit answers one finding and that no message cites the review. The apply review sees the committed tree rather than commit boundaries, so this reading is the check.
+Before the first apply review, read `git log <base>..HEAD` and check that every numbered group that changed files owns a commit carrying only its changes and that no commit combines two groups. Fix a missing boundary before the review opens: commit the group's remaining files, or split the apply branch when its edits went into another commit's patch. The apply review sees the committed tree rather than commit boundaries, so this reading is the check.
+
+Before resuming a round and before land, read the commits made since the round's reviewed base and check that each answers one finding and that no message cites the review; the implementation group commits are exempt.
 
 ## Plugin constraints
 
