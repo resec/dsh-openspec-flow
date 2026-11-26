@@ -1437,3 +1437,11 @@ test('a refreshed round rewrites its review card for the new report', async () =
   assert.equal(record.cards.filter((card) => card.phase === 'review' && card.round === 1).length, 1)
 })
 
+
+test('status omits revisions before an attempt is archived', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.revisions, undefined)
+})

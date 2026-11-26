@@ -132,6 +132,26 @@ test('a refreshed round arms a new notice for the new object version', async () 
   assert.match(noticeText(messages.at(-1)), /round 1/)
 })
 
+test('a blocked report stops the watch', async () => {
+  const root = fixture()
+  const { fake, messages } = externalSetup(root, undefined, { seedAgents: [{ id: 'review-test' }] })
+  const { factory, watchers } = fakeWatchFactory()
+  setRoundWatchTestHooks({ watch: factory, debounceMs: 1 })
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const watcher = watchers[0]
+  const execute = reviewerRunner(root)
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1,
+    report: report({ verdict: 'blocked', summary: 'The artifacts could not be reviewed.' }),
+  })
+  assert.equal(watcher.closed, true)
+  const before = messages.length
+  editTasks(root)
+  watcher.listener()
+  await settle()
+  assert.equal(messages.length, before)
+})
+
 test('a watch without a live changer logs and skips the message', async () => {
   const root = fixture()
   const { fake, messages } = externalSetup(root)
