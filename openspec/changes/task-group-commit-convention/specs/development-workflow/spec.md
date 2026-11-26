@@ -26,7 +26,7 @@ The repository SHALL require each numbered top-level `tasks.md` group that chang
 
 #### Scenario: A verification-only group leaves no implementation commit
 
-- **WHEN** a group runs checks without changing an implementation file
+- **WHEN** a group runs checks without changing a file
 - **THEN** it leaves no implementation commit
 
 #### Scenario: Checkbox bookkeeping is not a group commit
