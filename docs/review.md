@@ -205,7 +205,7 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 ### 轮内修改与 blocked 轮次
 
-draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告期间监视变更目录：每个对象版本变化记录一次 `staleNotice`，并给 slot reviewer 发一条带轮次号的消息，要求它以该轮次提交 `blocked`；通知只写 `staleNotice` 与 `notices`，不写报告或 finding。评审者也不得在轮次无报告期间要求该 change 修改产物；对另一个 change 的意见记入 `outOfScope`，不要形成要求修改的 finding。
+draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告期间监视变更目录：每个对象版本变化记录一次 `staleNotice`，并给 slot reviewer 发一条带轮次号的消息，要求它以该轮次提交 `blocked`；通知只写轮次的 `staleNotice` 与 `notices`，不写报告或 finding。评审者也不得在轮次无报告期间要求该 change 修改产物；对另一个 change 的意见记入 `outOfScope`，不要形成要求修改的 finding。
 
 恢复只有一条：`resume`。无报告且对象未变时复用该轮，不重复唤醒；对象已变或该轮已有 `blocked` 报告时，`resume` 先把该次尝试归档到 `round-<n>/revisions/<mm>/`（brief、可选报告、`meta.json` 与记录中的 `revisions`），清除当前轮的 blocked 报告，再原地刷新同一轮并唤醒同一 reviewer；轮号不变。已记录的 finding 及其状态不变，blocked 报告中的 finding 只保留在报告文件，不进入 finding 生命周期。reviewer 也可在对象已变时直接提交 `blocked`（无 findings，带轮次号）；其他 verdict 会被拒绝并提示 `blocked`。监视是尽力而为的：无法启动或取锁失败只记 warning，`resume` 仍是恢复路径。
 
