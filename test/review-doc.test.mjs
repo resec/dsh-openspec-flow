@@ -421,6 +421,8 @@ test('the review document explains the cards and the model rule', () => {
     '摘要不显示下一步',
     '评审卡不投递',
     'blocked 尝试的 review 卡片文件与标记保留',
+    'cards` 标记（sessionId、kind、phase、round、attempt、at）',
+    '同一轮、同一尝试',
     '`review.json` 或 `apply-review.json`',
     '升级前写入的同类卡同样不投递',
     '汇报类型 · change 名 · 评审类型',
