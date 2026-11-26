@@ -166,10 +166,12 @@ test('the policy text states the apply review gate', () => {
   }
 })
 
-test('the flow rule states the no-edit rule and the blocked recovery', () => {
+test('the flow rule states the no-edit rule and the archived recovery', () => {
   assert.match(POLICY_TEXT, /Do not edit the change artifacts while a draft round is open/)
-  assert.match(POLICY_TEXT, /closes the round as blocked/)
-  assert.match(POLICY_TEXT, /`resume` then opens the next round and wakes the reviewer/)
+  assert.match(POLICY_TEXT, /one watch notice and an optional blocked submit/)
+  assert.match(POLICY_TEXT, /archives the blocked attempt as a revision/)
+  assert.match(POLICY_TEXT, /refreshes the same round without advancing the round number/)
+  assert.match(POLICY_TEXT, /archived brief and hashes stay readable/)
 })
 
 test('every review action in the flow rule names its review kind', () => {

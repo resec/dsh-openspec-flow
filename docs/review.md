@@ -65,7 +65,7 @@ apply 锁按实现域与 store 域区分：
 每个评审段有 `reviewers` 设置：
 
 - `0`：changer 自评审。用 `openspec_review` 的 `action: "self-report"` 提交本轮报告；这是唯一接受自报告的配置。
-- `1`：独立 reviewer。首轮 `start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话。该 preset 挂 `read`、`grep`、`glob`、`read_image`、`web_search`、`web_fetch` 与 `openspec_reviewer`；reviewer 入口按全局工具注册表计算 deny 集合，把 Host 继承的 `openspec_review`、`openspec_apply_next`、`openspec_mark_task_done`、`openspec_archive`、`openspec_new_change`、`openspec_inspect`、`issues_*`、`create_worktree` 等全部排除，并在 `tools/change` 时刷新。reviewer 的实际目录是上述七个工具；`read_image` 只在 Host 提供 `attachments` 服务时注册，Host 未提供该服务时目录只有其余六个工具，调用其他工具返回未知工具；preset 也不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。`read_image` 读取 PNG/JPEG/WebP/GIF 文件，要求该步模型路由声明图片输入，否则调用返回工具错误且不改变评审记录。联网能力由部署为 Host `web` 服务选择的 provider 提供：preset 不挂载、不选择 provider，`web_search` 与 `web_fetch` 分别使用 Host 为 search 与 fetch 选择的 provider；每个工具是否出现在某一步，取决于为该项操作选择的 provider 对该步模型路由是否就绪，一个工具被隐藏不影响另一个。所选 provider 决定抓取的目标范围；默认匿名 HTTP provider 不限制目标地址，可达回环、私网与云元数据地址，需要隔离时应更换 provider 或添加 `tools/pre-execute` 策略。reviewer 的 persona 为 `complete: true`，工具自带的系统提示不会渲染，web 结果的不可信声明由每次工具结果携带。Host 未提供 `web` 服务时，该 preset 不能组装 reviewer 会话。每个新的 draft/apply 轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告且对象未变的轮次再次 `resume` 只会复用该轮，不会重复唤醒；对象已变时，`resume` 先把该轮记为 `blocked`（无 findings，记录前后哈希与 `stale-object` 原因），再开下一轮并唤醒 reviewer。
+- `1`：独立 reviewer。首轮 `start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话。该 preset 挂 `read`、`grep`、`glob`、`read_image`、`web_search`、`web_fetch` 与 `openspec_reviewer`；reviewer 入口按全局工具注册表计算 deny 集合，把 Host 继承的 `openspec_review`、`openspec_apply_next`、`openspec_mark_task_done`、`openspec_archive`、`openspec_new_change`、`openspec_inspect`、`issues_*`、`create_worktree` 等全部排除，并在 `tools/change` 时刷新。reviewer 的实际目录是上述七个工具；`read_image` 只在 Host 提供 `attachments` 服务时注册，Host 未提供该服务时目录只有其余六个工具，调用其他工具返回未知工具；preset 也不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。`read_image` 读取 PNG/JPEG/WebP/GIF 文件，要求该步模型路由声明图片输入，否则调用返回工具错误且不改变评审记录。联网能力由部署为 Host `web` 服务选择的 provider 提供：preset 不挂载、不选择 provider，`web_search` 与 `web_fetch` 分别使用 Host 为 search 与 fetch 选择的 provider；每个工具是否出现在某一步，取决于为该项操作选择的 provider 对该步模型路由是否就绪，一个工具被隐藏不影响另一个。所选 provider 决定抓取的目标范围；默认匿名 HTTP provider 不限制目标地址，可达回环、私网与云元数据地址，需要隔离时应更换 provider 或添加 `tools/pre-execute` 策略。reviewer 的 persona 为 `complete: true`，工具自带的系统提示不会渲染，web 结果的不可信声明由每次工具结果携带。Host 未提供 `web` 服务时，该 preset 不能组装 reviewer 会话。每个新的 draft/apply 轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告且对象未变的轮次再次 `resume` 只会复用该轮，不会重复唤醒；draft 轮次对象已变或已有 `blocked` 报告时，`resume` 把该次尝试归档为修订并原地刷新同一轮（轮号不变），再唤醒同一 reviewer。
 
 apply review 的 brief 头部记录 `validation: host strict pass (N issues)`，与提交树哈希一起绑定本轮；brief 还记录 `base` 及其来源（封存 commit、显式 `base` 或 merge-base），说明 diff 从 base tree 起算、整棵已提交树才是评审对象，空 diff 只表示树与 base 相同，不等于无需实现；`openspec_review` 接受可选 `base`，空白值忽略；显式 `baseline: "none"` 时缺失或空白 `base` 会被拒绝。reviewer 不再运行校验，也不需要 `openspec_inspect`。
 
@@ -122,7 +122,7 @@ finding 的处置：
 
 `issue` 参数已移除：`deferred` 必须给 note，旧记录中的 `issue` 字段保留原样但不读取，新处置不再写入。plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`。
 
-就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。
+就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。draft 的 `blocked` 报告视为未产生报告的尝试：就绪度按“尚无报告”处理，下一步为 draft `resume`；apply 的 `blocked` 仍按报告结论处理。
 
 draft review 还会检查 requirement description（`### Requirement:` 到第一个 scenario 之间的文本）的 500 字符上限。ADDED description 超过上限，或 MODIFIED description 超过上限且比主规格中的原文更长，会让 draft 未就绪并阻止 apply；历史既有超长但本次未增长或缩短的 description 不阻塞。长度阻塞且有报告、没有 open finding 时，下一步是 `openspec_review action=resume review=draft`，不是 `dispose`；还没有报告时仍是 `wait`（reviewer 模式）或 `self-report`（self 模式）。首次 `openspec_apply_next` 与 apply review 的 `start`/`resume` 会重查当前主规格；apply 启动后冻结的 draft 不再用该结果拦截，由 apply review 负责。apply review 被禁用或不可用时，没有 apply 启动后的长度复查。
 
@@ -174,7 +174,10 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 | `<reviewRoot>/<store>#<change>/review.json` | draft review 记录 |
 | `<reviewRoot>/<store>#<change>/apply-review.json` | apply review 记录 |
 | `<reviewRoot>/<store>#<change>/plan-change-waiver.json` | apply 阶段规划变更的用户豁免：原文、批准者、时间与文件清单 |
-| `<reviewRoot>/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮 brief |
+| `<reviewRoot>/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮当前 brief |
+| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/brief.md` | 被替换尝试的 brief |
+| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/report.json` | 被替换尝试的 blocked 报告（存在时） |
+| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/meta.json` | 修订的哈希、原因、通知与归档时间 |
 | `<reviewRoot>/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
 | `<reviewRoot>/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
 | `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/brief.md` | apply 额外轮次 brief；目录名使用 token |
@@ -183,18 +186,18 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 | `<reviewRoot>/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
-`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。记录复制前，旧记录根下的卡片仍由 `reviewCards/get` 返回并照常绑定 turn 与投递水位；复制后从共享记录读取，`.migrated` 标记会阻止已删除共享记录的旧卡片复活。迁移锁位于 `<reviewRoot>/.migrate/<record>.lock`；进程中断留下它时，后续访问等待 5 秒后报 busy，确认没有迁移进程后手动删除该锁目录。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、kind、phase、round、at），写入前查重，保证同一会话、同一种类、同一轮、同一 phase 只写一张卡；变更前写入的标记没有 `kind`，仍按「同会话、同轮、同 phase」匹配；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
+`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。`round-<n>/revisions/<mm>/` 保存同一轮内被替换的尝试，评审记录的 `rounds[].revisions` 与 `openspec_review` status 的 `revisions` 摘要列出它们。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。记录复制前，旧记录根下的卡片仍由 `reviewCards/get` 返回并照常绑定 turn 与投递水位；复制后从共享记录读取，`.migrated` 标记会阻止已删除共享记录的旧卡片复活。迁移锁位于 `<reviewRoot>/.migrate/<record>.lock`；进程中断留下它时，后续访问等待 5 秒后报 busy，确认没有迁移进程后手动删除该锁目录。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、kind、phase、round、at），写入前查重，保证同一会话、同一种类、同一轮、同一 phase 只写一张卡；变更前写入的标记没有 `kind`，仍按「同会话、同轮、同 phase」匹配；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
 
 ## 失败处理
 
 - **等待超时**：`action: "wait"` 返回 `waiting` 后 changer 结束本轮；`waitMinutes` 到期仍无报告时插件唤醒 waiter 并返回 `overdue`，可 `action: "extend"`（需 `approvedBy: "user"` 与 `reason`，`minutes` 1–15）或 `action: "abandon"`；`extend` 后应再次 `action: "wait"` 重新登记计时器。
 - **reviewer 未提交**：`retry` 让同一 reviewer 再评一次，可重复调用；`replace` 用新子会话替换并记录原因，次数不限，`replacements` 保留每次替换的来源与原因。
 - **reviewer 不可用**：用户可 `waive-reviewer`（需 `approvedBy: "user"` 与 waiver），记录覆盖缺口。
-- **轮次上限**：draft 与 apply review 不设轮次上限；只要 finding 处置完成，`resume` 就开下一轮。`extend` 只延长等待上限。rebase 额外轮次不占普通轮次号，也不受轮次上限影响。
+- **轮次上限**：draft 与 apply review 不设轮次上限；finding 处置完成且最新尝试有实质报告时，`resume` 开下一轮；blocked 或无报告的 draft 尝试刷新同一轮。`extend` 只延长等待上限。rebase 额外轮次不占普通轮次号，也不受轮次上限影响。
 - **finding 未处置**：`resume` 在有 `open` finding 时拒绝开新轮，错误列出全部 id 并指向 `action: "dispose"` 与该 review 的 `review`；先处置再 `resume`。
 - **dispositions 误用**：`start` 与 `resume` 携带 `dispositions` 会被拒绝；批量处置只属于 `dispose` 或 finding 的 `waive`，两者缺少 `review` 同样拒绝。
 - **评审被放弃**：`abandon` 后记录状态为 `abandoned`，同一变更不能重开 draft review；要重开须先移除评审记录。
-- **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；用 `resume` 开新一轮，或修正提交。draft 轮次在无报告时对象已变，由 `resume` 先记为 `blocked` 再开下一轮。
+- **对象已变**：draft 工件或 apply 的 HEAD tree 改变后，旧报告不再就绪；用 `resume` 开新一轮，或修正提交。draft 轮次在无实质报告时对象已变，`resume` 把该次尝试归档到 `round-<n>/revisions/<mm>/` 并原地刷新同一轮，轮号不变；只有 `pass` 或 `changes-requested` 报告才开下一轮。
 - **意图文件缺失或被改动**：`resume` 拒绝并提示移除评审记录；`start` 不会为已有记录重写 `intent.md`。
 - **工作区不干净**：apply review 拒绝启动并列出未提交路径；其他 `openspec/changes/` 目录的未提交规划文件不算脏。
 - **另一 change 持有 apply 锁**：apply、apply review 与 archive 拒绝，点名持有者与锁文件路径；draft review 仍可继续。成功归档会释放锁；暂停的 change 由用户删除锁文件释放，agent 必须先请求用户。
@@ -202,9 +205,9 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 
 ### 轮内修改与 blocked 轮次
 
-draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告期间监视变更目录：产物哈希一旦变化，就为这一轮记录一次 `staleNotice`，并给 slot reviewer 发一条带轮次号的消息，要求它以该轮次提交 `blocked`；通知只写 `staleNotice`，不写报告或 finding。评审者也不得在轮次无报告期间要求该 change 修改产物；对另一个 change 的意见记入 `outOfScope`，不要形成要求修改的 finding。
+draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告期间监视变更目录：每个对象版本变化记录一次 `staleNotice`，并给 slot reviewer 发一条带轮次号的消息，要求它以该轮次提交 `blocked`；通知只写 `staleNotice` 与 `notices`，不写报告或 finding。评审者也不得在轮次无报告期间要求该 change 修改产物；对另一个 change 的意见记入 `outOfScope`，不要形成要求修改的 finding。
 
-恢复只有一条：`resume`。对象已变时它先把这一轮记为 `blocked`：报告无 findings，轮次记录 `blockedReason: "stale-object"`、`staleFrom` 与 `staleTo`，已记录的 finding 及其状态不变；随后开下一轮并唤醒同一 reviewer。对象未变的未报告轮次仍按原样复用，不重复唤醒。reviewer 也可在对象已变时直接提交 `blocked`（无 findings，带轮次号）结束该轮；其他 verdict 会被拒绝并提示 `blocked`。监视是尽力而为的：无法启动或取锁失败只记 warning，`resume` 仍是恢复路径。
+恢复只有一条：`resume`。无报告且对象未变时复用该轮，不重复唤醒；对象已变或该轮已有 `blocked` 报告时，`resume` 先把该次尝试归档到 `round-<n>/revisions/<mm>/`（brief、可选报告、`meta.json` 与记录中的 `revisions`），清除当前轮的 blocked 报告，再原地刷新同一轮并唤醒同一 reviewer；轮号不变。已记录的 finding 及其状态不变，blocked 报告中的 finding 只保留在报告文件，不进入 finding 生命周期。reviewer 也可在对象已变时直接提交 `blocked`（无 findings，带轮次号）；其他 verdict 会被拒绝并提示 `blocked`。监视是尽力而为的：无法启动或取锁失败只记 warning，`resume` 仍是恢复路径。
 
 ## 配置
 
