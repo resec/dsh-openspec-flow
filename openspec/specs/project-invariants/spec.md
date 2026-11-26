@@ -21,7 +21,7 @@ The repository SHALL run on Node major 24 and declare `engines.node` as `>=24.9.
 
 ### Requirement: OpenSpec CLI pin
 
-The plugin SHALL depend on exactly `@fission-ai/openspec` 2.0.0 and accept only schema envelope version 1.
+The plugin SHALL depend on exactly `@fission-ai/openspec` 2.2.0 and accept only schema envelope version 1.
 
 #### Scenario: The bundled CLI reports another version
 
