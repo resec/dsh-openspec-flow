@@ -37,8 +37,8 @@ Each review profile SHALL carry a reviewer model with `source`. With `source: "e
 
 #### Scenario: The model list is unavailable
 
-- **WHEN** the page cannot read the model catalog
-- **THEN** it reports the failure and keeps showing the profile's recorded model
+- **WHEN** a caller reads the model catalog and the Host cannot reach the provider list
+- **THEN** the Host reports the failure to that caller, and the read-only page, which does not use the catalog, is unaffected
 
 ### Requirement: The Host serves the page
 
