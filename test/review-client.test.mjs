@@ -287,6 +287,12 @@ test('the controller reads the switch and each project configuration', async () 
   assert.match(failing.controller.getState().error, /no config/)
 })
 
+test('the page states the locking boundary', () => {
+  const text = readFileSync(join(ROOT, 'client.js'), 'utf8')
+  assert.ok(text.includes('只影响之后新建的变更'))
+  assert.ok(text.includes('affects only changes created afterwards'))
+})
+
 test('the page has no write path', () => {
   const text = readFileSync(join(ROOT, 'client.js'), 'utf8')
   assert.equal(text.includes('reviewSettings/update'), false)

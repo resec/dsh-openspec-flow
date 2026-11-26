@@ -56,6 +56,7 @@ window.__ModuleLoader__.load({
       summary: '项目评审配置（只读）',
       title: '评审配置',
       note: '评审参数由项目的 openspec/reviews.json 提供；页面只读展示，开关 reviewEnabled 在 profile 中修改。',
+      boundary: '修改 openspec/reviews.json 只影响之后新建的变更；已锁定的策略不会改动。',
       switchLabel: '评审开关',
       switchOn: '开启',
       switchOff: '关闭',
@@ -89,6 +90,7 @@ window.__ModuleLoader__.load({
       summary: 'Project review configuration (read-only)',
       title: 'Review configuration',
       note: 'Review parameters come from the project openspec/reviews.json; this page is read-only and reviewEnabled is set in the profile.',
+      boundary: 'Editing openspec/reviews.json affects only changes created afterwards; locked policies never change.',
       switchLabel: 'Review switch',
       switchOn: 'on',
       switchOff: 'off',
@@ -283,6 +285,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: pageStyle },
         h('h2', { style: { margin: 0, font: 'var(--dsw-font-lg-16)' } }, t('title')),
         h('p', { style: noteStyle }, t('note')),
+        h('p', { style: noteStyle }, t('boundary')),
         h('p', { style: noteStyle },
           `${t('switchLabel')}: ${state.reviewEnabled ? t('switchOn') : t('switchOff')}`),
         state.legacyReviews
