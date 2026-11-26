@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {
-  existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -1406,3 +1406,34 @@ test('status lists an archived draft attempt', async () => {
   assert.equal(typeof status.revisions[0].reportPath, 'string')
   assert.equal(typeof status.revisions[0].archivedAt, 'string')
 })
+
+test('a refreshed round rewrites its review card for the new report', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  const tool = fake.tools.get('openspec_review')
+  const execute = (args) => tool.execute(args, {
+    agent: { id: 'review-test', session: { id: 'card-session' } },
+    signal: new AbortController().signal,
+  })
+  await execute({ action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  await execute({
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'blocked', summary: 'The artifacts could not be reviewed.' }),
+  })
+  const cardsDir = join(reviewDir(root), 'cards')
+  const before = readdirSync(cardsDir)
+  assert.equal(before.length, 1)
+  assert.equal(JSON.parse(readFileSync(join(cardsDir, before[0]), 'utf8')).payload.verdict, 'blocked')
+  await execute({ action: 'resume', change: CHANGE })
+  assert.deepEqual(readdirSync(cardsDir), [])
+  await execute({
+    action: 'self-report', change: CHANGE,
+    report: report(),
+  })
+  const after = readdirSync(cardsDir)
+  assert.equal(after.length, 1)
+  assert.equal(JSON.parse(readFileSync(join(cardsDir, after[0]), 'utf8')).payload.verdict, 'pass')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.cards.filter((card) => card.phase === 'review' && card.round === 1).length, 1)
+})
+
