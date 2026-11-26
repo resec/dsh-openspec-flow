@@ -1198,20 +1198,45 @@ test('a fixed finding does not refuse a stale draft blocked submit', async () =>
   assert.equal(record.findings[0].status, 'fixed')
 })
 
-test('a late stale submission names its round and is refused', async () => {
+test('a stale resume keeps the round so the blocked submit is accepted', async () => {
   const root = fixture()
   const { fake } = externalSetup(root)
   await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
   editStaleTasks(root)
-  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  assert.equal(resumed.round, 1)
   const execute = reviewerRunner(root)
   await assert.rejects(
     execute({
-      action: 'submit', change: CHANGE, review: 'draft', round: 1,
+      action: 'submit', change: CHANGE, review: 'draft', round: 2,
       report: report({ verdict: 'blocked', summary: 'The artifacts changed during the round.' }),
     }),
-    /current draft round is 2, not 1/,
+    /current draft round is 1, not 2/,
   )
+  const accepted = await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1,
+    report: report({ verdict: 'blocked', summary: 'The artifacts changed during the round.' }),
+  })
+  assert.equal(accepted.state, 'in-review')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[0].verdict, 'blocked')
+})
+
+test('a blocked submit on an unchanged object keeps findings out of the record', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, intent: 'Add a theme selector.' })
+  const execute = reviewerRunner(root)
+  const result = await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 1,
+    report: report({ verdict: 'blocked', summary: 'Could not review the artifacts.', findings: [minorFinding()] }),
+  })
+  assert.equal(result.state, 'in-review')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
+  assert.equal(record.rounds[0].verdict, 'blocked')
+  assert.deepEqual(record.findings, [])
+  const stored = JSON.parse(readFileSync(join(reviewDir(root), record.rounds[0].report.path), 'utf8'))
+  assert.equal(stored.findings.length, 1)
 })
 
 test('an apply submit on a moved tree keeps the stale refusal', async () => {

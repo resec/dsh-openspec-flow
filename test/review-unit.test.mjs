@@ -48,7 +48,7 @@ import {
   roundRevisions,
 } from '../lib/review/record.js'
 import { archiveDraftAttempt } from '../lib/review/revision.js'
-import { closeStaleRound, submitReport } from '../lib/review/submit.js'
+import { submitReport } from '../lib/review/submit.js'
 import { anotherChangeInLocation } from '../lib/review/scope.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy, requireReviewConfig } from '../lib/review/policy.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
@@ -1077,33 +1077,6 @@ test('submitReport covers missing rounds, duplicate reports and empty findings',
   assert.equal(result.record.state, 'passed')
 })
 
-test('closeStaleRound records a blocked report and leaves findings alone', () => {
-  const root = temp()
-  const directory = join(root, 'review')
-  mkdirSync(join(directory, 'round-1'), { recursive: true })
-  const record = {
-    state: 'in-review',
-    findings: [{ id: 'R1-01', severity: 'major', status: 'fixed', firstRound: 1, firstRoundSeq: 1, title: 'Fixed finding' }],
-    rounds: [{ round: 1, seq: 1, objectHash: 'from-hash', startedAt: new Date().toISOString() }],
-  }
-  const result = closeStaleRound({ directory, record, currentHash: 'to-hash' })
-  const round = result.record.rounds.at(-1)
-  assert.equal(round.report.verdict, 'blocked')
-  assert.equal(round.verdict, 'blocked')
-  assert.equal(round.blockedReason, 'stale-object')
-  assert.equal(round.staleFrom, 'from-hash')
-  assert.equal(round.staleTo, 'to-hash')
-  assert.equal(result.record.findings.length, 1)
-  assert.equal(result.record.findings[0].status, 'fixed')
-  assert.equal(result.readiness.ready, false)
-  assert.match(result.readiness.reasons.join(' '), /verdict is blocked/)
-  assert.equal(closeStaleRound({ directory, record: result.record, currentHash: 'to-hash' }), undefined)
-  assert.throws(
-    () => closeStaleRound({ directory, record: { rounds: [] }, currentHash: 'to-hash' }),
-    /has no round/,
-  )
-})
-
 function git(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
@@ -1318,4 +1291,43 @@ test('a record without revisions reads as empty', () => {
   const round = { round: 1, objectHash: 'a' }
   assert.deepEqual(roundRevisions(round), [])
   assert.equal(round.revisions, undefined)
+})
+
+
+test('a blocked draft attempt reads as unreported and names resume', () => {
+  const record = {
+    review: 'draft',
+    state: 'in-review',
+    rounds: [{
+      round: 1,
+      seq: 1,
+      objectHash: 'hash',
+      verdict: 'blocked',
+      report: { path: 'round-1/report.json', verdict: 'blocked' },
+    }],
+    findings: [],
+  }
+  const readiness = draftReadiness(record, 'hash', 'draft')
+  assert.equal(readiness.ready, false)
+  assert.match(readiness.reasons.join(' '), /no review report has been recorded/)
+  assert.doesNotMatch(readiness.reasons.join(' '), /verdict is blocked/)
+  assert.equal(readiness.nextAction, 'openspec_review action=resume review=draft')
+})
+
+test('a blocked apply report keeps its verdict reason', () => {
+  const record = {
+    review: 'apply',
+    state: 'in-review',
+    rounds: [{
+      round: 1,
+      seq: 1,
+      objectHash: 'tree',
+      verdict: 'blocked',
+      report: { path: 'apply-round-1/report.json', verdict: 'blocked' },
+    }],
+    findings: [],
+  }
+  const readiness = draftReadiness(record, 'tree', 'apply')
+  assert.equal(readiness.ready, false)
+  assert.match(readiness.reasons.join(' '), /verdict is blocked/)
 })
