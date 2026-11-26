@@ -35,14 +35,19 @@ import {
 } from '../lib/review/report.js'
 import { draftReadiness } from '../lib/review/readiness.js'
 import {
+  appendRevision,
   latestEntry,
   latestExtraRound,
   latestRound,
+  nextRevisionNumber,
   nextRoundSeq,
   parseRoundToken,
   resolveRoundEntry,
+  revisionDirName,
   roundEntries,
+  roundRevisions,
 } from '../lib/review/record.js'
+import { archiveDraftAttempt } from '../lib/review/revision.js'
 import { closeStaleRound, submitReport } from '../lib/review/submit.js'
 import { anotherChangeInLocation } from '../lib/review/scope.js'
 import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy, requireReviewConfig } from '../lib/review/policy.js'
@@ -1256,4 +1261,61 @@ test('record accessors tolerate missing and unsupported inputs', () => {
   assert.equal(resolveRoundEntry({ extraRounds: [] }, 9), undefined)
   assert.equal(parseRoundToken('E01'), undefined)
   assert.equal(parseRoundToken('x'), undefined)
+})
+
+
+test('round revisions default to empty and number upward', () => {
+  const round = { round: 1 }
+  assert.deepEqual(roundRevisions(round), [])
+  assert.equal(nextRevisionNumber(round), 1)
+  appendRevision(round, { revision: 1 })
+  assert.equal(nextRevisionNumber(round), 2)
+  assert.equal(revisionDirName(1), '01')
+  assert.equal(revisionDirName(12), '12')
+  assert.deepEqual(roundRevisions(undefined), [])
+})
+
+test('a draft attempt is archived with its brief, report and cause', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'openspec-flow-revision-'))
+  try {
+    const round = {
+      round: 1,
+      objectHash: 'old-object',
+      artifactHash: 'old-artifact',
+      artifactFiles: ['proposal.md'],
+      brief: { path: 'round-1/brief.md', sha256: sha256('brief'), bytes: 5 },
+      report: {
+        path: 'round-1/report.json',
+        sha256: sha256('report'),
+        bytes: 6,
+        verdict: 'blocked',
+        recordedAt: '2026-01-01T00:00:00.000Z',
+      },
+      staleNotice: { round: 1, from: 'a', to: 'b', at: '2026-01-01T00:00:00.000Z' },
+    }
+    mkdirSync(join(directory, 'round-1'), { recursive: true })
+    writeFileSync(join(directory, 'round-1', 'brief.md'), 'brief')
+    writeFileSync(join(directory, 'round-1', 'report.json'), 'report')
+    const revision = archiveDraftAttempt({ directory, round, cause: 'blocked-report' })
+    assert.equal(revision.revision, 1)
+    assert.equal(revision.cause, 'blocked-report')
+    assert.equal(revision.report.verdict, 'blocked')
+    assert.equal(revision.notice.to, 'b')
+    assert.equal(readFileSync(join(directory, 'round-1', 'revisions', '01', 'brief.md'), 'utf8'), 'brief')
+    assert.equal(readFileSync(join(directory, 'round-1', 'revisions', '01', 'report.json'), 'utf8'), 'report')
+    const meta = JSON.parse(readFileSync(join(directory, 'round-1', 'revisions', '01', 'meta.json'), 'utf8'))
+    assert.equal(meta.objectHash, 'old-object')
+    assert.equal(meta.report.verdict, 'blocked')
+    assert.equal(round.report, undefined)
+    assert.equal(round.verdict, undefined)
+    assert.equal(round.revisions.length, 1)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a record without revisions reads as empty', () => {
+  const round = { round: 1, objectHash: 'a' }
+  assert.deepEqual(roundRevisions(round), [])
+  assert.equal(round.revisions, undefined)
 })
