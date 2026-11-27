@@ -51,6 +51,9 @@ test('self review passes the apply gate', async () => {
   assert.equal(record.independent, false)
   assert.equal(record.state, 'passed')
   assert.equal(record.length.blocking, false)
+  assert.deepEqual(record.criteria, {
+    passCriteria: 'major', allowDeferred: true, allowRejected: true,
+  })
   assert.ok(record.applyBaseCommit === undefined || typeof record.applyBaseCommit === 'string')
 })
 

@@ -103,6 +103,9 @@ test('apply review starts on the committed tree and records its base', async () 
   assert.ok(validation.includes('--strict'), 'the apply start validates strictly')
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.objectKind, 'tree')
+  assert.deepEqual(record.criteria, {
+    passCriteria: 'major', allowDeferred: true, allowRejected: true,
+  })
   assert.equal(record.baseTreeSha, run(['rev-parse', `${record.baseCommit}^{tree}`]))
   assert.ok(started.brief.includes(`- base: ${record.baseCommit}`))
 })
@@ -1035,7 +1038,7 @@ test('a locked policy refuses an undeclared entry and a configPath supplements i
   })
   assert.equal(started.review, 'pr')
   const supplemented = JSON.parse(readFileSync(policyPath, 'utf8'))
-  assert.equal(supplemented.schemaVersion, 3)
+  assert.equal(supplemented.schemaVersion, 4)
   assert.equal(supplemented.reviews.pr.object, 'tree')
   assert.deepEqual(supplemented.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
   const bytes = readFileSync(policyPath, 'utf8')
