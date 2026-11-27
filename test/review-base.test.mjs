@@ -232,3 +232,49 @@ test('an unresolvable recorded base refuses', () => {
     /could not resolve base/,
   )
 })
+
+/** Run fn while a git wrapper executes `rules` before delegating to the real git. */
+function withGitStub(rules, fn) {
+  const bin = mkdtempSync(join(tmpdir(), 'openspec-flow-git-'))
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\n${rules}\nexec ${real} "$@"\n`)
+  spawnSync('chmod', ['+x', join(bin, 'git')])
+  const before = process.env.PATH
+  process.env.PATH = `${bin}:${before}`
+  try {
+    return fn()
+  } finally {
+    process.env.PATH = before
+    rmSync(bin, { recursive: true, force: true })
+  }
+}
+
+test('a draft baseline without a recorded seal keeps the recorded base', () => {
+  const { root, seal } = reviewRepo()
+  const resolved = resolveApplyBase({ root, baseline: 'draft', recordedBaseCommit: seal, recordedBaseSource: 'merge-base' })
+  assert.equal(resolved.baseSource, 'merge-base')
+  assert.equal(resolved.baseCommit, seal)
+})
+
+test('an unreadable seal listing returns no tree', { skip: process.platform === 'win32' }, () => {
+  const { root, seal, fork } = reviewRepo()
+  const tree = withGitStub(
+    'for a in "$@"; do if [ "$a" = "ls-tree" ]; then exit 1; fi; done',
+    () => overlaySealTree({ root, sealCommit: seal, onto: fork }),
+  )
+  assert.equal(tree, undefined)
+})
+
+test('a malformed seal listing returns no tree', { skip: process.platform === 'win32' }, () => {
+  const { root, seal, fork } = reviewRepo()
+  const noTab = withGitStub(
+    "for a in \"$@\"; do if [ \"$a\" = \"ls-tree\" ]; then printf 'bad\\0'; exit 0; fi; done",
+    () => overlaySealTree({ root, sealCommit: seal, onto: fork }),
+  )
+  assert.equal(noTab, undefined)
+  const noSha = withGitStub(
+    "for a in \"$@\"; do if [ \"$a\" = \"ls-tree\" ]; then printf '100644 blob\\tfoo\\0'; exit 0; fi; done",
+    () => overlaySealTree({ root, sealCommit: seal, onto: fork }),
+  )
+  assert.equal(noSha, undefined)
+})
