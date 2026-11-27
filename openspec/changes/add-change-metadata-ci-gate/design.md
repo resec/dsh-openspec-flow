@@ -51,7 +51,7 @@ The CI verify job already runs `npm run openspec:check`, and the non-main pre-pu
 
 ### Decision: check every active change
 
-`openspec validate --all` already checks every active change, so the metadata gate uses the same scope. A pull-request-only scope would let an active change on `main` with broken metadata pass CI and fail later, and the two scopes would drift. A broken metadata file in an unrelated in-progress change blocks the push just as a broken delta already does. The gate enumerates directories under `openspec/changes/` and skips only `archive`, matching the CLI's listing rule for active changes, which includes hidden names.
+`openspec validate --all` already checks every active change, so the metadata gate uses the same scope. A pull-request-only scope would let an active change on `main` with broken metadata pass CI and fail later, and the two scopes would drift. A broken metadata file in an unrelated in-progress change blocks the push just as a broken delta already does. The gate enumerates directories under `openspec/changes/` and skips `archive` and dot-prefixed names, matching the set `openspec validate --all` treats as active changes; the CLI refuses a dot-prefixed change name in `status`.
 
 ### Decision: fail closed and report every failing change
 
