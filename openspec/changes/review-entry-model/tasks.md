@@ -2,10 +2,10 @@
 
 ## 1. Entry configuration and resolution
 
-- [ ] 1.1 Add arbitrary kebab-case entries and the optional `pipeline` with `beforeApply`/`beforeArchive` defaults to `lib/review/config.js`, including validation errors for a bad entry name, an unknown pipeline key, an absent pipeline entry and a gate entry with the wrong object. Verify `npm run test:affected -- lib/review/config.js test/config.test.mjs` passes.
-- [ ] 1.2 Add a review-entry resolver in `lib/review/entry.js` that resolves an entry name against a parsed file or a locked policy, returns `{ name, profile, object, section }`, and exposes the configured entry names as one list. Verify new unit tests cover a `pr` entry and an unknown entry, including the unknown-entry error naming the configured entries.
-- [ ] 1.3 Write `pipeline` and the default entries in `lib/review/config.js` and `lib/init.js`, keeping `openspec_init`'s created/already-present report. Verify a temp-project test reads the written file, resolves `beforeApply`/`beforeArchive`, and checks the existing `reviewEnabled` cases.
-- [ ] 1.4 Update the configuration section of `docs/review.md` with the `profiles`/`reviews`/`pipeline` shape, the default pipeline and a non-default entry example. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
+- [x] 1.1 Add arbitrary kebab-case entries and the optional `pipeline` with `beforeApply`/`beforeArchive` defaults to `lib/review/config.js`, including validation errors for a bad entry name, an unknown pipeline key, an absent pipeline entry and a gate entry with the wrong object. Verify `npm run test:affected -- lib/review/config.js test/config.test.mjs` passes.
+- [x] 1.2 Add a review-entry resolver in `lib/review/entry.js` that resolves an entry name against a parsed file or a locked policy, returns `{ name, profile, object, section }`, and exposes the configured entry names as one list. Verify new unit tests cover a `pr` entry and an unknown entry, including the unknown-entry error naming the configured entries.
+- [x] 1.3 Write `pipeline` and the default entries in `lib/review/config.js` and `lib/init.js`, keeping `openspec_init`'s created/already-present report. Verify a temp-project test reads the written file, resolves `beforeApply`/`beforeArchive`, and checks the existing `reviewEnabled` cases.
+- [x] 1.4 Update the configuration section of `docs/review.md` with the `profiles`/`reviews`/`pipeline` shape, the default pipeline and a non-default entry example. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
 
 ## 2. Policy schema version 3
 
