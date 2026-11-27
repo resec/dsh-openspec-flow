@@ -135,6 +135,15 @@ test('review keys and directories are safe and store-aware', () => {
   assert.throws(() => reviewKey('a/b', 'demo'), /path segment/)
 })
 
+test('a review key is unique per name', () => {
+  assert.throws(() => reviewKey(undefined, 'a#b'), /must not contain '#'/)
+  assert.throws(() => reviewKey('a#b', 'c'), /must not contain '#'/)
+  assert.throws(() => reviewKey('a', 'b#c'), /must not contain '#'/)
+  assert.throws(() => reviewKey(undefined, 'a\nb'), /control character/)
+  assert.throws(() => reviewKey(undefined, 'a\u007fb'), /control character/)
+  assert.equal(reviewKey('a-b', 'c'), 'a-b#c')
+})
+
 test('the review ignore entry is appended once', () => {
   const root = temp()
   mkdirSync(join(root, 'openspec'))
