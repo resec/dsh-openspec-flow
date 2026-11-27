@@ -12,10 +12,10 @@
 
 ## 2. Policy lock and round criteria
 
-- [ ] 2.1 Lock `passCriteria`, `allowDeferred` and `allowRejected` in every policy review section, applying defaults for an omitted profile field; verify `npm run test:affected -- lib/review/policy.js test/review-draft.test.mjs` reads the locked values from a new policy.
-- [ ] 2.2 Store the resolved criteria on the review record when a round opens, and read `major`/`true`/`true` for a record without them; verify `node --test test/review-draft.test.mjs test/review-apply.test.mjs` covers new and legacy records.
-- [ ] 2.3 Read a legacy policy without the three fields as `major`/`true`/`true` without rewriting the file; verify `node --test test/review-unit.test.mjs test/review-draft.test.mjs` asserts the bytes are unchanged.
-- [ ] 2.4 Raise `POLICY_SCHEMA_VERSION` one level above the version archived by `review-entry-model` (expected `4`) and update the policy tests; verify `node --test test/review-draft.test.mjs test/review-apply.test.mjs` asserts the written version and that old policies remain readable.
+- [x] 2.1 Lock `passCriteria`, `allowDeferred` and `allowRejected` in every policy review section, applying defaults for an omitted profile field; verify `npm run test:affected -- lib/review/policy.js test/review-draft.test.mjs` reads the locked values from a new policy.
+- [x] 2.2 Store the resolved criteria on the review record when a round opens, and read `major`/`true`/`true` for a record without them; verify `node --test test/review-draft.test.mjs test/review-apply.test.mjs` covers new and legacy records.
+- [x] 2.3 Read a legacy policy without the three fields as `major`/`true`/`true` without rewriting the file; verify `node --test test/review-unit.test.mjs test/review-draft.test.mjs` asserts the bytes are unchanged.
+- [x] 2.4 Raise `POLICY_SCHEMA_VERSION` one level above the version archived by `review-entry-model` (expected `4`) and update the policy tests; verify `node --test test/review-draft.test.mjs test/review-apply.test.mjs` asserts the written version and that old policies remain readable.
 
 ## 3. Finding lifecycle and dispositions
 
