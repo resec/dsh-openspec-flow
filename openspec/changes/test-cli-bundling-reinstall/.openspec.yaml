@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Guard the four incomplete-installation failure messages with
+  assertions, as the cli-bundling spec already requires a recovery action.

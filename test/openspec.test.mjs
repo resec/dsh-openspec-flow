@@ -1,11 +1,50 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { assertCliVersion, parseJson, PINNED_CLI_VERSION, resolveBundledCli, withStore } from '../lib/openspec.js'
+import { createFakeContext } from './fake-context.mjs'
 
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'))
+
+/**
+ * Copy the module under test into a throwaway installation tree.
+ *
+ * The resolution failures read the plugin's own manifest and resolve from the
+ * module's location, so a copy under a temporary root is the only way to build
+ * a broken install without touching the real `node_modules`.
+ *
+ * @param files - relative path to file content below the temporary root.
+ * @returns the root and a loader for the copied module.
+ */
+function installation(files = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'openspec-incomplete-'))
+  mkdirSync(join(root, 'lib'), { recursive: true })
+  copyFileSync(join(ROOT, 'lib', 'openspec.js'), join(root, 'lib', 'openspec.js'))
+  copyFileSync(join(ROOT, 'package.json'), join(root, 'package.json'))
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), content)
+  }
+  return { root, load: () => import(pathToFileURL(join(root, 'lib', 'openspec.js')).href) }
+}
+
+/**
+ * Build the bundled package manifest for an installation fixture.
+ * @param bin - `bin` field; omitted when undefined.
+ * @returns the manifest text.
+ */
+function bundledManifest(bin) {
+  return JSON.stringify({
+    name: '@fission-ai/openspec',
+    version: PINNED_CLI_VERSION,
+    main: 'index.js',
+    ...(bin === undefined ? {} : { bin }),
+  })
+}
 
 test('pins an exact bundled CLI version', () => {
   assert.equal(PINNED_CLI_VERSION, '2.2.0')
@@ -56,4 +95,69 @@ test('withStore appends only a non-empty string store', () => {
 
 test('rejects an array version report', () => {
   assert.throws(() => assertCliVersion([]), /non-object version report/)
+})
+
+test('an install without the bundled package names it and asks for a reinstall', async () => {
+  const { root, load } = installation()
+  try {
+    const { resolveBundledCli: resolve } = await load()
+    assert.throws(
+      () => resolve(),
+      /could not resolve its bundled @fission-ai\/openspec CLI\. Reinstall the plugin so its runtime dependencies are installed\./,
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a bundled package without a bin entry names the missing field and asks for a reinstall', async () => {
+  const { root, load } = installation({
+    'node_modules/@fission-ai/openspec/package.json': bundledManifest(),
+    'node_modules/@fission-ai/openspec/index.js': 'export default {}\n',
+  })
+  try {
+    const { resolveBundledCli: resolve } = await load()
+    assert.throws(() => resolve(), (error) => {
+      assert.match(error.message, /has no bin\.openspec entry\. Reinstall the plugin\./)
+      assert.ok(error.message.includes(join(root, 'node_modules', '@fission-ai', 'openspec')), error.message)
+      return true
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a bin entry whose file is gone names the missing path and asks for a reinstall', async () => {
+  const { root, load } = installation({
+    'node_modules/@fission-ai/openspec/package.json': bundledManifest({ openspec: 'bin/openspec.js' }),
+    'node_modules/@fission-ai/openspec/index.js': 'export default {}\n',
+  })
+  try {
+    const { resolveBundledCli: resolve } = await load()
+    assert.throws(() => resolve(), (error) => {
+      assert.match(error.message, /points at a missing bin '.+bin[\\/]openspec\.js'\. Reinstall the plugin\./)
+      assert.ok(error.message.includes(join(root, 'node_modules', '@fission-ai', 'openspec', 'bin', 'openspec.js')), error.message)
+      return true
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a version call that prints no JSON names the exit code and the output', async () => {
+  const { root, load } = installation({
+    'node_modules/@fission-ai/openspec/package.json': bundledManifest({ openspec: 'bin/openspec.js' }),
+    'node_modules/@fission-ai/openspec/index.js': 'export default {}\n',
+    'node_modules/@fission-ai/openspec/bin/openspec.js': "console.log('this build prints prose, not JSON')\n",
+  })
+  try {
+    const { runOpenSpec } = await load()
+    const { ctx } = createFakeContext({ cwd: root, spawnMode: 'child' })
+    await assert.rejects(
+      () => runOpenSpec(ctx, { timeoutMs: 10_000 }, root, ['list', '--json']),
+      /bundled OpenSpec CLI returned no JSON version report \(exit 0\): this build prints prose, not JSON/,
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
