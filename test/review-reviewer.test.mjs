@@ -441,6 +441,42 @@ test('the reviewer reads a status target and refuses an own report before submis
   )
 })
 
+test('an independent reviewer reads, submits and reports status for a pr entry', async () => {
+  const { root, run } = gitFixture()
+  const { fake, activations } = externalSetup(root)
+  writeFileSync(join(root, 'openspec', 'reviews.json'), `${JSON.stringify({
+    profiles: {
+      d: { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      t: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      p: { object: 'tree', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    },
+    reviews: { draft: 'd', apply: 't', pr: 'p' },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+  }, null, 2)}\n`)
+  run(['add', `openspec/changes/${CHANGE}`, 'openspec/reviews.json'])
+  run(['commit', '-m', 'pr reviewer fixture'])
+  const head = run(['rev-parse', 'HEAD'])
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'pr', baseline: 'none', base: head,
+  })
+  assert.equal(started.review, 'pr')
+  assert.equal(started.mode, 'reviewer')
+  assert.equal(activations.length, 1)
+
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  const read = await execute({ action: 'read', target: 'brief', change: CHANGE, review: 'pr' })
+  assert.match(read.brief, /pr review/i)
+  const submitted = await execute({ action: 'submit', change: CHANGE, review: 'pr', report: report() })
+  assert.equal(submitted.ready, true)
+  const status = await execute({ action: 'status', change: CHANGE, review: 'pr' })
+  assert.equal(status.review, 'pr')
+  assert.equal(status.ready, true)
+})
+
 test('the reviewer tool rejects an unknown review kind', async () => {
   const root = fixture()
   const reviewer = createFakeContext({ cwd: root })
