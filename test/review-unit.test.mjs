@@ -659,7 +659,7 @@ test('policy helpers lock, read and remove one change', () => {
     resolveModel,
   })
   assert.equal(locked.created, true)
-  assert.equal(locked.policy.schemaVersion, 3)
+  assert.equal(locked.policy.schemaVersion, 4)
   assert.equal(locked.policy.source.path, 'openspec/reviews.json')
   assert.equal(locked.policy.reviews.draft.waitMinutes, 20)
   assert.deepEqual(locked.policy.reviews.draft.reviewerModel, {
@@ -667,7 +667,13 @@ test('policy helpers lock, read and remove one change', () => {
   })
   assert.equal(draftEnabled(locked.policy), true)
   assert.deepEqual(policyDraft({}), {
-    enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    enabled: false,
+    reviewers: 0,
+    waitMinutes: 15,
+    reviewerModel: { source: 'inherit' },
+    passCriteria: 'major',
+    allowDeferred: true,
+    allowRejected: true,
   })
   const again = ensurePolicy({
     projectRoot: root,
@@ -688,7 +694,13 @@ test('a policy locks every entry object and the pipeline', () => {
   const parsed = normalizeReviewDocument({
     profiles: {
       dir: {
-        object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        object: 'directory',
+        enabled: true,
+        reviewers: 0,
+        waitMinutes: 15,
+        reviewerModel: { source: 'inherit' },
+        passCriteria: 'nit',
+        allowDeferred: false,
       },
       tree: {
         object: 'tree', enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' },
@@ -710,12 +722,17 @@ test('a policy locks every entry object and the pipeline', () => {
   const policy = buildPolicy({
     change: 'demo', config: parsed, source, gitEnabled: true, lockedBy: 'test', resolveModel,
   })
-  assert.equal(policy.schemaVersion, 3)
+  assert.equal(policy.schemaVersion, 4)
   assert.deepEqual(policy.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
   assert.equal(policy.reviews.draft.object, 'directory')
   assert.equal(policy.reviews.apply.object, 'tree')
   assert.equal(policy.reviews.pr.object, 'tree')
   assert.equal(policy.reviews.pr.reviewers, 1)
+  assert.equal(policy.reviews.draft.passCriteria, 'nit')
+  assert.equal(policy.reviews.draft.allowDeferred, false)
+  assert.equal(policy.reviews.draft.allowRejected, true)
+  assert.equal(policy.reviews.apply.passCriteria, 'major')
+  assert.equal(policy.reviews.pr.allowDeferred, true)
   assert.deepEqual(policy.source, source)
   const changed = buildPolicy({
     change: 'demo',
@@ -741,8 +758,17 @@ test('a legacy policy reads default entries without rewriting its bytes', () => 
   const before = readFileSync(file, 'utf8')
   const policy = readPolicy(directory)
   assert.equal(policy.schemaVersion, 2)
-  assert.equal(policyDraft(policy).enabled, true)
+  assert.deepEqual(policyDraft(policy), {
+    enabled: true,
+    reviewers: 0,
+    waitMinutes: 15,
+    reviewerModel: { source: 'inherit' },
+    passCriteria: 'major',
+    allowDeferred: true,
+    allowRejected: true,
+  })
   assert.equal(policyApply(policy).enabled, false)
+  assert.equal(policyApply(policy).passCriteria, 'major')
   assert.equal(resolveEntry(policy, 'draft').object, 'directory')
   assert.deepEqual(pipelineOf(policy), { beforeApply: 'draft', beforeArchive: 'apply' })
   assert.equal(needsPolicySupplement(policy), true)
@@ -774,18 +800,21 @@ test('a supplied configuration supplements a legacy policy once', () => {
   }).value
   const resolveModel = () => ({ provider: 'deepseek', model: 'deepseek-flash' })
   const added = supplementPolicy(directory, legacy, { config, resolveModel })
-  assert.equal(added.schemaVersion, 3)
+  assert.equal(added.schemaVersion, 4)
   assert.deepEqual(added.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
   assert.equal(added.reviews.apply.object, 'tree')
   assert.equal(added.reviews.apply.reviewers, 1)
   assert.deepEqual(added.reviews.apply.reviewerModel, {
     source: 'inherit', provider: 'deepseek', model: 'deepseek-flash',
   })
+  assert.equal(added.reviews.apply.passCriteria, 'major')
+  assert.equal(added.reviews.apply.allowDeferred, true)
+  assert.equal(added.reviews.apply.allowRejected, true)
   assert.equal(added.reviews.draft.object, undefined)
   assert.equal('source' in added, false)
   const after = readFileSync(file, 'utf8')
   const again = supplementPolicy(directory, readPolicy(directory), { config, resolveModel })
-  assert.equal(again.schemaVersion, 3)
+  assert.equal(again.schemaVersion, 4)
   assert.equal(readFileSync(file, 'utf8'), after)
 })
 
@@ -1135,7 +1164,13 @@ test('apply policy helpers migrate and default', () => {
   assert.equal(migrated.reviews.apply.waitMinutes, 20)
   assert.equal(readPolicy(directory).reviews.apply.waitMinutes, 20)
   assert.deepEqual(policyApply({}), {
-    enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    enabled: false,
+    reviewers: 0,
+    waitMinutes: 15,
+    reviewerModel: { source: 'inherit' },
+    passCriteria: 'major',
+    allowDeferred: true,
+    allowRejected: true,
   })
 })
 
@@ -1523,7 +1558,7 @@ test('a version 3 policy whose section lacks an object needs the supplement', ()
   }
   assert.equal(needsPolicySupplement(policy), true)
   assert.equal(needsPolicySupplement({
-    schemaVersion: 3,
+    schemaVersion: 4,
     pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
     reviews: { draft: { object: 'directory', enabled: true } },
   }), false)
