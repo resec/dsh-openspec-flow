@@ -1260,6 +1260,28 @@ test('a disposition without a review kind is refused', async () => {
   assert.equal(record.findings[0].waiver, undefined)
 })
 
+test('a second directory entry guards its own intent on resume', async () => {
+  const root = fixture()
+  const fake = setup(root, undefined, {
+    reviewFile: JSON.stringify({
+      profiles: {
+        d: { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+        t: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      },
+      reviews: { draft: 'd', apply: 't', planning: 'd' },
+      pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+    }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'planning', intent: 'First plan.',
+  })
+  writeFileSync(join(reviewDir(root), 'intent.md'), 'Second plan.\n')
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'planning' }),
+    /intent file changed/,
+  )
+})
+
 test('draft review refuses an extra round token', async () => {
   const root = fixture()
   const fake = setup(root)
