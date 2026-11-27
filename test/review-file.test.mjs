@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { DEFAULT_REVIEW_CONFIG, normalizeProfile, normalizeReviewDocument, normalizeReviewerModel, reviewSection } from '../lib/review/config.js'
+import { gateEntry, resolveEntry } from '../lib/review/entry.js'
 import {
   defaultReviewConfigText,
   readReviewConfig,
@@ -106,20 +107,35 @@ test('a missing parameter is refused instead of defaulted', () => {
   assert.match(issuesOf(result), /reviewers is required/)
 })
 
-test('a draft entry naming a tree profile is refused', () => {
+test('a tree entry named draft is accepted with an explicit pipeline', () => {
   const root = project()
   const value = document()
+  value.profiles['planning-directory'] = structuredClone(value.profiles['standard-directory'])
+  value.reviews.planning = 'planning-directory'
   value.reviews.draft = 'standard-tree'
+  value.pipeline = { beforeApply: 'planning', beforeArchive: 'draft' }
   write(root, value)
   const result = readReviewConfig(root)
-  assert.equal(result.ok, false)
-  assert.match(issuesOf(result), /reviews\.draft must name a profile whose object is "directory"/)
+  assert.equal(result.ok, true)
+  assert.equal(result.value.entries.draft.object, 'tree')
+  assert.deepEqual(result.value.pipeline, { beforeApply: 'planning', beforeArchive: 'draft' })
 })
 
-test('a missing entry is refused', () => {
+test('the default pipeline resolves when the document omits it', () => {
+  const root = project()
+  const value = document()
+  delete value.pipeline
+  write(root, value)
+  const result = readReviewConfig(root)
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.value.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+})
+
+test('a missing default entry is refused when the pipeline is omitted', () => {
   const root = project()
   const value = document()
   delete value.reviews.apply
+  delete value.pipeline
   write(root, value)
   const result = readReviewConfig(root)
   assert.equal(result.ok, false)
@@ -136,14 +152,78 @@ test('an entry naming an absent profile is refused', () => {
   assert.match(issuesOf(result), /which profiles does not declare/)
 })
 
-test('an unsupported entry such as pr is refused', () => {
+test('a pr entry is accepted with an explicit pipeline', () => {
   const root = project()
   const value = document()
-  value.reviews.pr = 'standard-tree'
+  value.profiles['pr-tree'] = structuredClone(value.profiles['standard-tree'])
+  value.reviews.pr = 'pr-tree'
+  value.pipeline = { beforeApply: 'draft', beforeArchive: 'pr' }
+  write(root, value)
+  const result = readReviewConfig(root)
+  assert.equal(result.ok, true)
+  assert.equal(result.value.reviews.pr, 'pr-tree')
+  assert.equal(result.value.entries.pr.object, 'tree')
+})
+
+test('an entry name outside kebab-case is refused', () => {
+  const root = project()
+  const value = document()
+  value.reviews.PR = 'standard-tree'
   write(root, value)
   const result = readReviewConfig(root)
   assert.equal(result.ok, false)
-  assert.match(issuesOf(result), /reviews\.pr is not a supported review entry/)
+  assert.match(issuesOf(result), /reviews\.PR is not a kebab-case entry name/)
+})
+
+test('the pipeline refuses the wrong object for each role', () => {
+  const cases = [
+    ['beforeApply', 'tree-draft', 'standard-tree', 'directory'],
+    ['beforeArchive', 'directory-archive', 'standard-directory', 'tree'],
+  ]
+  for (const [role, entry, profile, expected] of cases) {
+    const root = project()
+    const value = document()
+    value.profiles[entry] = structuredClone(value.profiles[profile])
+    value.reviews[entry] = entry
+    value.pipeline = role === 'beforeApply'
+      ? { beforeApply: entry, beforeArchive: 'apply' }
+      : { beforeApply: 'draft', beforeArchive: entry }
+    write(root, value)
+    const result = readReviewConfig(root)
+    assert.equal(result.ok, false, role)
+    assert.match(
+      issuesOf(result),
+      new RegExp(`pipeline\\.${role} names entry "${entry}".*must be a "${expected}" entry`),
+      role,
+    )
+  }
+})
+
+test('the pipeline refuses unknown keys, absent entries and non-string values', () => {
+  const cases = [
+    [{ beforeApply: 'draft', beforeArchive: 'apply', afterApply: 'draft' }, /pipeline\.afterApply is not supported/],
+    [{ beforeApply: 'draft', beforeArchive: 'missing' }, /pipeline\.beforeArchive names entry "missing", which reviews does not declare/],
+    [{ beforeApply: 7 }, /pipeline\.beforeApply must be a non-empty string/],
+  ]
+  for (const [pipeline, pattern] of cases) {
+    const root = project()
+    const value = document()
+    value.pipeline = pipeline
+    write(root, value)
+    const result = readReviewConfig(root)
+    assert.equal(result.ok, false)
+    assert.match(issuesOf(result), pattern)
+  }
+})
+
+test('a non-object pipeline is refused', () => {
+  const root = project()
+  const value = document()
+  value.pipeline = ['draft', 'apply']
+  write(root, value)
+  const result = readReviewConfig(root)
+  assert.equal(result.ok, false)
+  assert.match(issuesOf(result), /pipeline must be an object/)
 })
 
 test('an unknown profile key is refused', () => {
@@ -211,6 +291,11 @@ test('the default document is valid and round-trips through the reader', () => {
   assert.equal(result.ok, true)
   assert.equal(result.value.reviews.draft, 'standard-directory')
   assert.equal(result.value.reviews.apply, 'standard-tree')
+  assert.deepEqual(result.value.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+  assert.equal(resolveEntry(result.value, 'draft').object, 'directory')
+  assert.equal(resolveEntry(result.value, 'apply').object, 'tree')
+  assert.equal(gateEntry(result.value, 'beforeApply').name, 'draft')
+  assert.equal(gateEntry(result.value, 'beforeArchive').name, 'apply')
 })
 
 test('the profile validator refuses every malformed parameter', () => {

@@ -213,22 +213,29 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 
 评审参数只来自项目内 `openspec/reviews.json`。插件行配置只保留全局开关 `reviewEnabled`（默认 `true`）；profile 里遗留的 `reviews` 段会被忽略，并在首次读取时提示迁移。
 
-文件由具名档案与用途映射组成：
+文件由具名档案、入口表与生命周期映射组成：
 
 ```json
 {
   "profiles": {
     "standard-directory": { "object": "directory", "enabled": true, "reviewers": 0, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } },
-    "standard-tree": { "object": "tree", "enabled": true, "reviewers": 0, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } }
+    "standard-tree": { "object": "tree", "enabled": true, "reviewers": 0, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } },
+    "pr-tree": { "object": "tree", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } }
   },
-  "reviews": { "draft": "standard-directory", "apply": "standard-tree" }
+  "reviews": {
+    "draft": "standard-directory",
+    "apply": "standard-tree",
+    "pr": "pr-tree"
+  },
+  "pipeline": { "beforeApply": "draft", "beforeArchive": "apply" }
 }
 ```
 
-- `object` 只能是 `directory` 或 `tree`；`reviews.draft` 必须引用 directory 档案，`reviews.apply` 必须引用 tree 档案。
-- `reviews.draft` 与 `reviews.apply` 都必须存在；`pr` 等其他用途会被拒绝。
+- `object` 只能是 `directory` 或 `tree`。入口名只是标签，不决定评审流程；入口引用的档案 `object` 决定走目录评审还是 committed tree 评审。入口名必须是 kebab-case。
+- `reviews` 的键是入口名，不限于 `draft` 与 `apply`；每个入口必须引用已声明档案。默认文档声明 `draft` 与 `apply`，上面的 `pr` 是非默认入口示例。
+- `pipeline.beforeApply` 必须引用 directory 入口，`pipeline.beforeArchive` 必须引用 tree 入口；省略时分别默认 `draft` 与 `apply`。`openspec_apply_next` 检查 `beforeApply`，`openspec_archive` 与 land 的归档检查 `beforeArchive`。
 - 每个档案必须写全 `enabled`、`reviewers`、`waitMinutes`、`reviewerModel`，缺失即报错，不回退内置默认。
-- 顶层只接受 `profiles` 与 `reviews`，未知键即报错。
+- 顶层只接受 `profiles`、`reviews` 与 `pipeline`，未知键即报错。
 
 `openspec_init` 在文件不存在时写入上面的默认文档，已存在则保留并报告 `exists`。文件缺失、不可读、JSON 非法或 schema 非法时，`openspec_new_change` 与首次评审 `start` 直接失败，并给出路径与出错字段；不会回退默认值。
 
@@ -244,6 +251,8 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 | `profiles.standard-tree.enabled` | `true` | 新变更是否锁定 apply review |
 | `profiles.standard-tree.reviewers` | `0` | 0 自评审，1 独立 reviewer |
 | `profiles.standard-tree.waitMinutes` | `15` | apply 等待上限，1–120 |
+| `pipeline.beforeApply` | `draft` | apply 前门禁入口；必须引用 directory 入口 |
+| `pipeline.beforeArchive` | `apply` | archive 前门禁入口；必须引用 tree 入口 |
 
 `reviewerModel` 默认为 `{ source: "inherit" }`，锁定时解析为执行变更的当前模型；`source: "explicit"` 时必须带非空 `provider` 与 `model`。
 
@@ -251,7 +260,7 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 
 `openspec_review` 的 `configPath` 参数只在本次调用写入策略或补写缺失段时生效；目标段已记录时忽略。它用于仓库侧的 PR 流程读取基线 `main` 的配置：`scripts/pr-review-watch.mjs prepare` 把基线文件复制到 `.cache/pr-review/reviews.json`，评审会话把该绝对路径作为 `configPath` 传入，PR 分支自带的文件不参与锁定。
 
-配置页（Plugins → `dsh-openspec-flow` 行 → Configure）只读：展示 `reviewEnabled`、迁移提示、每个项目的档案、用途映射、schema 错误与已锁定策略，不提供保存。
+配置页（Plugins → `dsh-openspec-flow` 行 → Configure）只读：展示 `reviewEnabled`、迁移提示、每个项目的档案、入口表、`pipeline`、schema 错误与已锁定策略，不提供保存。
 
 
 ### 等待与唤醒
