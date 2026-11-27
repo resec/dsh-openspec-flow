@@ -1282,6 +1282,30 @@ test('a second directory entry guards its own intent on resume', async () => {
   )
 })
 
+test('a refreshed planning attempt archives under its entry prefix', async () => {
+  const root = fixture()
+  const fake = setup(root, undefined, {
+    reviewFile: JSON.stringify({
+      profiles: {
+        d: { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+        t: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      },
+      reviews: { draft: 'd', apply: 't', planning: 'd' },
+      pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+    }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'planning', intent: 'First plan.',
+  })
+  writeFileSync(
+    join(root, 'openspec', 'changes', CHANGE, 'proposal.md'),
+    '# Add dark mode\n\n## Why\nUsers need a dark theme at night.\n\n## What Changes\n- Add a theme context provider.\n',
+  )
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'planning' })
+  assert.equal(existsSync(join(reviewDir(root), 'planning-round-1', 'revisions', '01', 'meta.json')), true)
+  assert.equal(existsSync(join(reviewDir(root), 'round-1', 'revisions', '01', 'meta.json')), false)
+})
+
 test('draft review refuses an extra round token', async () => {
   const root = fixture()
   const fake = setup(root)
