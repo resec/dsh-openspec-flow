@@ -1,5 +1,0 @@
-schema: spec-driven
-created: 2026-11-22
-goal: Fail the coverage gate in report mode too when the baseline is absent or
-  records a Node version that fails validation, as decided on issue #10, and
-  state that rule in the mode requirement.

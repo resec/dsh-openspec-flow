@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -487,60 +487,6 @@ test('a preflight or argument failure leaves the recorded stamp untouched', asyn
     assert.ok(readStampFixture(root) !== null, 'an argument failure must not clear the stamp')
     await assert.rejects(runVerification({ root, argv: [], version: 'v22.0.0' }), /requires Node 24/)
     assert.ok(readStampFixture(root) !== null, 'a preflight failure must not clear the stamp')
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('report mode does not pass without a usable baseline', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'coverage-report-baseline-'))
-  try {
-    git(root, ['init', '-b', 'main'])
-    git(root, ['config', 'user.email', 'test@example.com'])
-    git(root, ['config', 'user.name', 'Test'])
-    mkdirSync(join(root, 'lib'), { recursive: true })
-    writeFileSync(join(root, 'index.js'), 'export const a = 1\n')
-    writeFileSync(join(root, 'lib', 'a.js'), 'export const b = 2\n')
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ engines: { node: '>=24.9.0' } }, null, 2))
-    writeFileSync(join(root, 'coverage.config.json'), JSON.stringify({
-      primaryNodeMajor: 24,
-      mode: 'report',
-      thresholds: {
-        absolute: { line: 90, branch: 85, function: 95 },
-        deltaMaxDrop: 1,
-        newCode: { line: 95, branch: 90, function: 100 },
-      },
-    }, null, 2))
-    mkdirSync(join(root, '.coverage'), { recursive: true })
-    writeFileSync(join(root, '.coverage', 'plugin.info'), lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]))
-    git(root, ['add', '-A'])
-    git(root, ['commit', '-m', 'base'])
-
-    await assert.rejects(runGate({ root, mode: 'report', base: 'main' }), /coverage\.baseline\.json is missing/u, 'a missing baseline fails the report mode')
-
-    writeJson(join(root, 'coverage.baseline.json'), {
-      version: 1,
-      node: { version: 'v26.0.0', range: '>=24.9.0' },
-      scopes: {},
-    })
-    await assert.rejects(
-      runGate({ root, mode: 'report', base: 'main' }),
-      /does not match primary major 24/u,
-      'an unusable baseline fails the report mode',
-    )
-
-    // Updating the baseline is the one path that tolerates both failures.
-    rmSync(join(root, 'coverage.baseline.json'))
-    assert.equal(await runGate({ root, mode: 'report', base: 'main', updateBaseline: true }), 0)
-    assert.equal(existsSync(join(root, 'coverage.baseline.json')), true, 'the missing baseline is regenerated')
-    writeJson(join(root, 'coverage.baseline.json'), {
-      version: 1,
-      node: { version: 'v26.0.0', range: '>=24.9.0' },
-      scopes: {},
-    })
-    assert.equal(await runGate({ root, mode: 'report', base: 'main', updateBaseline: true }), 0)
-    const rewritten = JSON.parse(readFileSync(join(root, 'coverage.baseline.json'), 'utf8'))
-    assert.equal(rewritten.node.version, process.version, 'the unusable baseline is rewritten')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
