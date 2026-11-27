@@ -65,7 +65,7 @@ apply 锁按实现域与 store 域区分：
 每个评审段有 `reviewers` 设置：
 
 - `0`：changer 自评审。用 `openspec_review` 的 `action: "self-report"` 提交本轮报告；这是唯一接受自报告的配置。
-- `1`：独立 reviewer。首轮 `start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话。该 preset 挂 `read`、`grep`、`glob`、`read_image`、`web_search`、`web_fetch` 与 `openspec_reviewer`；reviewer 入口按全局工具注册表计算 deny 集合，把 Host 继承的 `openspec_review`、`openspec_apply_next`、`openspec_mark_task_done`、`openspec_archive`、`openspec_new_change`、`openspec_inspect`、`issues_*`、`create_worktree` 等全部排除，并在 `tools/change` 时刷新。reviewer 的实际目录是上述七个工具；`read_image` 只在 Host 提供 `attachments` 服务时注册，Host 未提供该服务时目录只有其余六个工具，调用其他工具返回未知工具；preset 也不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。`read_image` 读取 PNG/JPEG/WebP/GIF 文件，要求该步模型路由声明图片输入，否则调用返回工具错误且不改变评审记录。联网能力由部署为 Host `web` 服务选择的 provider 提供：preset 不挂载、不选择 provider，`web_search` 与 `web_fetch` 分别使用 Host 为 search 与 fetch 选择的 provider；每个工具是否出现在某一步，取决于为该项操作选择的 provider 对该步模型路由是否就绪，一个工具被隐藏不影响另一个。所选 provider 决定抓取的目标范围；默认匿名 HTTP provider 不限制目标地址，可达回环、私网与云元数据地址，需要隔离时应更换 provider 或添加 `tools/pre-execute` 策略。reviewer 的 persona 为 `complete: true`，工具自带的系统提示不会渲染，web 结果的不可信声明由每次工具结果携带。Host 未提供 `web` 服务时，该 preset 不能组装 reviewer 会话。每个新的 draft/apply 轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告且对象未变的轮次再次 `resume` 只会复用该轮，不会重复唤醒；draft 轮次对象已变或已有 `blocked` 报告时，`resume` 把该次尝试归档为修订并原地刷新同一轮（轮号不变），再唤醒同一 reviewer。
+- `1`：独立 reviewer。首轮 `start` 时插件通过 subagent 的 `spawn` provider 启动一个 `openspec-reviewer` preset 的子会话。该 preset 挂 `read`、`grep`、`glob`、`read_image`、`web_search`、`web_fetch` 与 `openspec_reviewer`；reviewer 入口按全局工具注册表计算 deny 集合，把 Host 继承的 `openspec_review`、`openspec_apply_next`、`openspec_mark_task_done`、`openspec_archive`、`openspec_new_change`、`openspec_inspect`、`issues_*`、`create_worktree` 等全部排除，并在 `tools/change` 时刷新。reviewer 的实际目录是上述七个工具；`read_image` 只在 Host 提供 `attachments` 服务时注册，Host 未提供该服务时目录只有其余六个工具，调用其他工具返回未知工具；preset 也不加载写工具、bash、子代理或 workflow，因此 reviewer 不能修改工作区。`read_image` 读取 PNG/JPEG/WebP/GIF 文件，要求该步模型路由声明图片输入，否则调用返回工具错误且不改变评审记录。联网能力由部署为 Host `web` 服务选择的 provider 提供：preset 不挂载、不选择 provider，`web_search` 与 `web_fetch` 分别使用 Host 为 search 与 fetch 选择的 provider；每个工具是否出现在某一步，取决于为该项操作选择的 provider 对该步模型路由是否就绪，一个工具被隐藏不影响另一个。所选 provider 决定抓取的目标范围；默认匿名 HTTP provider 不限制目标地址，可达回环、私网与云元数据地址，需要隔离时应更换 provider 或添加 `tools/pre-execute` 策略。reviewer 的 persona 为 `complete: true`，工具自带的系统提示不会渲染，web 结果的不可信声明由每次工具结果携带。Host 未提供 `web` 服务时，该 preset 不能组装 reviewer 会话。每个新的入口轮次都会唤醒同一个 reviewer 读取新 brief；只有 `replace` 会启动新 reviewer。对尚无报告且对象未变的轮次再次 `resume` 只会复用该轮，不会重复唤醒；draft 轮次对象已变或已有 `blocked` 报告时，`resume` 把该次尝试归档为修订并原地刷新同一轮（轮号不变），再唤醒同一 reviewer。
 
 apply review 的 brief 头部记录 `validation: host strict pass (N issues)`，与提交树哈希一起绑定本轮；brief 还记录 `base` 及其来源（封存 commit、显式 `base` 或 merge-base），说明 diff 从 base tree 起算、整棵已提交树才是评审对象，空 diff 只表示树与 base 相同，不等于无需实现；`openspec_review` 接受可选 `base`，空白值忽略；显式 `baseline: "none"` 时缺失或空白 `base` 会被拒绝。reviewer 不再运行校验，也不需要 `openspec_inspect`。
 
@@ -77,7 +77,7 @@ draft brief 的开头在两种模式下相同：要求对抗性审阅，不声�
 - `source: "explicit"` 使用配置里的 provider 与 model；模型暴露可选推理档位时带 `reasoningEffort`，否则按适配器默认。
 - 启动前插件会核对 provider、model 与 effort 仍在 `llm` 目录里，任一不可用都在创建子会话之前失败；子会话通过 `agentOptions` 收到锁定的路由。
 
-reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报告、读 finding 状态，或看就绪度）、`submit`（提交一份报告）、`status`（看就绪度）。`read` 的 `target` 为 `brief`、`own-report`（可带 `round`）、`findings` 与 `status`；`round` 接受正整数或额外轮次 token `E<n>`，普通历史条目不带 `roundToken`。`findings` 返回每条 finding 的 id、severity、status、title、首次轮次、验证轮次与最后验证状态，以及每轮的 verdict、是否已有报告与额外轮次的 `roundToken`。`openspec_reviewer` 只在 `openspec-reviewer` preset 里注册，changer 的目录中不可见。
+reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报告、读 finding 状态，或看就绪度）、`submit`（提交一份报告）、`status`（看就绪度）。三者都接受锁定策略中的入口名，省略时默认 `draft`。`read` 的 `target` 为 `brief`、`own-report`（可带 `round`）、`findings` 与 `status`；`round` 接受正整数或额外轮次 token `E<n>`，普通历史条目不带 `roundToken`。`findings` 返回每条 finding 的 id、severity、status、title、首次轮次、验证轮次与最后验证状态，以及每轮的 verdict、是否已有报告与额外轮次的 `roundToken`。`openspec_reviewer` 只在 `openspec-reviewer` preset 里注册，changer 的目录中不可见。
 
 ## 策略锁定
 
@@ -119,11 +119,11 @@ finding 的处置：
 
 `dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispose` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的条目只需 `id`，`status` 固定为 `waived`，`waiver` 与 `approvedBy` 可由顶层提供默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。`dispositions` 只属于 `action: "dispose"` 与 finding 的 `waive`；`start` 与 `resume` 不接受它，传入即拒绝并指向 `action: "dispose"`。
 
-`dispose` 与 finding 的 `waive` 必须显式给出 `review`（`"draft"` 或 `"apply"`），缺省不再回落到 draft：调用在读取任何记录之前就拒绝，错误同时列出两个取值。apply 启动后 draft 记录冻结，对它的 `dispose` 与 finding `waive` 一律拒绝，错误指向 `openspec_review action=status review=apply`；apply 记录的处置与 plan-change 的 `waive` 不受影响。
+`dispose` 与 finding 的 `waive` 必须显式给出 `review`（锁定策略声明的入口名），缺省不再回落到 draft：调用在读取任何记录之前就拒绝，错误列出全部已配置入口。apply 启动后 directory 入口的记录冻结，对它的 `dispose` 与 finding `waive` 一律拒绝，错误指向归档门禁入口的 status；tree 入口记录的处置与 plan-change 的 `waive` 不受影响。
 
 `issue` 参数已移除：`deferred` 必须给 note，旧记录中的 `issue` 字段保留原样但不读取，新处置不再写入。plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`。
 
-就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。draft 的 `blocked` 报告视为未产生报告的尝试：就绪度按“尚无报告”处理，下一步为 draft `resume`；apply 的 `blocked` 仍按报告结论处理。
+就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。directory 入口的 `blocked` 报告视为未产生报告的尝试：就绪度按“尚无报告”处理，下一步为该入口的 `resume`；tree 入口的 `blocked` 仍按报告结论处理。
 
 draft review 还会检查 requirement description（`### Requirement:` 到第一个 scenario 之间的文本）的 500 字符上限。ADDED description 超过上限，或 MODIFIED description 超过上限且比主规格中的原文更长，会让 draft 未就绪并阻止 apply；历史既有超长但本次未增长或缩短的 description 不阻塞。长度阻塞且有报告、没有 open finding 时，下一步是 `openspec_review action=resume review=draft`，不是 `dispose`；还没有报告时仍是 `wait`（reviewer 模式）或 `self-report`（self 模式）。首次 `openspec_apply_next` 与 apply review 的 `start`/`resume` 会重查当前主规格；apply 启动后冻结的 draft 不再用该结果拦截，由 apply review 负责。apply review 被禁用或不可用时，没有 apply 启动后的长度复查。
 
@@ -240,6 +240,8 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 - `pipeline.beforeApply` 必须引用 directory 入口，`pipeline.beforeArchive` 必须引用 tree 入口；省略时分别默认 `draft` 与 `apply`。`openspec_apply_next` 检查 `beforeApply`，`openspec_archive` 与 land 的归档检查 `beforeArchive`。
 - 每个档案必须写全 `enabled`、`reviewers`、`waitMinutes`、`reviewerModel`，缺失即报错，不回退内置默认。
 - 顶层只接受 `profiles`、`reviews` 与 `pipeline`，未知键即报错。
+
+`openspec_review` 与 `openspec_reviewer` 的 `review` 参数接受锁定策略声明的任意入口名，省略时默认 `draft`；`dispose` 与 finding 的 `waive` 必须显式给入口，缺失或未知时报错并列出全部已配置入口。入口只是标签，流程由入口档案的 `object` 选择：directory 入口审变更工件（artifact hash、intent、长度门禁、执行性预检与 stale watch），tree 入口审已提交 git tree（提交、tree、base、strict 校验、plan-change waiver 与额外轮次）。记录文件名、轮次目录、brief 标题、状态与唤醒消息都使用入口名；`draft` 与 `apply` 保留旧记录名。
 
 `openspec_init` 在文件不存在时写入上面的默认文档，已存在则保留并报告 `exists`。文件缺失、不可读、JSON 非法或 schema 非法时，`openspec_new_change` 与首次评审 `start` 直接失败，并给出路径与出错字段；不会回退默认值。
 

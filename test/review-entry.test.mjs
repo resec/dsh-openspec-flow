@@ -1,8 +1,32 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import test from 'node:test'
+import {
+  CHANGE, cleanupFixtures, fixture, gitFixture, passDraft, report, reviewDir, setup, call, majorFinding,
+} from './review-fixtures.mjs'
 import { DEFAULT_REVIEW_CONFIG, normalizeReviewDocument } from '../lib/review/config.js'
 import { DEFAULT_ENTRY, entryNames, gateEntry, pipelineOf, resolveEntry } from '../lib/review/entry.js'
 import { reviewFile, roundPrefix } from '../lib/review/record.js'
+
+test.after(cleanupFixtures)
+
+function entryConfig({ pr = true, directoryEntry = 'draft' } = {}) {
+  const profiles = {
+    'test-directory': { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    'test-apply': { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+  }
+  const reviews = { [directoryEntry]: 'test-directory', apply: 'test-apply' }
+  if (pr) {
+    profiles['pr-tree'] = { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } }
+    reviews.pr = 'pr-tree'
+  }
+  return {
+    profiles,
+    reviews,
+    pipeline: { beforeApply: directoryEntry, beforeArchive: pr ? 'pr' : 'apply' },
+  }
+}
 
 function parsedDocument() {
   const raw = structuredClone(DEFAULT_REVIEW_CONFIG)
@@ -86,4 +110,52 @@ test('an entry without a declared object is refused', () => {
     () => resolveEntry(policy, 'planning'),
     /review entry "planning" has no review object; expected "directory" or "tree"/,
   )
+})
+
+test('a pr tree entry starts, reports, disposes and reads its own record', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, undefined, { reviewFile: `${JSON.stringify(entryConfig(), null, 2)}\n` })
+  await passDraft(fake, root, run)
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'pr' })
+  assert.equal(started.review, 'pr')
+  assert.match(started.brief, /Pr review brief/)
+  assert.equal(existsSync(join(reviewDir(root), 'pr-review.json')), true)
+  assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'pr',
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  const disposed = await call(fake, 'openspec_review', {
+    action: 'dispose', change: CHANGE, review: 'pr', id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  assert.equal(disposed.review, 'pr')
+  assert.equal(disposed.findings.fixed, 1)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'pr' })
+  assert.equal(status.review, 'pr')
+})
+
+test('an unknown entry is refused with the configured entries', async () => {
+  const root = fixture()
+  const fake = setup(root, undefined, { reviewFile: `${JSON.stringify(entryConfig(), null, 2)}\n` })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'nope' }),
+    /unknown review entry "nope"; configured entries: draft, apply, pr/,
+  )
+})
+
+test('a directory entry under another name runs the directory flow', async () => {
+  const root = fixture()
+  const fake = setup(root, undefined, { reviewFile: `${JSON.stringify(entryConfig({ pr: false, directoryEntry: 'planning' }), null, 2)}\n` })
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'planning', intent: 'Add a theme selector.',
+  })
+  assert.equal(started.review, 'planning')
+  assert.match(started.brief, /Planning review brief/)
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'planning', report: report(),
+  })
+  assert.equal(existsSync(join(reviewDir(root), 'planning-review.json')), true)
+  assert.equal(existsSync(join(reviewDir(root), 'review.json')), false)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'planning' })
+  assert.equal(status.review, 'planning')
 })

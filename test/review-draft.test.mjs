@@ -1252,7 +1252,7 @@ test('a disposition without a review kind is refused', async () => {
   ]) {
     await assert.rejects(
       call(fake, 'openspec_review', args),
-      /needs review: "draft" or review: "apply"/,
+      /needs review; configured entries:/,
     )
   }
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'))
