@@ -78,4 +78,12 @@ test('the repository review configuration declares a pr tree entry', () => {
   assert.equal(entry.section.waitMinutes, 15)
   assert.deepEqual(entry.section.reviewerModel, { source: 'inherit' })
   assert.deepEqual(result.value.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+  for (const profile of ['standard-directory', 'standard-tree']) {
+    assert.equal(result.value.profiles[profile].passCriteria, 'major')
+    assert.equal(result.value.profiles[profile].allowDeferred, true)
+    assert.equal(result.value.profiles[profile].allowRejected, true)
+  }
+  assert.equal(entry.section.passCriteria, 'nit')
+  assert.equal(entry.section.allowDeferred, false)
+  assert.equal(entry.section.allowRejected, false)
 })

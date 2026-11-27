@@ -5,21 +5,36 @@
       "enabled": true,
       "reviewers": 1,
       "waitMinutes": 15,
-      "reviewerModel": { "source": "inherit" }
+      "reviewerModel": {
+        "source": "inherit"
+      },
+      "passCriteria": "major",
+      "allowDeferred": true,
+      "allowRejected": true
     },
     "standard-tree": {
       "object": "tree",
       "enabled": true,
       "reviewers": 1,
       "waitMinutes": 15,
-      "reviewerModel": { "source": "inherit" }
+      "reviewerModel": {
+        "source": "inherit"
+      },
+      "passCriteria": "major",
+      "allowDeferred": true,
+      "allowRejected": true
     },
     "pr-tree": {
       "object": "tree",
       "enabled": true,
       "reviewers": 1,
       "waitMinutes": 15,
-      "reviewerModel": { "source": "inherit" }
+      "reviewerModel": {
+        "source": "inherit"
+      },
+      "passCriteria": "nit",
+      "allowDeferred": false,
+      "allowRejected": false
     }
   },
   "reviews": {
