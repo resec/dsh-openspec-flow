@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-27
+goal: Render pull-request review comments without severity or round-scoped
+  finding ids, with stable PR-level finding numbers and the full finding state
+  from the pr review record, and gate trusted pass on the plugin readiness
+  result.
