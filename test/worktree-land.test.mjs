@@ -40,6 +40,19 @@ async function readyLand({ feature = false } = {}) {
   return { root, run, fake, state }
 }
 
+/** Promote the fixture's ready apply record to a `pr` beforeArchive entry. */
+function promotePrGate(root) {
+  const directory = reviewDir(root)
+  const policy = JSON.parse(readFileSync(join(directory, 'policy.json'), 'utf8'))
+  policy.reviews.pr = { ...policy.reviews.apply, object: 'tree' }
+  policy.pipeline = { beforeApply: policy.pipeline?.beforeApply ?? 'draft', beforeArchive: 'pr' }
+  writeFileSync(join(directory, 'policy.json'), `${JSON.stringify(policy, null, 2)}\n`)
+  const apply = JSON.parse(readFileSync(join(directory, 'apply-review.json'), 'utf8'))
+  const pr = { ...apply, review: 'pr' }
+  writeFileSync(join(directory, 'pr-review.json'), `${JSON.stringify(pr, null, 2)}\n`)
+  return pr
+}
+
 async function withGitRace(root, mode, run) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-land-race-'))
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' })
@@ -1490,4 +1503,34 @@ test('an empty staged set refuses the archive commit', async () => {
   }
   assert.equal(readApplyState(root, null, CHANGE).status, 'landing')
   assert.notEqual(run(['log', '-1', '--format=%s']), `chore(openspec): archive ${CHANGE}`)
+})
+
+test('land uses a ready pr beforeArchive record and names it in the manifest', async () => {
+  const { root, run, fake } = await readyLand()
+  const pr = promotePrGate(root)
+  const landed = await call(fake, 'openspec_apply_worktree', {
+    action: 'land', change: CHANGE, approvedBy: 'user',
+  })
+  assert.equal(landed.landCommit, run(['rev-parse', `${landed.archiveCommit}^1`]))
+  const manifest = JSON.parse(readFileSync(landed.manifest, 'utf8'))
+  assert.equal(manifest.beforeArchiveEntry, 'pr')
+  assert.equal(manifest.applyReviewId, pr.id)
+  assert.equal(
+    manifest.reviewRecordHash,
+    sha256(readFileSync(join(reviewDir(root), 'pr-review.json'), 'utf8')),
+  )
+})
+
+test('a pr beforeArchive behind main writes no marker and names the pr review', async () => {
+  const { root, run, fake } = await readyLand()
+  promotePrGate(root)
+  run(['commit', '--allow-empty', '-m', 'main moved'])
+  await assert.rejects(
+    () => call(fake, 'openspec_apply_worktree', {
+      action: 'land', change: CHANGE, approvedBy: 'user',
+    }),
+    /rebase, retest and run openspec_review action=resume review=pr, then retry land/,
+  )
+  const pr = JSON.parse(readFileSync(join(reviewDir(root), 'pr-review.json'), 'utf8'))
+  assert.equal(pr.rebaseReview, undefined)
 })

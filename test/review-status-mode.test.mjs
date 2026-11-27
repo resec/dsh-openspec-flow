@@ -172,3 +172,22 @@ test('a recorded reviewer review keeps its mode when the policy is absent', asyn
   assert.equal(status.mode, 'reviewer')
   assert.equal(status.independent, true)
 })
+
+test('a pr entry status names the entry and its start action', async () => {
+  const { root } = gitFixture()
+  writePolicy(root, CHANGE, {
+    draft: { enabled: true, reviewers: 0 },
+    apply: { enabled: true, reviewers: 0 },
+    pr: { enabled: true, reviewers: 1, object: 'tree' },
+  })
+  const fake = setup(root)
+  const status = await call(fake, 'openspec_review', {
+    action: 'status', change: CHANGE, review: 'pr',
+  })
+  assert.equal(status.review, 'pr')
+  assert.equal(status.policy, true)
+  assert.equal(status.enabled, true)
+  assert.equal(status.available, true)
+  assert.equal(status.mode, 'reviewer')
+  assert.equal(status.nextAction, 'openspec_review action=start review=pr')
+})
