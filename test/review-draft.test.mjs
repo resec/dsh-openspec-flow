@@ -1453,3 +1453,23 @@ test('status omits revisions before an attempt is archived', async () => {
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
   assert.equal(status.revisions, undefined)
 })
+
+test('the apply gate names the beforeApply entry when it is not ready', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, report: report(),
+  })
+  const directory = reviewDir(root)
+  const policy = JSON.parse(readFileSync(join(directory, 'policy.json'), 'utf8'))
+  policy.reviews.planning = { ...policy.reviews.draft, object: 'directory' }
+  policy.pipeline = { ...policy.pipeline, beforeApply: 'planning' }
+  writeFileSync(join(directory, 'policy.json'), `${JSON.stringify(policy, null, 2)}\n`)
+  await assert.rejects(
+    () => call(fake, 'openspec_apply_next', { change: CHANGE }),
+    /the planning review has not started; run openspec_review action=start review=planning/,
+  )
+})

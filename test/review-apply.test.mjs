@@ -2175,3 +2175,29 @@ test('an apply resume reports the base source it actually used', async () => {
   assert.match(resumed.brief, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
   assert.doesNotMatch(resumed.brief, /The base is the explicit base passed to this review\./)
 })
+
+test('archive gates on a pr beforeArchive entry', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, review: 'apply', report: report(),
+  })
+  const directory = reviewDir(root)
+  const policy = JSON.parse(readFileSync(join(directory, 'policy.json'), 'utf8'))
+  policy.reviews.pr = { ...policy.reviews.apply, object: 'tree' }
+  policy.pipeline = { ...policy.pipeline, beforeArchive: 'pr' }
+  writeFileSync(join(directory, 'policy.json'), `${JSON.stringify(policy, null, 2)}\n`)
+  await assert.rejects(
+    call(fake, 'openspec_archive', { change: CHANGE }),
+    /the pr review has not started; run openspec_review action=start review=pr/,
+  )
+  const apply = JSON.parse(readFileSync(join(directory, 'apply-review.json'), 'utf8'))
+  writeFileSync(
+    join(directory, 'pr-review.json'),
+    `${JSON.stringify({ ...apply, review: 'pr' }, null, 2)}\n`,
+  )
+  const archived = await call(fake, 'openspec_archive', { change: CHANGE })
+  assert.equal(archived.archived, true)
+})

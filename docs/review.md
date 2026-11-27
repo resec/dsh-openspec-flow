@@ -6,8 +6,8 @@
 
 评审是流程闸门，不是建议：
 
-- **draft review** 在实施前检查规划工件（proposal、delta specs、design、tasks）与用户意图是否一致，`openspec_apply_next` 在它未就绪时拒绝。
-- **apply review** 在归档前检查已提交的实现与变更工件是否一致；当 apply review 启用且项目有 git 时，`openspec_archive` 在它未就绪时拒绝。
+- **draft review** 在实施前检查规划工件（proposal、delta specs、design、tasks）与用户意图是否一致；`openspec_apply_next` 在 `pipeline.beforeApply` 入口未就绪时拒绝。
+- **apply review** 在归档前检查已提交的实现与变更工件是否一致；`openspec_archive` 与 land 的归档在 `pipeline.beforeArchive` 入口未就绪时拒绝。
 
 两类评审都以「报告 + finding + 就绪度」表达结论。报告是模型写的，就绪度由插件按报告、finding 生命周期与对象哈希计算，`verdict: "pass"` 本身不构成就绪。
 
@@ -18,7 +18,7 @@
 | draft | 变更工件（`.openspec.yaml`、`design.md`、`proposal.md`、`specs/**/*.md`、`tasks.md`）加首轮写入的意图文本 | 首轮 `start` 写入 `intent.md`，之后每次 `resume` 复用它；每次进入评审重新计算哈希；`tasks.md` 的复选框状态被归一化，勾选任务不改变哈希 |
 | apply | 已提交的 git tree（`HEAD^{tree}`） | 每次 `start` 或 `resume` 读取；工作区必须干净，提交之外的内容不进入评审；打开轮次前以 `--strict` 校验提交的变更 |
 
-apply review 需要 git 仓库、干净工作区与至少一个提交；worktree apply 时通过 `worktree` 指向该 checkout，reviewer 在 worktree 中读取实现树。没有 git 的项目只能用 draft review；`openspec_new_change` 在锁定策略时忽略 apply review 的启用设置，把新建策略的 apply 段关闭。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
+apply review 需要 git 仓库、干净工作区与至少一个提交；worktree apply 时通过 `worktree` 指向该 checkout，reviewer 在 worktree 中读取实现树。没有 git 的项目只能用 draft review（directory 入口）；`openspec_new_change` 在锁定策略时忽略 tree 入口的启用设置，把所有 tree 入口锁定为禁用。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段（draft-only）的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
 
 apply review 默认使用 draft 基线：draft 段启用时，`start` 仍要求已完成的 draft review。`openspec_review` 接受可选 `baseline`：`draft`（draft 段启用时的默认）或 `none`。显式 `baseline: "none"` 用于没有 draft 记录的已提交分支：跳过 draft record、intent、plan drift 与 plan-change waiver 检查，必须显式给出非空 `base`，不会回落到 merge-base，且已有 draft 记录时拒绝。draft 段禁用时，省略 baseline 解析为 `none`，沿用原有的 base 解析（显式 base 或 merge-base）；显式 `baseline: "draft"` 会被拒绝，需改用 `none`。apply 记录、status 与 report 报告该 baseline；旧 apply 记录没有该字段时按 `draft` 报告。
 
@@ -32,19 +32,20 @@ git worktree apply 中，draft review 就绪后首次 `openspec_apply_next` 由�
 2. planning 工件写完后调用 `openspec_review`（`action: "start"`，默认 `review: "draft"`），把用户目标与验收条件放进 `intent`；`start` 只用于首轮。
 3. draft review 未就绪时 `openspec_review` 需要下一轮：用 `action: "resume"`，不传 `intent`。就绪后，git worktree apply 直接调用 `openspec_apply_next`，由插件构造封存 commit 并挂到 apply 分支与私有引用，main 不动，该 commit 记录为 base；worktree 关闭时仍先提交 committed-`HEAD` 封存。任一校验不满足即拒绝，同时取得本 change 的 apply 锁。apply 开始后 draft review 冻结，不再接受 `resume`。
 4. 在 worktree 中实现并逐轮提交后调用 `openspec_review`（`action: "start"`、`review: "apply"`，并传入 worktree 路径）；插件先以 `--strict` 校验提交的变更，失败时拒绝且不写记录或轮次，通过后审阅 brief 与 diff；后续轮次同样用 `resume`，同样先做 strict 校验。apply 开始后若修改 planning 工件，须先取得用户书面豁免并用 `action: "waive"`、`scope: "plan-change"` 记录，`files` 以 change 目录为基准（也接受项目相对与绝对路径，示例 `files: ["proposal.md","tasks.md"]`，逃逸 change 目录或指向其他 change 的路径会被拒绝）；apply review 拒绝豁免清单之外的变更文件。apply brief 对规划变更按三条轴评审：plan coherence（变更后的 artifacts 彼此一致）、intent fit（仍满足用户目标与验收条件）、scope control（没有为迁就实现而弱化或移除需求）。当 land 因 worktree 落后 main 而拒绝时，它在 apply review 记录上写 `rebaseReview`（原 worktree head、评审 tree、mainHead 与时间）；用户 rebase、retest 后再次 `resume`，插件打开额外轮次 `E1`、`E2`。额外轮次记在独立的 `extraRounds` 数组，按共享 `seq` 排序，不增加 `rounds` 长度，也不占用普通轮次编号；其 finding id 为 `E<n>-NN`。apply review 就绪后仍保留标记，land 使用该额外轮次的 `treeSha`，在写入 manifest 与 archived 状态后于 review 目录锁内清除标记。rebase 后 tree 与已评审 tree 相同时，`resume` 直接清除标记而不开轮。
-5. apply review 就绪后，或 apply review 不可用、禁用，或策略没有 apply 段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。plugin-created worktree 的 active/landing 状态不能走 `openspec_archive`，由 `openspec_apply_worktree action=land` 在同一 lifecycle 临界区内 fast-forward main、archive 并提交 archive。
+5. `pipeline.beforeArchive` 入口就绪后，或该入口不可用、禁用、缺失、或策略没有对应段时，`openspec_archive` 执行归档并合并 delta specs；成功后释放本 change 的 apply 锁，失败保留。plugin-created worktree 的 active/landing 状态不能走 `openspec_archive`，由 `openspec_apply_worktree action=land` 在同一 lifecycle 临界区内 fast-forward main、archive 并提交 archive。
 
-任一步都可以先用 `openspec_review` 的 `action: "status"` 查看 state、round、就绪原因与下一动作；两种 status 都返回 `mode` 与 `independent`，apply status 还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
+任一步都可以先用 `openspec_review` 的 `action: "status"` 查看指定入口的 state、round、就绪原因与下一动作；status 返回 `review` 入口名、`mode` 与 `independent`，tree 入口还返回 `policy`、`enabled`、`available`。`action: "report"` 读回已提交的报告。
 
-### apply status 字段
+### status 字段
 
-- `policy`：策略是否存在 apply 段；只有 draft 段的旧策略为 false。
-- `enabled`：apply 段是否启用；`policy` 为 false 时为 false。
-- `available`：项目是否有 git；为 false 时优先于无策略。
-- `mode`：评审未开始时按锁定策略该段的 `reviewers` 推导：`1` 为 `reviewer`，`0` 为 `self`；评审段禁用或项目不可用（无 git）时为 `self`；已有评审记录时用记录中的值。draft 与 apply status 都返回该字段。
+- `review`：本次查询的入口名。
+- `policy`：锁定策略是否存在该入口段；旧策略缺少该入口时为 false。
+- `enabled`：该入口段是否启用；`policy` 为 false 时为 false。
+- `available`：tree 入口需要 git；为 false 时优先于无策略。directory 入口不看 git。
+- `mode`：评审未开始时按锁定策略该段的 `reviewers` 推导：`1` 为 `reviewer`，`0` 为 `self`；入口禁用或项目不可用（无 git）时为 `self`；已有评审记录时用记录中的值。
 - `independent`：与 `mode` 对应，`reviewer` 为 true，其余为 false。
 
-不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或 draft-only 指向 `openspec_review` 的 `start`。
+不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或缺少入口段（包括 draft-only 旧策略）指向该入口的 `openspec_review action=start review=<entry>`。`openspec_apply_next` 只检查 `pipeline.beforeApply`，`openspec_archive` 与 land 只检查 `pipeline.beforeArchive`；入口禁用、缺失或不可用时该门禁放行，不阻塞生命周期步骤。
 
 ## 并发与串行
 
