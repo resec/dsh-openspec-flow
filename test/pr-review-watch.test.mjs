@@ -67,6 +67,8 @@ function retryingGh(handler) {
 
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
+const EARLIER = '2026-11-23T03:06:12Z'
+const LATER = '2026-11-23T03:27:16Z'
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -206,6 +208,65 @@ test('checksGreen judges each check by its newest run', () => {
     { name: 'verify', conclusion: 'SUCCESS' },
     { name: 'verify', conclusion: 'SUCCESS', startedAt: newer },
   ]), true)
+})
+
+test('checksGreen groups checks by workflow name and check name', () => {
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'nightly', conclusion: 'FAILURE', startedAt: EARLIER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: LATER },
+  ]), false, 'a newer success in another workflow does not supersede the failure')
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: EARLIER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: LATER },
+  ]), true, 'a newer success in the same workflow supersedes the failure')
+})
+
+test('checksGreen keeps a status context apart from a same-named check run', () => {
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: EARLIER },
+    { context: 'verify', state: 'SUCCESS', createdAt: LATER },
+  ]), false, 'the successful status context is a separate group and leaves the check run failed')
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: EARLIER },
+    { context: 'verify', state: 'FAILURE', createdAt: LATER },
+  ]), false, 'a failed status context is not superseded by the check run with the same name')
+})
+
+test('checksGreen falls back from startedAt to createdAt', () => {
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', createdAt: EARLIER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', createdAt: LATER },
+  ]), true, 'without startedAt the older failed entry is superseded by the newer createdAt')
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', createdAt: EARLIER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', createdAt: LATER },
+  ]), false, 'the newest createdAt entry decides the group')
+})
+
+test('checksGreen requires every entry of a group without a start time to succeed', () => {
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: EARLIER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE' },
+  ]), false, 'one entry without startedAt or createdAt requires the whole group to succeed')
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS' },
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS' },
+  ]), true, 'every entry without a start time succeeded')
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', createdAt: '' },
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: '0001-01-01T00:00:00Z' },
+  ]), false, 'an empty createdAt and a zero startedAt are not usable start times')
+})
+
+test('checksGreen requires every entry that shares the latest start time to succeed', () => {
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: LATER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'FAILURE', startedAt: LATER },
+  ]), false, 'one failed entry at the latest start time fails the group')
+  assert.equal(checksGreen([
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: LATER },
+    { name: 'verify', workflowName: 'ci', conclusion: 'SUCCESS', startedAt: LATER },
+  ]), true, 'every entry at the latest start time succeeded')
 })
 
 test('filterCandidates includes a head whose newer run replaced a failure', () => {
