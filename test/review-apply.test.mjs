@@ -1700,6 +1700,44 @@ test('a waiver result names the uncovered drift', async () => {
   assert.match(waived.reasons.join(' '), /does not cover tasks\.md/)
 })
 
+test('a plan-change waiver follows the planning/pr pipeline and names pr drift', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  await passDraft(fake, root, run)
+  const directory = reviewDir(root)
+  const draftRecord = JSON.parse(readFileSync(join(directory, 'review.json'), 'utf8'))
+  writeFileSync(join(directory, 'planning-review.json'), `${JSON.stringify({ ...draftRecord, review: 'planning' }, null, 2)}\n`)
+  writeFileSync(join(directory, 'pr-review.json'), `${JSON.stringify({
+    review: 'pr',
+    state: 'in-review',
+    rounds: [{ round: 1 }],
+    draftDrift: { currentObjectHash: draftRecord.objectHash },
+  }, null, 2)}\n`)
+  const policyPath = join(directory, 'policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  const model = policy.reviews.apply.reviewerModel
+  policy.reviews.planning = { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: model }
+  policy.reviews.pr = { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: model }
+  policy.pipeline = { beforeApply: 'planning', beforeArchive: 'pr' }
+  writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`)
+
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'proposal.md'), '# Proposal changed\n')
+  writeFileSync(join(root, 'openspec', 'changes', CHANGE, 'tasks.md'), '\n## 2. More\n\n- [ ] 2.1 More work\n')
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'change plan'])
+
+  const waived = await call(fake, 'openspec_review', {
+    action: 'waive', scope: 'plan-change', change: CHANGE,
+    approvedBy: 'user', waiver: 'Approved.', files: ['proposal.md'],
+  })
+  assert.equal(waived.review, 'planning')
+  assert.match(waived.nextAction, /review=pr/)
+  assert.equal(waived.ready, false)
+  assert.match(waived.reasons.join(' '), /does not cover tasks\.md/)
+  const waiver = JSON.parse(readFileSync(join(directory, 'plan-change-waiver.json'), 'utf8'))
+  assert.equal(waiver.draftObjectHash, draftRecord.objectHash)
+})
+
 test('a waiver that covers every drift file reports ready', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
