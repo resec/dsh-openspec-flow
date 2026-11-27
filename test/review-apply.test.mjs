@@ -502,6 +502,96 @@ test('apply review can run with draft review disabled and the merge-base fallbac
   assert.equal(resumedRecord.baseSource, 'merge-base')
 })
 
+test('a no-draft automatic base re-bases onto the fork', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-q', '-m', 'branch'])
+  const seal = run(['rev-parse', 'HEAD'])
+  run(['update-ref', 'refs/remotes/origin/main', seal])
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.baseline, 'none')
+  const first = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(first.baseSource, 'merge-base')
+  assert.equal(first.baseCommit, seal)
+
+  writeFileSync(join(root, 'feature.txt'), 'feature\n')
+  run(['add', 'feature.txt'])
+  run(['commit', '-q', '-m', 'feature work'])
+  run(['checkout', '-q', '-b', 'advance', seal])
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  run(['add', 'main-only.txt'])
+  run(['commit', '-q', '-m', 'main advance'])
+  const fork = run(['rev-parse', 'HEAD'])
+  run(['update-ref', 'refs/remotes/origin/main', fork])
+  run(['checkout', '-q', '-'])
+  run(['rebase', '-q', 'advance'])
+
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseSource, 'merge-base')
+  assert.equal(record.baseCommit, fork)
+  assert.equal(record.rebasedFrom, seal)
+  const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
+  assert.match(diff, /feature\.txt/)
+  assert.doesNotMatch(diff, /main-only\.txt/)
+})
+
+test('a no-draft explicit base stays after main advanced into the branch', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-q', '-m', 'branch'])
+  const seal = run(['rev-parse', 'HEAD'])
+  run(['update-ref', 'refs/remotes/origin/main', seal])
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply', base: seal })
+
+  writeFileSync(join(root, 'feature.txt'), 'feature\n')
+  run(['add', 'feature.txt'])
+  run(['commit', '-q', '-m', 'feature work'])
+  run(['checkout', '-q', '-b', 'advance', seal])
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  run(['add', 'main-only.txt'])
+  run(['commit', '-q', '-m', 'main advance'])
+  run(['update-ref', 'refs/remotes/origin/main', run(['rev-parse', 'HEAD'])])
+  run(['checkout', '-q', '-'])
+  run(['rebase', '-q', 'advance'])
+
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseSource, 'explicit')
+  assert.equal(record.baseCommit, seal)
+  assert.equal(record.rebasedFrom, undefined)
+  const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
+  assert.match(diff, /main-only\.txt/)
+})
+
+test('a no-draft automatic base that is not an ancestor stays', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: false }, apply: { enabled: true } })
+  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  run(['add', 'openspec/.gitignore', `openspec/changes/${CHANGE}`])
+  run(['commit', '-q', '-m', 'branch'])
+  const seal = run(['rev-parse', 'HEAD'])
+  run(['update-ref', 'refs/remotes/origin/main', seal])
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+
+  run(['checkout', '-q', '-b', 'sibling', `${seal}^`])
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  run(['add', 'main-only.txt'])
+  run(['commit', '-q', '-m', 'sibling advance'])
+  run(['update-ref', 'refs/remotes/origin/main', run(['rev-parse', 'HEAD'])])
+  run(['checkout', '-q', '-'])
+
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseSource, 'merge-base')
+  assert.equal(record.baseCommit, seal)
+  assert.equal(record.rebasedFrom, undefined)
+})
+
 test('a no-draft apply review starts without a draft record and reports its baseline', async () => {
   const { root, run } = gitFixture()
   writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
@@ -2180,6 +2270,69 @@ test('a rebase rewrites the branch seal and keeps the recorded base', async () =
   assert.equal(started.baseTreeSha, run(['rev-parse', `${state.sealedCommit}^{tree}`]))
   const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
   assert.match(diff, /feature\.txt/)
+})
+
+test('a rebase onto newer main re-bases the apply review diff', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'feature.txt'), 'feature\n')
+  run(['-C', state.worktree, 'add', 'feature.txt'])
+  run(['-C', state.worktree, 'commit', '-q', '-m', 'feature work'])
+  run(['checkout', '-q', 'main'])
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  run(['add', 'main-only.txt'])
+  run(['commit', '-q', '-m', 'another land'])
+  const mainTip = run(['rev-parse', 'HEAD'])
+  run(['update-ref', 'refs/remotes/origin/main', mainTip])
+  run(['-C', state.worktree, 'rebase', 'main'])
+
+  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  assert.equal(started.baseline, 'draft')
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseSource, 'rebase')
+  assert.equal(record.baseCommit, mainTip)
+  assert.equal(record.rebasedFrom, state.sealedCommit)
+  assert.notEqual(record.baseTreeSha, run(['rev-parse', `${state.sealedCommit}^{tree}`]))
+  const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
+  assert.match(diff, /feature\.txt/)
+  assert.doesNotMatch(diff, /main-only\.txt/)
+})
+
+test('an overlay that cannot be built refuses the round', { skip: process.platform === 'win32' }, async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root, { draft: { enabled: true }, apply: { enabled: true } })
+  await passDraft(fake, root, run)
+  const seal = run(['rev-parse', 'HEAD'])
+  writeFileSync(join(root, 'feature.txt'), 'feature\n')
+  run(['add', 'feature.txt'])
+  run(['commit', '-q', '-m', 'feature work'])
+  run(['checkout', '-q', '-b', 'advance', seal])
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  run(['add', 'main-only.txt'])
+  run(['commit', '-q', '-m', 'main advance'])
+  run(['update-ref', 'refs/remotes/origin/main', run(['rev-parse', 'HEAD'])])
+  run(['checkout', '-q', '-'])
+  run(['rebase', '-q', 'advance'])
+
+  const bin = mkdtempSync(join(tmpdir(), 'openspec-flow-git-'))
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\nfor arg in "$@"; do if [ "$arg" = "write-tree" ]; then exit 1; fi; done\nexec ${realGit} "$@"\n`)
+  spawnSync('chmod', ['+x', join(bin, 'git')])
+  const before = process.env.PATH
+  process.env.PATH = `${bin}:${before}`
+  try {
+    await assert.rejects(
+      call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+      /could not build the re-based base tree/,
+    )
+  } finally {
+    process.env.PATH = before
+    rmSync(bin, { recursive: true, force: true })
+  }
+  assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
 })
 
 test('the seal resets a stale apply branch and refuses an attached worktree', async () => {
