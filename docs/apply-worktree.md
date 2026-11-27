@@ -87,7 +87,7 @@ The `repair.action` is `none`, `recover`, `cleanup` or `manual`. A git project w
 
 `recover` removes the lock only when the observed token matches and the process is dead. It refuses a live owner, a changed owner or a missing owner, and does not delete state, worktrees, branches or review records.
 
-`remove` deletes only an archived plugin-created checkout (or an explicitly abandoned one with user approval and a reason), keeps its branch and deletes the state. A PR worktree is refused. After land cleanup, `remove` is idempotent: it succeeds without deleting the state and without failing on the missing checkout or branch.
+`remove` deletes only an archived plugin-created checkout (or an explicitly abandoned one with user approval and a reason) and keeps its branch. A PR worktree is refused. An archived state keeps its state file, seal ref and cleanup record, and the call succeeds without failing, when `cleanup.worktreeRemoved` is `true`, when the recorded checkout is gone or when its recorded branch is gone; only the call that removes the checkout deletes the state and the seal ref.
 
 `openspec_archive` refuses a plugin-created active or landing state and points at `openspec_apply_worktree action=land`.
 
