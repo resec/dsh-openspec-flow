@@ -716,6 +716,7 @@ window.__ModuleLoader__.load({
         ENDPOINTS,
         NS,
         lockLine,
+        ProfileRow,
         createController,
         selectCards,
         selectCardArray,

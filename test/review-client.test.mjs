@@ -213,6 +213,26 @@ test('the bundle repeats the channel and endpoint literals exactly', () => {
   }
 })
 
+test('a profile row renders the pass criteria and disposition switches', async () => {
+  const { plugin } = await loadBundle()
+  const { ProfileRow } = plugin.__test
+  const t = (key) => key
+  const row = JSON.stringify(ProfileRow({
+    t,
+    name: 'draft',
+    profile: {
+      object: 'directory', enabled: true, reviewers: 1, waitMinutes: 15,
+      passCriteria: 'minor', allowDeferred: false, allowRejected: true,
+    },
+  }))
+  assert.match(row, /passCriteria/)
+  assert.match(row, /allowDeferred/)
+  assert.match(row, /allowRejected/)
+  assert.match(row, /minor/)
+  assert.match(row, /false/)
+  assert.match(row, /true/)
+})
+
 test('a locked section is described in one line', async () => {
   const { plugin } = await loadBundle()
   const { lockLine } = plugin.__test
