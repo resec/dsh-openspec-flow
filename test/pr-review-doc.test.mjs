@@ -58,6 +58,7 @@ test('the contributor flow uses the pr entry and its profile', () => {
   assert.match(doc, /reviews\.pr/u)
   assert.match(doc, /pr-review\.json/u)
   assert.doesNotMatch(doc, /review=apply/u)
+  assert.doesNotMatch(doc, /merged-tree apply review/u)
 })
 
 test('the documented retry, batching, lock and telemetry behaviour is named', () => {

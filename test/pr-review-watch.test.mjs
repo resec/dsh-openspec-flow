@@ -27,6 +27,7 @@ import {
   preparePullRequest,
   processStartTime,
   publishComment,
+  readPrReviewRecord,
   readPullRequestStates,
   readReport,
   reclaimStaleRunLock,
@@ -446,6 +447,44 @@ test('comment dry-run renders without a GitHub write, and --apply posts once', (
   }
 })
 
+test('a later publish reuses the stored finding numbers', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, {
+      schemaVersion: 1,
+      prs: {
+        12: {
+          number: 12, head: HEAD, base: BASE, change: 'widget', round: 1, status: 'prepared',
+          findingNumbers: { 'R1-01': 1 }, nextFindingNumber: 2, commentFormat: 2,
+        },
+      },
+    })
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({
+      ready: true,
+      reasons: [],
+      report: {
+        verdict: 'changes-requested',
+        summary: 'ok',
+        findings: [
+          { id: 'R1-01', severity: 'major', axis: 'intent', location: 'a.js:1', problem: 'old', evidence: 'e', suggestion: 's', impact: 'i', rule: 'r', failure: 'f', status: 'open' },
+          { id: 'R2-01', severity: 'major', axis: 'intent', location: 'b.js:1', problem: 'new', evidence: 'e', suggestion: 's', impact: 'i', rule: 'r', failure: 'f', status: 'open' },
+        ],
+        verifications: [],
+      },
+    }))
+    const { gh } = fakeGh(() => undefined)
+    const dry = publishComment({ root, number: 12, reportPath: report, gh })
+    assert.match(dry.text, /\| F1 \|/)
+    assert.match(dry.text, /\| F2 \|/)
+    assert.match(dry.text, /old/)
+    assert.match(dry.text, /new/)
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('a trusted marker for the same head suppresses a second publish', () => {
   const root = makeRepository()
   try {
@@ -778,8 +817,27 @@ test('prepare copies the baseline configuration and ignores the PR head file', (
     git(root, ['push', '-q', 'origin', 'pr-head'])
     git(remote, ['update-ref', 'refs/pull/12/head', head])
     git(root, ['checkout', '-q', 'main'])
+    saveState(root, {
+      schemaVersion: 1,
+      prs: {
+        12: {
+          number: 12,
+          head: BASE,
+          change: 'widget',
+          round: 1,
+          status: 'commented',
+          commentFormat: 2,
+          findingNumbers: { 'R1-01': 1 },
+          nextFindingNumber: 2,
+        },
+      },
+    })
     const { gh } = fakeGh(() => prJson({ headRefOid: head }))
     const facts = preparePullRequest({ root, number: 12, gh })
+    const prepared = loadState(root).prs['12']
+    assert.deepEqual(prepared.findingNumbers, { 'R1-01': 1 })
+    assert.equal(prepared.nextFindingNumber, 2)
+    assert.equal(prepared.commentFormat, 2)
     const baseline = join(root, '.cache', 'pr-review', 'reviews.json')
     assert.equal(facts.reviewConfig, baseline)
     const copied = JSON.parse(readFileSync(baseline, 'utf8'))
@@ -1641,7 +1699,7 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
     const state = {
       schemaVersion: 1,
       prs: {
-        12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented' },
+        12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented', commentFormat: 2 },
       },
     }
     const detailNumbers = []
@@ -1664,6 +1722,58 @@ test('the poll fallback skips a recorded commented head and keeps the others', (
     assert.equal(result.fallback, true)
     assert.deepEqual(detailNumbers, [13])
     assert.deepEqual(result.candidates.map((candidate) => candidate.number), [13])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the poll fallback re-emits an old-format commented head', () => {
+  const root = makeRepository()
+  try {
+    const recorded = pollRow(12, HEAD)
+    const fresh = pollRow(13, BASE)
+    const state = {
+      schemaVersion: 1,
+      prs: { 12: { number: 12, head: HEAD, change: 'widget', worktree: null, round: 1, status: 'commented' } },
+    }
+    const detailNumbers = []
+    const gh = (args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        const fields = args[args.indexOf('--json') + 1]
+        if (fields !== 'number,headRefOid,baseRefOid,baseRefName,isDraft,labels') {
+          throw new Error('HTTP 504: 504 Gateway Timeout')
+        }
+        return JSON.stringify([recorded, fresh].map(({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels }) => ({ number, headRefOid, baseRefOid, baseRefName, isDraft, labels })))
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        detailNumbers.push(Number(args[2]))
+        const row = [recorded, fresh].find((entry) => Number(entry.number) === Number(args[2]))
+        return JSON.stringify({ files: row.files, statusCheckRollup: row.statusCheckRollup })
+      }
+      throw new Error(`unexpected gh ${args.join(' ')}`)
+    }
+    const result = pollPullRequests({ root, gh, state })
+    assert.equal(result.fallback, true)
+    assert.deepEqual(detailNumbers, [12, 13])
+    assert.deepEqual(result.candidates.map((candidate) => candidate.number), [12, 13])
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('a malformed pr review record is unavailable instead of throwing', () => {
+  const root = makeRepository()
+  try {
+    const paths = resolvePaths(root)
+    const directory = join(paths.commonDir, 'openspec-flow', 'review', 'local#widget')
+    mkdirSync(directory, { recursive: true })
+    const file = join(directory, 'pr-review.json')
+    writeFileSync(file, '{ not json')
+    assert.deepEqual(readPrReviewRecord(root, 'widget'), { findings: undefined, unavailable: true })
+    writeFileSync(file, JSON.stringify([]))
+    assert.deepEqual(readPrReviewRecord(root, 'widget'), { findings: undefined, unavailable: true })
+    writeFileSync(file, JSON.stringify({ findings: [{ id: 'R1-01', status: 'open' }] }))
+    assert.deepEqual(readPrReviewRecord(root, 'widget'), { findings: [{ id: 'R1-01', status: 'open' }], unavailable: false })
   } finally {
     cleanup(root)
   }
