@@ -92,6 +92,20 @@ test('evaluateChange requires exactly one active change and keeps other diagnost
   assert.match(unchecked.join('\n'), /unchecked tasks: 1\.1/)
 })
 
+test('a removed active change does not need a tasks.md', () => {
+  const removed = evaluateChange({
+    paths: ['openspec/changes/a/proposal.md', 'openspec/changes/a/tasks.md'],
+    tasksByChange: { a: null },
+  })
+  assert.deepEqual(removed, [])
+
+  const missing = evaluateChange({
+    paths: ['openspec/changes/a/proposal.md'],
+    tasksByChange: { a: undefined },
+  })
+  assert.match(missing.join('\n'), /the change a has no tasks\.md/u)
+})
+
 test('the maintainer flag skips only the restricted-path refusal', () => {
   const paths = ['openspec/changes/a/proposal.md', '.githooks/pre-push']
   const external = evaluateChange({
@@ -168,7 +182,7 @@ function makeMergeCheckout({ prFiles = {}, mainFiles = {}, prDelete = [] } = {})
   gitRun(root, ['checkout', '-q', '-b', 'pr'])
   writeFileAt(root, 'openspec/changes/widget/proposal.md', '# Widget\n\n## Why\n\nA thing.\n')
   for (const [path, text] of Object.entries(prFiles)) writeFileAt(root, path, text)
-  for (const path of prDelete) rmSync(join(root, path))
+  for (const path of prDelete) rmSync(join(root, path), { recursive: true, force: true })
   gitRun(root, ['add', '-A'])
   gitRun(root, ['commit', '-qm', 'pull request'])
   const head = gitRun(root, ['rev-parse', 'HEAD'])
@@ -205,6 +219,17 @@ test('the pull-request head excludes advanced main commits', () => {
     assert.deepEqual(changedPaths(base, head, root), ['openspec/changes/widget/proposal.md'])
     const result = spawnCheck(root, ['--base', base, '--head', head])
     assert.equal(result.status, 0, result.stderr)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('removing the whole active change does not require a tasks.md', () => {
+  const { root, base, head } = makeMergeCheckout({ prDelete: ['openspec/changes/widget'] })
+  try {
+    const result = spawnCheck(root, ['--base', base, '--head', head])
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /change check: ok/u)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

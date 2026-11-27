@@ -9,7 +9,7 @@
  * restricted-path refusal; every other validation still runs.
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -115,6 +115,8 @@ export function hasDependencyChange(base, head) {
 /**
  * Evaluate the pull request facts collected by the CLI.
  * @param input - paths, tasks by change, package.json snapshots and the maintainer flag.
+ * `tasksByChange[name]` is the tasks body, `undefined` when the change lacks
+ * tasks.md, or `null` when the pull request removes the whole change.
  * @returns error messages.
  */
 export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, headPackageJson, maintainer = false }) {
@@ -127,6 +129,7 @@ export function evaluateChange({ paths, tasksByChange = {}, basePackageJson, hea
   } else {
     for (const name of names) {
       const tasks = tasksByChange[name]
+      if (tasks === null) continue
       if (tasks === undefined) {
         errors.push(`the change ${name} has no tasks.md`)
         continue
@@ -254,7 +257,9 @@ function main() {
     try {
       tasksByChange[name] = readFileSync(join(ROOT, 'openspec', 'changes', name, 'tasks.md'), 'utf8')
     } catch {
-      tasksByChange[name] = undefined
+      // A missing directory means the pull request removes the whole change
+      // (a revert); a present directory without tasks.md is still an error.
+      tasksByChange[name] = existsSync(join(ROOT, 'openspec', 'changes', name)) ? undefined : null
     }
   }
   const errors = evaluateChange({
