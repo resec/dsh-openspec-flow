@@ -201,6 +201,10 @@ test('the README states the optional pass fields and readiness rule', () => {
     '门槛内',
     '`verified-deferred`',
     '`verified-rejected`',
+    '默认 `major`',
+    '所有门槛内 finding 已关闭',
+    '`pass` 要求门槛内 finding 已解决',
+    '`changes-requested` 要求仍有门槛内未解决项',
   ]) {
     assert.ok(readme.includes(phrase), `the README states ${phrase}`)
   }
