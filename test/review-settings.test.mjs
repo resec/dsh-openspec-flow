@@ -388,6 +388,7 @@ test('locked policies list only the review sections of each project', async () =
     const dark = first.changes.find((change) => change.change === 'add-dark-mode')
     assert.equal(dark.reviews.draft.reviewers, 1)
     assert.equal(dark.reviews.apply.reviewers, 0)
+    assert.deepEqual(dark.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
     assert.equal(dark.reviews.draft.reviewerModel.provider, 'deepseek')
     assert.equal(dark.lockedBy, 'new-change')
     assert.equal(typeof dark.lockedAt, 'string')
@@ -581,6 +582,35 @@ test('the route registers as one prefix and unregisters with the plugin', async 
   }
 })
 
+
+test('a project policy lists an extra entry and its pipeline', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-openspec-extra-entry-'))
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    mkdirSync(join(root, 'openspec'), { recursive: true })
+    const directory = reviewDirectory(root, null, 'demo')
+    mkdirSync(directory, { recursive: true })
+    writeJsonAtomic(join(directory, 'policy.json'), {
+      schemaVersion: 3,
+      change: 'demo',
+      reviews: {
+        draft: {
+          object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
+        pr: {
+          object: 'tree', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+        },
+      },
+      pipeline: { beforeApply: 'draft', beforeArchive: 'pr' },
+    })
+    const facts = projectFacts(root)
+    assert.equal(facts.changes.length, 1)
+    assert.equal(facts.changes[0].reviews.pr.reviewers, 1)
+    assert.deepEqual(facts.changes[0].pipeline, { beforeApply: 'draft', beforeArchive: 'pr' })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('a legacy policy is listed once and migrated to the shared root', () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-openspec-legacy-policy-'))
