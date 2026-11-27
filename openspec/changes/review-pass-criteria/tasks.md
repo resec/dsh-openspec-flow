@@ -6,9 +6,9 @@
 
 ## 1. Profile parameters and defaults
 
-- [ ] 1.1 Add optional `passCriteria`, `allowDeferred` and `allowRejected` to the profile normalizer, with enum and boolean validation and the `major`/`true`/`true` defaults; verify `npm run test:affected -- lib/review/config.js test/review-file.test.mjs` covers accepted, omitted and rejected values.
-- [ ] 1.2 Add the three resolved fields to `reviewSection` and to `DEFAULT_DRAFT_REVIEW` / `DEFAULT_APPLY_REVIEW`; verify `node --test test/review-file.test.mjs` asserts the resolved section always carries them.
-- [ ] 1.3 Make `defaultReviewConfigText()` write the three fields explicitly in both default profiles; verify `node --test test/review-file.test.mjs` asserts the generated file text carries all three values per profile.
+- [x] 1.1 Add optional `passCriteria`, `allowDeferred` and `allowRejected` to the profile normalizer, with enum and boolean validation and the `major`/`true`/`true` defaults; verify `npm run test:affected -- lib/review/config.js test/review-file.test.mjs` covers accepted, omitted and rejected values.
+- [x] 1.2 Add the three resolved fields to `reviewSection` and to `DEFAULT_DRAFT_REVIEW` / `DEFAULT_APPLY_REVIEW`; verify `node --test test/review-file.test.mjs` asserts the resolved section always carries them.
+- [x] 1.3 Make `defaultReviewConfigText()` write the three fields explicitly in both default profiles; verify `node --test test/review-file.test.mjs` asserts the generated file text carries all three values per profile.
 
 ## 2. Policy lock and round criteria
 
