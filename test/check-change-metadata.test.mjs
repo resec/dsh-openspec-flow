@@ -111,9 +111,9 @@ function calls(path) {
   return readFileSync(path, 'utf8').trim().split('\n').filter((line) => line !== '')
 }
 
-test('lists every directory except archive, hidden names included', () => {
+test('skips archive and dot-prefixed directories', () => {
   const root = makeProject({ changes: ['.hidden', 'widget', 'archive'] })
-  assert.deepEqual(listActiveChanges(root), ['.hidden', 'widget'])
+  assert.deepEqual(listActiveChanges(root), ['widget'])
 })
 
 test('the embedded PR #30 metadata fails with the parser message', () => {

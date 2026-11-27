@@ -36,8 +36,9 @@ export function usage() {
 /**
  * List the active change names under a project root.
  *
- * The CLI lists every directory under `openspec/changes` except `archive` for
- * active changes, hidden names included; the gate enumerates the same set.
+ * The CLI validation set excludes `archive` and dot-prefixed directories, and
+ * `status` refuses a dot-prefixed change name; the gate enumerates the same
+ * set so a lookalike directory is not reported as a change.
  *
  * @param root - project root.
  * @returns active change names, sorted.
@@ -47,7 +48,7 @@ export function listActiveChanges(root) {
   const directory = join(root, 'openspec', 'changes')
   if (!existsSync(directory)) throw new Error(`the OpenSpec change root ${directory} does not exist`)
   return readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== 'archive')
+    .filter((entry) => entry.isDirectory() && entry.name !== 'archive' && !entry.name.startsWith('.'))
     .map((entry) => entry.name)
     .sort()
 }
