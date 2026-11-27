@@ -17,9 +17,6 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { parseJson, resolveBundledCli } from '../lib/openspec.js'
 
-/** Raised for a malformed command line. */
-export class UsageError extends Error {}
-
 /**
  * The command line help.
  * @returns usage text.

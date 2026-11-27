@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-import { listActiveChanges, main } from '../scripts/check-change-metadata.mjs'
+import { checkChange, listActiveChanges, main } from '../scripts/check-change-metadata.mjs'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
 
 test.after(cleanupTempDirs)
@@ -214,11 +214,19 @@ test('a resolver failure fails the gate before spawning', () => {
   assert.match(result.stderr, /the pinned package is missing/u)
 })
 
-test('an unexecutable CLI fails the gate', () => {
+test('a missing CLI is refused before spawning', () => {
   const root = makeProject()
   const result = runMain({ root, cli: join(root, 'missing-openspec.mjs') })
   assert.equal(result.code, 2)
   assert.match(result.stderr, /cannot run the bundled OpenSpec CLI/u)
+})
+
+test('a spawn failure inside checkChange is reported', () => {
+  const root = makeProject()
+  assert.throws(
+    () => checkChange(process.execPath, join(root, 'missing-directory'), 'widget'),
+    /cannot run the bundled OpenSpec CLI/u,
+  )
 })
 
 test('unknown arguments and --help follow the gate contract', () => {
