@@ -1511,3 +1511,17 @@ test('archiveDraftAttempt refuses a missing round and an unknown cause', () => {
     /unknown draft attempt cause/,
   )
 })
+
+test('a version 3 policy whose section lacks an object needs the supplement', () => {
+  const policy = {
+    schemaVersion: 3,
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+    reviews: { draft: { enabled: true, reviewers: 0, waitMinutes: 15 } },
+  }
+  assert.equal(needsPolicySupplement(policy), true)
+  assert.equal(needsPolicySupplement({
+    schemaVersion: 3,
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+    reviews: { draft: { object: 'directory', enabled: true } },
+  }), false)
+})
