@@ -140,7 +140,7 @@ The pull request template asks for the exact commands, their pass or fail result
 
 No scope or metric may drop more than 1.00 percentage point below `coverage.baseline.json`. New code means the lines added or modified since `git merge-base origin/main HEAD`.
 
-`npm run coverage -- --report-only` prints the same verdict without failing the run, which makes it the faster pre-check; `npm run verify` is still required before opening the pull request. Only coverage violations are non-fatal in that mode: the command still exits nonzero when `coverage.baseline.json` is missing or unusable.
+`npm run coverage -- --report-only` prints the same verdict without failing the run, which makes it the faster pre-check; `npm run verify` is still required before opening the pull request.
 
 ## Node and runtime rules
 
