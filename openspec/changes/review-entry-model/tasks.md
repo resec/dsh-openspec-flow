@@ -52,10 +52,10 @@
 
 ## 8. Integration verification
 
-- [ ] 8.1 Run `npm run verify` on Node 24 and confirm the test summary and coverage verdict pass.
-- [ ] 8.2 Run `npm run test:lab -- --mock-only` and confirm the offline flow still completes.
-- [ ] 8.3 Read a change locked with a version 2 policy and a change locked with a version 3 policy through status, confirm the legacy one is unchanged and the new one reports its entries and pipeline.
-- [ ] 8.4 Confirm no file under `scripts/pr-review-*.mjs` changed in this change.
+- [x] 8.1 Run `npm run verify` on Node 24 and confirm the test summary and coverage verdict pass.
+- [x] 8.2 Run `npm run test:lab -- --mock-only` and confirm the offline flow still completes.
+- [x] 8.3 Read a change locked with a version 2 policy and a change locked with a version 3 policy through status, confirm the legacy one is unchanged and the new one reports its entries and pipeline.
+- [x] 8.4 Confirm no file under `scripts/pr-review-*.mjs` changed in this change.
 
 ## Workflow follow-up
 
