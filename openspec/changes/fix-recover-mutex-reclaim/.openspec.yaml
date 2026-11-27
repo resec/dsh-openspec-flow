@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Reclaim a leftover recover mutex by owner liveness so a killed recovery cannot block recovery forever, and report it in read-only inspection.

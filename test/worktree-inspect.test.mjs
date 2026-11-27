@@ -141,6 +141,59 @@ test('recover removes the dead lock after the token matches', async () => {
   assert.equal(existsSync(path), false)
 })
 
+test('recover reclaims a stale recovery mutex and removes the dead lock', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const recovery = `${path}.recover.d`
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({
+    schema: 1, token: 'dead-token', pid: 2147483647, at: new Date().toISOString(), what: 'test',
+  })}\n`)
+  mkdirSync(recovery)
+  writeFileSync(join(recovery, 'owner'), `${JSON.stringify({
+    schema: 1, token: 'stale', pid: 2147483647, at: new Date().toISOString(),
+  })}\n`)
+  const fake = setup(root)
+  const result = await call(fake, 'openspec_apply_worktree', {
+    action: 'recover', change: 'demo', scope: 'change', expectedOwner: 'dead-token',
+  })
+  assert.deepEqual(result, { recovered: true, scope: 'change' })
+  assert.equal(existsSync(path), false)
+  assert.equal(existsSync(recovery), false)
+})
+
+test('a leftover recovery mutex is reported and left in place', async () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const recovery = `${path}.recover.d`
+  mkdirSync(recovery, { recursive: true })
+  writeFileSync(join(recovery, 'owner'), `${JSON.stringify({
+    schema: 1, token: 'stale', pid: 2147483647, at: new Date().toISOString(),
+  })}\n`)
+  const fake = setup(root)
+  const dead = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(dead.status, 'repair-required')
+  assert.equal(dead.repair.action, 'manual')
+  assert.match(dead.repair.message, /change recovery mutex .*dead process 2147483647/)
+  const entry = dead.locks.find((lock) => lock.scope === 'change')
+  assert.equal(entry.recovery.state, 'dead')
+  assert.equal(entry.recovery.owner.token, 'stale')
+  assert.equal(existsSync(recovery), true)
+
+  writeFileSync(join(recovery, 'owner'), 'not json')
+  const corrupt = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(corrupt.repair.action, 'manual')
+  assert.match(corrupt.repair.message, /no usable owner/)
+  assert.equal(corrupt.locks.find((lock) => lock.scope === 'change').recovery.state, 'corrupt')
+
+  writeFileSync(join(recovery, 'owner'), `${JSON.stringify({ schema: 1, token: 'busy', pid: process.pid })}\n`)
+  const live = await call(fake, 'openspec_inspect', { action: 'worktree', change: 'demo' })
+  assert.equal(live.repair.action, 'none')
+  assert.equal(live.locks.find((lock) => lock.scope === 'change').recovery.state, 'alive')
+})
+
 test('recover rejects missing owner and scope arguments before touching a lock', async () => {
   const root = repository()
   const fake = setup(root)

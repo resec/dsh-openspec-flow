@@ -17,6 +17,8 @@ test('the apply worktree document and README row describe the state and locks', 
     'cleanup',
     'rebaseReview',
     'cleanup.complete',
+    '<lock>.recover.d',
+    'recovery mutex',
   ]) {
     assert.ok(doc.includes(text), `document names ${text}`)
   }

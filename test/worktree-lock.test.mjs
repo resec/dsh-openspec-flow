@@ -7,7 +7,8 @@ import test from 'node:test'
 
 import { gitCommonDir } from '../lib/review/store.js'
 import {
-  acquireLock, acquireOrdered, inspectLock, isDeadLock, lockPath, recoverLock, releaseLock,
+  acquireLock, acquireOrdered, inspectLock, inspectRecovery, isDeadLock, lockPath, reclaimRecovery,
+  recoverLock, releaseLock,
 } from '../lib/worktree/lock.js'
 
 const roots = []
@@ -145,6 +146,76 @@ test('recovery requires a scope and an owner token', () => {
   assert.throws(() => recoverLock(common, 'bogus', { expectedOwner: 'x' }), /unknown lock scope/)
   assert.throws(() => recoverLock(common, 'change', { change: 'demo' }), /requires the expectedOwner token/)
   assert.throws(() => recoverLock(common, 'change', { expectedOwner: 'x' }), /requires a non-empty change/)
+})
+
+test('a dead recovery mutex is reclaimed and removed with the lock', () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const recovery = `${path}.recover.d`
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 2147483647 })}\n`)
+  mkdirSync(recovery)
+  writeFileSync(join(recovery, 'owner'), `${JSON.stringify({
+    schema: 1, token: 'stale', pid: 2147483647, at: new Date().toISOString(),
+  })}\n`)
+  const stale = JSON.parse(readFileSync(join(recovery, 'owner'), 'utf8'))
+  assert.deepEqual(inspectRecovery(path), { path: recovery, state: 'dead', owner: stale })
+  assert.deepEqual(recoverLock(common, 'change', { change: 'demo', expectedOwner: 'dead' }), {
+    recovered: true,
+    scope: 'change',
+  })
+  assert.equal(existsSync(path), false)
+  assert.equal(existsSync(recovery), false)
+  assert.equal(inspectRecovery(path).state, 'missing')
+})
+
+test('a live recovery mutex still refuses recovery and is left in place', () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const recovery = `${path}.recover.d`
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'owner'), `${JSON.stringify({ schema: 1, token: 'dead', pid: 2147483647 })}\n`)
+  mkdirSync(recovery)
+  writeFileSync(join(recovery, 'owner'), `${JSON.stringify({ schema: 1, token: 'busy', pid: process.pid })}\n`)
+  assert.throws(
+    () => recoverLock(common, 'change', { change: 'demo', expectedOwner: 'dead' }),
+    /another recovery holds .*pid \d+, token busy/,
+  )
+  assert.equal(inspectRecovery(path).state, 'alive')
+  assert.equal(existsSync(recovery), true)
+  assert.equal(existsSync(path), true)
+})
+
+test('recovery surfaces a mutex creation failure', () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const directory = dirname(path)
+  mkdirSync(directory, { recursive: true })
+  chmodSync(directory, 0o555)
+  try {
+    assert.throws(
+      () => recoverLock(common, 'change', { change: 'demo', expectedOwner: 'x' }),
+      /EACCES|EPERM|EROFS/,
+    )
+  } finally {
+    chmodSync(directory, 0o755)
+  }
+  assert.equal(existsSync(`${path}.recover.d`), false)
+})
+
+test('a reclaim puts back a mutex whose owner changed after the observation', () => {
+  const root = repository()
+  const common = gitCommonDir(root)
+  const path = lockPath(common, 'change', { change: 'demo' })
+  const recovery = `${path}.recover.d`
+  mkdirSync(recovery, { recursive: true })
+  writeFileSync(join(recovery, 'owner'), `${JSON.stringify({ schema: 1, token: 'live', pid: process.pid })}\n`)
+  assert.equal(reclaimRecovery(recovery, { token: 'stale', pid: 2147483647 }), false)
+  assert.equal(inspectLock(recovery).owner.token, 'live')
+  assert.equal(reclaimRecovery(`${path}.missing.recover.d`, { token: 'stale', pid: 2147483647 }), false)
 })
 
 test('inspection reports corrupt and missing owners', () => {
