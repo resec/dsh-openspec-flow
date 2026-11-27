@@ -16,10 +16,10 @@
 
 ## 3. Record naming and compatibility
 
-- [ ] 3.1 Map an entry to its record file and round directory in `lib/review/record.js`: `draft` → `review.json`/`round-N`, `apply` → `apply-review.json`/`apply-round-N`, otherwise `<entry>-review.json`/`<entry>-round-N`; reject an unsafe entry segment. Verify unit tests cover all three mappings.
-- [ ] 3.2 Route report, round, revision, waiver and card reads through the entry-aware naming, keeping the legacy `draft`/`apply` paths byte-for-byte. Verify `npm run test:affected -- lib/review/record.js test/review-unit.test.mjs test/review-store-root.test.mjs` passes.
-- [ ] 3.3 Read an existing `review.json` or `apply-review.json` under its old name for a legacy policy and do not copy it to a new name. Verify a legacy-record test asserts the old path is read and no new file is created.
-- [ ] 3.4 Update the record-layout section of `docs/review.md` with the per-entry names and the legacy compatibility rule. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
+- [x] 3.1 Map an entry to its record file and round directory in `lib/review/record.js`: `draft` → `review.json`/`round-N`, `apply` → `apply-review.json`/`apply-round-N`, otherwise `<entry>-review.json`/`<entry>-round-N`; reject an unsafe entry segment. Verify unit tests cover all three mappings.
+- [x] 3.2 Route report, round, revision, waiver and card reads through the entry-aware naming, keeping the legacy `draft`/`apply` paths byte-for-byte. Verify `npm run test:affected -- lib/review/record.js test/review-unit.test.mjs test/review-store-root.test.mjs` passes.
+- [x] 3.3 Read an existing `review.json` or `apply-review.json` under its old name for a legacy policy and do not copy it to a new name. Verify a legacy-record test asserts the old path is read and no new file is created.
+- [x] 3.4 Update the record-layout section of `docs/review.md` with the per-entry names and the legacy compatibility rule. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
 
 ## 4. Entry-driven review flow
 
