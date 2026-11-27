@@ -34,6 +34,7 @@ Commands that must pass before the pull request is ready.
 ```sh
 npm test
 npm run openspec:check
+npm run check:requirement-length
 npm run verify
 ```
 

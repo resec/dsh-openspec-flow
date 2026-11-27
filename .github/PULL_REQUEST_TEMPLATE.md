@@ -4,7 +4,7 @@ Closes #
 
 ## Change
 
-- Change name under `openspec/changes/`:
+- Exactly one active change under `openspec/changes/`:
 - One-sentence summary:
 
 ## Root cause
@@ -22,6 +22,7 @@ Commands and results from the commit in this pull request:
 ```text
 npm test
 npm run openspec:check
+npm run check:requirement-length
 npm run verify
 npm run test:lab -- --mock-only
 ```
@@ -35,18 +36,3 @@ npm run test:lab -- --mock-only
 
 - Risk:
 - Rollback:
-
-## Checklist
-
-- [ ] The pull request adds or updates an active change under `openspec/changes/`.
-- [ ] Every task in the change's `tasks.md` is checked.
-- [ ] `openspec validate <name> --strict` passes.
-- [ ] No restricted path changed (`.githooks/`, `.github/workflows/`, `coverage.baseline.json`, `dist/`, `openspec/changes/archive/`, dependency fields, `package-lock.json`).
-- [ ] No generated OpenSpec skill copy is committed.
-- [ ] The change is not archived in this pull request.
-- [ ] CI is green.
-
-## Agent metadata (optional)
-
-- GitHub handle:
-- Agent, model or session:

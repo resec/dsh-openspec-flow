@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+goal: Align the issue and pull request templates with the change gate and
+  cover the templates with tests.
