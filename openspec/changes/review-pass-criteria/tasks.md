@@ -39,15 +39,15 @@
 
 ## 6. Documentation and repository configuration
 
-- [ ] 6.1 Update `docs/review.md` with the threshold, disposition table, finding statuses, readiness, report verdict, brief contract, status counts and configuration defaults; extend `test/review-doc.test.mjs` to assert the threshold, disposition table, `verified-deferred`/`verified-rejected` statuses, `verifiedDeferred`/`verifiedRejected` counts, and the readiness and verdict rules; verify `node --test test/review-doc.test.mjs` passes.
-- [ ] 6.2 Update the README review configuration section with the optional fields and their defaults and the changed readiness and verdict behavior; extend `test/review-doc.test.mjs` to assert the three optional fields with their defaults and the new readiness/verdict statements; verify `node --test test/review-doc.test.mjs` passes.
-- [ ] 6.3 Update `openspec/reviews.json` so `standard-directory` and `standard-tree` carry explicit `major`/`true`/`true`, and `pr-tree` (from `review-entry-model`) carries `nit`/`false`/`false`; add a test that reads the repository file and asserts the fields, and verify with `node --test test/review-file.test.mjs`.
+- [x] 6.1 Update `docs/review.md` with the threshold, disposition table, finding statuses, readiness, report verdict, brief contract, status counts and configuration defaults; extend `test/review-doc.test.mjs` to assert the threshold, disposition table, `verified-deferred`/`verified-rejected` statuses, `verifiedDeferred`/`verifiedRejected` counts, and the readiness and verdict rules; verify `node --test test/review-doc.test.mjs` passes.
+- [x] 6.2 Update the README review configuration section with the optional fields and their defaults and the changed readiness and verdict behavior; extend `test/review-doc.test.mjs` to assert the three optional fields with their defaults and the new readiness/verdict statements; verify `node --test test/review-doc.test.mjs` passes.
+- [x] 6.3 Update `openspec/reviews.json` so `standard-directory` and `standard-tree` carry explicit `major`/`true`/`true`, and `pr-tree` (from `review-entry-model`) carries `nit`/`false`/`false`; add a test that reads the repository file and asserts the fields, and verify with `node --test test/review-file.test.mjs`.
 
 ## 7. Integration verification
 
-- [ ] 7.1 Confirm no pull-request script changed by diffing the recorded apply base (or seal commit) against `HEAD` and checking untracked or staged paths: `git diff --name-only <base>..HEAD -- 'scripts/pr-*'` and `git status --porcelain -- 'scripts/pr-*'` are both empty.
-- [ ] 7.2 Run the full instrumented suite on Node 24 with `npm run verify` and record the test and coverage verdicts.
-- [ ] 7.3 Run `openspec_inspect` with `action: "validate"`, `change: "review-pass-criteria"` and `strict: true`, and record the result.
+- [x] 7.1 Confirm no pull-request script changed by diffing the recorded apply base (or seal commit) against `HEAD` and checking untracked or staged paths: `git diff --name-only <base>..HEAD -- 'scripts/pr-*'` and `git status --porcelain -- 'scripts/pr-*'` are both empty.
+- [x] 7.2 Run the full instrumented suite on Node 24 with `npm run verify` and record the test and coverage verdicts.
+- [x] 7.3 Run `openspec_inspect` with `action: "validate"`, `change: "review-pass-criteria"` and `strict: true`, and record the result.
 
 ## Workflow follow-up
 
