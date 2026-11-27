@@ -697,6 +697,27 @@ test('finding summaries count statuses and blockers', () => {
   assert.equal(terminal.blocking, 0)
 })
 
+test('a non-default threshold changes blocking and a ready open below-threshold finding still asks for dispose', () => {
+  const findings = [
+    finding({ id: 'R1-01', severity: 'nit', status: 'open' }),
+    finding({ id: 'R1-02', severity: 'minor', status: 'open' }),
+  ]
+  const atMinor = summarizeFindings(findings, 'minor')
+  assert.equal(atMinor.blocking, 1)
+  assert.equal(summarizeFindings(findings, 'nit').blocking, 2)
+  const record = {
+    review: 'draft',
+    state: 'in-review',
+    objectHash: 'hash',
+    rounds: [{ round: 1, objectHash: 'hash', verdict: 'pass', report: { path: 'round-1/report.json' } }],
+    findings: [finding({ id: 'R1-01', severity: 'nit', status: 'open' })],
+    criteria: { passCriteria: 'major', allowDeferred: true, allowRejected: true },
+  }
+  const readiness = draftReadiness(record, 'hash', 'draft')
+  assert.equal(readiness.ready, true)
+  assert.match(readiness.nextAction, /openspec_review action=dispose review=draft/)
+})
+
 test('recordFinding keeps the report fields and starts open', () => {
   const recorded = recordFinding(finding(), 1, 1)
   assert.equal(recorded.status, 'open')
@@ -1042,7 +1063,7 @@ test('verification transitions and dispositions cover every status', () => {
       findings: [],
       verifications: [{ id: 'R1-10', status: 'verified-deferred', evidence: 'x' }],
     }, { round: 2, findings: [notDeferred] }),
-    /only a deferred finding can be verified-deferred/,
+    /must dispose it with openspec_review action=dispose review=draft status=deferred/,
   )
   const pendingDeferred = finding({ id: 'R1-11', severity: 'minor', status: 'deferred' })
   assert.throws(
@@ -1052,7 +1073,7 @@ test('verification transitions and dispositions cover every status', () => {
       findings: [],
       verifications: [{ id: 'R1-11', status: 'verified-rejected', evidence: 'x' }],
     }, { round: 2, findings: [pendingDeferred] }),
-    /only a rejected finding can be verified-rejected/,
+    /must dispose it with openspec_review action=dispose review=draft status=rejected/,
   )
 })
 
@@ -1276,6 +1297,23 @@ test('apply policy helpers migrate and default', () => {
     allowDeferred: true,
     allowRejected: true,
   })
+})
+
+test('a migrated apply section keeps the profile pass criteria', () => {
+  const root = temp()
+  const directory = join(root, 'review')
+  mkdirSync(directory, { recursive: true })
+  const policy = { schemaVersion: 3, reviews: { draft: { enabled: true, reviewers: 0, waitMinutes: 15 } } }
+  const config = {
+    apply: {
+      object: 'tree', enabled: true, reviewers: 1, waitMinutes: 20,
+      reviewerModel: { source: 'inherit' }, passCriteria: 'nit', allowDeferred: false, allowRejected: false,
+    },
+  }
+  const migrated = ensureApplyPolicy(directory, policy, { config })
+  assert.equal(migrated.reviews.apply.passCriteria, 'nit')
+  assert.equal(migrated.reviews.apply.allowDeferred, false)
+  assert.equal(migrated.reviews.apply.allowRejected, false)
 })
 
 test('git merge base resolves and fails cleanly', () => {
