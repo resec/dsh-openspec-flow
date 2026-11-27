@@ -1047,6 +1047,7 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   const rebasedMerge = buildApplyBrief({ ...base, baseSource: 'merge-base', rebasedFrom: 'e'.repeat(40), validation: { strict: true, issues: [] } })
   assert.match(rebasedMerge, /^- rebased from: e{40}$/m)
   assert.match(rebasedMerge, /git merge-base HEAD origin\/main/)
+  assert.match(rebasedMerge, /re-resolved to the current fork because the branch took in newer main/)
 })
 
 test('the apply brief verifies a recorded fixed finding', () => {
