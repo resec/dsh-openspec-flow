@@ -185,11 +185,12 @@ test('a failed validation blocks the push before the landed check and coverage',
   assert.deepEqual(nodeCalls, [])
 })
 
-test('openspec:check validates active artifacts and archived task state', () => {
+test('openspec:check validates active artifacts, archived task state and change metadata', () => {
   const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   const script = manifest.scripts['openspec:check']
   assert.match(script, /validate --all --strict/)
   assert.match(script, /validate --archived --strict/)
+  assert.match(script, /check-change-metadata\.mjs/)
 })
 
 test('openspec:check:push runs the scoped main gate', () => {
