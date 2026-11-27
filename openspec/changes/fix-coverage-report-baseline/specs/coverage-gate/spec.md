@@ -25,4 +25,4 @@ The gate SHALL support a report mode that prints coverage violations without fai
 
 - **WHEN** the gate runs in report mode and `coverage.baseline.json` is absent or records a Node version that fails validation
 - **THEN** the command exits nonzero instead of printing a clean report
-- **AND** a run that updates the baseline still tolerates the absent or Node-invalid baseline, though the baseline ratchet can still refuse a lowering
+- **AND** a run that updates the baseline still completes and regenerates the file
