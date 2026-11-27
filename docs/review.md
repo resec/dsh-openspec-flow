@@ -83,12 +83,13 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 `openspec_new_change` 与首次评审都会写 `policy.json`，之后不再随配置改动。锁定内容：
 
-- `reviews.draft`、`reviews.apply`：`enabled`、`reviewers`、`waitMinutes`、`reviewerModel`。
-- `git.enabled`：创建时该目录是否有 git 仓库。
+- `reviews.<entry>`：每个入口的 `object`、`enabled`、`reviewers`、`waitMinutes`、`reviewerModel`。`object` 随入口锁定，之后修改档案不会把已开始的评审换到另一种对象流程。
+- `pipeline`：`beforeApply` 与 `beforeArchive` 指向的入口。
+- `git.enabled`：创建时该目录是否有 git 仓库；无 git 时所有 tree 入口在锁定策略中为禁用。
 - `change`、`store`、`lockedAt`、`lockedBy`、`configHash`、`schemaVersion`。
-- `source`：配置文件路径（项目内为项目相对路径，项目外为绝对路径）、内容 sha256 与两个档案名。
+- `source`：配置文件路径（项目内为项目相对路径，项目外为绝对路径）、内容 sha256、入口到档案名的映射与 `pipeline`。
 
-策略记录 `schemaVersion: 2`。更早的 policy 没有 `reviewerModel` 或 apply 段时，下一次 `start` 或 `resume` 会用项目文件（或调用传入的 `configPath`）补写缺失段；已记录的段不会被重写。`schemaVersion: 1` 的记录按只读兼容读取，不会被改写以补 `source`。修改 `openspec/reviews.json` 只影响之后新建的变更，没有重新锁定入口。
+策略记录 `schemaVersion: 3`。更早的 policy 按 `draft` = directory、`apply` = tree 与默认 pipeline 只读兼容读取，读取本身不重写文件；缺少某个入口段或 `pipeline` 时，只有首次 `start` 或 `resume` 且调用提供 `configPath` 才补写一次：补写记录 `schemaVersion: 3` 与新增入口的 `object`，不补 `source`，也不给已有旧段补 `object`；之后再次传入 `configPath` 不再补写。`schemaVersion: 1` 的记录按只读兼容读取，不会被改写以补 `source`。修改 `openspec/reviews.json` 只影响之后新建的变更，没有重新锁定入口。
 
 ## 报告与 finding
 

@@ -45,10 +45,11 @@ test('a valid document resolves both entries and records the source', () => {
   assert.deepEqual(result.value.draft.reviewerModel, { source: 'inherit' })
   assert.equal(result.source.path, 'openspec/reviews.json')
   assert.match(result.source.sha256, /^[0-9a-f]{64}$/)
-  assert.deepEqual(result.source.profiles, {
+  assert.deepEqual(result.source.entries, {
     draft: 'standard-directory',
     apply: 'standard-tree',
   })
+  assert.deepEqual(result.source.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
 })
 
 test('a missing file fails with its path', () => {
