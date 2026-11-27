@@ -491,3 +491,162 @@ test('a preflight or argument failure leaves the recorded stamp untouched', asyn
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+/** The lcov record a passing fixture run writes. */
+function passingLcov() {
+  return (
+    lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]) +
+    lcov('lib/a.js', [[1, 1]], [[1, 0, 0, 1]], [['b', 1, 1]])
+  )
+}
+
+/** The lcov record a fixture run writes below the line floor. */
+function violatingLcov() {
+  return lcov('index.js', [[1, 1]], [[1, 0, 0, 1]], [['a', 1, 1]]) + lcov('lib/a.js', [[1, 0]], [], [])
+}
+
+/**
+ * Turn a passing gate repository into one the entrypoint can run end to end.
+ *
+ * The committed `scripts/run-tests.mjs` stub reads `.cache/run-mode.json`, which
+ * is ignored, so a test can switch the run's outcome without dirtying the tree
+ * the stamp requires to be clean. `.coverage/` is ignored as well: the
+ * entrypoint recreates it and the gate writes its report there before the
+ * stamp decision.
+ *
+ * @returns the repository root.
+ */
+function entrypointRoot() {
+  const root = makePassingGateRepo()
+  writeFileSync(join(root, '.gitignore'), '.cache/\n.coverage/\n')
+  writeFileSync(
+    join(root, 'scripts', 'run-tests.mjs'),
+    [
+      "import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'",
+      "let mode = 'pass'",
+      'try {',
+      "  mode = JSON.parse(readFileSync('.cache/run-mode.json', 'utf8')).mode",
+      '} catch {}',
+      "if (mode === 'fail') process.exit(1)",
+      "mkdirSync('.coverage', { recursive: true })",
+      `if (mode !== 'no-lcov') writeFileSync('.coverage/plugin.info', mode === 'violate' ? ${JSON.stringify(violatingLcov())} : ${JSON.stringify(passingLcov())})`,
+      '',
+    ].join('\n'),
+  )
+  // The first commit tracked `.coverage/plugin.info`; drop it from the index so
+  // deleting and recreating the directory cannot dirty the tree.
+  git(root, ['rm', '--cached', '-r', '.coverage'])
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-m', 'add the run stub'])
+  return root
+}
+
+/**
+ * @param root - repository root.
+ * @param mode - the stub's outcome: `pass`, `fail` or `no-lcov`.
+ */
+function writeRun(root, mode) {
+  mkdirSync(join(root, '.cache'), { recursive: true })
+  writeJson(join(root, '.cache', 'run-mode.json'), { mode })
+}
+
+test('a passing enforce run writes the stamp through the entrypoint', async () => {
+  const root = entrypointRoot()
+  try {
+    writeRun(root, 'pass')
+    const head = git(root, ['rev-parse', 'HEAD']).stdout.trim()
+    assert.equal(await runVerification({ root }), 0)
+    const record = readStampFixture(root)
+    assert.ok(record !== null, 'a passing enforce run must record a stamp')
+    assert.equal(record.head, head)
+    assert.equal(record.base, resolveBase(root, 'origin/main'))
+    assert.equal(git(root, ['status', '--porcelain']).stdout.trim(), '')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a suite failure clears the stamp through the entrypoint', async () => {
+  const root = entrypointRoot()
+  try {
+    writeStampFixture({ root, base: resolveBase(root, 'origin/main') })
+    assert.ok(readStampFixture(root) !== null)
+    writeRun(root, 'fail')
+    assert.equal(await runVerification({ root }), 1)
+    assert.equal(readStampFixture(root), null)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a gate violation clears the stamp through the entrypoint', async () => {
+  const root = entrypointRoot()
+  try {
+    writeStampFixture({ root, base: resolveBase(root, 'origin/main') })
+    assert.ok(readStampFixture(root) !== null)
+    writeRun(root, 'violate')
+    assert.equal(await runVerification({ root }), 1)
+    assert.equal(readStampFixture(root), null)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a gate error clears the stamp through the entrypoint', async () => {
+  const root = entrypointRoot()
+  try {
+    writeStampFixture({ root, base: resolveBase(root, 'origin/main') })
+    assert.ok(readStampFixture(root) !== null)
+    writeRun(root, 'no-lcov')
+    await assert.rejects(runVerification({ root }), /missing lcov for plugin/)
+    assert.equal(readStampFixture(root), null)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a report run writes no stamp and keeps an existing one on failure', async () => {
+  const root = entrypointRoot()
+  try {
+    writeRun(root, 'pass')
+    assert.equal(await runVerification({ root, argv: ['--report-only'] }), 0)
+    assert.equal(readStampFixture(root), null, 'a report run must not write the stamp')
+    writeStampFixture({ root, base: resolveBase(root, 'origin/main') })
+    writeRun(root, 'fail')
+    assert.equal(await runVerification({ root, argv: ['--report-only'] }), 1)
+    assert.ok(readStampFixture(root) !== null, 'a report run must not clear the stamp')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('an in-scope file without an lcov record is a missing-coverage violation', async () => {
+  const root = makePassingGateRepo()
+  try {
+    writeFileSync(join(root, 'lib', 'b.js'), 'export const d = 4\n')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'add an uncovered file'])
+    assert.equal(await runGate({ root, mode: 'enforce', base: 'main' }), 1)
+    const report = readFileSync(join(root, '.coverage', 'report.md'), 'utf8')
+    assert.match(report, /missing coverage record: plugin: lib\/b\.js/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a baseline range that differs from the current range is rendered and warned about', async () => {
+  const root = makePassingGateRepo()
+  try {
+    const baseline = JSON.parse(readFileSync(join(root, 'coverage.baseline.json'), 'utf8'))
+    baseline.node.range = '>=24.5.0'
+    writeJson(join(root, 'coverage.baseline.json'), baseline)
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'record an older range'])
+    assert.equal(await runGate({ root, mode: 'enforce', base: 'main' }), 0)
+    const report = readFileSync(join(root, '.coverage', 'report.md'), 'utf8')
+    assert.match(report, /- baseline range: >=24\.5\.0/)
+    assert.match(report, /- baseline range >=24\.5\.0 differs from current >=24\.9\.0/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { gzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { artifactPaths, SCRATCH_DIR, DIST_DIR, tarballPaths } from '../lib/bundle.js'
 import { runPack, USAGE_LINES } from '../lib/pack.js'
 
@@ -275,6 +276,71 @@ test('reports a git failure', () => {
     const result = runPack({ root, argv: [], exec: fakeExec({ gitFails: true }).exec })
     assert.equal(result.code, 1)
     assert.ok(result.lines.some((line) => line.text.includes('git failed')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a forced repack that fails the content check leaves the previous pair byte-identical', () => {
+  const root = fixture()
+  try {
+    assert.equal(runPack({ root, argv: [], exec: fakeExec({ revision: 'b'.repeat(40) }).exec }).code, 0)
+    const { tarball: tarballPath, metadata } = artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0')
+    const before = { tarball: readFileSync(tarballPath), metadata: readFileSync(metadata) }
+
+    const incomplete = tarball(COMPLETE.filter(([name]) => name !== 'index.js'))
+    const forced = runPack({
+      root,
+      argv: ['--force'],
+      exec: fakeExec({ revision: 'c'.repeat(40), bytes: incomplete }).exec,
+    })
+    assert.equal(forced.code, 1)
+    assert.ok(forced.lines.some((line) => line.text.includes('missing: index.js')))
+    assert.deepEqual(readFileSync(tarballPath), before.tarball)
+    assert.deepEqual(readFileSync(metadata), before.metadata)
+    assert.equal(JSON.parse(readFileSync(metadata, 'utf8')).revision, 'b'.repeat(40))
+    const leftovers = readdirSync(join(root, DIST_DIR)).filter((name) => name.includes('previous') || name.includes('staging'))
+    assert.deepEqual(leftovers, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('records the sha512 of the tarball gzip bytes, not the inflated tar', () => {
+  const root = fixture()
+  try {
+    assert.equal(runPack({ root, argv: [], exec: fakeExec().exec }).code, 0)
+    const { tarball, metadata } = artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0')
+    const record = JSON.parse(readFileSync(metadata, 'utf8'))
+    const gzipped = readFileSync(tarball)
+    const independent = createHash('sha512').update(gzipped).digest('hex')
+    assert.equal(record.sha512, independent)
+    assert.equal(record.bytes, gzipped.length)
+    assert.notEqual(record.sha512, createHash('sha512').update(gunzipSync(gzipped)).digest('hex'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the entrypoint runs only git and npm pack and hands installation to the user', () => {
+  const root = fixture()
+  try {
+    const { exec, calls } = fakeExec()
+    const result = runPack({ root, argv: [], exec })
+    assert.equal(result.code, 0)
+    assert.deepEqual([...new Set(calls.map(([command]) => command))].sort(), ['git', 'npm'])
+    const npm = calls.filter(([command]) => command === 'npm')
+    assert.equal(npm.length, 1)
+    assert.equal(npm[0][1], 'pack')
+    for (const forbidden of ['install', 'add', 'link', 'i']) {
+      assert.ok(!npm[0].includes(forbidden), `npm must not run ${forbidden}`)
+    }
+    assert.ok(!calls.some((call) => call[0] === 'dsh'), 'the entrypoint must not call the plugin manager')
+    const { tarball } = artifactPaths(join(root, DIST_DIR), 'fixture-bundle', '1.0.0')
+    const output = result.lines.map((line) => line.text).join('\n')
+    assert.ok(output.includes(tarball))
+    assert.ok(output.includes('Plugins page'))
+    assert.ok(output.includes('remove the bundle in the Plugins page first'))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
