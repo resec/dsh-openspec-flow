@@ -38,10 +38,10 @@
 
 ## 6. Cards, client and configuration page
 
-- [ ] 6.1 Use the entry name as the card `kind`, select `apply-review.json` for `apply`, `review.json` for `draft` and `<entry>-review.json` otherwise, and cache the record lookup per entry. Verify `npm run test:affected -- lib/review/cards.js test/review-cards.test.mjs test/review-cards-endpoint.test.mjs` passes.
-- [ ] 6.2 Render the entry name in the collapsed summary, keep a missing value as `draft`, and make the client accept a `pr` kind without a code branch per known entry. Verify `npm run test:affected -- client.js test/review-cards-flow.test.mjs test/review-client.test.mjs` passes.
-- [ ] 6.3 Show the entries and pipeline on the read-only configuration page and keep the page's no-save behavior. Verify `npm run test:affected -- lib/review/settings.js test/review-settings.test.mjs` passes.
-- [ ] 6.4 Update the card section of `docs/review.md` with the entry kind, the raw-name rendering and the record-selection rule. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
+- [x] 6.1 Use the entry name as the card `kind`, select `apply-review.json` for `apply`, `review.json` for `draft` and `<entry>-review.json` otherwise, and cache the record lookup per entry. Verify `npm run test:affected -- lib/review/cards.js test/review-cards.test.mjs test/review-cards-endpoint.test.mjs` passes.
+- [x] 6.2 Render the entry name in the collapsed summary, keep a missing value as `draft`, and make the client accept a `pr` kind without a code branch per known entry. Verify `npm run test:affected -- client.js test/review-cards-flow.test.mjs test/review-client.test.mjs` passes.
+- [x] 6.3 Show the entries and pipeline on the read-only configuration page and keep the page's no-save behavior. Verify `npm run test:affected -- lib/review/settings.js test/review-settings.test.mjs` passes.
+- [x] 6.4 Update the card section of `docs/review.md` with the entry kind, the raw-name rendering and the record-selection rule. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
 
 ## 7. Defaults, repository configuration and documentation
 
