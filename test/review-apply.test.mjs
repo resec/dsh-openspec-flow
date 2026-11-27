@@ -1948,7 +1948,10 @@ test('a rebase marker opens extra rounds without changing the normal rounds', as
   assert.equal(reused.roundToken, 'E1')
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE, review: 'apply',
-    report: report({ findings: [minorFinding({ id: 'E1-01' })] }),
+    report: report({
+      verdict: 'changes-requested',
+      findings: [{ ...majorFinding(), id: 'E1-01' }],
+    }),
   })
   await call(fake, 'openspec_review', {
     action: 'dispose', change: CHANGE, review: 'apply',

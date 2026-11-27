@@ -259,9 +259,11 @@ test('the brief names the axes and the report contract', () => {
   assert.match(brief, /review prompts, not report values/)
   assert.match(brief, /verified-fixed, verified-deferred, verified-rejected, still-open, regressed/)
   assert.match(brief, /required only for `critical` and `major`/)
+  assert.match(brief, /pass criteria: every finding at or above `major`/)
+  assert.match(brief, /below `major`, `deferred` is allowed and `rejected` is allowed/)
   assert.equal(brief.split('A finding carries').length - 1, 1)
   assert.equal(brief.split('After you submit').length - 1, 1)
-  assert.equal(brief.split('A `pass` verdict cannot').length - 1, 1)
+  assert.equal(brief.split('A `pass` verdict requires').length - 1, 1)
   assert.match(brief, /Coherence/)
   assert.match(brief, /Intent fit/)
   assert.match(brief, /"verdict"/)
@@ -494,6 +496,41 @@ test('readiness accounts for verdict, blockers and stale hashes', () => {
     findings: [finding({ status: 'waived', approvedBy: 'user', waiver: 'ok' })],
   }, 'hash')
   assert.equal(waived.ready, true)
+})
+
+test('readiness uses the pass criteria threshold', () => {
+  const record = {
+    state: 'in-review',
+    objectHash: 'hash',
+    criteria: { passCriteria: 'minor', allowDeferred: true, allowRejected: true },
+    rounds: [{ round: 1, verdict: 'pass', report: { path: 'report.json' } }],
+    findings: [finding({ id: 'R1-01', severity: 'nit', status: 'open' })],
+  }
+  assert.equal(draftReadiness(record, 'hash').ready, true)
+  const inThreshold = {
+    ...record,
+    findings: [finding({ id: 'R1-02', severity: 'minor', status: 'open' })],
+  }
+  assert.equal(draftReadiness(inThreshold, 'hash').ready, false)
+})
+
+test('report verdicts follow the pass criteria threshold', () => {
+  const nit = { ...finding({ severity: 'nit' }), status: undefined }
+  const minor = { ...finding({ severity: 'minor' }), status: undefined }
+  const reportOf = (verdict, findings) => ({
+    verdict, summary: 'summary', findings, verifications: [], outOfScope: [], residualRisks: [],
+  })
+  const options = { round: 1, roundToken: 1, seq: 1, findings: [], kind: 'draft', passCriteria: 'minor' }
+  assert.doesNotThrow(() => assertReport(reportOf('pass', [nit]), options))
+  assert.throws(
+    () => assertReport(reportOf('pass', [minor]), options),
+    /pass verdict has unresolved findings at or above pass criteria minor/,
+  )
+  assert.doesNotThrow(() => assertReport(reportOf('changes-requested', [minor]), options))
+  assert.throws(
+    () => assertReport(reportOf('changes-requested', [nit]), options),
+    /changes-requested verdict needs an unresolved finding at or above pass criteria minor/,
+  )
 })
 
 test('a blocking length result gates readiness and names resume', () => {

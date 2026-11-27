@@ -968,7 +968,7 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   assert.match(seal, /required only for `critical` and `major`/)
   assert.equal(seal.split('A finding carries').length - 1, 1)
   assert.equal(seal.split('After you submit').length - 1, 1)
-  assert.equal(seal.split('A `pass` verdict cannot').length - 1, 1)
+  assert.equal(seal.split('A `pass` verdict requires').length - 1, 1)
   assert.match(seal, /^- base: d{40}$/m)
   assert.match(seal, /The base is the seal commit recorded by the first `openspec_apply_next`\./)
   assert.match(seal, /The diff starts at the base tree/)

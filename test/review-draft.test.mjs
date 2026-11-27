@@ -1010,7 +1010,7 @@ test('dispose honors the threshold and the disposition switches', async () => {
   })
   await call(fake, 'openspec_review', {
     action: 'self-report', change: CHANGE,
-    report: report({ findings: [minorFinding()] }),
+    report: report({ verdict: 'changes-requested', findings: [minorFinding()] }),
   })
   await assert.rejects(
     call(fake, 'openspec_review', {
