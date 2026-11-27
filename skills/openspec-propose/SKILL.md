@@ -35,7 +35,7 @@ Every `openspec_inspect` result with `action: "instructions"` may carry `context
 
 ## Draft review
 
-Run the draft review before presenting the proposal. The draft object is the change artifacts and the user's intent, not a commit or a git tree; do not require a commit. Several changes may hold draft reviews at the same time; this review belongs to one change and does not wait for another.
+Run the review of the `pipeline.beforeApply` entry before presenting the proposal (default `draft`). The review object is the change artifacts and the user's intent, not a commit or a git tree; do not require a commit. Several changes may hold draft reviews at the same time; this review belongs to one change and does not wait for another.
 
 1. Call `openspec_review` with `action: "start"`, `review: "draft"`, the change name and an `intent` that states the user's goal and acceptance conditions. `start` is the first round only.
 2. Read the returned `brief`. Check coherence, the user's goal, conflicts with the main specs, artifact form, feasibility and scope.

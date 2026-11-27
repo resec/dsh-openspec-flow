@@ -188,6 +188,19 @@ test('the review document states the shared brief report contract', () => {
   assert.match(text, /本轮开始前已记录/)
 })
 
+test('the README states the entry table, pipeline and per-entry records', () => {
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  for (const phrase of [
+    '`reviews` 的键是入口名',
+    '顶层 `pipeline` 的 `beforeApply`',
+    '`beforeArchive`',
+    '`<entry>-review.json`',
+    '`openspec_review` 的 `review` 选择锁定策略中的入口名',
+  ]) {
+    assert.ok(readme.includes(phrase), `the README names ${phrase}`)
+  }
+})
+
 test('the review document and README state the apply brief base scope', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /base tree/)

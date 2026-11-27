@@ -108,6 +108,7 @@ test('skills route gated tools through the admin command', () => {
 test('the propose skill runs the draft review before presenting', () => {
   const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
   assert.match(propose, /## Draft review/)
+  assert.match(propose, /pipeline\.beforeApply/)
   assert.match(propose, /openspec_review/)
   assert.match(propose, /action: "start"/)
   assert.match(propose, /self-report/)
@@ -137,6 +138,7 @@ test('the propose and apply skills dispose findings in one batch', () => {
 test('the apply and archive skills run the apply review', () => {
   const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
   assert.match(apply, /## Apply review/)
+  assert.match(apply, /pipeline\.beforeArchive/)
   assert.match(apply, /review: "apply"/)
   assert.match(apply, /self-report/)
   assert.match(apply, /available/)
@@ -145,6 +147,7 @@ test('the apply and archive skills run the apply review', () => {
   assert.match(apply, /disables apply review/)
   const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
   assert.match(archive, /openspec_review/)
+  assert.match(archive, /pipeline\.beforeArchive/)
   assert.match(archive, /review: "apply"/)
   assert.match(archive, /no apply review/)
   assert.match(archive, /available/)

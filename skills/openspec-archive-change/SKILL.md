@@ -18,7 +18,7 @@ A plugin-created apply worktree is not archived here: `openspec_apply_worktree a
 ## Preconditions
 
 1. Call `openspec_inspect` with `action: "list"` and find the change. If `completedTasks` is less than `totalTasks`, report the remaining count and stop; archive waits for a completed change.
-2. Check the apply review with `openspec_review` (`action: "status"`, `review: "apply"`). When `available` is false, say the project has no git repository and continue. When `policy` is false, say no apply review policy is locked and continue. When `enabled` is false, say the review is disabled and continue. Only when `policy`, `enabled` and `available` are true and `ready` is false, report its blockers and stop.
+2. Check the review of the `pipeline.beforeArchive` entry with `openspec_review` (`action: "status"`, `review: "apply"`). When `available` is false, say the project has no git repository and continue. When `policy` is false, say no apply review policy is locked and continue. When `enabled` is false, say the review is disabled and continue. Only when `policy`, `enabled` and `available` are true and `ready` is false, report its blockers and stop.
 3. Call `openspec_inspect` with `action: "status"` to confirm planning is complete.
 4. Call `openspec_inspect` with `action: "validate"`. Report every finding and stop when `valid` is false.
 5. If the change is doc-only or tooling-only and does not alter spec-level behavior, ask whether to archive with `skipSpecs: true`.

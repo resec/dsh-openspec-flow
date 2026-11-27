@@ -42,7 +42,7 @@ Ask before continuing when a task is unclear, the implementation reveals a desig
 
 ## Apply review
 
-After the loop reaches `all_done`, and before reporting completion:
+The apply review is the review of the `pipeline.beforeArchive` entry (default `apply`). After the loop reaches `all_done`, and before reporting completion:
 
 1. Commit every changed file for this round. The apply review object is the committed git tree, so an uncommitted working tree is not reviewable.
 2. Call `openspec_review` with `action: "status"`, `review: "apply"` and the change name. When the change has an apply worktree, pass `worktree` returned by `openspec_apply_next` to the apply review start/resume so the reviewer reads the implementation tree. When `available` is false, say the project has no git repository and skip the review. When `policy` is true and `enabled` is false, say the review is disabled and skip it. Otherwise call `action: "start"` with `review: "apply"` for the first round and read the returned brief and generated diff; with `policy: false`, the start first locks or migrates the policy. A later round uses `action: "resume"` with `review: "apply"` and no intent. When the start reports that the locked policy disables apply review, say the review is disabled and continue without it. When land refuses a worktree behind main, rebase and retest, then resume the apply review: it opens an extra round (`roundToken` `E1`, `E2`) that does not consume a normal round number; submit and dispose its findings like any round, and land only after that extra round is ready.

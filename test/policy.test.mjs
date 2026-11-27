@@ -150,8 +150,10 @@ test('both attachment paths register one section', (t) => {
   assert.equal(sections.length, 1)
 })
 
-test('the policy text states the apply review gate', () => {
+test('the policy text states the pipeline review gates', () => {
   assert.match(POLICY_TEXT, /review: "apply"/)
+  assert.match(POLICY_TEXT, /pipeline\.beforeApply/)
+  assert.match(POLICY_TEXT, /pipeline\.beforeArchive/)
   assert.match(POLICY_TEXT, /committed git tree/)
   assert.match(POLICY_TEXT, /no apply review/)
   assert.match(POLICY_TEXT, /does not hold archive/)
