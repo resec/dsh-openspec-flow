@@ -175,6 +175,37 @@ test('the review document matches the live tools, actions, defaults and record l
   assert.deepEqual(checkDocument(text, spec), [])
 })
 
+test('the review document states the pass criteria and disposition contract', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  for (const phrase of [
+    '`passCriteria`',
+    '`allowDeferred`',
+    '`allowRejected`',
+    '门槛内',
+    'critical > major > minor > nit',
+    '`verified-deferred`',
+    '`verified-rejected`',
+    '`verifiedDeferred`/`verifiedRejected`',
+    '未解决的门槛内 finding 数',
+  ]) {
+    assert.ok(text.includes(phrase), `the review document states ${phrase}`)
+  }
+})
+
+test('the README states the optional pass fields and readiness rule', () => {
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  for (const phrase of [
+    '`passCriteria`',
+    '`allowDeferred`',
+    '`allowRejected`',
+    '门槛内',
+    '`verified-deferred`',
+    '`verified-rejected`',
+  ]) {
+    assert.ok(readme.includes(phrase), `the README states ${phrase}`)
+  }
+})
+
 test('the README links the review document', () => {
   assert.deepEqual(checkReadme(readFileSync(join(ROOT, 'README.md'), 'utf8')), [])
 })
@@ -183,7 +214,7 @@ test('the review document states the shared brief report contract', () => {
   const text = readFileSync(DOC_PATH, 'utf8')
   assert.match(text, /同一渲染器按当前轮生成/)
   assert.match(text, /R<round>-NN/)
-  assert.match(text, /`verified-fixed`、`still-open`、`regressed`/)
+  assert.match(text, /`verified-fixed`、`verified-deferred`、`verified-rejected`、`still-open`、`regressed`/)
   assert.match(text, /首轮为空/)
   assert.match(text, /本轮开始前已记录/)
 })

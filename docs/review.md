@@ -84,25 +84,27 @@ reviewer 侧只有三个动作：`read`（读 brief、按 `round` 读历史报�
 
 `openspec_new_change` 与首次评审都会写 `policy.json`，之后不再随配置改动。锁定内容：
 
-- `reviews.<entry>`：每个入口的 `object`、`enabled`、`reviewers`、`waitMinutes`、`reviewerModel`。`object` 随入口锁定，之后修改档案不会把已开始的评审换到另一种对象流程。
+- `reviews.<entry>`：每个入口的 `object`、`enabled`、`reviewers`、`waitMinutes`、`reviewerModel`，以及可选的 `passCriteria`、`allowDeferred`、`allowRejected`。`object` 随入口锁定，之后修改档案不会把已开始的评审换到另一种对象流程。
 - `pipeline`：`beforeApply` 与 `beforeArchive` 指向的入口。
 - `git.enabled`：创建时该目录是否有 git 仓库；无 git 时所有 tree 入口在锁定策略中为禁用。
 - `change`、`store`、`lockedAt`、`lockedBy`、`configHash`、`schemaVersion`。
 - `source`：配置文件路径（项目内为项目相对路径，项目外为绝对路径）、内容 sha256、入口到档案名的映射与 `pipeline`。
 
-策略记录 `schemaVersion: 3`。更早的 policy 按 `draft` = directory、`apply` = tree 与默认 pipeline 只读兼容读取，读取本身不重写文件；缺少某个入口段或 `pipeline` 时，只有首次 `start` 或 `resume` 且调用提供 `configPath` 才补写一次：补写记录 `schemaVersion: 3` 与新增入口的 `object`，不补 `source`，也不给已有旧段补 `object`；之后再次传入 `configPath` 不再补写。`schemaVersion: 1` 的记录按只读兼容读取，不会被改写以补 `source`。修改 `openspec/reviews.json` 只影响之后新建的变更，没有重新锁定入口。
+策略记录 `schemaVersion: 4`。更早的 policy 按 `draft` = directory、`apply` = tree 与默认 pipeline 只读兼容读取，读取本身不重写文件；缺少某个入口段或 `pipeline` 时，只有首次 `start` 或 `resume` 且调用提供 `configPath` 才补写一次：补写记录 `schemaVersion: 4` 与新增入口的 `object`，不补 `source`，也不给已有旧段补 `object`；之后再次传入 `configPath` 不再补写。`schemaVersion: 1` 的记录按只读兼容读取，不会被改写以补 `source`。修改 `openspec/reviews.json` 只影响之后新建的变更，没有重新锁定入口。
 
 ## 报告与 finding
 
-draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：finding id 必须匹配 `R<round>-NN`；`verifications` 状态取 `verified-fixed`、`still-open`、`regressed`，首轮为空，后续轮只引用本轮开始前已记录的 finding；report 的 `axis` 取下文枚举，brief 的 `## Axes` 标题只是评审提示。
+draft 与 apply brief 的 `## Report` 块由同一渲染器按当前轮生成：finding id 必须匹配 `R<round>-NN`；`verifications` 状态取 `verified-fixed`、`verified-deferred`、`verified-rejected`、`still-open`、`regressed`，首轮为空，后续轮只引用本轮开始前已记录的 finding；report 的 `axis` 取下文枚举，brief 的 `## Axes` 标题只是评审提示。
 
 报告由 `verdict`、`summary`、`findings`、`verifications`、`outOfScope`、`residualRisks` 组成：
 
-- `verdict`：`pass`、`changes-requested` 或 `blocked`。`blocked` 表示评审无法进行，原因写进 `summary` 或 finding。
+- `verdict`：`pass`、`changes-requested` 或 `blocked`。`pass` 要求所有门槛内 finding 已解决；`changes-requested` 要求至少一个门槛内 finding 未解决；`blocked` 表示评审无法进行，原因写进 `summary` 或 finding。
 - `findings`：每条含 `id`（如 `R1-01`）、`severity`、`axis`、`location`、`title`、`problem`、`evidence`、`suggestion`；`critical` 与 `major` 还必须给出 `impact`、`rule`、`failure`。
-- `severity`：`critical`、`major`、`minor`、`nit`。前两者是阻塞项。
+- `severity`：`critical`、`major`、`minor`、`nit`。等级顺序为 critical > major > minor > nit；severity 大于等于 profile `passCriteria` 的 finding 是**门槛内**。门槛内只能 `fixed` 或用户 `waived`；门槛外可在开关允许时 `deferred`/`rejected`。
 - `axis`：`intent`、`coherence`、`spec-conflict`、`standards`、`feasibility`、`quality`。
-- `verifications`：后续轮次逐条声明本轮开始前已记录 finding 的状态：`verified-fixed`、`still-open`、`regressed`。
+- `verifications`：后续轮次逐条声明本轮开始前已记录 finding 的状态。`fixed` 用 `verified-fixed`，`deferred` 用 `verified-deferred`，`rejected` 用 `verified-rejected`；`still-open` 把处置打回 `open`，`regressed` 把已关闭终态打回 `open`。
+
+brief 的 `## Report` 合同同样列出这些 verification 状态、`fixed`/`deferred`/`rejected` 的验证候选，以及按 `passCriteria` 计算的 verdict 规则。
 
 字段只校验类型与非空：`summary`、finding 的文本字段、`verification.evidence` 以及 `outOfScope`/`residualRisks` 的条目都不设字符上限，后两个数组也不设条数上限。finding 的 `location` 另有范围校验：指向另一个 change 目录的路径会被拒绝；报告在写入前整体校验，任一结构错误或范围违规都会拒绝整份报告。
 
@@ -113,10 +115,11 @@ finding 的处置：
 | 动作 | 要求 | 语义 |
 | --- | --- | --- |
 | `dispose status=fixed` | 需要 note | 已修复，等待后续轮次验证 |
-| `dispose status=deferred` | 需要 note | 阻塞项不可 deferred（`critical`/`major` 会被拒绝）；后续 issue 编号写进 note |
-| `dispose status=rejected` | 需要带证据的 note | 阻塞项不可 rejected |
+| `dispose status=deferred` | 需要 note | 仅门槛外且 `allowDeferred: true`；门槛内或开关关闭会被拒绝；后续 issue 编号写进 note |
+| `dispose status=rejected` | 需要带证据的 note | 仅门槛外且 `allowRejected: true`；门槛内或开关关闭会被拒绝 |
 | `waive` | 需要 `approvedBy: "user"` 与 waiver 文本 | 由用户明确豁免，记录在案 |
 | 后续报告 `verified-fixed` | 验证轮次必须晚于首次轮次 | 真正关闭 finding |
+| 后续报告 `verified-deferred`/`verified-rejected` | 分别只能验证已 `deferred`/`rejected` 的 finding | 评审者接受处置，finding 进入对应终态并关闭 |
 
 `dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispose` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的条目只需 `id`，`status` 固定为 `waived`，`waiver` 与 `approvedBy` 可由顶层提供默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。`dispositions` 只属于 `action: "dispose"` 与 finding 的 `waive`；`start` 与 `resume` 不接受它，传入即拒绝并指向 `action: "dispose"`。
 
@@ -124,7 +127,7 @@ finding 的处置：
 
 `issue` 参数已移除：`deferred` 必须给 note，旧记录中的 `issue` 字段保留原样但不读取，新处置不再写入。plan-change 的 `waive` 仍用 `files` 记录豁免，不接受 `dispositions`。
 
-就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、没有未关闭的 finding（`fixed` 尚未验证、`deferred`、`rejected`、无用户豁免的 `waived` 都算未关闭）。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。directory 入口的 `blocked` 报告视为未产生报告的尝试：就绪度按“尚无报告”处理，下一步为该入口的 `resume`；tree 入口的 `blocked` 仍按报告结论处理。
+就绪度（readiness）要求：对象哈希与当前一致、最新报告存在且 `verdict` 为 `pass`、所有**门槛内** finding 已关闭（`verified`、`verified-deferred`、`verified-rejected` 或用户 `waived`）。门槛外 finding 不阻塞就绪度，无论其状态是 `open`、`deferred` 还是 `rejected`；`fixed` 与未确认的 `deferred`/`rejected` 不算解决。`findings` 摘要的 `blocking` 计数是未解决的门槛内 finding 数，status 与卡片 payload 另带 `verifiedDeferred`/`verifiedRejected` 计数。reviewer 被用户豁免时跳过“报告与 verdict”检查，但保留覆盖缺口标记。任一 finding 仍为 `open` 时，下一步动作固定为 `openspec_review action=dispose review=<kind>`，即使对象已变化或有 finding 已是 `fixed`。directory 入口的 `blocked` 报告视为未产生报告的尝试：就绪度按“尚无报告”处理，下一步为该入口的 `resume`；tree 入口的 `blocked` 仍按报告结论处理。
 
 draft review 还会检查 requirement description（`### Requirement:` 到第一个 scenario 之间的文本）的 500 字符上限。ADDED description 超过上限，或 MODIFIED description 超过上限且比主规格中的原文更长，会让 draft 未就绪并阻止 apply；历史既有超长但本次未增长或缩短的 description 不阻塞。长度阻塞且有报告、没有 open finding 时，下一步是 `openspec_review action=resume review=draft`，不是 `dispose`；还没有报告时仍是 `wait`（reviewer 模式）或 `self-report`（self 模式）。首次 `openspec_apply_next` 与 apply review 的 `start`/`resume` 会重查当前主规格；apply 启动后冻结的 draft 不再用该结果拦截，由 apply review 负责。apply review 被禁用或不可用时，没有 apply 启动后的长度复查。
 
@@ -242,7 +245,7 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 - `object` 只能是 `directory` 或 `tree`。入口名只是标签，不决定评审流程；入口引用的档案 `object` 决定走目录评审还是 committed tree 评审。入口名必须是 kebab-case。
 - `reviews` 的键是入口名，不限于 `draft` 与 `apply`；每个入口必须引用已声明档案。默认文档声明 `draft` 与 `apply`，上面的 `pr` 是非默认入口示例。
 - `pipeline.beforeApply` 必须引用 directory 入口，`pipeline.beforeArchive` 必须引用 tree 入口；省略时分别默认 `draft` 与 `apply`。`openspec_apply_next` 检查 `beforeApply`，`openspec_archive` 与 land 的归档检查 `beforeArchive`。
-- 每个档案必须写全 `enabled`、`reviewers`、`waitMinutes`、`reviewerModel`，缺失即报错，不回退内置默认。
+- 每个档案必须写全 `enabled`、`reviewers`、`waitMinutes`、`reviewerModel`，缺失即报错，不回退内置默认。`passCriteria`（默认 `major`）、`allowDeferred`（默认 `true`）与 `allowRejected`（默认 `true`）是可选字段；非法值报错。
 - 顶层只接受 `profiles`、`reviews` 与 `pipeline`，未知键即报错。
 
 `openspec_review` 与 `openspec_reviewer` 的 `review` 参数接受锁定策略声明的任意入口名，省略时默认 `draft`；`dispose` 与 finding 的 `waive` 必须显式给入口，缺失或未知时报错并列出全部已配置入口。入口只是标签，流程由入口档案的 `object` 选择：directory 入口审变更工件（artifact hash、intent、长度门禁、执行性预检与 stale watch），tree 入口审已提交 git tree（提交、tree、base、strict 校验、plan-change waiver 与额外轮次）。记录文件名、轮次目录、brief 标题、状态与唤醒消息都使用入口名；`draft` 与 `apply` 保留旧记录名。
@@ -261,6 +264,12 @@ draft 轮次开启后不得修改该 change 的产物。插件在轮次无报告
 | `profiles.standard-tree.enabled` | `true` | 新变更是否锁定 apply review |
 | `profiles.standard-tree.reviewers` | `0` | 0 自评审，1 独立 reviewer |
 | `profiles.standard-tree.waitMinutes` | `15` | apply 等待上限，1–120 |
+| `profiles.standard-directory.passCriteria` | `major` | 通过门槛；severity 大于等于它的 finding 必须解决 |
+| `profiles.standard-directory.allowDeferred` | `true` | 是否允许门槛外 finding 处置为 deferred |
+| `profiles.standard-directory.allowRejected` | `true` | 是否允许门槛外 finding 处置为 rejected |
+| `profiles.standard-tree.passCriteria` | `major` | apply 评审的通过门槛 |
+| `profiles.standard-tree.allowDeferred` | `true` | apply 评审是否允许 deferred |
+| `profiles.standard-tree.allowRejected` | `true` | apply 评审是否允许 rejected |
 | `pipeline.beforeApply` | `draft` | apply 前门禁入口；必须引用 directory 入口 |
 | `pipeline.beforeArchive` | `apply` | archive 前门禁入口；必须引用 tree 入口 |
 
