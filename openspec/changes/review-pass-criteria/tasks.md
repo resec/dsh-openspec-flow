@@ -26,16 +26,16 @@
 
 ## 4. Readiness, report verdict and brief
 
-- [ ] 4.1 Make draft and apply readiness depend only on in-threshold findings, leaving below-threshold findings non-blocking while keeping the hash, length, execution and blocked-draft behavior; verify `npm run test:affected -- lib/review/readiness.js test/review-draft.test.mjs test/review-apply.test.mjs` covers both thresholds.
-- [ ] 4.2 Tighten report validation so `pass` requires every in-threshold finding resolved and `changes-requested` requires an unresolved in-threshold finding, and pass the resolved criteria through `submitReport` into `assertReport`; verify `node --test test/review-unit.test.mjs test/review-draft.test.mjs test/review-apply.test.mjs` covers accepted and refused verdicts and the criteria handoff.
-- [ ] 4.3 Add the verification candidates (`fixed`, `deferred`, `rejected`), their confirmation statuses and the pass-criteria verdict rule to the shared brief report contract; verify `npm run test:affected -- lib/review/brief.js test/review-reviewer.test.mjs` asserts the candidate list and the verdict rule in both briefs.
+- [x] 4.1 Make draft and apply readiness depend only on in-threshold findings, leaving below-threshold findings non-blocking while keeping the hash, length, execution and blocked-draft behavior; verify `npm run test:affected -- lib/review/readiness.js test/review-draft.test.mjs test/review-apply.test.mjs` covers both thresholds.
+- [x] 4.2 Tighten report validation so `pass` requires every in-threshold finding resolved and `changes-requested` requires an unresolved in-threshold finding, and pass the resolved criteria through `submitReport` into `assertReport`; verify `node --test test/review-unit.test.mjs test/review-draft.test.mjs test/review-apply.test.mjs` covers accepted and refused verdicts and the criteria handoff.
+- [x] 4.3 Add the verification candidates (`fixed`, `deferred`, `rejected`), their confirmation statuses and the pass-criteria verdict rule to the shared brief report contract; verify `npm run test:affected -- lib/review/brief.js test/review-reviewer.test.mjs` asserts the candidate list and the verdict rule in both briefs.
 
 ## 5. Status, card and page surfaces
 
-- [ ] 5.1 Add `verifiedDeferred` and `verifiedRejected` to the `findings` result schema and make `blocking` count unresolved in-threshold findings; verify `node --test test/review-status-mode.test.mjs test/review-unit.test.mjs` validates the result against the registered schema.
-- [ ] 5.2 Return the new terminal statuses and their verification round from the reviewer `findings` read; verify `node --test test/review-reviewer.test.mjs` covers both statuses.
-- [ ] 5.3 Carry the new counts in the review-card payload and keep the client's per-severity summary and expanded status rows correct; verify `node --test test/review-cards.test.mjs test/review-client.test.mjs` covers a card with both terminal statuses.
-- [ ] 5.4 Show `passCriteria`, `allowDeferred` and `allowRejected` on the read-only profile row; verify `node --test test/review-settings.test.mjs` asserts the three values render.
+- [x] 5.1 Add `verifiedDeferred` and `verifiedRejected` to the `findings` result schema and make `blocking` count unresolved in-threshold findings; verify `node --test test/review-status-mode.test.mjs test/review-unit.test.mjs` validates the result against the registered schema.
+- [x] 5.2 Return the new terminal statuses and their verification round from the reviewer `findings` read; verify `node --test test/review-reviewer.test.mjs` covers both statuses.
+- [x] 5.3 Carry the new counts in the review-card payload and keep the client's per-severity summary and expanded status rows correct; verify `node --test test/review-cards.test.mjs test/review-client.test.mjs` covers a card with both terminal statuses.
+- [x] 5.4 Show `passCriteria`, `allowDeferred` and `allowRejected` on the read-only profile row; verify `node --test test/review-settings.test.mjs` asserts the three values render.
 
 ## 6. Documentation and repository configuration
 
