@@ -149,17 +149,38 @@ test('active change extraction and CI filtering are strict', () => {
   assert.equal(checksGreen([]), false)
 })
 
-test('filterCandidates keeps only eligible PRs and skips processed heads', () => {
+test('Mixed pull-request list reports only the eligible PR with every candidate field', () => {
   const state = { schemaVersion: 1, prs: { 13: { head: HEAD, status: 'commented' } } }
+  const files = [{ path: 'openspec/changes/widget/proposal.md' }]
+  const pullRequest = (number, overrides = {}) => ({
+    number,
+    headRefOid: HEAD,
+    baseRefOid: BASE,
+    baseRefName: 'main',
+    isDraft: false,
+    statusCheckRollup: [{ conclusion: 'SUCCESS' }],
+    files,
+    ...overrides,
+  })
   const candidates = filterCandidates([
-    { number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
-    { number: 13, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
-    { number: 14, headRefOid: 'c'.repeat(40), baseRefOid: BASE, baseRefName: 'main', isDraft: true, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
-    { number: 15, headRefOid: 'd'.repeat(40), baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
-    { number: 16, headRefOid: 'e'.repeat(40), baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }, { path: 'openspec/changes/other/tasks.md' }] },
+    pullRequest(12),
+    pullRequest(13),
+    pullRequest(14, { isDraft: true }),
+    pullRequest(15, { statusCheckRollup: [] }),
+    pullRequest(16, { files: [...files, { path: 'openspec/changes/other/tasks.md' }] }),
+    pullRequest(17, { statusCheckRollup: [{ name: 'verify', conclusion: 'FAILURE' }] }),
+    pullRequest(18, { statusCheckRollup: [{ name: 'verify', conclusion: null, status: 'IN_PROGRESS' }] }),
   ], state)
-  assert.deepEqual(candidates.map((candidate) => candidate.number), [12])
-  assert.equal(candidates[0].change, 'widget')
+  assert.deepEqual(candidates, [{
+    number: 12,
+    head: HEAD,
+    baseRefOid: BASE,
+    baseRefName: 'main',
+    change: 'widget',
+    worktree: null,
+    status: 'new',
+    resume: false,
+  }])
 })
 
 test('checksGreen judges each check by its newest run', () => {
@@ -561,6 +582,61 @@ test('state loading, missing reports and empty polls fail or return explicitly',
     const { gh } = fakeGh(() => '[]')
     assert.deepEqual(pollPullRequests({ root, gh }).candidates, [])
     assert.throws(() => readReport(join(root, 'missing.json'), 12, HEAD), /does not exist/)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('prepare refuses a closed pull request and creates no worktree', () => {
+  const root = makeRepository()
+  try {
+    const { gh } = fakeGh(() => prJson({ state: 'CLOSED' }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /PR #12 is closed/)
+    assert.equal(existsSync(join(resolvePaths(root).worktrees, 'pr-12')), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('prepare refuses a draft pull request and creates no worktree', () => {
+  const root = makeRepository()
+  try {
+    const { gh } = fakeGh(() => prJson({ isDraft: true }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh }), /PR #12 is a draft/)
+    assert.equal(existsSync(join(resolvePaths(root).worktrees, 'pr-12')), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('prepare refuses a failing or pending CI rollup and creates no worktree', () => {
+  const root = makeRepository()
+  try {
+    const worktree = join(resolvePaths(root).worktrees, 'pr-12')
+    const failing = fakeGh(() => prJson({ statusCheckRollup: [{ name: 'verify', conclusion: 'FAILURE' }] }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh: failing.gh }), /PR #12 does not have a green CI rollup/)
+    const pending = fakeGh(() => prJson({ statusCheckRollup: [{ name: 'verify', conclusion: null, status: 'IN_PROGRESS' }] }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh: pending.gh }), /PR #12 does not have a green CI rollup/)
+    assert.equal(existsSync(worktree), false)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('prepare refuses zero or two active changes and creates no worktree', () => {
+  const root = makeRepository()
+  try {
+    const worktree = join(resolvePaths(root).worktrees, 'pr-12')
+    const none = fakeGh(() => prJson({ files: [{ path: 'README.md' }] }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh: none.gh }), /PR #12 must change exactly one active change; found none/)
+    const two = fakeGh(() => prJson({
+      files: [
+        { path: 'openspec/changes/widget/proposal.md' },
+        { path: 'openspec/changes/gadget/tasks.md' },
+      ],
+    }))
+    assert.throws(() => preparePullRequest({ root, number: 12, gh: two.gh }), /PR #12 must change exactly one active change; found widget, gadget/)
+    assert.equal(existsSync(worktree), false)
   } finally {
     cleanup(root)
   }

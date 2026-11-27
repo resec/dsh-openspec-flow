@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Guard the prepare gates and the mixed poll scenario in the watch tests.
