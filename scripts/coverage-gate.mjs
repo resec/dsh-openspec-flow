@@ -535,10 +535,10 @@ export async function runGate({
       }
     } catch (error) {
       baselineUsable = false
-      if (!updateBaseline) throw error
+      if (effectiveMode === 'enforce' && !updateBaseline) throw error
       warnings.push(`baseline unusable: ${error.message}`)
     }
-  } else if (!updateBaseline) {
+  } else if (effectiveMode === 'enforce' && !updateBaseline) {
     throw new GateError('coverage.baseline.json is missing; run npm run coverage:baseline')
   } else {
     warnings.push('coverage.baseline.json is missing; delta checks skipped')
