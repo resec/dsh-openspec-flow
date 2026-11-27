@@ -84,6 +84,96 @@ test('reuses an active worktree without creating a second checkout', async () =>
   assert.equal(git(root, ['worktree', 'list', '--porcelain']).split('\n').filter((line) => line.startsWith('worktree ')).length, 2)
 })
 
+test('a detached worktree is refused instead of reused', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'detached-test' }
+  const first = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  git(first.worktree, ['checkout', '--detach'])
+  await fake.workingDirectory.set({ id: agent.id }, root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+      signal: new AbortController().signal,
+    }),
+    /not on branch/,
+  )
+  assert.equal(fake.workingDirectory.get({ id: agent.id }), root)
+  assert.deepEqual(readApplyState(root, null, 'demo'), first)
+})
+
+test('a worktree on another branch is refused instead of reused', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'branch-switch-test' }
+  const first = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  git(first.worktree, ['checkout', '-q', '-b', 'scratch-branch'])
+  await fake.workingDirectory.set({ id: agent.id }, root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+      signal: new AbortController().signal,
+    }),
+    /not on branch/,
+  )
+  assert.equal(fake.workingDirectory.get({ id: agent.id }), root)
+  assert.deepEqual(readApplyState(root, null, 'demo'), first)
+})
+
+test('a dirty worktree is refused instead of reused', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'dirty-test' }
+  const first = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  writeFileSync(join(first.worktree, 'scratch.txt'), 'work in progress\n')
+  await fake.workingDirectory.set({ id: agent.id }, root)
+  await assert.rejects(
+    createOrReuseApplyWorktree(fake, {
+      mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+      signal: new AbortController().signal,
+    }),
+    /uncommitted changes[\s\S]*scratch\.txt/u,
+  )
+  assert.equal(readFileSync(join(first.worktree, 'scratch.txt'), 'utf8'), 'work in progress\n')
+  assert.equal(fake.workingDirectory.get({ id: agent.id }), root)
+  assert.deepEqual(readApplyState(root, null, 'demo'), first)
+})
+
+test('a clean worktree with commits on its branch is still reused', async () => {
+  const root = repository()
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const fake = context(root)
+  const agent = { id: 'committed-reuse-test' }
+  const first = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  writeFileSync(join(first.worktree, 'openspec', 'changes', 'demo', 'notes.md'), 'implementation\n')
+  git(first.worktree, ['add', 'openspec'])
+  git(first.worktree, ['commit', '-qm', 'implement'])
+  const committed = git(first.worktree, ['rev-parse', 'HEAD'])
+  assert.notEqual(committed, head)
+  const second = await createOrReuseApplyWorktree(fake, {
+    mainRoot: root, store: null, change: 'demo', sealCommit: head, agent,
+    signal: new AbortController().signal,
+  })
+  assert.deepEqual(second, first)
+  assert.equal(git(second.worktree, ['rev-parse', 'HEAD']), committed)
+  assert.equal(fake.workingDirectory.get({ id: agent.id }), second.worktree)
+})
+
 test('uses a branch-safe name for a double-dot change and a leading-dot store', () => {
   const branch = applyWorktreeBranch('.store', 'release..1')
   assert.match(branch, /^openspec\/apply\/-store-release--1-[0-9a-f]{8}$/)

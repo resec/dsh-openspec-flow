@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Refuse to reuse a recorded apply worktree that is detached or dirty, as the reuse scenario requires a clean worktree on its branch.
