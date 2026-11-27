@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
+goal: Take the published set from tracked files and record a dirty flag that
+  reflects the tarball, as the bundle-packaging spec already requires.
