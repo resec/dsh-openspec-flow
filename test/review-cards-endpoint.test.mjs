@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { compareCards, createReviewChannel } from '../lib/review/settings.js'
 import { sessionKeyOf } from '../lib/review/cards.js'
+import { reviewFile } from '../lib/review/record.js'
 import { reviewDirectory, reviewRoot, writeJsonAtomic } from '../lib/review/store.js'
 import { cleanupTempDirs, tempDir } from './temp.mjs'
 
@@ -91,8 +92,7 @@ function reviewRecord(directory, options = {}) {
     state: 'in-review',
   }
   if (changerSessionId !== null) record.changerSessionId = changerSessionId ?? 'changer'
-  const file = kind === 'apply' ? 'apply-review.json' : 'review.json'
-  writeFileSync(join(directory, file), `${JSON.stringify(record, null, 2)}\n`)
+  writeFileSync(join(directory, reviewFile(kind)), `${JSON.stringify(record, null, 2)}\n`)
 }
 
 test('an unclaimed card binds to the first turn and stays after a refresh', async () => {
@@ -564,6 +564,20 @@ test('a directory with both records selects the record by the card review kind',
     assert.equal(result.value.cards.length, 1)
     assert.equal(result.value.cards[0].review, 'draft')
     assert.equal(JSON.parse(readFileSync(applyPath, 'utf8')).turn, null)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a pr card selects the pr record', async () => {
+  const { root, directory, channel } = fixture()
+  try {
+    reviewRecord(directory, { kind: 'pr', independent: false })
+    const path = cardFile(directory, { review: 'pr', round: 2 })
+    const result = await channel.dispatch('reviewCards/get', { sessionId: 'changer', turn: 1 })
+    assert.equal(result.value.cards.length, 1)
+    assert.equal(result.value.cards[0].review, 'pr')
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).turn, 1)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

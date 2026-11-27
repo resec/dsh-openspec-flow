@@ -63,7 +63,10 @@ window.__ModuleLoader__.load({
       switchOff: '关闭',
       legacy: 'profile 中仍有 reviews 段，已被忽略；请把参数迁移到 openspec/reviews.json。',
       profiles: '档案',
-      entries: '用途映射',
+      entries: '入口表',
+      pipeline: '流程门禁',
+      beforeApply: 'apply 前',
+      beforeArchive: 'archive 前',
       object: '评审对象',
       objectDirectory: '目录',
       objectTree: 'git tree',
@@ -98,6 +101,9 @@ window.__ModuleLoader__.load({
       legacy: 'The profile still carries a reviews section; it is ignored. Move the parameters to openspec/reviews.json.',
       profiles: 'Profiles',
       entries: 'Entries',
+      pipeline: 'Pipeline',
+      beforeApply: 'beforeApply',
+      beforeArchive: 'beforeArchive',
       object: 'Object',
       objectDirectory: 'directory',
       objectTree: 'git tree',
@@ -131,10 +137,10 @@ window.__ModuleLoader__.load({
      * @returns the text.
      */
     function lockLine(t, section, kind) {
-      const label = kind === 'draft' ? t('lockDraft') : t('lockApply')
-      const state = section.enabled ? t('enabledOn') : t('enabledOff')
-      const reviewers = t('reviewersText', { n: section.reviewers })
-      return `${label}: ${state} · ${reviewers} · ${String(section.waitMinutes)}m`
+      const label = String(kind)
+      const state = section?.enabled ? t('enabledOn') : t('enabledOff')
+      const reviewers = t('reviewersText', { n: section?.reviewers })
+      return `${label}: ${state} · ${reviewers} · ${String(section?.waitMinutes)}m`
     }
 
     /**
@@ -256,7 +262,9 @@ window.__ModuleLoader__.load({
               Object.entries(config.profiles ?? {}).map(([name, profile]) =>
                 h(ProfileRow, { key: name, t, name, profile }))),
             h('p', { style: noteStyle },
-              `${t('entries')}: ${t('lockDraft')} → ${String(config.reviews?.draft)} · ${t('lockApply')} → ${String(config.reviews?.apply)}`)),
+              `${t('entries')}: ${Object.entries(config.reviews ?? {}).map(([name, profile]) => `${name} → ${String(profile)}`).join(' · ')}`),
+            h('p', { style: noteStyle },
+              `${t('pipeline')}: ${t('beforeApply')} → ${String(config.pipeline?.beforeApply ?? 'draft')} · ${t('beforeArchive')} → ${String(config.pipeline?.beforeArchive ?? 'apply')}`)),
         changes.length === 0
           ? null
           : h('div', null,
@@ -264,8 +272,12 @@ window.__ModuleLoader__.load({
             h('ul', { style: { margin: 0, paddingLeft: '18px' } },
               changes.map((change) => h('li', { key: change.change, 'data-openspec-locked': change.change },
                 h('strong', null, change.change), ' — ',
-                lockLine(t, change.reviews.draft, 'draft'), ' · ',
-                lockLine(t, change.reviews.apply, 'apply'))))))
+                Object.entries(change.reviews ?? {})
+                  .map(([name, section]) => lockLine(t, section, name))
+                  .join(' · '),
+                change.pipeline === undefined || Object.keys(change.pipeline).length === 0
+                  ? null
+                  : ` · ${t('pipeline')}: ${t('beforeApply')} → ${String(change.pipeline.beforeApply)} · ${t('beforeArchive')} → ${String(change.pipeline.beforeArchive)}`)))))
     }
 
     /** The page root. */
@@ -391,7 +403,9 @@ window.__ModuleLoader__.load({
     /** One-line collapsed summary for one card. */
     function cardSummary(card) {
       const phase = card.phase === 'resolution' ? '处理汇报' : '评审汇报'
-      const review = card.review === 'apply' ? 'apply' : 'draft'
+      const review = typeof card.review === 'string' && card.review.trim() !== ''
+        ? card.review.trim()
+        : 'draft'
       const change = typeof card.change === 'string' && card.change.trim() !== ''
         ? `${card.change.trim()} · `
         : ''

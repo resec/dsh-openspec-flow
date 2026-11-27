@@ -445,7 +445,7 @@ test('a card without a known review kind is neither named nor written', () => {
     assert.match(warnings[0], /unknown kind/)
     assert.throws(
       () => cardFilePath(root, { sessionId: 'card-session', phase: 'review', round: 1 }),
-      /needs a kind of draft or apply/,
+      /needs a kebab-case entry name as its kind/,
     )
     const stored = record()
     assert.equal(writeCard({

@@ -218,8 +218,8 @@ test('a locked section is described in one line', async () => {
   const { lockLine } = plugin.__test
   const t = (key, params) => (params?.n === undefined ? key : `${key}:${String(params.n)}`)
   const line = lockLine(t, { enabled: true, reviewers: 1, waitMinutes: 15 }, 'draft')
-  assert.equal(line, 'lockDraft: enabledOn · reviewersText:1 · 15m')
-  assert.match(lockLine(t, { enabled: false, reviewers: 0, waitMinutes: 15 }, 'apply'), /lockApply: enabledOff/)
+  assert.equal(line, 'draft: enabledOn · reviewersText:1 · 15m')
+  assert.match(lockLine(t, { enabled: false, reviewers: 0, waitMinutes: 15 }, 'apply'), /apply: enabledOff/)
 })
 
 /**
@@ -374,6 +374,8 @@ test('cards select by turn, collapse and expose the full report', async () => {
   assert.deepEqual(selectCards({ cards: [] }), [])
   assert.deepEqual(selectCards(undefined), [])
   assert.equal(cardSummary(reviewCard), '评审汇报 · demo · draft · 第 2 轮 · changes-requested · critical 0 · major 1 · minor 0 · nit 0')
+  assert.match(cardSummary({ ...reviewCard, review: 'pr' }), /· pr ·/)
+  assert.match(cardSummary({ ...reviewCard, review: '' }), /· draft ·/)
   assert.ok(!cardSummary(reviewCard).includes('下一步'))
 
   const sections = cardSections(reviewCard)
