@@ -425,7 +425,7 @@ test('the review document explains the cards and the model rule', () => {
     '同一轮、同一尝试',
     '`review.json` 或 `apply-review.json`',
     '升级前写入的同类卡同样不投递',
-    '汇报类型 · change 名 · 评审类型',
+    '汇报类型 · change 名 · 评审类型 · 轮次 · 结论 · 四档计数',
     'change 名缺失时省略',
     '问题、证据、类别、影响、规则、失败路径、建议',
     '`类别`、`规则`、`失败路径` 未记录时不显示',
