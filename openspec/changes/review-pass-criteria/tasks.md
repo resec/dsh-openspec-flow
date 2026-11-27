@@ -19,10 +19,10 @@
 
 ## 3. Finding lifecycle and dispositions
 
-- [ ] 3.1 Extend the finding statuses with `verified-deferred` and `verified-rejected`, update `closed()` and the status summary, and count both new terminal statuses in `summarizeFindings`; verify `npm run test:affected -- lib/review/report.js test/review-unit.test.mjs` covers every terminal status.
-- [ ] 3.2 Refuse `deferred` and `rejected` dispositions for in-threshold findings and for a closed profile switch, while keeping `fixed` and user `waived`; verify `node --test test/review-unit.test.mjs test/review-draft.test.mjs` covers each refusal and the unchanged record.
-- [ ] 3.3 Accept `verified-deferred` and `verified-rejected` only for their matching recorded disposition, accept `still-open` as a return to `open`, and keep `verified-fixed` and `regressed` behavior; verify `node --test test/review-unit.test.mjs test/review-apply.test.mjs` covers the transition table.
-- [ ] 3.4 Keep the disposition batch atomic when one entry is refused; verify `node --test test/review-unit.test.mjs` asserts no finding changes on a mixed batch.
+- [x] 3.1 Extend the finding statuses with `verified-deferred` and `verified-rejected`, update `closed()` and the status summary, and count both new terminal statuses in `summarizeFindings`; verify `npm run test:affected -- lib/review/report.js test/review-unit.test.mjs` covers every terminal status.
+- [x] 3.2 Refuse `deferred` and `rejected` dispositions for in-threshold findings and for a closed profile switch, while keeping `fixed` and user `waived`; verify `node --test test/review-unit.test.mjs test/review-draft.test.mjs` covers each refusal and the unchanged record.
+- [x] 3.3 Accept `verified-deferred` and `verified-rejected` only for their matching recorded disposition, accept `still-open` as a return to `open`, and keep `verified-fixed` and `regressed` behavior; verify `node --test test/review-unit.test.mjs test/review-apply.test.mjs` covers the transition table.
+- [x] 3.4 Keep the disposition batch atomic when one entry is refused; verify `node --test test/review-unit.test.mjs` asserts no finding changes on a mixed batch.
 
 ## 4. Readiness, report verdict and brief
 
