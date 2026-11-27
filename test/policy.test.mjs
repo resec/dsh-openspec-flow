@@ -126,6 +126,27 @@ test('the rule follows a working-directory change', (t) => {
   assert.equal(sections[0].text(), POLICY_TEXT)
 })
 
+test('a directory is re-probed while it is not an OpenSpec project', (t) => {
+  const f = fixture()
+  t.after(() => f.dispose())
+  assert.equal(isOpenSpecProject(f.plain), false)
+  mkdirSync(join(f.plain, 'openspec'))
+  assert.equal(isOpenSpecProject(f.plain), true)
+})
+
+test('the rule appears when the working directory gains an OpenSpec root', (t) => {
+  const f = fixture()
+  t.after(() => f.dispose())
+  const fake = createFakeContext({ cwd: f.plain })
+  registerPolicy(fake.ctx)
+  const { agent, sections } = fake.createAgent({ directory: f.plain })
+  fake.emit('agent/created', { agent })
+
+  assert.equal(sections[0].text(), '')
+  mkdirSync(join(f.plain, 'openspec'))
+  assert.equal(sections[0].text(), POLICY_TEXT)
+})
+
 test('a load-time sweep attaches to an already-live agent', (t) => {
   const f = fixture()
   t.after(() => f.dispose())
