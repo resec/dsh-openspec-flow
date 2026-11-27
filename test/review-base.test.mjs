@@ -83,19 +83,39 @@ test('the overlay carries the seal paths and the fork content', () => {
 test('a path whose fork content already equals the seal is accepted', () => {
   const root = repo()
   mkdirSync(join(root, 'openspec'), { recursive: true })
-  writeFileSync(join(root, 'openspec', '.gitignore'), '.review/\n')
+  writeFileSync(join(root, 'openspec', '.gitignore'), 'a\n')
   const base = commit(root, 'base')
+  writeFileSync(join(root, 'openspec', '.gitignore'), 'b\n')
   mkdirSync(join(root, 'openspec', 'changes', 'widget'), { recursive: true })
   writeFileSync(join(root, 'openspec', 'changes', 'widget', 'proposal.md'), '# Proposal\n')
+  const seal = commit(root, 'seal')
+  run(root, ['checkout', '-q', base])
+  writeFileSync(join(root, 'openspec', '.gitignore'), 'b\n')
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  const fork = commit(root, 'main advance')
+
+  const tree = overlaySealTree({ root, sealCommit: seal, onto: fork })
+  assert.ok(tree, 'the converging path does not refuse the overlay')
+  const changed = run(root, ['diff', '--name-only', fork, tree]).split('\n').filter(Boolean)
+  assert.ok(!changed.includes('openspec/.gitignore'), 'the converging path is not a difference')
+  assert.deepEqual(changed, ['openspec/changes/widget/proposal.md'])
+})
+
+test('a nested OpenSpec root is overlaid by its full path', () => {
+  const root = repo()
+  mkdirSync(join(root, 'sub', 'openspec', 'changes', 'widget'), { recursive: true })
+  writeFileSync(join(root, 'sub', 'openspec', 'changes', 'widget', 'proposal.md'), 'base\n')
+  const base = commit(root, 'base')
+  writeFileSync(join(root, 'sub', 'openspec', 'changes', 'widget', 'proposal.md'), '# Proposal\n')
   const seal = commit(root, 'seal')
   run(root, ['checkout', '-q', base])
   writeFileSync(join(root, 'main-only.txt'), 'landed\n')
   const fork = commit(root, 'main advance')
 
   const tree = overlaySealTree({ root, sealCommit: seal, onto: fork })
-  assert.ok(tree, 'the converging path does not refuse the overlay')
+  assert.ok(tree, 'the overlay tree is built')
   assert.deepEqual(run(root, ['diff', '--name-only', fork, tree]).split('\n').filter(Boolean), [
-    'openspec/changes/widget/proposal.md',
+    'sub/openspec/changes/widget/proposal.md',
   ])
 })
 
