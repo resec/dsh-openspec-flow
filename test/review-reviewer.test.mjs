@@ -1039,6 +1039,14 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   const merge = buildApplyBrief({ ...base, baseSource: 'merge-base', validation: { strict: true, issues: [] } })
   assert.match(merge, /git merge-base HEAD origin\/main/)
   assert.match(merge, /no seal commit was recorded/)
+  const rebase = buildApplyBrief({ ...base, baseSource: 'rebase', rebasedFrom: 'e'.repeat(40), validation: { strict: true, issues: [] } })
+  assert.match(rebase, /The base is the current fork `git merge-base HEAD origin\/main` plus the sealed change artifacts/)
+  assert.match(rebase, /rebased or merged onto newer main after the seal/)
+  assert.match(rebase, /^- rebased from: e{40}$/m)
+  assert.doesNotMatch(seal, /^- rebased from:/m)
+  const rebasedMerge = buildApplyBrief({ ...base, baseSource: 'merge-base', rebasedFrom: 'e'.repeat(40), validation: { strict: true, issues: [] } })
+  assert.match(rebasedMerge, /^- rebased from: e{40}$/m)
+  assert.match(rebasedMerge, /git merge-base HEAD origin\/main/)
 })
 
 test('the apply brief verifies a recorded fixed finding', () => {

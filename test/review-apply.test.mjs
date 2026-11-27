@@ -2253,7 +2253,7 @@ test('a resync tolerates a missing main planning copy', async () => {
   assert.equal(typeof resync.state, 'string')
 })
 
-test('a rebase rewrites the branch seal and keeps the recorded base', async () => {
+test('a rebase without origin/main keeps the recorded base', async () => {
   const { root, run } = gitFixture()
   run(['branch', '-M', 'main'])
   const fake = sealWorktreeApply(root)
@@ -2333,6 +2333,33 @@ test('an overlay that cannot be built refuses the round', { skip: process.platfo
     rmSync(bin, { recursive: true, force: true })
   }
   assert.equal(existsSync(join(reviewDir(root), 'apply-review.json')), false)
+})
+
+test('a merge of main into the branch re-bases the apply review diff', async () => {
+  const { root, run } = gitFixture()
+  run(['branch', '-M', 'main'])
+  const fake = sealWorktreeApply(root)
+  await passDraftConstructing(fake, root)
+  const state = readApplyState(root, null, CHANGE)
+  writeFileSync(join(state.worktree, 'feature.txt'), 'feature\n')
+  run(['-C', state.worktree, 'add', 'feature.txt'])
+  run(['-C', state.worktree, 'commit', '-q', '-m', 'feature work'])
+  run(['checkout', '-q', 'main'])
+  writeFileSync(join(root, 'main-only.txt'), 'landed\n')
+  run(['add', 'main-only.txt'])
+  run(['commit', '-q', '-m', 'another land'])
+  const mainTip = run(['rev-parse', 'HEAD'])
+  run(['update-ref', 'refs/remotes/origin/main', mainTip])
+  run(['-C', state.worktree, 'merge', '-q', '--no-edit', 'main'])
+
+  await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
+  const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
+  assert.equal(record.baseSource, 'rebase')
+  assert.equal(record.baseCommit, mainTip)
+  assert.equal(record.rebasedFrom, state.sealedCommit)
+  const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
+  assert.match(diff, /feature\.txt/)
+  assert.doesNotMatch(diff, /main-only\.txt/)
 })
 
 test('the seal resets a stale apply branch and refuses an attached worktree', async () => {
