@@ -159,3 +159,12 @@ test('a directory entry under another name runs the directory flow', async () =>
   const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: 'planning' })
   assert.equal(status.review, 'planning')
 })
+
+test('an empty review entry name is refused with the configured entries rule', async () => {
+  const root = fixture()
+  const fake = setup(root, undefined, { reviewFile: `${JSON.stringify(entryConfig(), null, 2)}\n` })
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'status', change: CHANGE, review: '  ' }),
+    /review must name a configured review entry/,
+  )
+})
