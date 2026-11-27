@@ -716,6 +716,12 @@ test('a non-default threshold changes blocking and a ready open below-threshold 
   const readiness = draftReadiness(record, 'hash', 'draft')
   assert.equal(readiness.ready, true)
   assert.match(readiness.nextAction, /openspec_review action=dispose review=draft/)
+  const frozen = draftReadiness(record, 'hash', 'draft', {
+    applyStarted: true,
+    readyAction: 'openspec_review action=status review=apply',
+  })
+  assert.equal(frozen.ready, true)
+  assert.equal(frozen.nextAction, 'openspec_review action=status review=apply')
 })
 
 test('recordFinding keeps the report fields and starts open', () => {
