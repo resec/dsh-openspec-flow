@@ -41,6 +41,8 @@ function makeRepo() {
   git(root, ['config', 'user.name', 'Stamp Test'])
   writeFileSync(join(root, '.gitignore'), '.cache/\n')
   writeFileSync(join(root, 'index.js'), 'export const value = 1\n')
+  writeFileSync(join(root, 'client.js'), 'export const client = 1\n')
+  writeFileSync(join(root, 'reviewer.js'), 'export const reviewer = 1\n')
   mkdirSync(join(root, 'lib'), { recursive: true })
   writeFileSync(join(root, 'lib', 'a.js'), 'export function a() { return 1 }\n')
   mkdirSync(join(root, 'test'), { recursive: true })
@@ -50,7 +52,7 @@ function makeRepo() {
   writeFileSync(join(root, 'coverage.config.json'), '{"mode":"enforce"}\n')
   writeFileSync(join(root, 'coverage.baseline.json'), '{"version":1}\n')
   mkdirSync(join(root, 'scripts'), { recursive: true })
-  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'test-env.mjs', 'node-version.mjs']) {
+  for (const name of ['coverage.mjs', 'coverage-gate.mjs', 'coverage-stamp.mjs', 'run-tests.mjs', 'test-env.mjs', 'node-version.mjs', 'check-pre-push.mjs']) {
     writeFileSync(join(root, 'scripts', name), '// fixture\n')
   }
   git(root, ['add', '-A'])
@@ -84,6 +86,8 @@ test('the input list names every verdict input', () => {
   assert.deepEqual(STAMP_INPUTS, [
     'lib',
     'index.js',
+    'client.js',
+    'reviewer.js',
     'test',
     'package.json',
     'package-lock.json',
@@ -95,6 +99,7 @@ test('the input list names every verdict input', () => {
     'scripts/run-tests.mjs',
     'scripts/test-env.mjs',
     'scripts/node-version.mjs',
+    'scripts/check-pre-push.mjs',
   ])
 })
 
@@ -164,6 +169,45 @@ test('a gate-script change invalidates the stamp', () => {
   const result = checkStamp({ root })
   assert.equal(result.ok, false)
   assert.match(result.reason, /inputs changed/)
+})
+
+test('a client.js change invalidates the stamp', () => {
+  const root = makeRepo()
+  writeStamp({ root, base: baseOf(root) })
+  writeFileSync(join(root, 'client.js'), 'export const client = 2\n')
+  commitAll(root, 'fix(client): change the channel')
+  const result = checkStamp({ root })
+  assert.equal(result.ok, false)
+  assert.match(result.reason, /inputs changed/)
+})
+
+test('a reviewer.js change invalidates the stamp', () => {
+  const root = makeRepo()
+  writeStamp({ root, base: baseOf(root) })
+  writeFileSync(join(root, 'reviewer.js'), 'export const reviewer = 2\n')
+  commitAll(root, 'fix(review): change the reviewer')
+  const result = checkStamp({ root })
+  assert.equal(result.ok, false)
+  assert.match(result.reason, /inputs changed/)
+})
+
+test('a check-pre-push change invalidates the stamp', () => {
+  const root = makeRepo()
+  writeStamp({ root, base: baseOf(root) })
+  writeFileSync(join(root, 'scripts', 'check-pre-push.mjs'), '// weakened\n')
+  commitAll(root, 'chore: change the pre-push check')
+  const result = checkStamp({ root })
+  assert.equal(result.ok, false)
+  assert.match(result.reason, /inputs changed/)
+})
+
+test('a commit outside the listed inputs keeps the stamp', () => {
+  const root = makeRepo()
+  writeStamp({ root, base: baseOf(root) })
+  writeFileSync(join(root, 'README.md'), '# Changed\n')
+  commitAll(root, 'docs: edit the readme')
+  const result = checkStamp({ root })
+  assert.equal(result.ok, true, 'text the suite only asserts must not invalidate the stamp')
 })
 
 test('a dirty tree refuses the write as a no-op', () => {
