@@ -516,6 +516,129 @@ test('a dispositions batch writes nothing when one entry is invalid', async () =
   assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'open')
 })
 
+test('a waived blocker cannot be disposed again and the review stays passed', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive', review: 'draft', change: CHANGE, id: 'R1-01',
+    approvedBy: 'user', waiver: 'The user accepted the risk.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE,
+    dispositions: [{ id: 'R1-02', status: 'rejected', note: 'Not a defect.' }],
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE })
+  const passed = await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, round: 2, report: report(),
+  })
+  assert.equal(passed.state, 'passed')
+  assert.equal(passed.ready, true)
+  const path = join(reviewDir(root), 'review.json')
+  const before = readFileSync(path, 'utf8')
+
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+    }),
+    /^Error: finding R1-01 is already waived and closed, so it cannot be disposed again$/u,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE,
+      dispositions: [
+        { id: 'R1-01', status: 'deferred', note: 'Later.' },
+      ],
+    }),
+    /^Error: dispositions\[0\] R1-01: finding R1-01 is already waived and closed, so it cannot be disposed again$/u,
+  )
+  assert.equal(readFileSync(path, 'utf8'), before)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.state, 'passed')
+  assert.equal(status.ready, true)
+  assert.equal(status.findings.blocking, 0)
+})
+
+test('a verified blocker cannot be disposed or waived again', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Added the task.',
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 2 })
+  const passed = await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE, round: 2,
+    report: report({ verifications: [{ id: 'R1-01', status: 'verified-fixed', evidence: 'Checked the new task.' }] }),
+  })
+  assert.equal(passed.state, 'passed')
+  const path = join(reviewDir(root), 'review.json')
+  const before = readFileSync(path, 'utf8')
+
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Again.',
+    }),
+    /^Error: finding R1-01 is already verified and closed, so it cannot be disposed again$/u,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'waive', review: 'draft', change: CHANGE, id: 'R1-01',
+      approvedBy: 'user', waiver: 'The user accepted the risk.',
+    }),
+    /^Error: finding R1-01 is already verified and closed, so it cannot be disposed again$/u,
+  )
+  assert.equal(readFileSync(path, 'utf8'), before)
+  const status = await call(fake, 'openspec_review', { action: 'status', change: CHANGE })
+  assert.equal(status.state, 'passed')
+  assert.equal(status.findings.verified, 1)
+  assert.equal(status.findings.waived, 0)
+})
+
+test('a dispositions batch writes nothing when an entry names a closed finding', async () => {
+  const root = fixture()
+  const fake = setup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ verdict: 'changes-requested', findings: [majorFinding(), minorFinding()] }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'waive', review: 'draft', change: CHANGE, id: 'R1-01',
+    approvedBy: 'user', waiver: 'The user accepted the risk.',
+  })
+  const before = readFileSync(join(reviewDir(root), 'review.json'), 'utf8')
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft',
+      change: CHANGE,
+      dispositions: [
+        { id: 'R1-02', status: 'fixed', note: 'Rewrote the sentence.' },
+        { id: 'R1-01', status: 'fixed', note: 'Added the missing task.' },
+      ],
+    }),
+    /^Error: dispositions\[1\] R1-01: finding R1-01 is already waived and closed, so it cannot be disposed again$/u,
+  )
+  assert.equal(readFileSync(join(reviewDir(root), 'review.json'), 'utf8'), before)
+  const record = JSON.parse(before)
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-02').status, 'open')
+  assert.equal(record.findings.find((finding) => finding.id === 'R1-01').status, 'waived')
+})
+
 test('dispositions batch validation names the offending entry', async () => {
   const root = fixture()
   const fake = setup(root)

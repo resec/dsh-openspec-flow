@@ -121,6 +121,8 @@ finding 的处置：
 | 后续报告 `verified-fixed` | 验证轮次必须晚于首次轮次 | 真正关闭 finding |
 | 后续报告 `verified-deferred`/`verified-rejected` | 分别只能验证已 `deferred`/`rejected` 的 finding | 评审者接受处置，finding 进入对应终态并关闭 |
 
+`verified` 与 `waived` 是 finding 的终态：对它的 `dispose` 或 `waive`（单条 `id` 或 `dispositions` 批量）一律拒绝，记录不变，错误报出 finding 的当前状态并说明它已关闭，不再指向下一步处置。
+
 `dispose` 与 finding 的 `waive` 接受 `dispositions` 数组，一次处置多条 finding；只有一条时仍可用单条 `id` 写法，两种写法不能同时出现。`dispose` 的每条带自己的 `id`、`status` 与 `note`；`waive` 的条目只需 `id`，`status` 固定为 `waived`，`waiver` 与 `approvedBy` 可由顶层提供默认值。整批先校验后写入，任一条无效时所有 finding 保持不变；重复 `id` 或未知 `id` 会拒绝整批。`dispositions` 只属于 `action: "dispose"` 与 finding 的 `waive`；`start` 与 `resume` 不接受它，传入即拒绝并指向 `action: "dispose"`。
 
 `dispose` 与 finding 的 `waive` 必须显式给出 `review`（锁定策略声明的入口名），缺省不再回落到 draft：调用在读取任何记录之前就拒绝，错误列出全部已配置入口。apply 启动后 directory 入口的记录冻结，对它的 `dispose` 与 finding `waive` 一律拒绝，错误指向归档门禁入口的 status；tree 入口记录的处置与 plan-change 的 `waive` 不受影响。

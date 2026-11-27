@@ -527,6 +527,12 @@ test('the review document qualifies every dispose example and next action', () =
   assert.match(text, /openspec_review action=dispose review=<kind>/)
 })
 
+test('the review document states that a closed finding cannot be disposed again', () => {
+  const text = readFileSync(DOC_PATH, 'utf8')
+  assert.match(text, /`verified` 与 `waived` 是 finding 的终态/)
+  assert.match(text, /错误报出 finding 的当前状态并说明它已关闭，不再指向下一步处置/)
+})
+
 test('the README states the review kind and the draft freeze', () => {
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
   assert.match(readme, /`dispose` 与 finding 的 `waive` 必须显式传 `review`/)
