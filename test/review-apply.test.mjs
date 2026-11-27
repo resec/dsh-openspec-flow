@@ -1510,7 +1510,11 @@ test('a started apply freezes draft dispositions and not apply ones', async () =
     call(fake, 'openspec_review', {
       action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
     }),
-    /frozen once apply started/,
+    (error) => {
+      assert.match(error.message, /frozen once apply started/)
+      assert.match(error.message, /openspec_review action=status review=apply/)
+      return true
+    },
   )
   await assert.rejects(
     call(fake, 'openspec_review', {
