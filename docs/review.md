@@ -18,7 +18,7 @@
 | draft | 变更工件（`.openspec.yaml`、`design.md`、`proposal.md`、`specs/**/*.md`、`tasks.md`）加首轮写入的意图文本 | 首轮 `start` 写入 `intent.md`，之后每次 `resume` 复用它；每次进入评审重新计算哈希；`tasks.md` 的复选框状态被归一化，勾选任务不改变哈希 |
 | apply | 已提交的 git tree（`HEAD^{tree}`） | 每次 `start` 或 `resume` 读取；工作区必须干净，提交之外的内容不进入评审；打开轮次前以 `--strict` 校验提交的变更 |
 
-apply review 需要 git 仓库、干净工作区与至少一个提交；worktree apply 时通过 `worktree` 指向该 checkout，reviewer 在 worktree 中读取实现树。没有 git 的项目只能用 draft review（directory 入口）；`openspec_new_change` 在锁定策略时忽略 tree 入口的启用设置，把所有 tree 入口锁定为禁用。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段（draft-only）的旧 change 报告 `policy: false`，首次 apply start 会锁定或迁移策略。
+apply review 需要 git 仓库、干净工作区与至少一个提交；worktree apply 时通过 `worktree` 指向该 checkout，reviewer 在 worktree 中读取实现树。没有 git 的项目只能用 draft review（directory 入口）；`openspec_new_change` 在锁定策略时忽略 tree 入口的启用设置，把所有 tree 入口锁定为禁用。旧的策略文件可能仍记录 `reviews.apply.enabled: true`，status 会报告 `policy: true`、`enabled: true`、`available: false`，`openspec_archive` 不会等待它。无策略或只有 draft 段（draft-only）的旧 change 报告 `policy: false`；首次带 `configPath` 的 start/resume 会补写缺失入口与 pipeline 一次，之后锁定；不带 `configPath` 时该门禁保持禁用。
 
 apply review 默认使用 draft 基线：draft 段启用时，`start` 仍要求已完成的 draft review。`openspec_review` 接受可选 `baseline`：`draft`（draft 段启用时的默认）或 `none`。显式 `baseline: "none"` 用于没有 draft 记录的已提交分支：跳过 draft record、intent、plan drift 与 plan-change waiver 检查，必须显式给出非空 `base`，不会回落到 merge-base，且已有 draft 记录时拒绝。draft 段禁用时，省略 baseline 解析为 `none`，沿用原有的 base 解析（显式 base 或 merge-base）；显式 `baseline: "draft"` 会被拒绝，需改用 `none`。apply 记录、status 与 report 报告该 baseline；旧 apply 记录没有该字段时按 `draft` 报告。
 
@@ -45,7 +45,7 @@ git worktree apply 中，draft review 就绪后首次 `openspec_apply_next` 由�
 - `mode`：评审未开始时按锁定策略该段的 `reviewers` 推导：`1` 为 `reviewer`，`0` 为 `self`；入口禁用或项目不可用（无 git）时为 `self`；已有评审记录时用记录中的值。
 - `independent`：与 `mode` 对应，`reviewer` 为 true，其余为 false。
 
-不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或缺少入口段（包括 draft-only 旧策略）指向该入口的 `openspec_review action=start review=<entry>`。`openspec_apply_next` 只检查 `pipeline.beforeApply`，`openspec_archive` 与 land 只检查 `pipeline.beforeArchive`；入口禁用、缺失或不可用时该门禁放行，不阻塞生命周期步骤。
+不可用、无策略或禁用时 status 不报错，返回 `ready: false` 与下一动作：不可用或禁用指向 `openspec_archive`，无策略或缺少入口段（包括 draft-only 旧策略）指向该入口的 `openspec_review action=start review=<entry> configPath=openspec/reviews.json`。`openspec_apply_next` 只检查 `pipeline.beforeApply`，`openspec_archive` 与 land 只检查 `pipeline.beforeArchive`；入口禁用、缺失或不可用时该门禁放行，不阻塞生命周期步骤。
 
 ## 并发与串行
 
