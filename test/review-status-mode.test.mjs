@@ -191,3 +191,14 @@ test('a pr entry status names the entry and its start action', async () => {
   assert.equal(status.mode, 'reviewer')
   assert.equal(status.nextAction, 'openspec_review action=start review=pr')
 })
+
+test('the review output schema requires the new finding counts', () => {
+  const root = fixture()
+  const fake = setup(root)
+  const schema = fake.tools.get('openspec_review').output.schema
+  const required = schema.properties.findings.required
+  assert.ok(required.includes('verifiedDeferred'))
+  assert.ok(required.includes('verifiedRejected'))
+  assert.ok(required.includes('blocking'))
+})
+

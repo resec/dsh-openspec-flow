@@ -111,6 +111,33 @@ test('a review card carries the complete report and counts', () => {
   }
 })
 
+test('a card counts both confirmed terminal dispositions', () => {
+  const root = directory()
+  try {
+    const stored = record({
+      findings: [
+        { id: 'R1-01', severity: 'minor', status: 'verified-deferred', firstRound: 1, verifiedInRound: 2 },
+        { id: 'R1-02', severity: 'minor', status: 'verified-rejected', firstRound: 1, verifiedInRound: 2 },
+      ],
+    })
+    const card = buildCard({
+      phase: 'review',
+      kind: 'draft',
+      record: stored,
+      round: 1,
+      report: readRoundReport(root, stored.rounds[0]),
+      waiver: null,
+      readiness: { ready: true, nextAction: 'openspec_apply_next', reasons: [] },
+      currentHash: 'hash-a',
+    })
+    assert.equal(card.counts.verifiedDeferred, 1)
+    assert.equal(card.counts.verifiedRejected, 1)
+    assert.equal(card.counts.blocking, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('a resolution card carries dispositions and the waiver', () => {
   const root = directory()
   try {

@@ -323,6 +323,59 @@ test('the findings read returns verification rounds and last verification', asyn
   assert.equal(reopened.lastVerification, 'still-open')
 })
 
+test('the findings read reports confirmed deferred and rejected terminal states', async () => {
+  const root = fixture()
+  const { fake } = externalSetup(root)
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  const reviewer = createFakeContext({ cwd: root })
+  reviewerApply(reviewer.ctx)
+  const execute = (args) => reviewer.tools.get('openspec_reviewer').execute(args, {
+    agent: { id: 'reviewer-1' }, signal: new AbortController().signal,
+  })
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft',
+    report: report({
+      verdict: 'changes-requested',
+      findings: [
+        majorFinding(),
+        minorFinding(),
+        { ...minorFinding(), id: 'R1-03', severity: 'nit' },
+      ],
+    }),
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'fixed', note: 'Fixed.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-02', status: 'deferred', note: 'Later.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-03', status: 'rejected', note: 'Not a defect.',
+  })
+  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, round: 2 })
+  await execute({
+    action: 'submit', change: CHANGE, review: 'draft', round: 2,
+    report: report({
+      verdict: 'pass',
+      findings: [],
+      verifications: [
+        { id: 'R1-01', status: 'verified-fixed', evidence: 'Checked.' },
+        { id: 'R1-02', status: 'verified-deferred', evidence: 'Agreed.' },
+        { id: 'R1-03', status: 'verified-rejected', evidence: 'Agreed.' },
+      ],
+    }),
+  })
+  const projected = await execute({ action: 'read', target: 'findings', change: CHANGE, review: 'draft' })
+  const deferred = projected.findings.find((finding) => finding.id === 'R1-02')
+  const rejected = projected.findings.find((finding) => finding.id === 'R1-03')
+  assert.equal(deferred.status, 'verified-deferred')
+  assert.equal(deferred.verifiedInRound, 2)
+  assert.equal(rejected.status, 'verified-rejected')
+  assert.equal(rejected.verifiedInRound, 2)
+})
+
 test('the reviewer refuses a missing record, a missing slot and a changed object', async () => {
   const root = fixture()
   const reviewer = createFakeContext({ cwd: root })
@@ -965,6 +1018,9 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   assert.match(seal, /`title`/)
   assert.match(seal, /review prompts, not report values/)
   assert.match(seal, /verified-fixed, verified-deferred, verified-rejected, still-open, regressed/)
+  assert.match(seal, /verification candidates: `fixed`, `deferred` and `rejected`/)
+  assert.match(seal, /`still-open` returns a `deferred` or `rejected` finding to `open`/)
+  assert.match(seal, /A finding at or above `major` is a blocker/)
   assert.match(seal, /required only for `critical` and `major`/)
   assert.equal(seal.split('A finding carries').length - 1, 1)
   assert.equal(seal.split('After you submit').length - 1, 1)

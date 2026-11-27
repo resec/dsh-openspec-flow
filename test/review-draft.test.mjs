@@ -996,7 +996,7 @@ test('dispose refuses an unknown finding and a deferred blocker', async () => {
   )
   await assert.rejects(
     call(fake, 'openspec_review', { action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-01', status: 'deferred', note: 'later' }),
-    /cannot be deferred/,
+    /cannot be deferred.*allowed: fixed, waived/,
   )
 })
 
@@ -1016,7 +1016,7 @@ test('dispose honors the threshold and the disposition switches', async () => {
     call(fake, 'openspec_review', {
       action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-02', status: 'deferred', note: 'later',
     }),
-    /cannot be deferred/,
+    /cannot be deferred.*allowed: fixed, waived/,
   )
   await assert.rejects(
     call(fake, 'openspec_review', {

@@ -336,6 +336,9 @@ test('settings reads report the switch and each project configuration read-only'
     assert.equal(first.path, dir.root)
     assert.equal(first.config.reviews.draft, 'draft')
     assert.equal(first.config.draft.reviewers, 1)
+    assert.equal(first.config.draft.passCriteria, 'major')
+    assert.equal(first.config.draft.allowDeferred, true)
+    assert.equal(first.config.draft.allowRejected, true)
     assert.equal(first.configError, undefined)
     assert.equal('reviews' in read.value, false, 'the channel no longer returns editable sections')
   } finally {
