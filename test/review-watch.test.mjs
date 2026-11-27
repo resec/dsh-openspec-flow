@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -281,6 +282,60 @@ test('the watch module falls back to fs.watch and the default debounce', () => {
   assert.equal(armed.round, 1)
   clearRoundWatches()
   f.dispose()
+})
+
+test('arming the watch unrefs the watcher and disarming still closes it', () => {
+  const f = directFixture()
+  const calls = []
+  let watcher
+  const factory = () => {
+    watcher = {
+      closed: false,
+      unref() { calls.push('unref') },
+      close() { this.closed = true },
+    }
+    return watcher
+  }
+  armRoundWatch({
+    directory: f.directory, changeRoot: f.changeRoot, intent: 'intent', round: 1, hash: 'x',
+    watchFactory: factory, debounceMs: 1, logger: { warn() {} },
+  })
+  assert.deepEqual(calls, ['unref'])
+  disarmRoundWatch(f.directory)
+  assert.equal(watcher.closed, true)
+  f.dispose()
+})
+
+test('a process that arms a real watch exits within 1.5 seconds', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-watch-exit-'))
+  const changeRoot = join(root, 'openspec', 'changes', CHANGE)
+  mkdirSync(changeRoot, { recursive: true })
+  const worker = join(root, 'worker.mjs')
+  writeFileSync(worker, [
+    `import { armRoundWatch } from ${JSON.stringify(new URL('../lib/review/watch.js', import.meta.url).href)}`,
+    'const entry = armRoundWatch({',
+    '  directory: process.argv[2],',
+    '  changeRoot: process.argv[3],',
+    "  intent: 'Add a theme selector.',",
+    '  round: 1,',
+    "  hash: 'unused',",
+    '  logger: { warn() {} },',
+    '  onStale: () => {},',
+    '})',
+    "process.stdout.write('armed ' + entry.round + '\\n')",
+  ].join('\n'))
+  const started = Date.now()
+  try {
+    const result = spawnSync(process.execPath, [worker, join(root, 'watch-review'), changeRoot], {
+      encoding: 'utf8', timeout: 1500,
+    })
+    assert.equal(result.signal, null, `the armed watch held the process: ${result.stderr ?? ''}`)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /^armed 1$/m)
+    assert.ok(Date.now() - started < 1500, `the child took ${Date.now() - started}ms`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 function rewriteRecord(root, mutate) {
