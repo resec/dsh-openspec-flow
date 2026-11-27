@@ -172,22 +172,25 @@ Host 只读取文件名以当前会话键开头的卡片文件；每个评审根
 | --- | --- |
 | `<reviewRoot>/<store>#<change>/policy.json` | 锁定的评审策略 |
 | `<reviewRoot>/<store>#<change>/intent.md` | 首轮 `start` 写入的 draft 意图文本；`resume` 只读取，不修改 |
-| `<reviewRoot>/<store>#<change>/review.json` | draft review 记录 |
-| `<reviewRoot>/<store>#<change>/apply-review.json` | apply review 记录 |
+| `<reviewRoot>/<store>#<change>/review.json` | `draft` 入口记录 |
+| `<reviewRoot>/<store>#<change>/apply-review.json` | `apply` 入口记录 |
+| `<reviewRoot>/<store>#<change>/<entry>-review.json` | 其他入口（例如 `pr-review.json`）的记录 |
 | `<reviewRoot>/<store>#<change>/plan-change-waiver.json` | apply 阶段规划变更的用户豁免：原文、批准者、时间与文件清单 |
-| `<reviewRoot>/<store>#<change>/round-<n>/brief.md` | draft 第 n 轮当前 brief |
-| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/brief.md` | 被替换尝试的 brief |
-| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/report.json` | 被替换尝试的 blocked 报告（存在时） |
-| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/meta.json` | 修订的哈希、原因、通知与归档时间 |
-| `<reviewRoot>/<store>#<change>/apply-round-<n>/brief.md` | apply 第 n 轮 brief |
-| `<reviewRoot>/<store>#<change>/apply-round-<n>/diff.patch` | apply 第 n 轮 diff |
-| `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/brief.md` | apply 额外轮次 brief；目录名使用 token |
-| `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/diff.patch` | apply 额外轮次 diff |
+| `<reviewRoot>/<store>#<change>/round-<n>/brief.md` | `draft` 第 n 轮当前 brief |
+| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/brief.md` | `draft` 被替换尝试的 brief |
+| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/report.json` | `draft` 被替换尝试的 blocked 报告（存在时） |
+| `<reviewRoot>/<store>#<change>/round-<n>/revisions/<mm>/meta.json` | `draft` 修订的哈希、原因、通知与归档时间 |
+| `<reviewRoot>/<store>#<change>/apply-round-<n>/brief.md` | `apply` 第 n 轮 brief |
+| `<reviewRoot>/<store>#<change>/apply-round-<n>/diff.patch` | `apply` 第 n 轮 diff |
+| `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/brief.md` | `apply` 额外轮次 brief；目录名使用 token |
+| `<reviewRoot>/<store>#<change>/apply-round-<E<n>>/diff.patch` | `apply` 额外轮次 diff |
+| `<reviewRoot>/<store>#<change>/<entry>-round-<n>/brief.md` | 其他入口第 n 轮 brief |
+| `<reviewRoot>/<store>#<change>/<entry>-round-<n>/diff.patch` | 其他 tree 入口第 n 轮 diff |
 | `<reviewRoot>/<store>#<change>/cards/<sessionKey>-<kind>-<phase>-<round>[-a<attempt>].json` | 一次尝试的卡片文件；第一次尝试不带后缀，刷新后的尝试带 `-a<n>`；payload 完整，绑定后写入 `turn` |
 | `<reviewRoot>/<store>#<change>/card-delivery.json` | 每会话投递水位，用于绑定 turn；请求带 turn 结束时间时水位不超过该时间 |
 | `<git dir>/openspec-flow/apply.lock.json` 或 `openspec/.review/apply.lock.json` | 项目级 apply 锁；git 域在 worktree git directory，非 git 域在 OpenSpec 根；字段为 `schemaVersion`、`change`、`store`、`changeRoot`、`implementationRoot`、`startedAt` |
 
-`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。`round-<n>/revisions/<mm>/` 保存同一轮内被替换的尝试，评审记录的 `rounds[].revisions` 与 `openspec_review` status 的 `revisions` 摘要列出它们。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。记录复制前，旧记录根下的卡片仍由 `reviewCards/get` 返回并照常绑定 turn 与投递水位；复制后从共享记录读取，`.migrated` 标记会阻止已删除共享记录的旧卡片复活。迁移锁位于 `<reviewRoot>/.migrate/<record>.lock`；进程中断留下它时，后续访问等待 5 秒后报 busy，确认没有迁移进程后手动删除该锁目录。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、kind、phase、round、attempt、at），写入前查重，保证同一会话、同一种类、同一轮、同一尝试、同一 phase 只写一张卡；变更前写入的标记没有 `kind` 或 `attempt`，仍按「同会话、同轮、同 phase」匹配；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
+`<reviewRoot>` 在 git 项目为 `<git common dir>/openspec-flow/review`，在非 git 项目为 `openspec/.review`。`draft` 与 `apply` 保留旧文件名与旧轮次目录；其他入口使用 `<entry>-review.json` 与 `<entry>-round-N`，已存在的旧记录不会改名或复制。`round-<n>/revisions/<mm>/` 保存同一轮内被替换的尝试，评审记录的 `rounds[].revisions` 与 `openspec_review` status 的 `revisions` 摘要列出它们。嵌套 OpenSpec 根在 `<store>#<change>` 后加 `@root-<sha256(相对根路径) 前 12 位>`，避免同名 change 共用记录。旧记录位于 `openspec/.review/`，首次访问复制一次到共享根并写 `.migrated` 标记；共享记录被用户删除后不再从旧副本恢复。共享根位于 git 目录内，不写 `openspec/.gitignore`、不运行 `git check-ignore`；旧根与非 git 项目仍按 `.review/` 忽略行处理。记录复制前，旧记录根下的卡片仍由 `reviewCards/get` 返回并照常绑定 turn 与投递水位；复制后从共享记录读取，`.migrated` 标记会阻止已删除共享记录的旧卡片复活。迁移锁位于 `<reviewRoot>/.migrate/<record>.lock`；进程中断留下它时，后续访问等待 5 秒后报 busy，确认没有迁移进程后手动删除该锁目录。`review.json` 与 `apply-review.json` 还携带 `cards` 标记（sessionId、kind、phase、round、attempt、at），写入前查重，保证同一会话、同一种类、同一轮、同一尝试、同一 phase 只写一张卡；变更前写入的标记没有 `kind` 或 `attempt`，仍按「同会话、同轮、同 phase」匹配；卡片文件本身以短 SHA-256 会话键命名，避免会话 id 进入路径。
 
 ## 失败处理
 

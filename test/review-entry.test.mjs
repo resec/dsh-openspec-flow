@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_REVIEW_CONFIG, normalizeReviewDocument } from '../lib/review/config.js'
 import { DEFAULT_ENTRY, entryNames, gateEntry, pipelineOf, resolveEntry } from '../lib/review/entry.js'
+import { reviewFile, roundPrefix } from '../lib/review/record.js'
 
 function parsedDocument() {
   const raw = structuredClone(DEFAULT_REVIEW_CONFIG)
@@ -66,6 +67,17 @@ test('an unknown entry names the configured entries', () => {
     () => resolveEntry({ reviews: {} }, 'draft'),
     /unknown review entry "draft"; configured entries: none/,
   )
+})
+
+test('record files and round prefixes follow the entry name', () => {
+  assert.equal(reviewFile('draft'), 'review.json')
+  assert.equal(reviewFile('apply'), 'apply-review.json')
+  assert.equal(reviewFile('pr'), 'pr-review.json')
+  assert.equal(roundPrefix('draft'), 'round')
+  assert.equal(roundPrefix('apply'), 'apply-round')
+  assert.equal(roundPrefix('pr'), 'pr-round')
+  assert.throws(() => reviewFile('PR'), /not a safe entry segment/)
+  assert.throws(() => roundPrefix('../draft'), /not a safe entry segment/)
 })
 
 test('an entry without a declared object is refused', () => {
