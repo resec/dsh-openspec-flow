@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-25
+skip_specs: true
+goal: Make the policy-lock test edit the settings after creation, and cover
+  the store-domain apply lock through the tool surface, so the two spec
+  requirements have a regression test rather than only unit-level evidence.
