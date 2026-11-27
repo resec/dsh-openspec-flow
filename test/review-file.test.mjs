@@ -42,6 +42,9 @@ test('a valid document resolves both entries and records the source', () => {
   assert.equal(result.value.draft.object, 'directory')
   assert.equal(result.value.apply.object, 'tree')
   assert.equal(result.value.draft.reviewers, 0)
+  assert.equal(result.value.draft.passCriteria, 'major')
+  assert.equal(result.value.draft.allowDeferred, true)
+  assert.equal(result.value.draft.allowRejected, true)
   assert.deepEqual(result.value.draft.reviewerModel, { source: 'inherit' })
   assert.equal(result.source.path, 'openspec/reviews.json')
   assert.match(result.source.sha256, /^[0-9a-f]{64}$/)
@@ -285,6 +288,21 @@ test('an explicit reviewer model is accepted', () => {
   })
 })
 
+test('explicit pass criteria and disposition switches are accepted', () => {
+  const root = project()
+  const value = document()
+  value.profiles['standard-directory'].passCriteria = 'nit'
+  value.profiles['standard-directory'].allowDeferred = false
+  value.profiles['standard-directory'].allowRejected = false
+  write(root, value)
+  const result = readReviewConfig(root)
+  assert.equal(result.ok, true)
+  assert.equal(result.value.draft.passCriteria, 'nit')
+  assert.equal(result.value.draft.allowDeferred, false)
+  assert.equal(result.value.draft.allowRejected, false)
+  assert.equal(result.value.apply.passCriteria, 'major')
+})
+
 test('the default document is valid and round-trips through the reader', () => {
   const root = project()
   writeFileSync(join(root, 'openspec', 'reviews.json'), defaultReviewConfigText())
@@ -293,6 +311,14 @@ test('the default document is valid and round-trips through the reader', () => {
   assert.equal(result.value.reviews.draft, 'standard-directory')
   assert.equal(result.value.reviews.apply, 'standard-tree')
   assert.deepEqual(result.value.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+  const text = defaultReviewConfigText()
+  for (const profile of ['standard-directory', 'standard-tree']) {
+    assert.match(text, new RegExp(`"passCriteria": "major"`, 'u'))
+    assert.match(text, new RegExp(`"allowDeferred": true`, 'u'))
+    assert.match(text, new RegExp(`"allowRejected": true`, 'u'))
+  }
+  assert.equal(JSON.parse(text).profiles['standard-directory'].passCriteria, 'major')
+  assert.equal(JSON.parse(text).profiles['standard-tree'].passCriteria, 'major')
   assert.equal(resolveEntry(result.value, 'draft').object, 'directory')
   assert.equal(resolveEntry(result.value, 'apply').object, 'tree')
   assert.equal(gateEntry(result.value, 'beforeApply').name, 'draft')
@@ -308,6 +334,9 @@ test('the profile validator refuses every malformed parameter', () => {
     { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 'x', reviewerModel: { source: 'inherit' } },
     { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15 },
     { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' }, extra: 1 },
+    { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' }, passCriteria: 'blocker' },
+    { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' }, allowDeferred: 'no' },
+    { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' }, allowRejected: 'no' },
   ]
   for (const raw of malformed) {
     const issues = []
@@ -352,10 +381,24 @@ test('the document validator refuses a malformed top level', () => {
   }
   assert.ok(normalizeReviewDocument(shared).issues.length > 0)
   assert.deepEqual(reviewSection(undefined, 'draft'), {
-    enabled: false, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+    enabled: false,
+    reviewers: 0,
+    waitMinutes: 15,
+    reviewerModel: { source: 'inherit' },
+    passCriteria: 'major',
+    allowDeferred: true,
+    allowRejected: true,
   })
   assert.deepEqual(
     reviewSection({ draft: { enabled: true, reviewers: 1, waitMinutes: 30, reviewerModel: { source: 'inherit' } } }, 'draft'),
-    { enabled: true, reviewers: 1, waitMinutes: 30, reviewerModel: { source: 'inherit' } },
+    {
+      enabled: true,
+      reviewers: 1,
+      waitMinutes: 30,
+      reviewerModel: { source: 'inherit' },
+      passCriteria: 'major',
+      allowDeferred: true,
+      allowRejected: true,
+    },
   )
 })
