@@ -451,6 +451,12 @@ test('the reviewer tool rejects an unknown review kind', async () => {
     }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal }),
     /unknown review entry "other"; configured entries:/,
   )
+  await assert.rejects(
+    reviewer.tools.get('openspec_reviewer').execute({
+      action: 'status', change: CHANGE, review: '  ',
+    }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal }),
+    /review must name a configured review entry/,
+  )
 })
 
 test('a provider without agent preset support refuses the reviewer', async () => {
