@@ -9,10 +9,10 @@
 
 ## 2. Policy schema version 3
 
-- [ ] 2.1 Lock every entry's `object` and parameters plus the pipeline and entry source names in `lib/review/policy.js`, raising `POLICY_SCHEMA_VERSION` to 3, keeping `configHash` over the new facts, and refusing a pipeline whose `beforeApply` is not a directory entry or `beforeArchive` is not a tree entry. Verify `npm run test:affected -- lib/review/policy.js test/policy.test.mjs` passes.
-- [ ] 2.2 Read a version 2 policy, a policy without `pipeline`, and a policy without an entry `object` with the `draft`/`apply` defaults and the default pipeline, without rewriting the file. Verify a legacy-policy read without `configPath` compares `policy.json` bytes and schema version before and after.
-- [ ] 2.3 The first start or resume with `configPath` SHALL supplement missing entry sections and the pipeline once, record schema version 3 and added-entry objects without a new `source` or a legacy-section object, then lock; a later `configPath` changes nothing. Verify an independent supplement test checks the added entry, pipeline, schema version, absent source and unchanged legacy section, and a second call leaves the bytes unchanged.
-- [ ] 2.4 Update the policy-locking and configuration-source sections of `docs/review.md` with the entry table, schema version 3, the legacy-read rule and the one-time `configPath` supplement. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
+- [x] 2.1 Lock every entry's `object` and parameters plus the pipeline and entry source names in `lib/review/policy.js`, raising `POLICY_SCHEMA_VERSION` to 3, keeping `configHash` over the new facts, and refusing a pipeline whose `beforeApply` is not a directory entry or `beforeArchive` is not a tree entry. Verify `npm run test:affected -- lib/review/policy.js test/policy.test.mjs` passes.
+- [x] 2.2 Read a version 2 policy, a policy without `pipeline`, and a policy without an entry `object` with the `draft`/`apply` defaults and the default pipeline, without rewriting the file. Verify a legacy-policy read without `configPath` compares `policy.json` bytes and schema version before and after.
+- [x] 2.3 The first start or resume with `configPath` SHALL supplement missing entry sections and the pipeline once, record schema version 3 and added-entry objects without a new `source` or a legacy-section object, then lock; a later `configPath` changes nothing. Verify an independent supplement test checks the added entry, pipeline, schema version, absent source and unchanged legacy section, and a second call leaves the bytes unchanged.
+- [x] 2.4 Update the policy-locking and configuration-source sections of `docs/review.md` with the entry table, schema version 3, the legacy-read rule and the one-time `configPath` supplement. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
 
 ## 3. Record naming and compatibility
 
