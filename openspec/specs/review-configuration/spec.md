@@ -116,9 +116,14 @@ The plugin SHALL register a Client configuration page at `plugins.row.config` fo
 - **WHEN** `reviewEnabled` is false
 - **THEN** the page still reports each project's file state, and the read locks nothing
 
+#### Scenario: A profile carries pass criteria and switches
+
+- **WHEN** a profile declares `passCriteria`, `allowDeferred` and `allowRejected`
+- **THEN** the page shows all three values for that profile
+
 ### Requirement: The project review file supplies every review parameter
 
-The plugin SHALL read review parameters from `openspec/reviews.json` under the project root, except when the first locking call supplies `configPath` or `reviewEnabled` is false. The file SHALL be JSON. A missing, unreadable, unparsable or schema-invalid file SHALL fail the locking call and SHALL name its path and the offending field. The plugin SHALL NOT fall back to built-in review parameter defaults.
+The plugin SHALL read review parameters from `openspec/reviews.json`, except when the first locking call supplies `configPath` or `reviewEnabled` is false. The file SHALL be JSON. A missing, unreadable, unparsable or schema-invalid file SHALL fail the locking call and name its path and the offending field. The plugin SHALL NOT fall back to defaults for a required parameter; `passCriteria`, `allowDeferred` and `allowRejected` are optional and default to `major`, `true` and `true`.
 
 #### Scenario: The file is present and valid
 
@@ -149,6 +154,16 @@ The plugin SHALL read review parameters from `openspec/reviews.json` under the p
 
 - **WHEN** `reviewEnabled` is false and a change is created
 - **THEN** no policy is locked and no review file is read
+
+#### Scenario: An optional parameter is omitted
+
+- **WHEN** a profile omits `passCriteria`, `allowDeferred` and `allowRejected`
+- **THEN** the read succeeds and the resolved profile carries `major`, `true` and `true`
+
+#### Scenario: An optional parameter is invalid
+
+- **WHEN** a profile carries `passCriteria: "blocker"` or a non-boolean `allowDeferred` or `allowRejected`
+- **THEN** the read fails and names the profile and the offending field
 
 ### Requirement: Profiles declare an object type and entries name a profile
 
@@ -186,7 +201,7 @@ The plugin SHALL read review parameters from `openspec/reviews.json` under the p
 
 ### Requirement: Review parameters keep their bounds
 
-A profile SHALL accept `object` (`directory` or `tree`), `enabled` (boolean), `reviewers` (0 or 1), `waitMinutes` (an integer from 1 to 120) and `reviewerModel`, and SHALL require all five. It SHALL refuse every other key, including a round cap.
+A profile SHALL accept `object` (`directory` or `tree`), `enabled` (boolean), `reviewers` (0 or 1), `waitMinutes` (an integer from 1 to 120), `reviewerModel`, and optional `passCriteria` (`critical`, `major`, `minor` or `nit`), `allowDeferred` (boolean) and `allowRejected` (boolean). It SHALL require the first five, default the optional three, and refuse every other key, including a round cap.
 
 #### Scenario: Reviewers exceeds the bound
 
@@ -207,6 +222,21 @@ A profile SHALL accept `object` (`directory` or `tree`), `enabled` (boolean), `r
 
 - **WHEN** a profile omits `reviewers`
 - **THEN** the read fails and names the missing parameter instead of supplying a default
+
+#### Scenario: The pass criteria is outside the enum
+
+- **WHEN** a profile carries `passCriteria: "highest"`
+- **THEN** the read fails and names the field and the accepted values
+
+#### Scenario: A disposition switch is not a boolean
+
+- **WHEN** a profile carries `allowDeferred: "yes"`
+- **THEN** the read fails and names the field
+
+#### Scenario: The optional parameters are omitted
+
+- **WHEN** a profile omits the three optional parameters
+- **THEN** the resolved profile carries `major`, `true` and `true`
 
 ### Requirement: A legacy row-config reviews section is ignored and reported
 

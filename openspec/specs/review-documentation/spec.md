@@ -104,6 +104,11 @@ The document SHALL list the default review configuration written by `openspec_in
 - **WHEN** the document lists a `maxRounds` key or a round-cap default
 - **THEN** the documentation test fails
 
+#### Scenario: The optional defaults are documented
+
+- **WHEN** the document lists the default profile values
+- **THEN** it names `passCriteria: "major"`, `allowDeferred: true` and `allowRejected: true`
+
 ### Requirement: The document matches the record layout
 
 The document SHALL state the legacy review root `openspec/.review/<store>#<change>/`, the records `review.json`, `apply-review.json` and `<entry>-review.json`, the round directories `round-N`, `apply-round-N` and `<entry>-round-N`, the `cards/<sessionKey>-<kind>-<phase>-<round>.json` layout with the entry name as `kind`, the short session key and the earlier kind-less card name, the `cards` marker and delivery watermark, the apply lock locations and fields, and the `openspec/.gitignore` entry.
@@ -336,7 +341,7 @@ The README review section SHALL state that `dispose` and a finding `waive` requi
 
 ### Requirement: The document states the refined card display
 
-`docs/review.md` SHALL state that the collapsed summary counts findings by severity and shows no next action, that unrecorded optional finding and disposition rows are omitted, and that same-state readiness reasons are merged into one line.
+`docs/review.md` SHALL state that the collapsed summary counts findings by severity and shows no next action, that the card payload counts `verifiedDeferred` and `verifiedRejected` findings, that unrecorded optional finding and disposition rows are omitted, and that same-state readiness reasons are merged into one line.
 
 #### Scenario: A reader reaches the refined card description
 
@@ -344,6 +349,11 @@ The README review section SHALL state that `dispose` and a finding `waive` requi
 - **THEN** the document states the per-severity summary without a next action
 - **AND** it states that unrecorded optional rows are omitted
 - **AND** it states that same-state readiness reasons are merged
+
+#### Scenario: The card counts the new terminal statuses
+
+- **WHEN** a reader reaches the card count description
+- **THEN** the document names `verifiedDeferred` and `verifiedRejected` among the card payload counts
 
 ### Requirement: The review document states the shared brief report contract
 
@@ -354,6 +364,12 @@ The README review section SHALL state that `dispose` and a finding `waive` requi
 - **WHEN** a reader opens the review document
 - **THEN** it states that every entry's brief renders one round-aware report contract from the same source
 - **AND** it names the finding id rule and the empty-verifications first-round case
+
+#### Scenario: The document names the new verification statuses
+
+- **WHEN** a reader opens the brief contract description
+- **THEN** the document names `verified-deferred` and `verified-rejected` beside the existing verification statuses
+- **AND** it states that the contract names the pass criteria and disposition switches
 
 ### Requirement: The README names the optional apply baseline
 
@@ -620,6 +636,17 @@ The README review section SHALL state that `reviewCards/get` accepts a batch tur
 - **WHEN** the row config switch or the file path changes in the code
 - **THEN** the documentation test fails until the README matches
 
+#### Scenario: The README names the optional fields
+
+- **WHEN** the README review section describes the profile parameters
+- **THEN** it names `passCriteria`, `allowDeferred` and `allowRejected` with their defaults
+
+#### Scenario: The README states the readiness rule
+
+- **WHEN** the README review section describes readiness
+- **THEN** it states that only in-threshold findings block readiness
+- **AND** it states that `pass` requires every in-threshold finding resolved
+
 ### Requirement: The document states the attempt revision layout
 
 `docs/review.md` SHALL state that a refreshed directory round keeps its previous attempts under `round-N/revisions/MM/`, and another entry under `<entry>-round-N/revisions/MM/`, as `brief.md`, an optional `report.json` and the recorded hashes, cause and archive time, and that the review record lists them in a `revisions` array.
@@ -647,3 +674,36 @@ The README review section SHALL state that `reviewCards/get` accepts a batch tur
 
 - **WHEN** the README describes the blocked-round reuse
 - **THEN** it names `docs/review.md`
+
+### Requirement: The document states the pass criteria and finding resolution
+
+`docs/review.md` SHALL state the severity order, the `passCriteria` threshold and its default, the disposition table for in-threshold and below-threshold findings, the `allowDeferred` and `allowRejected` switches, the full finding status list, the readiness and report verdict rules, and the `verifiedDeferred`/`verifiedRejected` counts.
+
+#### Scenario: The threshold is documented
+
+- **WHEN** a reader reaches the finding contract
+- **THEN** the document states the severity order and that findings at or above `passCriteria` are in-threshold
+- **AND** it names the default `major`
+
+#### Scenario: The disposition table is documented
+
+- **WHEN** a reader looks up finding dispositions
+- **THEN** the document states that an in-threshold finding can only be fixed or user-waived
+- **AND** it states that a below-threshold finding can be deferred or rejected only when its switch is true
+
+#### Scenario: The finding statuses are documented
+
+- **WHEN** a reader looks up finding statuses
+- **THEN** the document lists `verified-deferred` and `verified-rejected` and states how `still-open` returns a finding to `open`
+
+#### Scenario: Readiness and the report verdict are documented
+
+- **WHEN** a reader looks up readiness
+- **THEN** the document states that only in-threshold findings block readiness
+- **AND** it states that `pass` requires every in-threshold finding resolved and `changes-requested` requires an unresolved in-threshold finding
+
+#### Scenario: The status counts are documented
+
+- **WHEN** a reader looks up the review status counts
+- **THEN** the document names `verifiedDeferred` and `verifiedRejected`
+- **AND** it states that `blocking` counts unresolved in-threshold findings
