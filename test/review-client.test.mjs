@@ -217,8 +217,11 @@ test('a locked section is described in one line', async () => {
   const { plugin } = await loadBundle()
   const { lockLine } = plugin.__test
   const t = (key, params) => (params?.n === undefined ? key : `${key}:${String(params.n)}`)
-  const line = lockLine(t, { enabled: true, reviewers: 1, waitMinutes: 15 }, 'draft')
-  assert.equal(line, 'draft: enabledOn · reviewersText:1 · 15m')
+  const line = lockLine(t, {
+    enabled: true, reviewers: 1, waitMinutes: 15,
+    passCriteria: 'minor', allowDeferred: false, allowRejected: true,
+  }, 'draft')
+  assert.equal(line, 'draft: enabledOn · reviewersText:1 · 15m · passCriteria: minor · allowDeferred: false · allowRejected: true')
   assert.match(lockLine(t, { enabled: false, reviewers: 0, waitMinutes: 15 }, 'apply'), /apply: enabledOff/)
 })
 
