@@ -13,7 +13,7 @@ Archive only on an explicit request. A finished apply is not the same as a reque
 
 Use the `openspec_*` tools for every step. If a tool is unavailable, report it and stop.
 
-A plugin-created apply worktree is not archived here: `openspec_apply_worktree action=land` fast-forwards main, archives it in one lifecycle section and then removes the worktree and local branch while keeping the archived state and landed manifest. Check `openspec_inspect action="worktree"` first; when the state is `active` or `landing` under `.cache/openspec-flow/worktrees`, stop and use land. An archived state with pending cleanup reports `repair.action: "cleanup"`; call land again to retry the cleanup.
+A plugin-created apply worktree is not archived here: `openspec_apply_worktree action=land` fast-forwards main, archives it in one lifecycle section and then removes the worktree and local branch while keeping the archived state and landed manifest. Check `openspec_inspect action="worktree"` first; when the state is `active` or `landing` under `.cache/openspec-flow/worktrees`, stop and use land. An archived state with pending cleanup reports `repair.action: "cleanup"`; call land again to retry the cleanup. An archived state with no pending cleanup is done: say the change is already archived and stop, and do not call `openspec_archive` or land again.
 
 ## Preconditions
 
