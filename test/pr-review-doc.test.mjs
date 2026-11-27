@@ -39,6 +39,18 @@ test('the documented overrides match the module defaults and ranges', () => {
   assert.deepEqual(row('PR_REVIEW_GH_FETCH_TIMEOUT_MS'), [String(DEFAULT_FETCH_TIMEOUT_MS), timeoutRange])
 })
 
+test('the document states the handoff, review result and full finding state', () => {
+  assert.match(doc, /`report`, `ready`, `reasons`/u)
+  assert.match(doc, /\*\*Review result:\*\* passed/u)
+  assert.match(doc, /format=2/u)
+  assert.match(doc, /pr-review\.json/u)
+  assert.match(doc, /findingNumbers/u)
+  assert.match(doc, /nextFindingNumber/u)
+  assert.match(doc, /full finding state is unavailable/iu)
+  assert.match(doc, /same-repository convention/u)
+  assert.match(doc, /`F` numbers/u)
+})
+
 test('the documented retry, batching, lock and telemetry behaviour is named', () => {
   assert.match(doc, /three attempts/u)
   assert.match(doc, /stale-lock-reclaimed pid=/u)

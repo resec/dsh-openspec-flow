@@ -47,8 +47,12 @@ export const LANDING_LOCK_DIRECTORY = 'landing.lock'
 export const LANDING_LOCK_TTL_MINUTES = 120
 /** The offline route when GitHub or the origin remote is unreachable. */
 export const OFFLINE_LAND_COMMAND = 'run npm run test:lab -- --mock-only, then openspec_apply_worktree action=land with approvedBy "user", archive, record the offline land with node scripts/offline-land.mjs record --change <change> --land <sha> --apply (or pr-local-land finish --phase landed-offline when a local entry exists), and stop at local main without a push; run node scripts/push-landed.mjs --push --offline when GitHub returns; the matching record is removed'
-/** Marker pattern for a trusted report comment. */
-const MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+) -->/u
+/** Marker pattern for a trusted report comment in the current format. */
+const MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+) format=2 -->/u
+/** Any trusted marker format, kept for the current trusted-pass bridge. */
+const ANY_MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+)(?: format=2)? -->/u
+/** Comment format recorded in the watch state. */
+export const CURRENT_COMMENT_FORMAT = 2
 /** Active change path pattern. */
 const ACTIVE_CHANGE_PATTERN = /^openspec\/changes\/([^/]+)\//u
 
@@ -876,7 +880,7 @@ export function filterCandidates(prs, state, localNumbers = new Set()) {
     if (head === '') continue
     const recorded = state?.prs?.[String(number)]
     if (recorded !== undefined && recorded.head === head) {
-      if (recorded.status === 'commented') continue
+      if (recorded.status === 'commented' && recorded.commentFormat === CURRENT_COMMENT_FORMAT) continue
       candidates.push({
         number,
         head,
@@ -1077,33 +1081,121 @@ function cell(value) {
   return String(value ?? '').replaceAll('|', '\\|').replace(/\r?\n/gu, ' ')
 }
 
+/** A plain object, or undefined. */
+function plainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined
+}
+
 /**
- * Render one review report as a PR comment.
- * @param report - `openspec_review action=report` report object.
- * @param facts - `{ number, head, round }`.
+ * Assign and return one PR-level finding number.
+ * @param entry - watch state entry.
+ * @param id - internal finding id.
+ * @returns `F<n>`.
+ */
+export function findingNumber(entry, id) {
+  const key = typeof id === 'string' ? id.trim() : ''
+  if (key === '') return 'F?'
+  if (plainObject(entry.findingNumbers) === undefined) entry.findingNumbers = {}
+  if (!Number.isInteger(entry.nextFindingNumber) || entry.nextFindingNumber < 1) entry.nextFindingNumber = 1
+  if (!Number.isInteger(entry.findingNumbers[key])) {
+    entry.findingNumbers[key] = entry.nextFindingNumber
+    entry.nextFindingNumber += 1
+  }
+  return `F${entry.findingNumbers[key]}`
+}
+
+/** Replace internal finding ids in one text with their F numbers. */
+function mapFindingIds(text, number) {
+  return String(text ?? '').replace(/\b(?:R\d+-\d+|E\d+-\d+)\b/gu, (id) => number(id))
+}
+
+/**
+ * Read the PR change's recorded findings from the shared review root.
+ * @param root - main worktree.
+ * @param change - change name.
+ * @returns `{ findings, unavailable }`.
+ */
+export function readPrReviewRecord(root, change) {
+  const paths = resolvePaths(root)
+  if (typeof paths.commonDir !== 'string' || paths.commonDir === '') {
+    return { findings: undefined, unavailable: true }
+  }
+  const base = join(paths.commonDir, 'openspec-flow', 'review')
+  const primary = join(base, `local#${change}`, 'pr-review.json')
+  let file
+  if (existsSync(primary)) {
+    file = primary
+  } else if (existsSync(base)) {
+    let entries
+    try {
+      entries = readdirSync(base, { withFileTypes: true })
+    } catch {
+      return { findings: undefined, unavailable: true }
+    }
+    const matches = entries.filter((entry) => entry.isDirectory() && entry.name.endsWith(`#${change}`))
+    if (matches.length === 1) {
+      const candidate = join(base, matches[0].name, 'pr-review.json')
+      if (existsSync(candidate)) file = candidate
+    }
+  }
+  if (file === undefined) return { findings: undefined, unavailable: true }
+  const record = plainObject(readJson(file))
+  if (record === undefined || !Array.isArray(record.findings)) {
+    return { findings: undefined, unavailable: true }
+  }
+  return { findings: record.findings, unavailable: false }
+}
+
+/**
+ * Render one review handoff as a PR comment.
+ * @param handoff - full `openspec_review action=report` result or a legacy report.
+ * @param facts - `{ number, head, round, findings?, numberOf?, stateUnavailable? }`.
  * @returns Markdown.
  */
-export function renderReport(report, facts) {
-  const findings = Array.isArray(report?.findings) ? report.findings : []
-  const verifications = Array.isArray(report?.verifications) ? report.verifications : []
-  const outOfScope = Array.isArray(report?.outOfScope) ? report.outOfScope : []
-  const residualRisks = Array.isArray(report?.residualRisks) ? report.residualRisks : []
+export function renderReport(handoff, facts = {}) {
+  const full = plainObject(handoff?.report)
+  const report = full ?? plainObject(handoff) ?? {}
+  const ready = full !== undefined && handoff.ready === true
+  const readyKnown = full !== undefined && handoff.ready !== undefined
+  const reasons = full !== undefined && Array.isArray(handoff.reasons)
+    ? handoff.reasons.filter((reason) => typeof reason === 'string' && reason.trim() !== '')
+    : []
+  const findings = Array.isArray(facts.findings)
+    ? facts.findings
+    : (Array.isArray(report.findings) ? report.findings : [])
+  const verifications = Array.isArray(report.verifications) ? report.verifications : []
+  const outOfScope = Array.isArray(report.outOfScope) ? report.outOfScope : []
+  const residualRisks = Array.isArray(report.residualRisks) ? report.residualRisks : []
+  const localNumbers = new Map()
+  const number = typeof facts.numberOf === 'function'
+    ? facts.numberOf
+    : (id) => {
+      const key = String(id ?? '')
+      if (!localNumbers.has(key)) localNumbers.set(key, localNumbers.size + 1)
+      return `F${localNumbers.get(key)}`
+    }
   const lines = [
     `## Apply review — PR #${facts.number}, round ${facts.round}, head ${facts.head.slice(0, 12)}`,
     '',
-    `**Verdict:** ${String(report?.verdict ?? 'blocked')}`,
-    '',
-    String(report?.summary ?? ''),
-    '',
-    '### Findings',
-    '',
+    `**Review result:** ${ready ? 'passed' : 'not passed'}`,
   ]
+  if (!readyKnown) {
+    lines.push('', 'No readiness result was recorded in the handoff; the review is reported as not passed.')
+  } else if (!ready && reasons.length > 0) {
+    lines.push('', '### Reasons', '')
+    for (const reason of reasons) lines.push(`- ${cell(mapFindingIds(reason, number))}`)
+  }
+  lines.push('', String(report.summary ?? ''), '', '### Findings', '')
   if (findings.length === 0) {
     lines.push('No findings.')
   } else {
-    lines.push('| id | severity | location | problem | suggestion |', '| --- | --- | --- | --- | --- |')
+    if (facts.stateUnavailable === true) {
+      lines.push('Full finding state is unavailable; the table reflects the handoff report only.', '')
+    }
+    lines.push('| id | location | problem | suggestion | state |', '| --- | --- | --- | --- | --- |')
     for (const finding of findings) {
-      lines.push(`| ${cell(finding.id)} | ${cell(finding.severity)} | ${cell(finding.location)} | ${cell(finding.problem)} | ${cell(finding.suggestion)} |`)
+      const state = finding.state ?? finding.status ?? 'open'
+      lines.push(`| ${cell(number(finding.id))} | ${cell(finding.location)} | ${cell(finding.problem)} | ${cell(finding.suggestion)} | ${cell(state)} |`)
     }
   }
   lines.push('', '### Verifications', '')
@@ -1111,39 +1203,39 @@ export function renderReport(report, facts) {
     lines.push('None.')
   } else {
     for (const verification of verifications) {
-      lines.push(`- ${cell(verification.id)}: ${cell(verification.status)} — ${cell(verification.evidence)}`)
+      lines.push(`- ${cell(number(verification.id))}: ${cell(verification.status)} — ${cell(verification.evidence)}`)
     }
   }
   if (outOfScope.length > 0) {
     lines.push('', '### Out of scope', '')
-    for (const item of outOfScope) lines.push(`- ${cell(item)}`)
+    for (const item of outOfScope) lines.push(`- ${cell(mapFindingIds(item, number))}`)
   }
   if (residualRisks.length > 0) {
     lines.push('', '### Residual risks', '')
-    for (const item of residualRisks) lines.push(`- ${cell(item)}`)
+    for (const item of residualRisks) lines.push(`- ${cell(mapFindingIds(item, number))}`)
   }
-  lines.push('', '<!-- pr-review: pr=' + facts.number + ' head=' + facts.head + ' round=' + facts.round + ' -->')
+  lines.push('', marker(facts.number, facts.head, facts.round))
   return `${lines.join('\n')}\n`
 }
 
 /**
- * Build a trusted marker.
+ * Build a trusted marker in the current comment format.
  * @param number - PR number.
  * @param head - head SHA.
  * @param round - round.
  * @returns marker text.
  */
 export function marker(number, head, round) {
-  return `<!-- pr-review: pr=${number} head=${head} round=${round} -->`
+  return `<!-- pr-review: pr=${number} head=${head} round=${round} format=2 -->`
 }
 
 /**
- * Find a trusted marker in PR comments.
+ * Find a current-format trusted marker in PR comments.
  * @param comments - `gh pr view --json comments` comments.
  * @param login - authenticated GitHub login.
  * @param number - PR number.
  * @param head - head SHA.
- * @returns true when a trusted marker exists.
+ * @returns true when a current-format trusted marker exists.
  */
 export function hasTrustedMarker(comments, login, number, head) {
   return (Array.isArray(comments) ? comments : []).some((comment) => {
@@ -1164,7 +1256,8 @@ export function hasTrustedMarker(comments, login, number, head) {
 export function trustedPass(comments, login, number, head) {
   const matching = (Array.isArray(comments) ? comments : []).filter((comment) => {
     if (comment?.author?.login !== login) return false
-    return hasTrustedMarker([comment], login, number, head)
+    const match = ANY_MARKER_PATTERN.exec(String(comment?.body ?? ''))
+    return match !== null && Number(match[1]) === Number(number) && match[2] === head
   })
   if (matching.length === 0) return false
   const latest = matching.at(-1)
@@ -1172,24 +1265,52 @@ export function trustedPass(comments, login, number, head) {
 }
 
 /**
- * Read a report file bound to a PR head.
+ * Read a handoff file bound to a PR head.
+ *
+ * The full shape carries `report` plus the plugin's `ready` and `reasons`; the
+ * legacy shape is the bare report object. A missing readiness result is a
+ * legacy handoff and renders `not passed`.
  * @param file - report path.
  * @param number - PR number.
  * @param head - PR head.
- * @returns parsed report.
+ * @returns `{ report, ready, readyKnown, reasons, round, legacy }`.
  */
 export function readReport(file, number, head) {
   if (!existsSync(file)) throw new Error(`the report ${file} does not exist`)
-  const report = readJson(file)
-  if (report === null || typeof report !== 'object' || Array.isArray(report)) throw new Error(`the report ${file} is not an object`)
-  if (report.head !== undefined && String(report.head) !== head) {
-    throw new Error(`the report ${file} names head ${String(report.head)}, not ${head}`)
+  const value = plainObject(readJson(file))
+  if (value === undefined) throw new Error(`the report ${file} is not an object`)
+  const full = plainObject(value.report)
+  const report = full ?? value
+  const reportHead = value.head ?? report.head
+  if (reportHead !== undefined && String(reportHead) !== head) {
+    throw new Error(`the report ${file} names head ${String(reportHead)}, not ${head}`)
+  }
+  if (full !== undefined && value.ready !== undefined && typeof value.ready !== 'boolean') {
+    throw new Error(`the report ${file} ready must be a boolean`)
+  }
+  if (full !== undefined && value.reasons !== undefined) {
+    if (!Array.isArray(value.reasons)) throw new Error(`the report ${file} reasons must be an array`)
+    for (const reason of value.reasons) {
+      if (typeof reason !== 'string' || reason.trim() === '') {
+        throw new Error(`the report ${file} reasons must be non-empty strings`)
+      }
+    }
   }
   const base = file.split(/[\\/]/u).pop()
   if (base !== `pr-${number}-${head}.json`) {
     throw new Error(`the report ${file} must be named pr-${number}-${head}.json`)
   }
-  return report
+  const round = Number.isInteger(value.round)
+    ? value.round
+    : (Number.isInteger(report.round) ? report.round : undefined)
+  return {
+    report,
+    ready: full !== undefined && value.ready === true,
+    readyKnown: full !== undefined && value.ready !== undefined,
+    reasons: full !== undefined && Array.isArray(value.reasons) ? value.reasons : [],
+    round,
+    legacy: full === undefined || value.ready === undefined,
+  }
 }
 
 /**
@@ -1212,9 +1333,47 @@ export function publishComment({
   const state = loadState(root)
   const entry = state.prs[String(number)]
   if (entry === undefined) throw new Error(`PR #${number} has no watch state; run prepare first`)
-  const report = readReport(reportPath, Number(number), entry.head)
-  const round = Number.isInteger(report.round) ? report.round : Number(entry.round ?? 0) + 1
-  const text = renderReport(report, { number: Number(number), head: entry.head, round })
+  const handoff = readReport(reportPath, Number(number), entry.head)
+  const round = Number.isInteger(handoff.round) ? handoff.round : Number(entry.round ?? 0) + 1
+  const record = readPrReviewRecord(root, entry.change)
+  const display = []
+  const seen = new Set()
+  const numberFor = (id) => findingNumber(entry, id)
+  for (const finding of record.findings ?? []) {
+    numberFor(finding.id)
+    display.push({
+      id: finding.id,
+      location: finding.location,
+      problem: finding.problem,
+      suggestion: finding.suggestion,
+      state: finding.status ?? 'open',
+    })
+    seen.add(finding.id)
+  }
+  for (const finding of Array.isArray(handoff.report.findings) ? handoff.report.findings : []) {
+    if (seen.has(finding.id)) continue
+    numberFor(finding.id)
+    display.push({ ...finding, state: 'unavailable' })
+    seen.add(finding.id)
+  }
+  for (const verification of Array.isArray(handoff.report.verifications) ? handoff.report.verifications : []) {
+    if (seen.has(verification.id)) continue
+    numberFor(verification.id)
+    display.push({ id: verification.id, location: '', problem: '', suggestion: '', state: 'unavailable' })
+    seen.add(verification.id)
+  }
+  for (const reason of handoff.reasons) {
+    for (const match of String(reason).matchAll(/\b(?:R\d+-\d+|E\d+-\d+)\b/gu)) numberFor(match[0])
+  }
+  const stateUnavailable = record.unavailable === true || record.findings === undefined
+  const text = renderReport(handoff, {
+    number: Number(number),
+    head: entry.head,
+    round,
+    findings: display,
+    numberOf: numberFor,
+    stateUnavailable,
+  })
   if (!apply) return { published: false, marker: marker(Number(number), entry.head, round), dryRun: true, text }
 
   try {
@@ -1222,7 +1381,12 @@ export function publishComment({
     if (login === undefined || login === '') throw new Error('gh is not authenticated; cannot verify comment authors')
     const comments = ghJson(gh, ['pr', 'view', String(number), '--json', 'comments']).comments
     if (hasTrustedMarker(comments, login, Number(number), entry.head)) {
-      state.prs[String(number)] = { ...entry, round, status: 'commented', error: null, updatedAt: new Date().toISOString() }
+      entry.round = round
+      entry.status = 'commented'
+      entry.commentFormat = CURRENT_COMMENT_FORMAT
+      entry.error = null
+      entry.updatedAt = new Date().toISOString()
+      state.prs[String(number)] = entry
       saveState(root, state)
       return { published: false, marker: marker(Number(number), entry.head, round), dryRun: false, already: true }
     }
@@ -1231,7 +1395,13 @@ export function publishComment({
     try {
       const result = ghWrite(['pr', 'comment', String(number), '--body-file', temp])
       if (result === undefined) throw new Error(`gh pr comment on #${number} failed`)
-      state.prs[String(number)] = { ...entry, round, status: 'commented', error: null, commentId: result, updatedAt: new Date().toISOString() }
+      entry.round = round
+      entry.status = 'commented'
+      entry.commentFormat = CURRENT_COMMENT_FORMAT
+      entry.error = null
+      entry.commentId = result
+      entry.updatedAt = new Date().toISOString()
+      state.prs[String(number)] = entry
       saveState(root, state)
       return { published: true, marker: marker(Number(number), entry.head, round), dryRun: false, comment: result }
     } finally {

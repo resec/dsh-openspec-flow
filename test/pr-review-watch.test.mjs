@@ -150,7 +150,7 @@ test('active change extraction and CI filtering are strict', () => {
 })
 
 test('filterCandidates keeps only eligible PRs and skips processed heads', () => {
-  const state = { schemaVersion: 1, prs: { 13: { head: HEAD, status: 'commented' } } }
+  const state = { schemaVersion: 1, prs: { 13: { head: HEAD, status: 'commented', commentFormat: 2 } } }
   const candidates = filterCandidates([
     { number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
     { number: 13, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
@@ -320,29 +320,59 @@ test('prepare preserves the owner-review head when it records a new head', () =>
   }
 })
 
-test('renderReport carries the verdict, findings, verifications and marker', () => {
+test('renderReport carries the review result, numbered findings and current marker', () => {
   const text = renderReport({
-    verdict: 'changes-requested',
-    summary: 'One blocking issue.',
-    findings: [{ id: 'R1-01', severity: 'major', location: 'a.js:1', problem: 'bad', suggestion: 'fix' }],
-    verifications: [],
-    outOfScope: ['later'],
-    residualRisks: ['risk'],
+    ready: true,
+    reasons: [],
+    report: {
+      verdict: 'changes-requested',
+      summary: 'One issue.',
+      findings: [{ id: 'R1-01', severity: 'major', location: 'a.js:1', problem: 'bad', suggestion: 'fix' }],
+      verifications: [],
+      outOfScope: ['later'],
+      residualRisks: ['risk'],
+    },
   }, { number: 12, head: HEAD, round: 2 })
   assert.match(text, /Apply review — PR #12, round 2/)
-  assert.match(text, /\*\*Verdict:\*\* changes-requested/)
-  assert.match(text, /R1-01/)
-  assert.match(text, /pr-review: pr=12 head=a{40} round=2/)
+  assert.match(text, /\*\*Review result:\*\* passed/)
+  assert.match(text, /F1/)
+  assert.doesNotMatch(text, /R1-01/)
+  assert.doesNotMatch(text, /major|critical|minor|nit/)
+  assert.match(text, /pr-review: pr=12 head=a{40} round=2 format=2/)
+})
+
+test('a handoff without readiness renders not passed', () => {
+  const text = renderReport({
+    verdict: 'pass',
+    summary: 'ok',
+    findings: [],
+    verifications: [],
+  }, { number: 12, head: HEAD, round: 1 })
+  assert.match(text, /\*\*Review result:\*\* not passed/)
+  assert.match(text, /No readiness result was recorded/)
 })
 
 test('readReport requires the PR/head file name and a matching head', () => {
   const root = tempDir('dsh-pr-review-report-')
   try {
     const file = join(root, `pr-12-${HEAD}.json`)
+    writeFileSync(file, JSON.stringify({
+      ready: true,
+      reasons: [],
+      head: HEAD,
+      report: { verdict: 'pass', summary: 'ok', findings: [], verifications: [] },
+    }))
+    const full = readReport(file, 12, HEAD)
+    assert.equal(full.report.verdict, 'pass')
+    assert.equal(full.ready, true)
+    assert.equal(full.readyKnown, true)
     writeFileSync(file, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [], head: HEAD }))
-    assert.equal(readReport(file, 12, HEAD).verdict, 'pass')
+    const legacy = readReport(file, 12, HEAD)
+    assert.equal(legacy.report.verdict, 'pass')
+    assert.equal(legacy.ready, false)
+    assert.equal(legacy.readyKnown, false)
     assert.throws(() => readReport(file, 13, HEAD), /must be named/)
-    writeFileSync(file, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [], head: BASE }))
+    writeFileSync(file, JSON.stringify({ ready: true, report: { verdict: 'pass', summary: 'ok', findings: [], verifications: [] }, head: BASE }))
     assert.throws(() => readReport(file, 12, HEAD), /names head/)
     assert.throws(() => readReport(join(root, `pr-12-${HEAD}.json`), 12, HEAD), /names head/)
   } finally {
@@ -351,10 +381,12 @@ test('readReport requires the PR/head file name and a matching head', () => {
 })
 
 test('trusted markers require the authenticated author and exact head', () => {
-  const comments = [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }]
+  const comments = [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 format=2 -->` }]
   assert.equal(hasTrustedMarker(comments, 'maintainer', 12, HEAD), true)
   assert.equal(hasTrustedMarker(comments, 'someone', 12, HEAD), false)
   assert.equal(hasTrustedMarker(comments, 'maintainer', 12, BASE), false)
+  const old = [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }]
+  assert.equal(hasTrustedMarker(old, 'maintainer', 12, HEAD), false)
 })
 
 test('comment dry-run renders without a GitHub write, and --apply posts once', () => {
@@ -363,7 +395,16 @@ test('comment dry-run renders without a GitHub write, and --apply posts once', (
     saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', round: 0, status: 'prepared' } } })
     const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
     mkdirSync(dirname(report), { recursive: true })
-    writeFileSync(report, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [] }))
+    writeFileSync(report, JSON.stringify({
+      ready: true,
+      reasons: [],
+      report: {
+        verdict: 'changes-requested',
+        summary: 'ok',
+        findings: [{ id: 'R1-01', severity: 'major', location: 'a.js:1', problem: 'bad', suggestion: 'fix' }],
+        verifications: [],
+      },
+    }))
     const { gh, calls } = fakeGh((args) => {
       if (args[0] === 'api') return 'maintainer'
       if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify({ comments: [] })
@@ -373,12 +414,19 @@ test('comment dry-run renders without a GitHub write, and --apply posts once', (
     const dry = publishComment({ root, number: 12, reportPath: report, gh })
     assert.equal(dry.published, false)
     assert.equal(dry.dryRun, true)
-    assert.match(dry.text, /Apply review/)
+    assert.match(dry.text, /\*\*Review result:\*\* passed/)
+    assert.match(dry.text, /F1/)
+    assert.equal(loadState(root).prs['12'].commentFormat, undefined)
+    assert.equal(loadState(root).prs['12'].findingNumbers, undefined)
     assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'comment'), false)
     const posted = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
     assert.equal(posted.published, true)
     assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 1)
-    assert.equal(loadState(root).prs['12'].status, 'commented')
+    const stored = loadState(root).prs['12']
+    assert.equal(stored.status, 'commented')
+    assert.equal(stored.commentFormat, 2)
+    assert.deepEqual(stored.findingNumbers, { 'R1-01': 1 })
+    assert.equal(stored.nextFindingNumber, 2)
   } finally {
     cleanup(root)
   }
@@ -390,17 +438,102 @@ test('a trusted marker for the same head suppresses a second publish', () => {
     saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', round: 0, status: 'prepared' } } })
     const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
     mkdirSync(dirname(report), { recursive: true })
-    writeFileSync(report, JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [], verifications: [] }))
+    writeFileSync(report, JSON.stringify({ ready: true, reasons: [], report: { verdict: 'pass', summary: 'ok', findings: [], verifications: [] } }))
     const { gh, calls } = fakeGh((args) => {
       if (args[0] === 'api') return 'maintainer'
       if (args[0] === 'pr' && args[1] === 'view') {
-        return JSON.stringify({ comments: [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }] })
+        return JSON.stringify({ comments: [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 format=2 -->` }] })
       }
       return undefined
     })
     const result = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
     assert.equal(result.already, true)
     assert.equal(calls.some((args) => args[0] === 'pr' && args[1] === 'comment'), false)
+    assert.equal(loadState(root).prs['12'].commentFormat, 2)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('an old-format comment does not suppress a new-format publish', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', round: 0, status: 'commented' } } })
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({ ready: true, reasons: [], report: { verdict: 'pass', summary: 'ok', findings: [], verifications: [] } }))
+    const { gh, calls } = fakeGh((args) => {
+      if (args[0] === 'api') return 'maintainer'
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return JSON.stringify({ comments: [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }] })
+      }
+      if (args[0] === 'pr' && args[1] === 'comment') return 'https://example.test/comment/2'
+      return undefined
+    })
+    const result = publishComment({ root, number: 12, reportPath: report, apply: true, gh, ghWrite: gh })
+    assert.equal(result.published, true)
+    assert.equal(calls.filter((args) => args[0] === 'pr' && args[1] === 'comment').length, 1)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the comment renders every recorded finding with stable F numbers', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', round: 1, status: 'prepared' } } })
+    const common = git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    const reviewDir = join(common, 'openspec-flow', 'review', 'local#widget')
+    mkdirSync(reviewDir, { recursive: true })
+    writeFileSync(join(reviewDir, 'pr-review.json'), JSON.stringify({
+      findings: [
+        { id: 'R1-01', severity: 'major', location: 'a.js:1', problem: 'bad', suggestion: 'fix', status: 'verified' },
+        { id: 'R2-01', severity: 'minor', location: 'b.js:2', problem: 'also bad', suggestion: 'do better', status: 'open' },
+      ],
+    }))
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({
+      ready: false,
+      reasons: ['finding R2-01 is open'],
+      report: {
+        summary: 'Not ready.',
+        findings: [{ id: 'R2-01', severity: 'minor', location: 'b.js:2', problem: 'also bad', suggestion: 'do better' }],
+        verifications: [],
+      },
+    }))
+    const result = publishComment({ root, number: 12, reportPath: report, gh: fakeGh(() => undefined).gh })
+    assert.match(result.text, /\*\*Review result:\*\* not passed/)
+    assert.match(result.text, /F1/)
+    assert.match(result.text, /F2/)
+    assert.match(result.text, /verified/)
+    assert.match(result.text, /open/)
+    assert.doesNotMatch(result.text, /R1-01|R2-01|major|minor/)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the comment falls back to the handoff report and marks state unavailable', () => {
+  const root = makeRepository()
+  try {
+    saveState(root, { schemaVersion: 1, prs: { 12: { number: 12, head: HEAD, base: BASE, change: 'widget', round: 1, status: 'prepared' } } })
+    const report = join(root, '.cache', 'pr-review', 'reports', `pr-12-${HEAD}.json`)
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, JSON.stringify({
+      ready: false,
+      reasons: ['finding R9-01 is open'],
+      report: {
+        summary: '',
+        findings: [{ id: 'R1-01', severity: 'major', location: 'a.js:1', problem: 'bad', suggestion: 'fix' }],
+        verifications: [],
+      },
+    }))
+    const result = publishComment({ root, number: 12, reportPath: report, gh: fakeGh(() => undefined).gh })
+    assert.match(result.text, /Full finding state is unavailable/)
+    assert.match(result.text, /F1/)
+    assert.match(result.text, /F2/)
+    assert.doesNotMatch(result.text, /R1-01|R9-01|major/)
   } finally {
     cleanup(root)
   }
@@ -536,16 +669,18 @@ test('prepared and failed heads are re-emitted while commented heads are skipped
     schemaVersion: 1,
     prs: {
       12: { head: HEAD, status: 'prepared', change: 'widget', base: BASE, worktree: '/tmp/widget' },
-      13: { head: HEAD, status: 'commented', change: 'widget' },
+      13: { head: HEAD, status: 'commented', change: 'widget', commentFormat: 2 },
       14: { head: HEAD, status: 'failed', change: 'widget', base: BASE, worktree: '/tmp/widget-14' },
+      15: { head: HEAD, status: 'commented', change: 'widget' },
     },
   }
   const candidates = filterCandidates([
     { number: 12, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
     { number: 13, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
     { number: 14, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
+    { number: 15, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], files: [{ path: 'openspec/changes/widget/proposal.md' }] },
   ], state)
-  assert.deepEqual(candidates.map((candidate) => candidate.number), [12, 14])
+  assert.deepEqual(candidates.map((candidate) => candidate.number), [12, 14, 15])
   assert.equal(candidates[0].resume, true)
   assert.equal(candidates[0].worktree, '/tmp/widget')
 })
