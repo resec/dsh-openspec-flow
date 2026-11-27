@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Config } from '../index.js'
+import { resolveEntry } from '../lib/review/entry.js'
+import { readReviewConfig } from '../lib/review/file.js'
 
 function validate(value) {
   return Config['~standard'].validate(value)
@@ -63,4 +65,17 @@ test('accepts the worktree switch and rejects a non-boolean', () => {
   assert.equal(validate({ worktree: { enabled: false } }).value.worktree.enabled, false)
   assert.equal(validate({}).value.worktree.enabled, true)
   assert.match(validate({ worktree: { enabled: 'yes' } }).issues[0].message, /worktree\.enabled/)
+})
+
+test('the repository review configuration declares a pr tree entry', () => {
+  const result = readReviewConfig(import.meta.dirname.replace(/\/test$/u, ''))
+  assert.equal(result.ok, true)
+  assert.equal(result.value.reviews.pr, 'pr-tree')
+  const entry = resolveEntry(result.value, 'pr')
+  assert.equal(entry.object, 'tree')
+  assert.equal(entry.section.enabled, true)
+  assert.equal(entry.section.reviewers, 1)
+  assert.equal(entry.section.waitMinutes, 15)
+  assert.deepEqual(entry.section.reviewerModel, { source: 'inherit' })
+  assert.deepEqual(result.value.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
 })

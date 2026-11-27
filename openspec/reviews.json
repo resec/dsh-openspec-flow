@@ -13,7 +13,18 @@
       "reviewers": 1,
       "waitMinutes": 15,
       "reviewerModel": { "source": "inherit" }
+    },
+    "pr-tree": {
+      "object": "tree",
+      "enabled": true,
+      "reviewers": 1,
+      "waitMinutes": 15,
+      "reviewerModel": { "source": "inherit" }
     }
   },
-  "reviews": { "draft": "standard-directory", "apply": "standard-tree" }
+  "reviews": {
+    "draft": "standard-directory",
+    "apply": "standard-tree",
+    "pr": "pr-tree"
+  }
 }
