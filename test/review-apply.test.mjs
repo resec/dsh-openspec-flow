@@ -962,7 +962,7 @@ test('apply status reports disabled, enabled and unset git policies', async () =
   assert.match(unset.nextAction, /openspec_review action=start/)
 })
 
-test('a draft-only policy reports unset and migrates on the first apply start', async () => {
+test('a draft-only policy reports the configPath supplement and refuses a start without it', async () => {
   const { root, run } = gitFixture()
   const fake = setup(root)
   await passDraft(fake, root, run)
@@ -975,12 +975,77 @@ test('a draft-only policy reports unset and migrates on the first apply start', 
   assert.equal(status.policy, false)
   assert.equal(status.enabled, false)
   assert.equal(status.available, true)
+  assert.match(status.reasons.join(' '), /configPath/)
   assert.match(status.nextAction, /openspec_review action=start/)
+  assert.match(status.nextAction, /configPath=openspec\/reviews\.json/)
 
-  const started = await call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' })
-  assert.equal(started.review, 'apply')
-  const migrated = JSON.parse(readFileSync(policyPath, 'utf8'))
-  assert.equal(migrated.reviews.apply.enabled, true)
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'apply' }),
+    /unknown review entry "apply".*configured entries/,
+  )
+})
+
+test('a locked policy refuses an undeclared entry and a configPath supplements it once', async () => {
+  const { root, run } = gitFixture()
+  const fake = setup(root)
+  const directory = reviewDir(root)
+  mkdirSync(directory, { recursive: true })
+  const policyPath = join(directory, 'policy.json')
+  writeFileSync(policyPath, `${JSON.stringify({
+    schemaVersion: 3,
+    change: CHANGE,
+    store: null,
+    git: { enabled: true },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+    lockedAt: '2026-01-01T00:00:00.000Z',
+    lockedBy: 'test',
+    reviews: {
+      draft: {
+        object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15,
+        reviewerModel: { source: 'inherit', provider: 'deepseek', model: 'deepseek-flash' },
+      },
+      apply: {
+        object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15,
+        reviewerModel: { source: 'inherit', provider: 'deepseek', model: 'deepseek-flash' },
+      },
+    },
+  }, null, 2)}\n`)
+
+  await assert.rejects(
+    call(fake, 'openspec_review', { action: 'start', change: CHANGE, review: 'pr', baseline: 'none', base: 'HEAD' }),
+    /unknown review entry "pr".*configured entries: draft, apply/,
+  )
+
+  const outside = mkdtempSync(join(tmpdir(), 'openspec-flow-baseline-'))
+  const custom = join(outside, 'reviews.json')
+  writeFileSync(custom, JSON.stringify({
+    profiles: {
+      d: { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      t: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      p: { object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+    },
+    reviews: { draft: 'd', apply: 't', pr: 'p' },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+  }))
+  run(['add', `openspec/changes/${CHANGE}`])
+  run(['commit', '-m', 'commit the change for the pr review'])
+  const head = run(['rev-parse', 'HEAD'])
+  const started = await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, review: 'pr', configPath: custom, baseline: 'none', base: head,
+  })
+  assert.equal(started.review, 'pr')
+  const supplemented = JSON.parse(readFileSync(policyPath, 'utf8'))
+  assert.equal(supplemented.schemaVersion, 3)
+  assert.equal(supplemented.reviews.pr.object, 'tree')
+  assert.deepEqual(supplemented.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+  const bytes = readFileSync(policyPath, 'utf8')
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'start', change: CHANGE, review: 'pr', configPath: custom, baseline: 'none', base: head,
+    }),
+    /already|record/i,
+  )
+  assert.equal(readFileSync(policyPath, 'utf8'), bytes)
 })
 
 test('a draft-only policy migrates from the supplied configuration path', async () => {
