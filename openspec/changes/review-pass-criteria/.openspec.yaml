@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-27
+goal: Add profile passCriteria, allowDeferred and allowRejected; require
+  findings at or above the threshold to be resolved; add verified-deferred and
+  verified-rejected verification states.
