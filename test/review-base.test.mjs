@@ -234,17 +234,26 @@ test('an unresolvable recorded base refuses', () => {
 })
 
 /** Run fn while a git wrapper executes `rules` before delegating to the real git. */
-function withGitStub(rules, fn) {
+function withGitStub(rules, fn, env = {}) {
   const bin = mkdtempSync(join(tmpdir(), 'openspec-flow-git-'))
   const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
-  writeFileSync(join(bin, 'git'), `#!/bin/sh\n${rules}\nexec ${real} "$@"\n`)
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\n${rules.replaceAll('__REAL__', real)}\nexec ${real} "$@"\n`)
   spawnSync('chmod', ['+x', join(bin, 'git')])
   const before = process.env.PATH
+  const previous = {}
+  for (const key of Object.keys(env)) {
+    previous[key] = process.env[key]
+    process.env[key] = env[key]
+  }
   process.env.PATH = `${bin}:${before}`
   try {
     return fn()
   } finally {
     process.env.PATH = before
+    for (const key of Object.keys(env)) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
     rmSync(bin, { recursive: true, force: true })
   }
 }
@@ -277,4 +286,49 @@ test('a malformed seal listing returns no tree', { skip: process.platform === 'w
     () => overlaySealTree({ root, sealCommit: seal, onto: fork }),
   )
   assert.equal(noSha, undefined)
+})
+
+test('a seal entry mismatch returns no tree', { skip: process.platform === 'win32' }, () => {
+  const { root, seal, fork } = reviewRepo()
+  const rules = [
+    'for a in "$@"; do',
+    '  if [ "$a" = "ls-tree" ]; then',
+    '    found=0',
+    '    for b in "$@"; do if [ "$b" = "$OPENSPEC_SEAL" ]; then found=1; fi; done',
+    '    if [ "$found" = "0" ]; then',
+    '      printf \'100644 blob 1111111111111111111111111111111111111111\\t%s\\0\' "openspec/changes/widget/proposal.md"',
+    '      exit 0',
+    '    fi',
+    '  fi',
+    'done',
+    'exec __REAL__ "$@"',
+  ].join('\n')
+  const tree = withGitStub(rules, () => overlaySealTree({ root, sealCommit: seal, onto: fork }), { OPENSPEC_SEAL: seal })
+  assert.equal(tree, undefined)
+})
+
+test('a difference outside the seal paths returns no tree', { skip: process.platform === 'win32' }, () => {
+  const { root, seal, fork } = reviewRepo()
+  const rules = [
+    'for a in "$@"; do',
+    '  if [ "$a" = "diff" ]; then printf \'outside.txt\\0\'; exit 0; fi',
+    'done',
+    'exec __REAL__ "$@"',
+  ].join('\n')
+  const tree = withGitStub(rules, () => overlaySealTree({ root, sealCommit: seal, onto: fork }))
+  assert.equal(tree, undefined)
+})
+
+test('a refused overlay refuses the round', { skip: process.platform === 'win32' }, () => {
+  const { root, seal } = reviewRepo()
+  const rules = [
+    'for a in "$@"; do',
+    '  if [ "$a" = "diff" ]; then printf \'outside.txt\\0\'; exit 0; fi',
+    'done',
+    'exec __REAL__ "$@"',
+  ].join('\n')
+  assert.throws(
+    () => withGitStub(rules, () => resolveApplyBase({ root, baseline: 'draft', draftBaseCommit: seal })),
+    /could not build the re-based base tree for '.+' at '.+'; pass base=<commit>/,
+  )
 })
