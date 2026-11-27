@@ -345,7 +345,7 @@ The local owner state and the landing lock are resolved against the main worktre
 
 Landing phases are `prepared`, `reviewed`, `archive-pending`, `archive-failed`, `archived`, `push-pending` and `pushed`, plus the pre-merge failure phases `review-failed`, `failed` and `tree-mismatch`; `blocked` is accepted only for legacy state files. A retry resumes at the recorded phase; a merge is never repeated. `review-failed` keeps the checkout and is omitted by `candidates`; clear it with the Review-failed recovery steps. `abandon <n> --apply` clears a pre-merge landing whose review cannot pass or whose label was removed, but it deletes the entry; a pull request that still carries the label returns to the candidate list on the next run, while a label-removed pull request appears in `refused` for the missing label.
 
-The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at the PR checkout while the review is active. `state --cleanup` and `state --forget` remove that matching entry with the checkout; a foreign entry is refused and reported. Remove the checkout and state before a merged-tree apply review.
+The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at the PR checkout while the review is active. `state --cleanup` and `state --forget` remove that matching entry with the checkout; a foreign entry is refused and reported. Remove the checkout and state before a merged-tree `pr` review.
 
 ## Stalled review recovery
 

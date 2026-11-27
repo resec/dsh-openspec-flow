@@ -948,7 +948,8 @@ export function pollPullRequests({
     prs = readList('number,headRefOid,baseRefOid,baseRefName,isDraft,labels').map((row) => {
       const number = Number(row?.number)
       const recorded = state?.prs?.[String(number)]
-      if (recorded !== undefined && recorded.head === row.headRefOid && recorded.status === 'commented') return row
+      if (recorded !== undefined && recorded.head === row.headRefOid
+        && recorded.status === 'commented' && recorded.commentFormat === CURRENT_COMMENT_FORMAT) return row
       return { ...row, ...readDetail(number) }
     })
   }
@@ -1093,6 +1094,9 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
     status: 'prepared',
     error: null,
     commentId: previous.commentId ?? null,
+    ...(previous.commentFormat === undefined ? {} : { commentFormat: previous.commentFormat }),
+    ...(previous.findingNumbers === undefined ? {} : { findingNumbers: { ...previous.findingNumbers } }),
+    ...(Number.isInteger(previous.nextFindingNumber) ? { nextFindingNumber: previous.nextFindingNumber } : {}),
     ...(previous.ownerReview === undefined ? {} : { ownerReview: previous.ownerReview }),
     updatedAt: new Date().toISOString(),
   }
@@ -1163,7 +1167,12 @@ export function readPrReviewRecord(root, change) {
     }
   }
   if (file === undefined) return { findings: undefined, unavailable: true }
-  const record = plainObject(readJson(file))
+  let record
+  try {
+    record = plainObject(readJson(file))
+  } catch {
+    return { findings: undefined, unavailable: true }
+  }
   if (record === undefined || !Array.isArray(record.findings)) {
     return { findings: undefined, unavailable: true }
   }
