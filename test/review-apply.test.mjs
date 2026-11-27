@@ -528,11 +528,12 @@ test('a no-draft automatic base re-bases onto the fork', async () => {
   run(['checkout', '-q', '-'])
   run(['rebase', '-q', 'advance'])
 
-  await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
+  const resumed = await call(fake, 'openspec_review', { action: 'resume', change: CHANGE, review: 'apply' })
   const record = JSON.parse(readFileSync(join(reviewDir(root), 'apply-review.json'), 'utf8'))
   assert.equal(record.baseSource, 'merge-base')
   assert.equal(record.baseCommit, fork)
   assert.equal(record.rebasedFrom, seal)
+  assert.match(resumed.brief, /re-resolved to the current fork because the branch took in newer main/)
   const diff = readFileSync(join(reviewDir(root), 'apply-round-1', 'diff.patch'), 'utf8')
   assert.match(diff, /feature\.txt/)
   assert.doesNotMatch(diff, /main-only\.txt/)
