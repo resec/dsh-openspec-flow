@@ -4,7 +4,7 @@
 
 ### Requirement: Report and enforce modes
 
-The gate SHALL support a report mode that prints coverage violations without failing and an enforce mode that fails on them. Preflight, missing-lcov, invalid-baseline, and test failures SHALL remain nonzero in both modes. An absent or Node-invalid `coverage.baseline.json` counts as an invalid baseline, except when the run updates the baseline. An unparsable baseline is not classified this way: it aborts both modes, so regenerating starts by removing the file.
+The gate SHALL support a report mode that prints coverage violations without failing and an enforce mode that fails on them. Preflight, missing-lcov, invalid-baseline, and test failures SHALL remain nonzero in both modes. A missing `coverage.baseline.json`, or one whose recorded Node version fails validation, SHALL count as an invalid baseline and stay nonzero in both modes unless the run updates the baseline. A baseline that cannot be parsed is not classified this way: it aborts the run in both modes, so regenerating it starts by removing the file.
 
 #### Scenario: Report mode
 
