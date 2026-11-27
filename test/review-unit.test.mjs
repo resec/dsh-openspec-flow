@@ -222,6 +222,9 @@ test('review config validates profiles and entries', () => {
     reviewers: 0,
     waitMinutes: 15,
     reviewerModel: { source: 'inherit' },
+    passCriteria: 'major',
+    allowDeferred: true,
+    allowRejected: true,
   })
 })
 
