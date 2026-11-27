@@ -1,5 +1,0 @@
-schema: spec-driven
-created: 2026-11-22
-skip_specs: true
-goal: Fail the coverage gate in report mode too when the baseline is missing or
-  unusable, as decided on issue #10.
