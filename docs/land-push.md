@@ -49,7 +49,7 @@ The script reads the landed manifests, git, the local owner state and the offlin
 - The main worktree is on `main`, and its HEAD equals the manifest `archiveCommit`.
 - The worktree is clean apart from uncommitted paths under another change's `openspec/changes/<name>/`; an uncommitted path under the landed change's own former directory or outside `openspec/changes/` is refused.
 - The resolved land commit and `archiveCommit` exist locally, the land commit is an ancestor of the archive commit, and the land tree equals `featureTree`.
-- The `landCommit..archiveCommit` diff touches only `openspec/changes/archive/`, `openspec/specs/` and deletions under the change's former directory.
+- The `landCommit..archiveCommit` diff touches only the landed change's own `openspec/changes/archive/<date>-<change>/` directory, `openspec/specs/` and deletions under the change's former directory; another archived change's directory is refused.
 - A manifest that carries both fields with different commits is refused.
 - The dry run and the push both fetch `origin/main` first. The remote is fixed to `origin`; there is no remote-selection flag.
 
