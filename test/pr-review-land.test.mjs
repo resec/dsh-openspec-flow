@@ -117,7 +117,7 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
     mergeStateStatus: 'BEHIND',
     comments: [{
       author: { login: LOGIN },
-      body: `## Apply review\n\n**Verdict:** pass\n\n<!-- pr-review: pr=12 head=${head} round=1 format=2 -->`,
+      body: `## Apply review\n\n**Review result:** passed\n\n<!-- pr-review: pr=12 head=${head} round=1 format=2 -->`,
     }],
     ...overrides,
   })
@@ -140,7 +140,7 @@ function reviewRecord(root, tree, state = 'passed') {
   const paths = resolvePaths(root)
   const directory = join(paths.commonDir, 'openspec-flow', 'review', 'local#widget')
   mkdirSync(directory, { recursive: true })
-  writeFileSync(join(directory, 'apply-review.json'), `${JSON.stringify({ state, treeSha: tree }, null, 2)}\n`)
+  writeFileSync(join(directory, 'pr-review.json'), `${JSON.stringify({ state, treeSha: tree }, null, 2)}\n`)
 }
 
 function writeParallelDraft(root) {
@@ -239,10 +239,11 @@ test('landing documentation names the label, candidates, resume and recovery', (
 test('label and trusted pass checks are exact', () => {
   assert.equal(hasLandingLabel({ labels: [{ name: LANDING_LABEL }] }), true)
   assert.equal(hasLandingLabel({ labels: [{ name: 'merge' }] }), false)
-  const comments = [{ author: { login: LOGIN }, body: `**Verdict:** pass\n<!-- pr-review: pr=12 head=${HEAD} round=1 format=2 -->` }]
+  const comments = [{ author: { login: LOGIN }, body: `**Review result:** passed\n<!-- pr-review: pr=12 head=${HEAD} round=1 format=2 -->` }]
   assert.equal(trustedPass(comments, LOGIN, 12, HEAD), true)
   assert.equal(trustedPass(comments, 'other', 12, HEAD), false)
-  assert.equal(trustedPass([{ ...comments[0], body: '**Verdict:** changes-requested\n<!-- pr-review: pr=12 head=' + HEAD + ' round=1 format=2 -->' }], LOGIN, 12, HEAD), false)
+  assert.equal(trustedPass([{ ...comments[0], body: '**Review result:** not passed\n<!-- pr-review: pr=12 head=' + HEAD + ' round=1 format=2 -->' }], LOGIN, 12, HEAD), false)
+  assert.equal(trustedPass([{ ...comments[0], body: `**Review result:** passed\n<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }], LOGIN, 12, HEAD), false)
 })
 
 test('a second unfinished landing is refused', () => {
@@ -289,7 +290,7 @@ test('plan accepts a green newest run after a superseded failure', () => {
 test('plan refuses a changes-requested comment and a stale watch head', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
-  const comments = [{ author: { login: LOGIN }, body: `**Verdict:** changes-requested\n<!-- pr-review: pr=12 head=${head} round=1 format=2 -->` }]
+  const comments = [{ author: { login: LOGIN }, body: `**Review result:** not passed\n<!-- pr-review: pr=12 head=${head} round=1 format=2 -->` }]
   assert.throws(() => planLanding({
     root,
     number: 12,
@@ -309,7 +310,7 @@ test('prepare creates the landing branch at the current head and reviewed checks
   assert.equal(prepared.phase, 'prepared')
   assert.equal(prepared.landingHead, head)
   const tree = git(prepared.worktree, ['rev-parse', 'HEAD^{tree}'])
-  assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /apply review record/)
+  assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /pr review record/)
   reviewRecord(root, tree)
   const reviewed = reviewedLanding({ root, number: 12, apply: true })
   assert.equal(reviewed.phase, 'reviewed')
@@ -487,7 +488,7 @@ test('abandon clears a pre-merge landing without touching the watch entry', () =
   const { head } = addPullRequest(root, remote)
   const fake = fakeGh({ pr: JSON.parse(prJson(head)) })
   const prepared = prepareLanding({ root, number: 12, apply: true, gh: fake })
-  assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /apply review record/)
+  assert.throws(() => reviewedLanding({ root, number: 12, apply: true }), /pr review record/)
   const result = abandonLanding({ root, number: 12, apply: true })
   assert.equal(result.abandoned, 12)
   assert.equal(loadLandings(root).lands['12'], undefined)

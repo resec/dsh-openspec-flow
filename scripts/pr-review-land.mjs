@@ -673,7 +673,7 @@ export function syncBatch({
   }
 }
 
-/** Resolve the apply review record for one landing. */
+/** Resolve the pr review record for one landing. */
 function reviewRecordPath(root, entry) {
   const paths = landPaths(root)
   const directory = join(paths.commonDir, 'openspec-flow', 'review')
@@ -682,7 +682,7 @@ function reviewRecordPath(root, entry) {
     const match = readdirSync(directory).find((name) => name.endsWith(`#${entry.change}`))
     if (match !== undefined) key = match
   }
-  return join(directory, key, 'apply-review.json')
+  return join(directory, key, 'pr-review.json')
 }
 
 /** Verify the landing checkout and apply record still match the reviewed tree. */
@@ -696,9 +696,9 @@ function assertReviewRecord(root, entry, expectedTree = entry.reviewedTree) {
   }
   const recordFile = reviewRecordPath(root, entry)
   const record = readJson(recordFile)
-  if (record === undefined) throw new Error(`the apply review record ${recordFile} is missing`)
-  if (record.state !== 'passed') throw new Error(`the apply review state is ${String(record.state)}, not passed`)
-  if (record.treeSha !== tree) throw new Error(`the apply review tree ${String(record.treeSha)} does not match ${tree}`)
+  if (record === undefined) throw new Error(`the pr review record ${recordFile} is missing`)
+  if (record.state !== 'passed') throw new Error(`the pr review state is ${String(record.state)}, not passed`)
+  if (record.treeSha !== tree) throw new Error(`the pr review tree ${String(record.treeSha)} does not match ${tree}`)
   return tree
 }
 

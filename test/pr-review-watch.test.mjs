@@ -38,6 +38,7 @@ import {
   saveLocalState,
   saveState,
   stateCommand,
+  trustedPass,
   updateLocalEntry,
   withRunLock,
 } from '../scripts/pr-review-watch.mjs'
@@ -86,8 +87,9 @@ function makeRepository() {
     profiles: {
       'test-directory': { object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
       'test-tree': { object: 'tree', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
+      'test-pr': { object: 'tree', enabled: true, reviewers: 1, waitMinutes: 15, reviewerModel: { source: 'inherit' } },
     },
-    reviews: { draft: 'test-directory', apply: 'test-tree' },
+    reviews: { draft: 'test-directory', apply: 'test-tree', pr: 'test-pr' },
   }, null, 2))
   git(directory, ['add', '.'])
   git(directory, ['commit', '-qm', 'initial'])
@@ -387,6 +389,18 @@ test('trusted markers require the authenticated author and exact head', () => {
   assert.equal(hasTrustedMarker(comments, 'maintainer', 12, BASE), false)
   const old = [{ author: { login: 'maintainer' }, body: `<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }]
   assert.equal(hasTrustedMarker(old, 'maintainer', 12, HEAD), false)
+})
+
+test('trusted pass reads only the current result marker', () => {
+  const pass = [{ author: { login: 'maintainer' }, body: `**Review result:** passed\n<!-- pr-review: pr=12 head=${HEAD} round=1 format=2 -->` }]
+  assert.equal(trustedPass(pass, 'maintainer', 12, HEAD), true)
+  const old = [{ author: { login: 'maintainer' }, body: `**Verdict:** pass\n<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }]
+  assert.equal(trustedPass(old, 'maintainer', 12, HEAD), false)
+  const later = [
+    ...pass,
+    { author: { login: 'maintainer' }, body: `**Review result:** not passed\n<!-- pr-review: pr=12 head=${HEAD} round=2 format=2 -->` },
+  ]
+  assert.equal(trustedPass(later, 'maintainer', 12, HEAD), false)
 })
 
 test('comment dry-run renders without a GitHub write, and --apply posts once', () => {
@@ -768,8 +782,11 @@ test('prepare copies the baseline configuration and ignores the PR head file', (
     const facts = preparePullRequest({ root, number: 12, gh })
     const baseline = join(root, '.cache', 'pr-review', 'reviews.json')
     assert.equal(facts.reviewConfig, baseline)
-    assert.equal(readFileSync(baseline, 'utf8'), readFileSync(join(root, 'openspec', 'reviews.json'), 'utf8'))
-    assert.equal(JSON.parse(readFileSync(baseline, 'utf8')).reviews.apply, 'test-tree')
+    const copied = JSON.parse(readFileSync(baseline, 'utf8'))
+    assert.equal(copied.reviews.apply, 'test-tree')
+    assert.equal(copied.reviews.pr, 'test-pr')
+    assert.deepEqual(copied.pipeline, { beforeArchive: 'pr' })
+    assert.equal(copied.profiles['test-tree'].reviewers, 1)
     assert.equal(loadState(root).prs['12'].reviewConfig, baseline)
   } finally {
     cleanup(root, remote)
@@ -791,6 +808,34 @@ test('prepare refuses a missing baseline review configuration', () => {
     assert.throws(() => preparePullRequest({ root, number: 12, gh }), /no openspec\/reviews\.json/)
   } finally {
     cleanup(root, remote)
+  }
+})
+
+test('prepare refuses a baseline without an independent reviews.pr profile', () => {
+  const cases = [
+    [(value) => { delete value.reviews.pr }, /no reviews\.pr/],
+    [(value) => { value.profiles['test-pr'].reviewers = 0 }, /reviewers: 1/],
+    [(value) => { value.profiles['test-pr'].object = 'directory' }, /must name a tree profile/],
+  ]
+  for (const [mutate, pattern] of cases) {
+    const root = makeRepository()
+    const remote = makeOrigin(root)
+    try {
+      git(root, ['checkout', '-qb', 'pr-head'])
+      git(root, ['commit', '--allow-empty', '-qm', 'PR head'])
+      const head = git(root, ['rev-parse', 'HEAD'])
+      git(root, ['push', '-q', 'origin', 'pr-head'])
+      git(remote, ['update-ref', 'refs/pull/12/head', head])
+      git(root, ['checkout', '-q', 'main'])
+      const baselineFile = join(root, 'openspec', 'reviews.json')
+      const value = JSON.parse(readFileSync(baselineFile, 'utf8'))
+      mutate(value)
+      writeFileSync(baselineFile, JSON.stringify(value, null, 2))
+      const { gh } = fakeGh(() => prJson({ headRefOid: head }))
+      assert.throws(() => preparePullRequest({ root, number: 12, gh }), pattern)
+    } finally {
+      cleanup(root, remote)
+    }
   }
 })
 

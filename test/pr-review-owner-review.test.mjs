@@ -39,7 +39,7 @@ function cleanup(...directories) {
 function passComment(head = HEAD, number = 12) {
   return {
     author: { login: LOGIN },
-    body: `**Verdict:** pass\n<!-- pr-review: pr=${number} head=${head} round=1 format=2 -->`,
+    body: `**Review result:** passed\n<!-- pr-review: pr=${number} head=${head} round=1 format=2 -->`,
   }
 }
 
@@ -207,7 +207,12 @@ test('decideOwnerReview covers add, keep, adopt, readd and remove', () => {
 test('decideOwnerReview rejects untrusted, red, draft and multi-change states', () => {
   const login = LOGIN
   assert.equal(decideOwnerReview({
-    pr: makePr({ comments: [{ ...passComment(), body: '**Verdict:** fail\n<!-- pr-review: pr=12 head=' + HEAD + ' round=1 format=2 -->' }] }),
+    pr: makePr({ comments: [{ ...passComment(), body: '**Review result:** not passed\n<!-- pr-review: pr=12 head=' + HEAD + ' round=1 format=2 -->' }] }),
+    entry: makeEntry(),
+    login,
+  }).action, 'none')
+  assert.equal(decideOwnerReview({
+    pr: makePr({ comments: [{ author: { login }, body: `**Review result:** passed\n<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }] }),
     entry: makeEntry(),
     login,
   }).action, 'none')
