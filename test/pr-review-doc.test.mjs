@@ -51,6 +51,15 @@ test('the document states the handoff, review result and full finding state', ()
   assert.match(doc, /`F` numbers/u)
 })
 
+test('the contributor flow uses the pr entry and its profile', () => {
+  assert.match(doc, /review=pr/u)
+  assert.match(doc, /pr-tree/u)
+  assert.match(doc, /pipeline\.beforeArchive/u)
+  assert.match(doc, /reviews\.pr/u)
+  assert.match(doc, /pr-review\.json/u)
+  assert.doesNotMatch(doc, /review=apply/u)
+})
+
 test('the documented retry, batching, lock and telemetry behaviour is named', () => {
   assert.match(doc, /three attempts/u)
   assert.match(doc, /stale-lock-reclaimed pid=/u)

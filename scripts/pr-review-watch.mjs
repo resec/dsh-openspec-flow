@@ -8,7 +8,7 @@
  * GitHub/git work around it.
  */
 
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
@@ -49,8 +49,6 @@ export const LANDING_LOCK_TTL_MINUTES = 120
 export const OFFLINE_LAND_COMMAND = 'run npm run test:lab -- --mock-only, then openspec_apply_worktree action=land with approvedBy "user", archive, record the offline land with node scripts/offline-land.mjs record --change <change> --land <sha> --apply (or pr-local-land finish --phase landed-offline when a local entry exists), and stop at local main without a push; run node scripts/push-landed.mjs --push --offline when GitHub returns; the matching record is removed'
 /** Marker pattern for a trusted report comment in the current format. */
 const MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+) format=2 -->/u
-/** Any trusted marker format, kept for the current trusted-pass bridge. */
-const ANY_MARKER_PATTERN = /<!-- pr-review: pr=(\d+) head=([0-9a-f]{7,40}) round=(\d+)(?: format=2)? -->/u
 /** Comment format recorded in the watch state. */
 export const CURRENT_COMMENT_FORMAT = 2
 /** Active change path pattern. */
@@ -1051,9 +1049,35 @@ export function preparePullRequest({ root = process.cwd(), number, gh = ghText, 
   if (!existsSync(baselineSource)) {
     throw new Error(`${root} has no openspec/reviews.json; the pull-request review needs the baseline review configuration`)
   }
+  let baseline
+  try {
+    baseline = JSON.parse(readFileSync(baselineSource, 'utf8'))
+  } catch (error) {
+    throw new Error(`${baselineSource} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const prProfileName = baseline?.reviews?.pr
+  if (typeof prProfileName !== 'string' || prProfileName === '') {
+    throw new Error(`${baselineSource} has no reviews.pr entry; the pull-request review needs an independent tree profile at reviews.pr`)
+  }
+  const prProfile = baseline?.profiles?.[prProfileName]
+  if (prProfile === undefined) {
+    throw new Error(`${baselineSource} reviews.pr names "${prProfileName}", which profiles does not declare`)
+  }
+  if (prProfile.object !== 'tree') {
+    throw new Error(`${baselineSource} reviews.pr must name a tree profile, but "${prProfileName}" declares "${String(prProfile.object)}"`)
+  }
+  if (prProfile.reviewers !== 1) {
+    throw new Error(`${baselineSource} reviews.pr must name a profile with reviewers: 1, but "${prProfileName}" declares ${String(prProfile.reviewers)}`)
+  }
+  if (prProfile.enabled !== true) {
+    throw new Error(`${baselineSource} reviews.pr profile "${prProfileName}" must be enabled`)
+  }
   mkdirSync(paths.cache, { recursive: true })
   const reviewConfig = join(paths.cache, BASELINE_REVIEW_CONFIG)
-  copyFileSync(baselineSource, reviewConfig)
+  writeFileSync(reviewConfig, `${JSON.stringify({
+    ...baseline,
+    pipeline: { ...(baseline.pipeline ?? {}), beforeArchive: 'pr' },
+  }, null, 2)}\n`)
 
   const state = loadState(root)
   const previous = state.prs[String(n)] ?? {}
@@ -1256,12 +1280,12 @@ export function hasTrustedMarker(comments, login, number, head) {
 export function trustedPass(comments, login, number, head) {
   const matching = (Array.isArray(comments) ? comments : []).filter((comment) => {
     if (comment?.author?.login !== login) return false
-    const match = ANY_MARKER_PATTERN.exec(String(comment?.body ?? ''))
+    const match = MARKER_PATTERN.exec(String(comment?.body ?? ''))
     return match !== null && Number(match[1]) === Number(number) && match[2] === head
   })
   if (matching.length === 0) return false
   const latest = matching.at(-1)
-  return /\*\*Verdict:\*\*\s*pass\b/iu.test(String(latest?.body ?? ''))
+  return /\*\*Review result:\*\*\s*passed\b/iu.test(String(latest?.body ?? ''))
 }
 
 /**

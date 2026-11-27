@@ -355,7 +355,7 @@ docs/review.md           评审系统完整说明（不进入发布包）
 docs/apply-worktree.md   apply worktree 创建、会话路由、状态/锁、检查与恢复（不进入发布包）
 docs/apply-worktree-dev.md  仓库侧 apply worktree 开发环境：共享缓存、DSH home、浏览器锁与文档（不进入发布包）
 docs/land-push.md        land 后推送：manifest 校验、dry run、远端校对与恢复（不进入发布包）
-docs/pr-review.md        PR 评审监听：轮询、PR worktree、apply review 评论、状态清理（不进入发布包）
+docs/pr-review.md        PR 评审监听：轮询、PR worktree、pr review 评论、状态清理（不进入发布包）
 docs/local-pr.md         本地 PR 完成：owner 状态、landing 锁、发布、retarget/land 与离线路径（不进入发布包）
 docs/installing-bundles.md 安装、冻结与重装说明（不进入发布包）
 test/                    单元与真实 CLI 集成测试

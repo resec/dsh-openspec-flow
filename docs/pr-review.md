@@ -1,23 +1,24 @@
 # Pull-request review watch
 
-This is the repository-side loop for reviewing open pull requests with the installed `openspec-flow` plugin. It prepares a detached checkout of the PR head, lets a scheduled DSH session run an apply review, and publishes the report as a PR comment. It is not a plugin feature and does not change the plugin's review records or tool surface.
+This is the repository-side loop for reviewing open pull requests with the installed `openspec-flow` plugin. It prepares a detached checkout of the PR head, lets a scheduled DSH session run a `pr` review, and publishes the report as a PR comment. It is not a plugin feature and does not change the plugin's review records or tool surface.
 
 ## Prerequisites
 
 - `gh` is authenticated for `resec/dsh-openspec-flow`.
-- The baseline `main` worktree carries a complete `openspec/reviews.json`: both entries are mandatory, and the apply entry must name a tree profile with one independent reviewer. The repository's committed file already satisfies this; a project without one can start from this document:
+- The baseline `main` worktree carries a complete `openspec/reviews.json`: `reviews.draft`, `reviews.apply` and `reviews.pr` are mandatory for this loop, and `reviews.pr` must name an enabled tree profile with one independent reviewer. The repository's committed file already satisfies this; a project without one can start from this document:
 
   ```json
   {
     "profiles": {
       "standard-directory": { "object": "directory", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } },
-      "standard-tree": { "object": "tree", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } }
+      "standard-tree": { "object": "tree", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" } },
+      "pr-tree": { "object": "tree", "enabled": true, "reviewers": 1, "waitMinutes": 15, "reviewerModel": { "source": "inherit" }, "passCriteria": "nit", "allowDeferred": false, "allowRejected": false }
     },
-    "reviews": { "draft": "standard-directory", "apply": "standard-tree" }
+    "reviews": { "draft": "standard-directory", "apply": "standard-tree", "pr": "pr-tree" }
   }
   ```
 
-  Confirm this before enabling the schedule. An apply review with `reviewers: 0` is self-review and is not used by this loop. `prepare` copies the baseline file to `.cache/pr-review/reviews.json`; the session passes that path as `openspec_review`'s `configPath`, so the PR head's own file never supplies the review parameters.
+  Confirm this before enabling the schedule. A `pr` review with `reviewers: 0` is self-review and is not used by this loop. `prepare` copies the baseline file to `.cache/pr-review/reviews.json` and sets `pipeline.beforeArchive` to `pr` in the copy; it leaves `reviews.apply` and the baseline `pipeline.beforeApply` unchanged. The session passes that path as `openspec_review`'s `configPath`, so the PR head's own file never supplies the review parameters.
 - The main worktree is clean apart from other changes' uncommitted planning files under `openspec/changes/`. The script creates its own checkout under `.cache/pr-review/worktrees/` and never writes the main worktree.
 - The `owner-review` label exists. Verify it with `gh label list --search owner-review`; if it is absent, create it with `gh label create owner-review --description "require owner review before auto merge"`.
 
@@ -136,12 +137,12 @@ The scheduled session processes candidates one at a time:
 2. Run `state --cleanup` to remove tracked PRs that the state read reports as closed or merged. Cleanup reads every tracked and local owner number in requests of at most 100 numbers each; it reads a number individually when the response leaves it out, when the origin remote does not name a GitHub repository, or when a batch fails for a reason other than a transient network failure, and it reports a transient batch failure after its attempts instead of repeating it for every number.
 3. Run `poll --json` and take the candidates. The poll reads every open pull request up to the GitHub CLI ceiling of 1000; a pull request beyond the ceiling is not discovered. It reports candidates whose pull request carries `mergeable` first, keeping the existing order inside each group. A transient gateway failure on that read is retried under the shared read policy; when every attempt fails the poll reads a scalar list plus one detail request for each pull request that still needs evaluation, reports the same candidates and marks the result `fallback: true`. A scalar-list or detail request that stays unavailable fails the poll instead of reporting a partial candidate list.
 4. For each candidate, run `prepare <n> --json`. It fetches the PR head and base branch, computes the merge base of the base tip and head, creates or updates `.cache/pr-review/worktrees/pr-<n>`, verifies that the checkout is clean, shares the repository git directory, and contains the change.
-5. Read apply status with `openspec_review action=status review=apply` and the PR worktree:
+5. Read `pr` review status with `openspec_review action=status review=pr` and the PR worktree:
    - `policy: false` is the normal first-run state for a change created with the CLI, including a legacy draft-only policy. Start the review with `configPath` set to the prepared baseline path; the first start locks the baseline configuration. Require the returned mode to be `reviewer`; if it is `self`, publish nothing and stop.
    - An existing policy must report `available: true`, `enabled: true` and independent reviewer mode; otherwise publish nothing.
-6. First round: `openspec_review action=start review=apply` with the change, the PR worktree, `baseline: "none"`, `base` set to the prepared merge base, and `configPath` set to the prepared baseline path (`.cache/pr-review/reviews.json`, or the absolute path `prepare --json` reports). Never omit `configPath`: without it the plugin reads the PR checkout's own file.
-7. Later round: the author pushed a new head. Dispose every open finding from the previous round as `fixed` with a note that the new head awaits verification, then `openspec_review action=resume review=apply` with the same worktree and base. Do not waive a finding.
-7a. Re-emitted unchanged head: a candidate with `resume: true` and the same head is a retry, not a new round. Read apply status and report. If a report already exists for the current round, skip start/resume, write that report to the handoff file and publish it. If no report exists, record the failure with `state --fail <n> --error <text>` and then follow the stalled-review recovery below. Do not dispose findings or resume an unchanged head.
+6. First round: `openspec_review action=start review=pr` with the change, the PR worktree, `baseline: "none"`, `base` set to the prepared merge base, and `configPath` set to the prepared baseline path (`.cache/pr-review/reviews.json`, or the absolute path `prepare --json` reports). Never omit `configPath`: without it the plugin reads the PR checkout's own file.
+7. Later round: the author pushed a new head. Dispose every open finding from the previous round as `fixed` with a note that the new head awaits verification, then `openspec_review action=resume review=pr` with the same worktree and base. Do not waive a finding.
+7a. Re-emitted unchanged head: a candidate with `resume: true` and the same head is a retry, not a new round. Read `pr` review status and report. If a report already exists for the current round, skip start/resume, write that report to the handoff file and publish it. If no report exists, record the failure with `state --fail <n> --error <text>` and then follow the stalled-review recovery below. Do not dispose findings or resume an unchanged head.
 8. Read `openspec_review action=report` and write the complete result (`report`, `ready`, `reasons`) to:
 
    ```text
@@ -152,7 +153,7 @@ The scheduled session processes candidates one at a time:
 9. Publish with `comment <n> --report <path> --apply`. The comment prints `**Review result:** passed` only when the handoff's `ready` is true and prints `not passed` with the recorded `reasons` otherwise; it never derives the result from the report verdict. Findings use stable PR-local `F` numbers, print no severity and no internal id, and the table shows every recorded finding's current lifecycle state (see the full-state paragraph below). The comment carries a hidden marker for the PR, head and round with `format=2`; only a current-format marker from the authenticated `gh` login suppresses a duplicate, so an older comment is re-emitted for publication. A failed publish records `status: failed` and the error, and the next poll re-emits the prepared head. A failed `openspec_review` call is recorded the same way with `state --fail <n> --error <text>`. A commented head stops being re-emitted only when its watch entry records the current comment format; a prepared or failed head stays retryable.
 
 The watch reads the PR change's recorded findings from `<git common dir>/openspec-flow/review/local#<change>/pr-review.json` (with a single `*#<change>` directory as fallback) and renders every recorded finding, including findings closed in earlier rounds. This read is a same-repository convention, not a plugin tool contract. When the record is missing, unreadable or malformed, the comment falls back to the handoff report's findings and verifications and states that the full finding state is unavailable. Readiness reasons that name an internal finding id are rendered with that finding's `F` number; an id seen only in a reason receives one too.
-10. After a published `pass`, run `owner-review <n> --apply`. It adds the label when every non-label gate still passes. A label failure is reported and does not invalidate the review; the next reconcile retries.
+10. After a published `Review result: passed`, run `owner-review <n> --apply`. It adds the label when every non-label gate still passes. A label failure is reported and does not invalidate the review; the next reconcile retries.
 
 Candidates must be non-draft, have at least one CI check and every check's newest run succeeded, and change exactly one active change. Pending or absent checks are not candidates. A run superseded by a newer run of the same check does not make a pull request ineligible.
 
@@ -164,7 +165,9 @@ The scheduled session runs `preflight` first. It stops all pull-request work whe
 
 `scripts/pr-review-owner-review.mjs` maintains the advisory `owner-review` label. The label is a queue for maintainer attention, not an authorization: `mergeable` remains the only landing authorization, and the owner-review command never adds or removes it.
 
-The command adds the label only when the PR is open, non-draft, targets `main`, changes exactly one active change, has green CI, has `mergeable: MERGEABLE` and a `mergeStateStatus` other than `DIRTY` or `BLOCKED`, has a trusted `pass` comment for its current head, has no `mergeable` label, and its watch state names that head as `commented`. It removes the label when the head changes, the `mergeable` label appears, the PR closes, CI regresses, `mergeable` becomes `CONFLICTING`, `mergeStateStatus` becomes `DIRTY` or `BLOCKED`, the trusted pass no longer covers the head, the watch state is missing or names another head, or the base, draft or active-change rules fail.
+A trusted pass is the latest current-format (`format=2`) comment for the head authored by the authenticated login whose body contains `**Review result:** passed`. A comment carrying only the old `**Verdict:** pass` line, or an old marker without `format=2`, is not trusted. After deployment, an open pull request whose only comment is in the old format loses `owner-review` and is not a landing candidate until a new-format comment is published for the current head; old comments are not edited.
+
+The command adds the label only when the PR is open, non-draft, targets `main`, changes exactly one active change, has green CI, has `mergeable: MERGEABLE` and a `mergeStateStatus` other than `DIRTY` or `BLOCKED`, has a trusted `Review result: passed` comment for its current head, has no `mergeable` label, and its watch state names that head as `commented`. It removes the label when the head changes, the `mergeable` label appears, the PR closes, CI regresses, `mergeable` becomes `CONFLICTING`, `mergeStateStatus` becomes `DIRTY` or `BLOCKED`, the trusted pass no longer covers the head, the watch state is missing or names another head, or the base, draft or active-change rules fail.
 
 A head change removes the stale label and then adds it again in the same run when the new head already qualifies. A branch sync changes the head, so the label is removed and is not re-added while `mergeable` is present. While GitHub reports `mergeable: UNKNOWN`, a tracked label is kept and no new label is added; the next reconcile resolves the state. An open PR carrying the label without a watch state is orphaned and the label is removed.
 
@@ -176,7 +179,7 @@ Reconcile reads are batched. It reads the authenticated login once, screens ever
 
 Landing is separate from the review watch and owner-review signal. The review watch remains read-only except for its explicit comment publish; the owner-review command writes only `owner-review`; `scripts/pr-review-land.mjs` performs the git and GitHub work and the scheduled session calls the plugin review and archive tools.
 
-The `mergeable` label is the only contributor landing authorization. Only a maintainer adds it; the landing command reads it and never creates or removes labels. A labeled PR must also be open, non-draft, based on `main`, change exactly one active change, have a trusted `pass` comment for its current head, have a green CI rollup and be `MERGEABLE`. The advisory `owner-review` label does not authorize landing and is never a substitute for `mergeable`. A local pull request needs no label; its owner merges it after the local gates in [local-pr.md](local-pr.md).
+The `mergeable` label is the only contributor landing authorization. Only a maintainer adds it; the landing command reads it and never creates or removes labels. A labeled PR must also be open, non-draft, based on `main`, change exactly one active change, have a trusted `Review result: passed` comment for its current head, have a green CI rollup and be `MERGEABLE`. The local owner-managed flow in [local-pr.md](local-pr.md) keeps its own apply review record `apply-review.json`; the contributor `pr` review path above does not change it. The advisory `owner-review` label does not authorize landing and is never a substitute for `mergeable`. A local pull request needs no label; its owner merges it after the local gates in [local-pr.md](local-pr.md).
 
 Every contributor landing command refuses while a local owner holds `landing.lock`, and a new landing also refuses while local `main` leads `origin/main` (run `node scripts/push-landed.mjs --push` first, or `--push --offline` for a recorded offline land). `plan`, `sync`, `sync-batch` and `prepare` are read or prepare steps; `merge`, `archive`, `push` and `finish` mutate main. Reviews stay available while the lock is held.
 
@@ -190,8 +193,8 @@ The landing sequence is:
 2. `sync <n> --apply` updates a behind same-repository branch through GitHub's update-branch API with the current head as `expected_head_sha`. It requires the `mergeable` label, a conflict-free update and no open landing for the pull request. It never touches a fork branch, never force-pushes, publishes no comment and changes no label. It records `syncs[<n>] = { previousHead, newHead, at }` in `landings.json` without creating a landing entry.
 3. The synced head is a new head. The watch reviews it once its CI rollup is green and publishes the report; the landing gates then require that new pass.
 4. `prepare <n> --apply` fetches the PR head and `origin/main`, requires the head to contain the latest main, and creates the local `pr-land/<n>` branch at the head. There is no local rebase; a refusal leaves no landing entry.
-5. When the recorded apply review is `passed` and its `treeSha` equals the landing tree, the session skips the resume and runs `reviewed`. Otherwise it resumes the recorded apply review on the landing checkout with `openspec_review action=resume`, `base` set to the pre-merge main and the record's `baseline: "none"`. `start` is not used because the change already has a record. If the resume fails, run `state --fail <n> --error <text> --apply` to record `review-failed`, keep the checkout and stop; do not call `replace` and do not start another session.
-6. `reviewed <n> --apply` requires the apply review record to be `passed` with its `treeSha` equal to the landing tree, then records `reviewedTree`.
+5. When the recorded `pr` review is `passed` and its `treeSha` equals the landing tree, the session skips the resume and runs `reviewed`. Otherwise it resumes the recorded `pr` review on the landing checkout with `openspec_review action=resume review=pr`, `base` set to the pre-merge main and the record's `baseline: "none"`. `start` is not used because the change already has a record. If the resume fails, run `state --fail <n> --error <text> --apply` to record `review-failed`, keep the checkout and stop; do not call `replace` and do not start another session.
+6. `reviewed <n> --apply` requires the `pr` review record to be `passed` with its `treeSha` equal to the landing tree, then records `reviewedTree`.
 7. `merge <n> --apply` fetches `origin/main`, requires it to equal the recorded pre-merge main and to be contained in the head, then runs `gh pr merge <n> --rebase`. It never uses squash, `--admin`, force or a merge commit on `main`. A moved main or a stale head records `failed` before any merge call. After the merge it fast-forwards local main and requires the merged tree to equal `reviewedTree`.
 8. The session runs `openspec_archive` on main. `archive <n> --apply` then commits the archive from the paths it owns: the archived directory, the capability directories the archived change names under `openspec/specs`, and the removal of the source change directory. The subject is `chore(openspec): archive <change>` and the body is empty. The session pushes and continues with the remaining landing commands in the same run.
 9. `archive <n> --commit <sha> --apply` verifies and records an archive commit made outside the command; `push <n> --apply` verifies local main equals `origin/main` and records the pushed head; `finish <n> --apply` writes the manifest and removes the landing checkout and branch. A review pass on a candidate that the re-listing returns as not behind `origin/main` continues in the same run: the session acquires the landing lock for that pull request and runs `plan`, `prepare`, `reviewed`, `merge`, `openspec_archive`, `archive`, `push` and `finish`, with `finish` releasing the lock. A ready final review merges, archives, pushes and finishes in one locked run; archive and push no longer wait for a later run.
@@ -202,9 +205,9 @@ If the merged tree differs, `merge` records `tree-mismatch` and archive is refus
 
 `review-failed` is a durable stop: `candidates` omits the pull request until the operator clears the blocker. `abandon` alone deletes the landing entry, so the pull request returns to the candidate list and fails again; fix the blocker first. Steps 1 to 3 end by clearing the phase with `abandon <n> --apply`: the entry and checkout are removed, the PR returns to the candidate list, and the next run prepares the landing again from the PR head while the repaired review record lets the final review resume. Step 4 also clears the entry with `abandon <n> --apply`, but the label is gone so the PR stays out of the candidate list. The recovery steps are:
 
-1. With user approval, run `openspec_review action=replace review=apply` with a reason, which rebinds the same reviewer slot, then clear the phase with `abandon <n> --apply`.
+1. With user approval, run `openspec_review action=replace review=pr` with a reason, which rebinds the same reviewer slot, then clear the phase with `abandon <n> --apply`.
 2. Remove the locked review record and start a fresh review as the self-mode recovery does, then clear the phase with `abandon <n> --apply`.
-3. When a passed record still holds an open finding, with user approval run `openspec_review action=dispose review=apply` for that non-blocking finding, then clear the phase with `abandon <n> --apply`.
+3. When a passed record still holds an open finding, with user approval run `openspec_review action=dispose review=pr` for that non-blocking finding, then clear the phase with `abandon <n> --apply`.
 4. Have the maintainer remove the `mergeable` label, which takes the pull request out of the candidate list, then clear the phase with `abandon <n> --apply`.
 
 ## Schedule
@@ -241,11 +244,11 @@ Run the PR review watch for this repository in this fixed session:
    --session <scheduled-session> --token <token>. Then resume one phase of an
    unfinished contributor landing, then stop:
    - prepared: read the apply record with
-     openspec_review action=status review=apply change=<change>
+     openspec_review action=status review=pr change=<change>
      worktree=<landing worktree>, then run
      git -C <landing worktree> rev-parse HEAD^{tree} for the landing tree.
      When the record treeSha differs from the landing tree, call
-     openspec_review action=resume review=apply change=<change>
+     openspec_review action=resume review=pr change=<change>
      worktree=<landing worktree> base=<pre-merge main>; when the resume
      fails, run node scripts/pr-review-land.mjs state --fail <n>
      --error "<text>" --apply and stop.
@@ -256,8 +259,8 @@ Run the PR review watch for this repository in this fixed session:
      --session <scheduled-session> in the same run.
      When the record treeSha matches and state=in-review, follow the status
      nextAction without disposing a finding: a wait nextAction calls
-     openspec_review action=wait review=apply, a resume nextAction calls
-     openspec_review action=resume review=apply, and a dispose nextAction
+     openspec_review action=wait review=pr, a resume nextAction calls
+     openspec_review action=resume review=pr, and a dispose nextAction
      calls resume anyway so the failed resume records review-failed through
      state --fail.
    - reviewed: node scripts/pr-review-land.mjs merge <n> --apply
@@ -348,9 +351,9 @@ The plugin's apply state under `<git common dir>/openspec-flow/apply/` points at
 
 When a re-emitted head has no report, the review round is unfinished; a new poll alone does not progress it.
 
-1. Run `openspec_review action=retry review=apply` with the change and worktree once. This re-messages the same independent reviewer for the same round.
-2. If it still produces no report, run `openspec_review action=replace review=apply` with the change, worktree and a non-empty `reason`. This starts a new reviewer for the same round.
-3. If `replace` fails or is unavailable, run `openspec_review action=abandon review=apply` with the change, then use a fresh change name for the PR. Record the outcome in the watch state.
+1. Run `openspec_review action=retry review=pr` with the change and worktree once. This re-messages the same independent reviewer for the same round.
+2. If it still produces no report, run `openspec_review action=replace review=pr` with the change, worktree and a non-empty `reason`. This starts a new reviewer for the same round.
+3. If `replace` fails or is unavailable, run `openspec_review action=abandon review=pr` with the change, then use a fresh change name for the PR. Record the outcome in the watch state.
 
 Do not loop `prepare` -> status -> `state --fail` indefinitely. A repeated `status: failed` in `.cache/pr-review/state.json` is the signal that the operator must retry, replace or abandon before the loop can publish anything for that head.
 
@@ -358,8 +361,8 @@ Do not loop `prepare` -> status -> `state --fail` indefinitely. A repeated `stat
 
 If the first start returns self-review mode, the policy is already locked and cannot be changed. With user approval:
 
-1. Fix the baseline `main` `openspec/reviews.json` so the apply entry names a tree profile with `reviewers: 1`.
-2. Remove `policy.json` and `apply-review.json` from `<git common dir>/openspec-flow/review/<store>#<change>/`.
+1. Fix the baseline `main` `openspec/reviews.json` so `reviews.pr` names an enabled tree profile with `reviewers: 1`.
+2. Remove `policy.json` and `pr-review.json` from `<git common dir>/openspec-flow/review/<store>#<change>/`.
 3. Run `node scripts/pr-review-watch.mjs state --forget <change>` to remove the PR checkout and matching apply state.
 4. Rerun the poll. A fresh change name is the alternative if the old record cannot be removed.
 
