@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-27
+goal: After a branch is rebased or merged onto a newer main, an apply review's
+  diff contains only the change's own work; the rebased origin and the original
+  seal are recorded and named in the brief.
