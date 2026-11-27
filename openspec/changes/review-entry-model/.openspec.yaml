@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-27
+goal: "Make the review configuration entry-driven: any named entry maps to a
+  profile whose object decides the review flow, add the pr entry, and let
+  pipeline.beforeApply/beforeArchive name the gating entries."
