@@ -35,12 +35,18 @@ test('wakeText names the submitted round and its optional fields', () => {
     wakeText({ change: 'c', kind: 'apply', round: 2, ready: true, nextAction: 'openspec_archive' }),
     'apply review c round 2 submitted; ready; next: openspec_archive. Call openspec_review action="report" review="apply" for the full report.',
   )
+  assert.equal(
+    wakeText({ change: 'c', kind: 'pr', round: 2, ready: true, nextAction: 'openspec_archive' }),
+    'pr review c round 2 submitted; ready; next: openspec_archive. Call openspec_review action="report" review="pr" for the full report.',
+  )
 })
 
 test('deadlineText names the wait limit and the recovery actions', () => {
   assert.match(deadlineText({ change: 'c', kind: 'apply', round: 3 }), /apply review c round 3 reached the wait limit/)
   assert.match(deadlineText({ change: 'c', kind: 'apply', round: 3 }), /action="extend" review="apply"/)
   assert.match(deadlineText({ change: 'c', kind: 'draft' }), /round \? reached the wait limit/)
+  assert.match(deadlineText({ change: 'c', kind: 'pr', round: 2 }), /action="extend" review="pr"/)
+  assert.match(deadlineText({ change: 'c', kind: 'pr', round: 2 }), /action="abandon" review="pr"/)
 })
 
 test('wakeTargets flattens, deduplicates and drops empty entries', () => {
