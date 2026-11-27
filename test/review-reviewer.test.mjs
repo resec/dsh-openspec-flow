@@ -449,7 +449,7 @@ test('the reviewer tool rejects an unknown review kind', async () => {
     reviewer.tools.get('openspec_reviewer').execute({
       action: 'status', change: CHANGE, review: 'other',
     }, { agent: { id: 'reviewer-1' }, signal: new AbortController().signal }),
-    /review must be draft or apply/,
+    /unknown review entry "other"; configured entries:/,
   )
 })
 
