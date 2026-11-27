@@ -42,6 +42,7 @@ import {
   nextRevisionNumber,
   nextRoundSeq,
   parseRoundToken,
+  readReview,
   resolveRoundEntry,
   revisionDirName,
   roundEntries,
@@ -1298,6 +1299,17 @@ test('diffArtifactFiles treats a missing recorded list as all current files adde
 
 test('diffArtifactFiles returns nothing when both lists are absent', () => {
   assert.deepEqual(diffArtifactFiles(undefined, undefined), [])
+})
+
+test('a legacy record keeps its old file name and is not copied', () => {
+  const root = temp()
+  const directory = join(root, 'review')
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'apply-review.json'), `${JSON.stringify({ id: 'apply-1', change: 'demo' })}\n`)
+  assert.equal(readReview(directory, 'apply').id, 'apply-1')
+  assert.equal(existsSync(join(directory, 'apply-review.json')), true)
+  assert.equal(existsSync(join(directory, 'pr-review.json')), false)
+  assert.equal(readReview(directory, 'pr'), undefined)
 })
 
 test('round tokens parse normal numbers and extra tokens', () => {
