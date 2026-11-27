@@ -45,10 +45,10 @@
 
 ## 7. Defaults, repository configuration and documentation
 
-- [ ] 7.1 Add the `pr-tree` profile (`object: "tree"`, enabled, one reviewer, 15 minutes, inherit) and `reviews.pr` to this repository's `openspec/reviews.json`, leaving `pipeline` as `draft`/`apply`. Verify a `test/config.test.mjs` case reads this repository's file, resolves `pr`, and `npm run test:affected -- test/config.test.mjs` passes.
-- [ ] 7.2 Update `README.md` with the entry table, pipeline, per-entry record names and the `review` parameter, and link `docs/review.md`. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
-- [ ] 7.3 Update the shipped skills and `lib/policy.js` text where they name draft/apply review steps so they name the configured entry or the pipeline role. Verify `npm run test:affected -- test/skills.test.mjs test/skill.test.mjs` passes.
-- [ ] 7.4 Run `openspec validate --strict` for this change and verify it reports no issues.
+- [x] 7.1 Add the `pr-tree` profile (`object: "tree"`, enabled, one reviewer, 15 minutes, inherit) and `reviews.pr` to this repository's `openspec/reviews.json`, leaving `pipeline` as `draft`/`apply`. Verify a `test/config.test.mjs` case reads this repository's file, resolves `pr`, and `npm run test:affected -- test/config.test.mjs` passes.
+- [x] 7.2 Update `README.md` with the entry table, pipeline, per-entry record names and the `review` parameter, and link `docs/review.md`. Verify `npm run test:affected -- test/review-doc.test.mjs` passes.
+- [x] 7.3 Update the shipped skills and `lib/policy.js` text where they name draft/apply review steps so they name the configured entry or the pipeline role. Verify `npm run test:affected -- test/skills.test.mjs test/skill.test.mjs` passes.
+- [x] 7.4 Run `openspec validate --strict` for this change and verify it reports no issues.
 
 ## 8. Integration verification
 
