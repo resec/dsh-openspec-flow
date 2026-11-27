@@ -75,6 +75,9 @@ window.__ModuleLoader__.load({
       waitMinutes: '等待分钟',
       model: '评审模型',
       modelInherit: '继承当前模型',
+      passCriteria: '通过门槛',
+      allowDeferred: '允许延期',
+      allowRejected: '允许驳回',
       configError: '配置错误',
       noProjects: '当前没有正在使用 OpenSpec 项目的会话。',
       gitYes: 'git 可用',
@@ -112,6 +115,9 @@ window.__ModuleLoader__.load({
       waitMinutes: 'Wait minutes',
       model: 'Reviewer model',
       modelInherit: 'Follow the current model',
+      passCriteria: 'Pass criteria',
+      allowDeferred: 'Allow deferred',
+      allowRejected: 'Allow rejected',
       configError: 'Configuration error',
       noProjects: 'No session is working in an OpenSpec project right now.',
       gitYes: 'git available',
@@ -141,6 +147,9 @@ window.__ModuleLoader__.load({
       const state = section?.enabled ? t('enabledOn') : t('enabledOff')
       const reviewers = t('reviewersText', { n: section?.reviewers })
       return `${label}: ${state} · ${reviewers} · ${String(section?.waitMinutes)}m`
+        + ` · ${t('passCriteria')}: ${String(section?.passCriteria ?? 'major')}`
+        + ` · ${t('allowDeferred')}: ${String(section?.allowDeferred !== false)}`
+        + ` · ${t('allowRejected')}: ${String(section?.allowRejected !== false)}`
     }
 
     /**
@@ -241,7 +250,10 @@ window.__ModuleLoader__.load({
         `${t('enabled')}: ${profile?.enabled === true ? t('enabledOn') : t('enabledOff')}`, ' · ',
         `${t('reviewers')}: ${String(profile?.reviewers)}`, ' · ',
         `${t('waitMinutes')}: ${String(profile?.waitMinutes)}`, ' · ',
-        `${t('model')}: ${modelText}`)
+        `${t('model')}: ${modelText}`, ' · ',
+        `${t('passCriteria')}: ${String(profile?.passCriteria ?? 'major')}`, ' · ',
+        `${t('allowDeferred')}: ${String(profile?.allowDeferred !== false)}`, ' · ',
+        `${t('allowRejected')}: ${String(profile?.allowRejected !== false)}`)
     }
 
     /** One project's read-only configuration and its locked policies. */

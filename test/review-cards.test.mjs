@@ -99,6 +99,8 @@ test('a review card carries the complete report and counts', () => {
     assert.deepEqual(card.report.outOfScope, ['Not this change.'])
     assert.equal(card.findings[0].status, 'open')
     assert.equal(card.counts.total, 1)
+    assert.equal(card.counts.verifiedDeferred, 0)
+    assert.equal(card.counts.verifiedRejected, 0)
     assert.equal(card.object.changed, true)
     assert.equal(card.nextAction, 'openspec_review action=dispose')
     assert.deepEqual(card.readinessReasons, ['R1-01 is open'])
