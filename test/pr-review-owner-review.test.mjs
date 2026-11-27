@@ -8,6 +8,7 @@ import {
   decideOwnerReview,
   isLabelWrite,
   main,
+  MERGEABLE_LABEL,
   OWNER_REVIEW_LABEL,
   parseArgs,
   reconcileOwnerReview,
@@ -262,6 +263,38 @@ test('decideOwnerReview rejects untrusted, red, draft and multi-change states', 
   )
 })
 
+test('decideOwnerReview refuses a blocked merge state', () => {
+  const login = LOGIN
+  assert.deepEqual(
+    decideOwnerReview({ pr: makePr({ mergeStateStatus: 'BLOCKED' }), entry: makeEntry(), login }),
+    { action: 'none', reason: 'conflict', head: HEAD, number: 12 },
+  )
+  assert.deepEqual(
+    decideOwnerReview({
+      pr: makePr({ labels: [{ name: OWNER_REVIEW_LABEL }], mergeStateStatus: 'BLOCKED' }),
+      entry: makeEntry({ ownerReview: { head: HEAD, at: 't' } }),
+      login,
+    }),
+    { action: 'remove', reason: 'conflict', head: HEAD, number: 12 },
+  )
+})
+
+test('decideOwnerReview refuses a pass from an older head or another author', () => {
+  const login = LOGIN
+  assert.deepEqual(
+    decideOwnerReview({ pr: makePr({ comments: [passComment(OLD)] }), entry: makeEntry(), login }),
+    { action: 'none', reason: 'no-trusted-pass', head: HEAD, number: 12 },
+  )
+  assert.deepEqual(
+    decideOwnerReview({
+      pr: makePr({ comments: [{ ...passComment(), author: { login: 'stranger' } }] }),
+      entry: makeEntry(),
+      login,
+    }),
+    { action: 'none', reason: 'no-trusted-pass', head: HEAD, number: 12 },
+  )
+})
+
 test('syncPullRequest dry-run reports without writing labels or state', () => {
   const root = makeRoot()
   try {
@@ -288,6 +321,34 @@ test('syncPullRequest adds the label and records the head', () => {
     assert.deepEqual(loadState(root).prs['12'].ownerReview, { head: HEAD, at: '2026-01-01T00:00:00.000Z' })
   } finally {
     cleanup(root)
+  }
+})
+
+test('label writes never touch mergeable in either direction', () => {
+  const addRoot = makeRoot()
+  try {
+    writeState(addRoot)
+    const add = fakeGh(prHandler({ 12: makePr() }))
+    assert.equal(syncPullRequest({ root: addRoot, number: 12, apply: true, gh: add.gh, now: 't' }).action, 'add')
+    const added = add.calls.filter((args) => args[0] === 'pr' && args[1] === 'edit')
+    assert.deepEqual(added, [['pr', 'edit', '12', '--add-label', OWNER_REVIEW_LABEL]])
+    for (const args of added) assert.equal(args.includes(MERGEABLE_LABEL), false)
+  } finally {
+    cleanup(addRoot)
+  }
+
+  const removeRoot = makeRoot()
+  try {
+    writeState(removeRoot, makeEntry(), { head: HEAD, at: 't' })
+    const remove = fakeGh(prHandler({
+      12: makePr({ labels: [{ name: OWNER_REVIEW_LABEL }, { name: MERGEABLE_LABEL }] }),
+    }))
+    assert.equal(syncPullRequest({ root: removeRoot, number: 12, apply: true, gh: remove.gh }).action, 'remove')
+    const removed = remove.calls.filter((args) => args[0] === 'pr' && args[1] === 'edit')
+    assert.deepEqual(removed, [['pr', 'edit', '12', '--remove-label', OWNER_REVIEW_LABEL]])
+    for (const args of removed) assert.equal(args.includes(MERGEABLE_LABEL), false)
+  } finally {
+    cleanup(removeRoot)
   }
 })
 
