@@ -108,8 +108,17 @@ export function parseLcov(text) {
 export function parseUnifiedDiff(text) {
   const files = new Map()
   let current = null
+  // A file header can only follow `diff --git`; content lines always carry a
+  // `+`, `-` or space marker, so an added line whose source text starts with
+  // `++ ` renders as `+++ ` and must not reset the current file.
+  let headerPending = false
   for (const raw of text.split(/\r?\n/)) {
-    if (raw.startsWith('+++ ')) {
+    if (raw.startsWith('diff --git ')) {
+      headerPending = true
+      continue
+    }
+    if (headerPending && raw.startsWith('+++ ')) {
+      headerPending = false
       const value = raw.slice(4).trim()
       if (value === '/dev/null') {
         current = null
