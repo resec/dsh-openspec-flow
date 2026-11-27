@@ -189,6 +189,96 @@ function unqualifiedActions(section, kind) {
   return missing
 }
 
+/**
+ * Match a project field name as a standalone word.
+ * Backticks are optional so a rewrite of the marker does not break the guard,
+ * while `contextFiles` and `contexts` stay out of the match.
+ * @param name - field name such as `context` or `guidance`.
+ * @returns the field pattern.
+ */
+function fieldWord(name) {
+  return new RegExp(`(?<![A-Za-z])${name}(?![A-Za-z])`)
+}
+
+/**
+ * A directive that acts on a returned value: a verb before a field name, or a
+ * verb whose object is the field pair named just before it.
+ */
+const DIRECTED = new RegExp([
+  '\\b(?:follow|follows|apply|applies|use|uses|honou?rs?|respects?)\\s+(?:the\\s+)?(?:returned\\s+)?`?(?:context|rules|guidance)`?',
+  '\\b(?:apply|applies|use|uses)\\s+them\\b',
+].join('|'), 'i')
+
+/**
+ * Assert that one paragraph names the returned fields, a directive to follow
+ * them and the tool that returns them.
+ *
+ * The check is scoped to a paragraph so a field borrowed from a later
+ * paragraph cannot satisfy it, but it matches the field names and the
+ * directive verb instead of one fixed sentence.
+ * @param text - skill body.
+ * @param options - label, expected fields, tools and extra markers.
+ */
+function assertFollowsReturned(text, { label, fields, tools, markers = [] }) {
+  const blocks = text.split(/\n\s*\n/).filter((block) =>
+    fields.every((field) => fieldWord(field).test(block)))
+  assert.ok(blocks.length > 0, `${label} must name ${fields.join(' and ')} in one paragraph`)
+  const directed = blocks.filter((block) => DIRECTED.test(block))
+  assert.ok(
+    directed.length > 0,
+    `${label} must tell the agent to follow the returned ${fields.join(' and ')}`,
+  )
+  const named = directed.filter((block) => tools.every((tool) => block.includes(tool)))
+  assert.ok(
+    named.length > 0,
+    `${label} must name ${tools.join(' and ')} where it names ${fields.join(' and ')}`,
+  )
+  for (const marker of markers) {
+    assert.ok(
+      named.some((block) => marker.test(block)),
+      `${label} must name ${marker} where it names ${fields.join(' and ')}`,
+    )
+  }
+}
+
+test('the propose and update skills follow the returned artifact context and rules', () => {
+  for (const [name, label] of [
+    ['openspec-propose', 'propose'],
+    ['openspec-update-change', 'update'],
+  ]) {
+    const raw = readFileSync(packagedSkillPath(name), 'utf8')
+    assertFollowsReturned(raw, {
+      label,
+      fields: ['context', 'rules'],
+      tools: ['openspec_inspect'],
+      markers: [/action: "instructions"/],
+    })
+  }
+})
+
+test('the apply skill follows the returned context and guidance', () => {
+  assertFollowsReturned(readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8'), {
+    label: 'apply',
+    fields: ['context', 'guidance'],
+    tools: ['openspec_apply_next'],
+  })
+})
+
+test('the archive skill reads the returned archive context and guidance first', () => {
+  const archive = readFileSync(packagedSkillPath('openspec-archive-change'), 'utf8')
+  assertFollowsReturned(archive, {
+    label: 'archive',
+    fields: ['context', 'guidance'],
+    tools: ['openspec_inspect'],
+    markers: [/action: "instructions"/, /artifact: "archive"/],
+  })
+  assert.match(archive, /both are absent[\s\S]{0,20}continue/, 'archive continues when both fields are absent')
+  assert.ok(
+    archive.indexOf('artifact: "archive"') < archive.indexOf('`openspec_archive`'),
+    'archive reads the archive instructions before it calls openspec_archive',
+  )
+})
+
 test('the shipped skills name the review kind at every review action', () => {
   const propose = readFileSync(packagedSkillPath('openspec-propose'), 'utf8')
   const apply = readFileSync(packagedSkillPath('openspec-apply-change'), 'utf8')
