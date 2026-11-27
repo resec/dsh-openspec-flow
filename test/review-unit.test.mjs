@@ -50,7 +50,8 @@ import {
 import { archiveDraftAttempt } from '../lib/review/revision.js'
 import { submitReport } from '../lib/review/submit.js'
 import { anotherChangeInLocation } from '../lib/review/scope.js'
-import { draftEnabled, ensureApplyPolicy, ensurePolicy, policyApply, policyDraft, readPolicy, removePolicy, requireReviewConfig } from '../lib/review/policy.js'
+import { buildPolicy, draftEnabled, ensureApplyPolicy, ensurePolicy, needsPolicySupplement, policyApply, policyDraft, readPolicy, removePolicy, requireReviewConfig, supplementPolicy } from '../lib/review/policy.js'
+import { pipelineOf, resolveEntry } from '../lib/review/entry.js'
 import { relativeChangePath, storeSealSkipWarning } from '../lib/tools/review.js'
 
 const CREATED = []
@@ -654,7 +655,7 @@ test('policy helpers lock, read and remove one change', () => {
     resolveModel,
   })
   assert.equal(locked.created, true)
-  assert.equal(locked.policy.schemaVersion, 2)
+  assert.equal(locked.policy.schemaVersion, 3)
   assert.equal(locked.policy.source.path, 'openspec/reviews.json')
   assert.equal(locked.policy.reviews.draft.waitMinutes, 20)
   assert.deepEqual(locked.policy.reviews.draft.reviewerModel, {
@@ -677,6 +678,133 @@ test('policy helpers lock, read and remove one change', () => {
   assert.equal(again.policy.reviews.draft.enabled, true)
   removePolicy(locked.directory)
   assert.equal(readPolicy(locked.directory), undefined)
+})
+
+test('a policy locks every entry object and the pipeline', () => {
+  const parsed = normalizeReviewDocument({
+    profiles: {
+      dir: {
+        object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      },
+      tree: {
+        object: 'tree', enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+      },
+      pr: {
+        object: 'tree', enabled: true, reviewers: 1, waitMinutes: 10, reviewerModel: { source: 'inherit' },
+      },
+    },
+    reviews: { draft: 'dir', apply: 'tree', pr: 'pr' },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+  }).value
+  const source = {
+    path: 'openspec/reviews.json',
+    sha256: 'abc',
+    entries: { draft: 'dir', apply: 'tree', pr: 'pr' },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+  }
+  const resolveModel = () => ({ provider: 'deepseek', model: 'deepseek-flash' })
+  const policy = buildPolicy({
+    change: 'demo', config: parsed, source, gitEnabled: true, lockedBy: 'test', resolveModel,
+  })
+  assert.equal(policy.schemaVersion, 3)
+  assert.deepEqual(policy.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+  assert.equal(policy.reviews.draft.object, 'directory')
+  assert.equal(policy.reviews.apply.object, 'tree')
+  assert.equal(policy.reviews.pr.object, 'tree')
+  assert.equal(policy.reviews.pr.reviewers, 1)
+  assert.deepEqual(policy.source, source)
+  const changed = buildPolicy({
+    change: 'demo',
+    config: { ...parsed, pipeline: { beforeApply: 'draft', beforeArchive: 'pr' } },
+    source,
+    gitEnabled: true,
+    lockedBy: 'test',
+    resolveModel,
+  })
+  assert.notEqual(policy.configHash, changed.configHash)
+})
+
+test('a legacy policy reads default entries without rewriting its bytes', () => {
+  const root = temp()
+  const directory = join(root, 'openspec', '.review', 'local#demo')
+  mkdirSync(directory, { recursive: true })
+  const file = join(directory, 'policy.json')
+  writeFileSync(file, `${JSON.stringify({
+    schemaVersion: 2,
+    change: 'demo',
+    reviews: { draft: { enabled: true, reviewers: 0, waitMinutes: 15 } },
+  }, null, 2)}\n`)
+  const before = readFileSync(file, 'utf8')
+  const policy = readPolicy(directory)
+  assert.equal(policy.schemaVersion, 2)
+  assert.equal(policyDraft(policy).enabled, true)
+  assert.equal(policyApply(policy).enabled, false)
+  assert.equal(resolveEntry(policy, 'draft').object, 'directory')
+  assert.deepEqual(pipelineOf(policy), { beforeApply: 'draft', beforeArchive: 'apply' })
+  assert.equal(needsPolicySupplement(policy), true)
+  assert.equal(readFileSync(file, 'utf8'), before)
+})
+
+test('a supplied configuration supplements a legacy policy once', () => {
+  const root = temp()
+  const directory = join(root, 'openspec', '.review', 'local#demo')
+  mkdirSync(directory, { recursive: true })
+  const file = join(directory, 'policy.json')
+  const legacy = {
+    schemaVersion: 2,
+    change: 'demo',
+    reviews: { draft: { enabled: true, reviewers: 0, waitMinutes: 15 } },
+  }
+  writeFileSync(file, `${JSON.stringify(legacy, null, 2)}\n`)
+  const config = normalizeReviewDocument({
+    profiles: {
+      dir: {
+        object: 'directory', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      },
+      tree: {
+        object: 'tree', enabled: true, reviewers: 1, waitMinutes: 20, reviewerModel: { source: 'inherit' },
+      },
+    },
+    reviews: { draft: 'dir', apply: 'tree' },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+  }).value
+  const resolveModel = () => ({ provider: 'deepseek', model: 'deepseek-flash' })
+  const added = supplementPolicy(directory, legacy, { config, resolveModel })
+  assert.equal(added.schemaVersion, 3)
+  assert.deepEqual(added.pipeline, { beforeApply: 'draft', beforeArchive: 'apply' })
+  assert.equal(added.reviews.apply.object, 'tree')
+  assert.equal(added.reviews.apply.reviewers, 1)
+  assert.deepEqual(added.reviews.apply.reviewerModel, {
+    source: 'inherit', provider: 'deepseek', model: 'deepseek-flash',
+  })
+  assert.equal(added.reviews.draft.object, undefined)
+  assert.equal('source' in added, false)
+  const after = readFileSync(file, 'utf8')
+  const again = supplementPolicy(directory, readPolicy(directory), { config, resolveModel })
+  assert.equal(again.schemaVersion, 3)
+  assert.equal(readFileSync(file, 'utf8'), after)
+})
+
+test('a policy refuses a pipeline role with the wrong object', () => {
+  const bad = {
+    entries: {
+      draft: {
+        object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      },
+      apply: {
+        object: 'tree', enabled: true, reviewers: 0, waitMinutes: 15, reviewerModel: { source: 'inherit' },
+      },
+    },
+    reviews: { draft: 'x', apply: 'y' },
+    pipeline: { beforeApply: 'draft', beforeArchive: 'apply' },
+  }
+  assert.throws(
+    () => buildPolicy({
+      change: 'demo', config: bad, source: undefined, gitEnabled: true, lockedBy: 'test',
+      resolveModel: () => ({ provider: 'p', model: 'm' }),
+    }),
+    /pipeline\.beforeApply names entry "draft".*must be a "directory" entry/,
+  )
 })
 
 test('requireReviewConfig refuses a failed read with its issues', () => {
