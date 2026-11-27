@@ -9,7 +9,6 @@ The gate warns and exits zero when `coverage.baseline.json` is missing or unusab
 - Throw for a missing baseline in report mode as well.
 - Throw for an unusable baseline in report mode as well; `--update-baseline` still tolerates a missing or unusable one, because writing a baseline is the point there.
 - Coverage violations keep their per-mode behavior: report mode prints them, enforce mode fails.
-- State the missing-baseline rule in "Report and enforce modes" instead of relying on the implementation alone.
 - Add a test for both report-mode failures.
 
 ## Capabilities
@@ -20,7 +19,7 @@ None.
 
 ### Modified Capabilities
 
-- `coverage-gate`: "Report and enforce modes" now states that a missing or unusable baseline counts as an invalid baseline, so the durable spec carries the rule the gate enforces.
+None. The spec already states the rule; the gate now matches it, so this change sets `skip_specs: true`.
 
 ## Impact
 
