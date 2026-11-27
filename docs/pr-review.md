@@ -142,14 +142,16 @@ The scheduled session processes candidates one at a time:
 6. First round: `openspec_review action=start review=apply` with the change, the PR worktree, `baseline: "none"`, `base` set to the prepared merge base, and `configPath` set to the prepared baseline path (`.cache/pr-review/reviews.json`, or the absolute path `prepare --json` reports). Never omit `configPath`: without it the plugin reads the PR checkout's own file.
 7. Later round: the author pushed a new head. Dispose every open finding from the previous round as `fixed` with a note that the new head awaits verification, then `openspec_review action=resume review=apply` with the same worktree and base. Do not waive a finding.
 7a. Re-emitted unchanged head: a candidate with `resume: true` and the same head is a retry, not a new round. Read apply status and report. If a report already exists for the current round, skip start/resume, write that report to the handoff file and publish it. If no report exists, record the failure with `state --fail <n> --error <text>` and then follow the stalled-review recovery below. Do not dispose findings or resume an unchanged head.
-8. Read `openspec_review action=report` and write the report object to:
+8. Read `openspec_review action=report` and write the complete result (`report`, `ready`, `reasons`) to:
 
    ```text
    .cache/pr-review/reports/pr-<n>-<head>.json
    ```
 
-   The file name must match the prepared PR and head; the report may carry its own `head` and `round` fields.
-9. Publish with `comment <n> --report <path> --apply`. The comment carries a hidden marker for the PR, head and round; a trusted marker from the authenticated `gh` login suppresses a duplicate. A failed publish records `status: failed` and the error, and the next poll re-emits the prepared head. A failed `openspec_review` call is recorded the same way with `state --fail <n> --error <text>`. Only `status: commented` stops a head from being re-emitted; a prepared or failed head stays retryable.
+   The file name must match the prepared PR and head; the result may carry its own `head` and `round` fields. A legacy report-only file is still accepted, prints `Review result: not passed`, and names the missing readiness result.
+9. Publish with `comment <n> --report <path> --apply`. The comment prints `**Review result:** passed` only when the handoff's `ready` is true and prints `not passed` with the recorded `reasons` otherwise; it never derives the result from the report verdict. Findings use stable PR-local `F` numbers, print no severity and no internal id, and the table shows every recorded finding's current lifecycle state (see the full-state paragraph below). The comment carries a hidden marker for the PR, head and round with `format=2`; only a current-format marker from the authenticated `gh` login suppresses a duplicate, so an older comment is re-emitted for publication. A failed publish records `status: failed` and the error, and the next poll re-emits the prepared head. A failed `openspec_review` call is recorded the same way with `state --fail <n> --error <text>`. A commented head stops being re-emitted only when its watch entry records the current comment format; a prepared or failed head stays retryable.
+
+The watch reads the PR change's recorded findings from `<git common dir>/openspec-flow/review/local#<change>/pr-review.json` (with a single `*#<change>` directory as fallback) and renders every recorded finding, including findings closed in earlier rounds. This read is a same-repository convention, not a plugin tool contract. When the record is missing, unreadable or malformed, the comment falls back to the handoff report's findings and verifications and states that the full finding state is unavailable. Readiness reasons that name an internal finding id are rendered with that finding's `F` number; an id seen only in a reason receives one too.
 10. After a published `pass`, run `owner-review <n> --apply`. It adds the label when every non-label gate still passes. A label failure is reported and does not invalidate the review; the next reconcile retries.
 
 Candidates must be non-draft, have at least one CI check and every check's newest run succeeded, and change exactly one active change. Pending or absent checks are not candidates. A run superseded by a newer run of the same check does not make a pull request ineligible.
@@ -323,14 +325,14 @@ The script's `run.lock` records the owner PID, its process start time, the acqui
 
 ```text
 .cache/pr-review/
-  state.json                 tracked PRs, head/base/change, round, status, comment id, optional ownerReview
+  state.json                 tracked PRs, head/base/change, round, status, comment id, commentFormat, findingNumbers, nextFindingNumber, optional ownerReview
   local-prs.json             owner-managed local PRs: number, change, branch, head, tree, record, session, phase
   landing.lock/owner.json    cross-session landing lock: owner session, token, PR, acquisition time
   landings.json              landing phases, reviewed tree, merged head, archive commit, sync records
   landings/pr-<n>-<sha>.json completed landing manifest
   run.lock/                  exclusive run lock and owner: pid, pidStart, at, command
   worktrees/pr-<n>/          detached PR checkout
-  reports/pr-<n>-<head>.json report handoff written by the session
+  reports/pr-<n>-<head>.json review handoff written by the session: report, ready, reasons
   runs.jsonl                 one line per run-lock command: at, command, durationMs, ghCalls, transientFailures, outcome
 ```
 

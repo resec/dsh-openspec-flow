@@ -117,7 +117,7 @@ function prJson(head, baseRefName = 'main', overrides = {}) {
     mergeStateStatus: 'BEHIND',
     comments: [{
       author: { login: LOGIN },
-      body: `## Apply review\n\n**Verdict:** pass\n\n<!-- pr-review: pr=12 head=${head} round=1 -->`,
+      body: `## Apply review\n\n**Verdict:** pass\n\n<!-- pr-review: pr=12 head=${head} round=1 format=2 -->`,
     }],
     ...overrides,
   })
@@ -239,10 +239,10 @@ test('landing documentation names the label, candidates, resume and recovery', (
 test('label and trusted pass checks are exact', () => {
   assert.equal(hasLandingLabel({ labels: [{ name: LANDING_LABEL }] }), true)
   assert.equal(hasLandingLabel({ labels: [{ name: 'merge' }] }), false)
-  const comments = [{ author: { login: LOGIN }, body: `**Verdict:** pass\n<!-- pr-review: pr=12 head=${HEAD} round=1 -->` }]
+  const comments = [{ author: { login: LOGIN }, body: `**Verdict:** pass\n<!-- pr-review: pr=12 head=${HEAD} round=1 format=2 -->` }]
   assert.equal(trustedPass(comments, LOGIN, 12, HEAD), true)
   assert.equal(trustedPass(comments, 'other', 12, HEAD), false)
-  assert.equal(trustedPass([{ ...comments[0], body: '**Verdict:** changes-requested\n<!-- pr-review: pr=12 head=' + HEAD + ' round=1 -->' }], LOGIN, 12, HEAD), false)
+  assert.equal(trustedPass([{ ...comments[0], body: '**Verdict:** changes-requested\n<!-- pr-review: pr=12 head=' + HEAD + ' round=1 format=2 -->' }], LOGIN, 12, HEAD), false)
 })
 
 test('a second unfinished landing is refused', () => {
@@ -289,7 +289,7 @@ test('plan accepts a green newest run after a superseded failure', () => {
 test('plan refuses a changes-requested comment and a stale watch head', () => {
   const { root, remote } = makeRepo()
   const { head } = addPullRequest(root, remote)
-  const comments = [{ author: { login: LOGIN }, body: `**Verdict:** changes-requested\n<!-- pr-review: pr=12 head=${head} round=1 -->` }]
+  const comments = [{ author: { login: LOGIN }, body: `**Verdict:** changes-requested\n<!-- pr-review: pr=12 head=${head} round=1 format=2 -->` }]
   assert.throws(() => planLanding({
     root,
     number: 12,
