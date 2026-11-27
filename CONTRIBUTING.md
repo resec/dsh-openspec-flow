@@ -129,6 +129,18 @@ npm run test:lab -- --mock-only
 
 The pull request template asks for the exact commands, their pass or fail result, the coverage summary when relevant, and the commit SHA. A claim that tests pass without the command and its result is not reviewable.
 
+### Pull-request change check
+
+`npm run check:pr` is the same change gate CI runs for a pull request, so you can run it before pushing. It fails unless the diff touches exactly one active change, that change's `tasks.md` has no unchecked task, no [restricted path](#restricted-paths) changed, and no dependency, engine or package-manager field in `package.json` changed.
+
+Pass the base commit; `--head` defaults to `HEAD`:
+
+```sh
+npm run check:pr -- --base origin/main
+```
+
+The check compares `git diff <base>...<head>`, so `origin/main` measures your branch against the last fetched `main`. CI passes the pull request's `base.sha` and `head.sha` instead. A run without `--base` prints its usage line and exits with status 2, which is not a pass.
+
 ### Coverage gate
 
 `npm run verify` is the completion command. It runs the suite once with coverage and enforces:

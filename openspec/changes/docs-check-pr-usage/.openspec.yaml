@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-25
+skip_specs: true
+goal: Document the check:pr command in CONTRIBUTING.md so a contributor can
+  run the pull-request change gate locally with the base commit CI uses.
