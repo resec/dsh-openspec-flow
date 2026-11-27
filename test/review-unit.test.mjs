@@ -257,7 +257,7 @@ test('the brief names the axes and the report contract', () => {
   assert.match(brief, /"verifications": \[\]/)
   assert.match(brief, /`title`/)
   assert.match(brief, /review prompts, not report values/)
-  assert.match(brief, /verified-fixed, still-open, regressed/)
+  assert.match(brief, /verified-fixed, verified-deferred, verified-rejected, still-open, regressed/)
   assert.match(brief, /required only for `critical` and `major`/)
   assert.equal(brief.split('A finding carries').length - 1, 1)
   assert.equal(brief.split('After you submit').length - 1, 1)
@@ -435,6 +435,22 @@ test('finding dispositions follow the lifecycle', () => {
   assert.throws(() => disposeFinding(minor, { status: 'deferred', issue: '#12' }), /needs a note/)
   disposeFinding(minor, { status: 'deferred', note: 'later' })
   assert.equal(minor.status, 'deferred')
+
+  const switched = finding({ id: 'R1-04', severity: 'minor' })
+  assert.throws(
+    () => disposeFinding(switched, { status: 'deferred', note: 'later', allowDeferred: false }),
+    /deferred dispositions are disabled/,
+  )
+  assert.throws(
+    () => disposeFinding(switched, { status: 'rejected', note: 'no', allowRejected: false }),
+    /rejected dispositions are disabled/,
+  )
+  assert.throws(
+    () => disposeFinding(switched, { status: 'deferred', note: 'later', passCriteria: 'nit' }),
+    /at or above pass criteria nit/,
+  )
+  disposeFinding(switched, { status: 'deferred', note: 'later', passCriteria: 'critical' })
+  assert.equal(switched.status, 'deferred')
   const fixed = finding({ id: 'R1-03', severity: 'minor' })
   assert.throws(() => disposeFinding(fixed, { status: 'fixed' }), /needs a note/)
   disposeFinding(fixed, { status: 'fixed', note: 'changed' })
@@ -635,6 +651,13 @@ test('finding summaries count statuses and blockers', () => {
   assert.equal(summary.deferred, 1)
   assert.equal(summary.verified, 1)
   assert.equal(summary.blocking, 1)
+  const terminal = summarizeFindings([
+    finding({ id: 'R1-04', severity: 'minor', status: 'verified-deferred', firstRound: 1, verifiedInRound: 2 }),
+    finding({ id: 'R1-05', severity: 'minor', status: 'verified-rejected', firstRound: 1, verifiedInRound: 2 }),
+  ])
+  assert.equal(terminal.verifiedDeferred, 1)
+  assert.equal(terminal.verifiedRejected, 1)
+  assert.equal(terminal.blocking, 0)
 })
 
 test('recordFinding keeps the report fields and starts open', () => {
@@ -950,6 +973,50 @@ test('verification transitions and dispositions cover every status', () => {
   assert.throws(() => disposeFinding(rejected, { status: 'rejected' }), /needs a note/)
   disposeFinding(rejected, { status: 'rejected', note: 'not a defect' })
   assert.equal(rejected.status, 'rejected')
+
+  const deferred = finding({ id: 'R1-03', severity: 'minor', status: 'deferred' })
+  const acceptedDeferred = applyVerificationsTo(
+    [deferred],
+    [{ id: 'R1-03', status: 'verified-deferred', evidence: 'agreed' }],
+    2,
+    2,
+  )
+  assert.equal(acceptedDeferred[0].status, 'verified-deferred')
+  assert.equal(acceptedDeferred[0].verifiedInRound, 2)
+  const reopened = applyVerificationsTo(
+    [{ ...acceptedDeferred[0] }],
+    [{ id: 'R1-03', status: 'still-open', evidence: 'changed' }],
+    3,
+    3,
+  )
+  assert.equal(reopened[0].status, 'open')
+  const acceptedRejected = applyVerificationsTo(
+    [{ ...rejected }],
+    [{ id: 'R1-02', status: 'verified-rejected', evidence: 'agreed' }],
+    2,
+    2,
+  )
+  assert.equal(acceptedRejected[0].status, 'verified-rejected')
+  const notDeferred = finding({ id: 'R1-10', severity: 'minor', status: 'fixed' })
+  assert.throws(
+    () => assertReport({
+      verdict: 'pass',
+      summary: 'ok',
+      findings: [],
+      verifications: [{ id: 'R1-10', status: 'verified-deferred', evidence: 'x' }],
+    }, { round: 2, findings: [notDeferred] }),
+    /only a deferred finding can be verified-deferred/,
+  )
+  const pendingDeferred = finding({ id: 'R1-11', severity: 'minor', status: 'deferred' })
+  assert.throws(
+    () => assertReport({
+      verdict: 'pass',
+      summary: 'ok',
+      findings: [],
+      verifications: [{ id: 'R1-11', status: 'verified-rejected', evidence: 'x' }],
+    }, { round: 2, findings: [pendingDeferred] }),
+    /only a rejected finding can be verified-rejected/,
+  )
 })
 
 test('readiness reports abandoned, empty and deferred blockers', () => {

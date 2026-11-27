@@ -1000,6 +1000,32 @@ test('dispose refuses an unknown finding and a deferred blocker', async () => {
   )
 })
 
+test('dispose honors the threshold and the disposition switches', async () => {
+  const root = fixture()
+  const fake = setup(root, {
+    draft: { passCriteria: 'nit', allowDeferred: false, allowRejected: false },
+  })
+  await call(fake, 'openspec_review', {
+    action: 'start', change: CHANGE, intent: 'Add a theme selector.',
+  })
+  await call(fake, 'openspec_review', {
+    action: 'self-report', change: CHANGE,
+    report: report({ findings: [minorFinding()] }),
+  })
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-02', status: 'deferred', note: 'later',
+    }),
+    /cannot be deferred/,
+  )
+  await assert.rejects(
+    call(fake, 'openspec_review', {
+      action: 'dispose', review: 'draft', change: CHANGE, id: 'R1-02', status: 'rejected', note: 'no',
+    }),
+    /cannot be rejected/,
+  )
+})
+
 test('self-report refuses a duplicate report and a wrong round', async () => {
   const root = fixture()
   const fake = setup(root)

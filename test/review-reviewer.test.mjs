@@ -964,7 +964,7 @@ test('buildApplyBrief records the host validation and handles its absent branch'
   assert.match(seal, /repository-relative path and line/)
   assert.match(seal, /`title`/)
   assert.match(seal, /review prompts, not report values/)
-  assert.match(seal, /verified-fixed, still-open, regressed/)
+  assert.match(seal, /verified-fixed, verified-deferred, verified-rejected, still-open, regressed/)
   assert.match(seal, /required only for `critical` and `major`/)
   assert.equal(seal.split('A finding carries').length - 1, 1)
   assert.equal(seal.split('After you submit').length - 1, 1)
